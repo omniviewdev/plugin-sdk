@@ -34,10 +34,10 @@ type ResourceTypeManager interface {
 
 	// SyncResourceNamespace sets up a given auth context with the manager, and syncs the available resource types
 	// given a set of options
-	SyncAuthContext(*pkgtypes.PluginContext, *pkgtypes.AuthContext) error
+	SyncConnection(*pkgtypes.PluginContext, *pkgtypes.Connection) error
 
 	// and stops the client for the namespace
-	RemoveAuthContext(*pkgtypes.PluginContext, *pkgtypes.AuthContext) error
+	RemoveConnection(*pkgtypes.PluginContext, *pkgtypes.Connection) error
 }
 
 // StaticResourceTypeManager is a resource type manager that provides a static set of resource types
@@ -104,9 +104,9 @@ func (r *StaticResourceTypeManager) HasResourceType(s string) bool {
 	return ok
 }
 
-func (r *StaticResourceTypeManager) SyncAuthContext(
+func (r *StaticResourceTypeManager) SyncConnection(
 	pluginCtx *pkgtypes.PluginContext,
-	authCtx *pkgtypes.AuthContext,
+	authCtx *pkgtypes.Connection,
 ) error {
 	r.Lock()
 	defer r.Unlock()
@@ -138,9 +138,9 @@ func (r *StaticResourceTypeManager) GetContextResourceTypes(
 	return nil, fmt.Errorf("no available resource types for auth context %s", authCtxID)
 }
 
-func (r *StaticResourceTypeManager) RemoveAuthContext(
+func (r *StaticResourceTypeManager) RemoveConnection(
 	pluginCtx *pkgtypes.PluginContext,
-	authCtx *pkgtypes.AuthContext,
+	authCtx *pkgtypes.Connection,
 ) error {
 	r.Lock()
 	defer r.Unlock()
@@ -151,7 +151,7 @@ func (r *StaticResourceTypeManager) RemoveAuthContext(
 
 func (r *StaticResourceTypeManager) GetAvailableResourceTypes(
 	ctx *pkgtypes.PluginContext,
-	authCtx *pkgtypes.AuthContext,
+	authCtx *pkgtypes.Connection,
 ) ([]types.ResourceMeta, error) {
 	r.RLock()
 	defer r.RUnlock()
@@ -207,7 +207,7 @@ func NewDynamicResourceTypeManager[DiscoveryClientT any](
 
 func (r *DynamicResourceTypeManager[DiscoveryClientT]) SyncResourceNamespace(
 	ctx *pkgtypes.PluginContext,
-	authCtx *pkgtypes.AuthContext,
+	authCtx *pkgtypes.Connection,
 ) error {
 	r.Lock()
 	defer r.Unlock()
@@ -254,9 +254,9 @@ func (r *DynamicResourceTypeManager[DiscoveryClientT]) SyncResourceNamespace(
 	return nil
 }
 
-func (r *DynamicResourceTypeManager[DiscoveryClientT]) RemoveAuthContext(
+func (r *DynamicResourceTypeManager[DiscoveryClientT]) RemoveConnection(
 	ctx *pkgtypes.PluginContext,
-	authCtx *pkgtypes.AuthContext,
+	authCtx *pkgtypes.Connection,
 ) error {
 	r.Lock()
 	defer r.Unlock()
@@ -278,7 +278,7 @@ func (r *DynamicResourceTypeManager[DiscoveryClientT]) RemoveAuthContext(
 // GetAvailableResourceTypes returns the available resource types for the given namespace.
 func (r *DynamicResourceTypeManager[DiscoveryClientT]) GetAvailableResourceTypes(
 	ctx *pkgtypes.PluginContext,
-	authCtx *pkgtypes.AuthContext,
+	authCtx *pkgtypes.Connection,
 ) ([]types.ResourceMeta, error) {
 	r.Lock()
 	defer r.Unlock()

@@ -48,7 +48,7 @@ type InformerFactory[ClientT, InformerT any] interface {
 	// CreateInformer creates a new informer for a given resource namespace.
 	CreateInformer(
 		ctx *pkgtypes.PluginContext,
-		auth *pkgtypes.AuthContext,
+		auth *pkgtypes.Connection,
 		client *ClientT,
 	) (InformerT, error)
 }
@@ -133,9 +133,9 @@ func (i *InformerManager[CT, IT]) Run(
 	}
 }
 
-func (i *InformerManager[CT, IT]) CreateAuthContextInformer(
+func (i *InformerManager[CT, IT]) CreateConnectionInformer(
 	ctx *pkgtypes.PluginContext,
-	auth *pkgtypes.AuthContext,
+	auth *pkgtypes.Connection,
 	client *CT,
 ) error {
 	// make sure we don't already have an informer for this namespace
@@ -158,7 +158,7 @@ func (i *InformerManager[CT, IT]) CreateAuthContextInformer(
 // called when a new context has been started for the first time.
 func (i *InformerManager[CT, IT]) RegisterResource(
 	_ *pkgtypes.PluginContext,
-	auth *pkgtypes.AuthContext,
+	auth *pkgtypes.Connection,
 	resource types.ResourceMeta,
 ) error {
 	// get the informer
@@ -173,7 +173,7 @@ func (i *InformerManager[CT, IT]) RegisterResource(
 
 // StartNamespace starts the informer for a given resource namespace, and sends events to the given
 // event channels.
-func (i *InformerManager[CT, IT]) StartAuthContext(
+func (i *InformerManager[CT, IT]) StartConnection(
 	_ *pkgtypes.PluginContext,
 	authID string,
 ) error {
@@ -188,7 +188,7 @@ func (i *InformerManager[CT, IT]) StartAuthContext(
 }
 
 // StopNamespace stops the informer for a given resource namespace.
-func (i *InformerManager[CT, IT]) StopAuthContext(
+func (i *InformerManager[CT, IT]) StopConnection(
 	_ *pkgtypes.PluginContext,
 	authID string,
 ) error {

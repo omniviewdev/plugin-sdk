@@ -45,7 +45,7 @@ func RegisterStaticResourcePlugin[ClientT, InformerT any](
 	controller := controllers.NewResourceController[ClientT, InformerT](
 		services.NewResourcerManager[ClientT](),
 		services.NewHookManager(),
-		services.NewAuthContextManager(opts.ClientFactory),
+		services.NewConnectionManager(opts.ClientFactory),
 		services.NewStaticResourceTypeManager(metas),
 	)
 
@@ -91,7 +91,7 @@ func RegisterDynamicResourcePlugin[ClientT, InformerT, DiscoveryClientT any](
 	controller := controllers.NewResourceController[ClientT, InformerT](
 		services.NewResourcerManager[ClientT](),
 		services.NewHookManager(),
-		services.NewAuthContextManager(opts.ClientFactory),
+		services.NewConnectionManager(opts.ClientFactory),
 		services.NewDynamicResourceTypeManager(
 			metas,
 			opts.DiscoveryClientFactory,

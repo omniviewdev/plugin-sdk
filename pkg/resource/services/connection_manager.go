@@ -10,7 +10,7 @@ import (
 
 // TODO - rename to AuthorizationsManager
 
-// AuthContextManager is an interface that resource managers must implement
+// ConnectionManager is an interface that resource managers must implement
 // in order to manage working against resources within a authd resources. T is the type of the client
 // that the resource manager will manage, and O is the options type that the resource manager will use.
 //
@@ -30,58 +30,58 @@ import (
 // acts as a provider that resourcers can use to get the appropriate client for the given auth.
 // When creating a new resource manager, the type and options type should be provided to the auth manager
 // so that it can be provided the necessary client factory to create and manage clients for the resource manager.
-type AuthContextManager[ClientT any] interface {
-	// InjectAuthContext injects the auth context by id into the plugin context
-	InjectAuthContext(ctx *types.PluginContext, id string) error
+type ConnectionManager[ClientT any] interface {
+	// InjectConnection injects the connection by id into the plugin context
+	InjectConnection(ctx *types.PluginContext, id string) error
 
-	// CreateAuthorization creates a new auth for the resource manager
+	// Create creates a new connection for the resource manager
 	// This method should perform any necessary setup so that client retrieval
 	// can be done for the auth after it is created
-	Create(ctx *types.PluginContext, auth types.AuthContext) error
+	Create(ctx *types.PluginContext, auth types.Connection) error
 
 	// RemoveAuthorization removes a auth from the resource manager
 	Remove(ctx *types.PluginContext, id string) error
 
 	// ListAuthorizations lists the auths for the resource manager
-	List(ctx *types.PluginContext) ([]types.AuthContext, error)
+	List(ctx *types.PluginContext) ([]types.Connection, error)
 
-	// GetContextClient returns the necessary client for the given auth
+	// GetConnectionClient returns the necessary client for the given auth
 	// This method should be used by resourcers to get the client for the given
 	// auth.
-	GetContextClient(ctx *types.PluginContext, id string) (*ClientT, error)
+	GetConnectionClient(ctx *types.PluginContext, id string) (*ClientT, error)
 
-	// RefreshContextClient performs any actions necessary to refresh a client for the given auth.
+	// RefreshConnectionClient performs any actions necessary to refresh a client for the given auth.
 	// This may include refreshing credentials, or re-initializing the client if it has been
 	// invalidated.
-	RefreshContextClient(ctx *types.PluginContext, id string) error
+	RefreshConnectionClient(ctx *types.PluginContext, id string) error
 
-	// GetCurrentContextClient returns the current client for the given auth
-	GetCurrentContextClient(ctx *types.PluginContext) (*ClientT, error)
+	// GetCurrentConnectionClient returns the current client for the given auth
+	GetCurrentConnectionClient(ctx *types.PluginContext) (*ClientT, error)
 
-	// RefreshCurrentContextClient performs any actions necessary to refresh the current client for the given auth.
-	RefreshCurrentContextClient(ctx *types.PluginContext) error
+	// RefreshCurrentConnectionClient performs any actions necessary to refresh the current client for the given auth.
+	RefreshCurrentConnectionClient(ctx *types.PluginContext) error
 }
 
-// NewAuthContextManager creates a new service to manage the various auth contexts for a
+// NewConnectionManager creates a new service to manage the various auth contexts for a
 // plugin with an authenticated backend.
-func NewAuthContextManager[ClientT any](
+func NewConnectionManager[ClientT any](
 	factory factories.ResourceClientFactory[ClientT],
-) AuthContextManager[ClientT] {
-	return &authContextManager[ClientT]{
+) ConnectionManager[ClientT] {
+	return &connectionManager[ClientT]{
 		factory: factory,
-		auths:   make(map[string]types.AuthContext),
+		auths:   make(map[string]types.Connection),
 		clients: make(map[string]*ClientT),
 	}
 }
 
-type authContextManager[ClientT any] struct {
+type connectionManager[ClientT any] struct {
 	factory factories.ResourceClientFactory[ClientT]
-	auths   map[string]types.AuthContext
+	auths   map[string]types.Connection
 	clients map[string]*ClientT
 	sync.RWMutex
 }
 
-func (r *authContextManager[ClientT]) InjectAuthContext(
+func (r *connectionManager[ClientT]) InjectConnection(
 	ctx *types.PluginContext,
 	id string,
 ) error {
@@ -92,13 +92,13 @@ func (r *authContextManager[ClientT]) InjectAuthContext(
 	if !ok {
 		return fmt.Errorf("auth %s does not exist", id)
 	}
-	ctx.AuthContext = &auth
+	ctx.Connection = &auth
 	return nil
 }
 
-func (r *authContextManager[ClientT]) Create(
+func (r *connectionManager[ClientT]) Create(
 	ctx *types.PluginContext,
-	auth types.AuthContext,
+	auth types.Connection,
 ) error {
 	r.Lock()
 	defer r.Unlock()
@@ -121,7 +121,7 @@ func (r *authContextManager[ClientT]) Create(
 	return nil
 }
 
-func (r *authContextManager[ClientT]) Remove(
+func (r *connectionManager[ClientT]) Remove(
 	ctx *types.PluginContext,
 	id string,
 ) error {
@@ -142,13 +142,13 @@ func (r *authContextManager[ClientT]) Remove(
 	return nil
 }
 
-func (r *authContextManager[ClientT]) List(
+func (r *connectionManager[ClientT]) List(
 	_ *types.PluginContext,
-) ([]types.AuthContext, error) {
+) ([]types.Connection, error) {
 	r.RLock()
 	defer r.RUnlock()
 
-	auths := make([]types.AuthContext, 0, len(r.auths))
+	auths := make([]types.Connection, 0, len(r.auths))
 
 	for _, auth := range r.auths {
 		auths = append(auths, auth)
@@ -156,7 +156,7 @@ func (r *authContextManager[ClientT]) List(
 	return auths, nil
 }
 
-func (r *authContextManager[ClientT]) GetContextClient(
+func (r *connectionManager[ClientT]) GetConnectionClient(
 	_ *types.PluginContext,
 	id string,
 ) (*ClientT, error) {
@@ -171,7 +171,7 @@ func (r *authContextManager[ClientT]) GetContextClient(
 	return client, nil
 }
 
-func (r *authContextManager[ClientT]) RefreshContextClient(
+func (r *connectionManager[ClientT]) RefreshConnectionClient(
 	ctx *types.PluginContext,
 	id string,
 ) error {
@@ -191,41 +191,41 @@ func (r *authContextManager[ClientT]) RefreshContextClient(
 	return r.factory.RefreshClient(ctx, client)
 }
 
-func (r *authContextManager[ClientT]) GetCurrentContextClient(
+func (r *connectionManager[ClientT]) GetCurrentConnectionClient(
 	ctx *types.PluginContext,
 ) (*ClientT, error) {
 	r.RLock()
 	defer r.RUnlock()
 
-	if ctx.AuthContext == nil {
+	if ctx.Connection == nil {
 		return nil, fmt.Errorf("auth context is nil")
 	}
 
-	client, ok := r.clients[ctx.AuthContext.ID]
+	client, ok := r.clients[ctx.Connection.ID]
 
 	if !ok {
-		return nil, fmt.Errorf("client for auth context %s does not exist", ctx.AuthContext.ID)
+		return nil, fmt.Errorf("client for auth context %s does not exist", ctx.Connection.ID)
 	}
 
 	return client, nil
 }
 
-func (r *authContextManager[ClientT]) RefreshCurrentContextClient(
+func (r *connectionManager[ClientT]) RefreshCurrentConnectionClient(
 	ctx *types.PluginContext,
 ) error {
 	r.RLock()
 	defer r.RUnlock()
-	if ctx.AuthContext == nil {
+	if ctx.Connection == nil {
 		return fmt.Errorf("auth context is nil")
 	}
-	client, clientOk := r.clients[ctx.AuthContext.ID]
-	_, authOk := r.auths[ctx.AuthContext.ID]
+	client, clientOk := r.clients[ctx.Connection.ID]
+	_, authOk := r.auths[ctx.Connection.ID]
 
 	if !clientOk {
-		return fmt.Errorf("client for auth %s does not exist", ctx.AuthContext.ID)
+		return fmt.Errorf("client for auth %s does not exist", ctx.Connection.ID)
 	}
 	if !authOk {
-		return fmt.Errorf("auth %s does not exist", ctx.AuthContext.ID)
+		return fmt.Errorf("auth %s does not exist", ctx.Connection.ID)
 	}
 
 	return r.factory.RefreshClient(ctx, client)

@@ -19,13 +19,13 @@ import (
 func NewResourceController[ClientT, InformerT any](
 	resourcerManager services.ResourcerManager[ClientT],
 	hookManager services.HookManager,
-	authContextManager services.AuthContextManager[ClientT],
+	connectionManager services.ConnectionManager[ClientT],
 	resourceTypeManager services.ResourceTypeManager,
 ) types.ResourceProvider {
 	return &resourceController[ClientT, InformerT]{
 		resourcerManager:            resourcerManager,
 		hookManager:                 hookManager,
-		authContextManager:          authContextManager,
+		connectionManager:           connectionManager,
 		resourceResourceTypeManager: resourceTypeManager,
 	}
 }
@@ -51,8 +51,8 @@ type resourceController[ClientT, InformerT any] struct {
 	resourcerManager services.ResourcerManager[ClientT]
 	// hookManager is the hook manager that the controller will use to attach hooks to operations.
 	hookManager services.HookManager
-	// authContextManager is the namespace manager that the controller will use to manage resource namespaces.
-	authContextManager services.AuthContextManager[ClientT]
+	// connectionManager is the namespace manager that the controller will use to manage resource namespaces.
+	connectionManager services.ConnectionManager[ClientT]
 	// resourceResourceTypeManager is the resource type manager that the controller will use to manage resource types.
 	resourceResourceTypeManager services.ResourceTypeManager
 }
@@ -82,11 +82,11 @@ func (c *resourceController[ClientT, InformerT]) retrieveClientResourcer(
 	}
 
 	// 2. Get the client for the given resource namespace, ensuring it is of the correct type
-	client, err := c.authContextManager.GetCurrentContextClient(ctx)
+	client, err := c.connectionManager.GetCurrentConnectionClient(ctx)
 	if err != nil {
 		return nil, nilResourcer, fmt.Errorf(
 			"client unable to be retrieved for auth context %s: %w",
-			ctx.AuthContext.ID,
+			ctx.Connection.ID,
 			err,
 		)
 	}
@@ -101,7 +101,7 @@ func (c *resourceController[ClientT, InformerT]) retrieveClientResourcer(
 			"client type %s does not match expected type %s for auth context %s",
 			clientType,
 			expectedType,
-			ctx.AuthContext.ID,
+			ctx.Connection.ID,
 		)
 	}
 
@@ -232,7 +232,7 @@ func (c *resourceController[ClientT, InformerT]) StartContextInformer(
 	if !c.withInformer {
 		return nil
 	}
-	return c.informerManager.StartAuthContext(ctx, contextID)
+	return c.informerManager.StartConnection(ctx, contextID)
 }
 
 // StopContextInformer signals to the listen runner to stop the informer for the given context.
@@ -243,7 +243,7 @@ func (c *resourceController[ClientT, InformerT]) StopContextInformer(
 	if !c.withInformer {
 		return nil
 	}
-	return c.informerManager.StopAuthContext(ctx, contextID)
+	return c.informerManager.StopConnection(ctx, contextID)
 }
 
 // ListenForEvents listens for events from the informer and sends them to the given event channels.

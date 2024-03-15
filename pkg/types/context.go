@@ -22,8 +22,8 @@ type PluginContext struct {
 	// RequestOptions are the options that were set for the request.
 	RequestOptions *RequestOptions
 
-	// AuthContext holds the identifier of the auth context for the plugin.
-	AuthContext *AuthContext
+	// Connection holds the identifier of the auth context for the plugin.
+	Connection *Connection
 
 	// The resource context for the request, if available
 	ResourceContext *ResourceContext
@@ -71,14 +71,14 @@ func NewPluginContextFromCtx(ctx context.Context) *PluginContext {
 	}
 }
 
-func (c *PluginContext) SetAuthContext(authContext *AuthContext) {
+func (c *PluginContext) SetConnection(authContext *Connection) {
 	if c.ResourceContext != nil {
-		c.AuthContext = authContext
+		c.Connection = authContext
 	}
 }
 
 func (c *PluginContext) IsAuthenticated() bool {
-	return c.AuthContext != nil
+	return c.Connection != nil
 }
 
 // RequestOptions are the options that were set for the request.
