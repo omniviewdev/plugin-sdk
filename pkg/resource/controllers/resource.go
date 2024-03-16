@@ -21,25 +21,23 @@ func NewResourceController[ClientT, InformerT any](
 	hookManager services.HookManager,
 	connectionManager services.ConnectionManager[ClientT],
 	resourceTypeManager services.ResourceTypeManager,
+	informerOpts *services.InformerOptions[ClientT, InformerT],
 ) types.ResourceProvider {
-	return &resourceController[ClientT, InformerT]{
+	controller := &resourceController[ClientT, InformerT]{
 		resourcerManager:            resourcerManager,
 		hookManager:                 hookManager,
 		connectionManager:           connectionManager,
 		resourceResourceTypeManager: resourceTypeManager,
 	}
-}
-
-func AddInformerManager[ClientT, InformerT any](
-	controller *resourceController[ClientT, InformerT],
-	opts services.InformerOptions[ClientT, InformerT],
-) {
-	controller.withInformer = true
-	controller.informerManager = services.NewInformerManager(
-		opts.Factory,
-		opts.RegisterHandler,
-		opts.RunHandler,
-	)
+	if informerOpts != nil {
+		controller.withInformer = true
+		controller.informerManager = services.NewInformerManager(
+			informerOpts.Factory,
+			informerOpts.RegisterHandler,
+			informerOpts.RunHandler,
+		)
+	}
+	return controller
 }
 
 type resourceController[ClientT, InformerT any] struct {

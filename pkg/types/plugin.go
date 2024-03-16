@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/hashicorp/go-plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
 	"gopkg.in/yaml.v3"
 )
@@ -45,12 +46,15 @@ func (pt PluginType) MarshalText() ([]byte, error) {
 
 // Plugin represents a plugin that is installed and managed by the plugin manager.
 type Plugin struct {
-	ID           string              `json:"id"`
-	Metadata     config.PluginMeta   `json:"metadata"`
-	Config       config.PluginConfig `json:"config"`
-	Enabled      bool                `json:"enabled"`
-	Running      bool                `json:"running"`
-	Capabilities []PluginType        `json:"capabilities"`
+	ID           string                `json:"id"`
+	Metadata     config.PluginMeta     `json:"metadata"`
+	Config       config.PluginConfig   `json:"config"`
+	Enabled      bool                  `json:"enabled"`
+	Running      bool                  `json:"running"`
+	LoadError    string                `json:"load_error"`
+	Capabilities []PluginType          `json:"capabilities"`
+	RPCClient    plugin.ClientProtocol `json:"-"`
+	PluginClient *plugin.Client        `json:"-"`
 }
 
 func (p *Plugin) HasCapability(capability PluginType) bool {
@@ -64,6 +68,10 @@ func (p *Plugin) HasCapability(capability PluginType) bool {
 
 func (p *Plugin) SetEnabled() {
 	p.Enabled = true
+}
+
+func (p *Plugin) GetRPCClient() interface{} {
+	return p.RPCClient
 }
 
 func (p *Plugin) SetDisabled() {
@@ -83,7 +91,7 @@ func LoadPluginMetadata(path string) (config.PluginMeta, error) {
 	var settings config.PluginMeta
 
 	// read in the yaml config
-	configFile, err := os.Open(path + "/config.yaml")
+	configFile, err := os.Open(path + "/plugin.yaml")
 	if err != nil {
 		return config.PluginMeta{}, fmt.Errorf("error loading plugin config file: %w", err)
 	}

@@ -61,6 +61,25 @@ func NewPluginContext(
 	}
 }
 
+// Construct a new plugin context with a valid connection.
+func NewPluginContextWithConnection(
+	context context.Context,
+	requester string,
+	pluginConfig *config.PluginConfig,
+	globalConfig *config.GlobalConfig,
+	connection *Connection,
+) *PluginContext {
+	return &PluginContext{
+		Context:        context,
+		RequestID:      uuid.New().String(),
+		RequesterID:    requester,
+		RequestOptions: NewDefaultRequestOptions(),
+		PluginConfig:   pluginConfig,
+		GlobalConfig:   globalConfig,
+		Connection:     connection,
+	}
+}
+
 func NewPluginContextFromCtx(ctx context.Context) *PluginContext {
 	return &PluginContext{
 		Context:        ctx,
