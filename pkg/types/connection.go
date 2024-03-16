@@ -12,7 +12,7 @@ const (
 	ConnectionDefaultExpiryTime = time.Hour * 24
 )
 
-// prevent collisions in context values
+// prevent collisions in context values.
 type connectionCtxKey struct{}
 
 type ConnectionContext Connection

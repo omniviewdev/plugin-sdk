@@ -3,13 +3,14 @@ package plugin
 import (
 	"context"
 
-	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
-	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
-	"github.com/omniviewdev/plugin-sdk/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
+	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
+	"github.com/omniviewdev/plugin-sdk/proto"
 )
 
 // Here is the gRPC server that GRPCClient talks to.

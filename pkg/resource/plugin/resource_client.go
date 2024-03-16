@@ -2,133 +2,37 @@ package plugin
 
 import (
 	"context"
+	"errors"
 
-	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
-	"github.com/omniviewdev/plugin-sdk/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
+	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
+	"github.com/omniviewdev/plugin-sdk/proto"
 )
+
+var ErrNoConnection = errors.New("no connection provided")
 
 // ResourcePluginClient is the real client implementation for ResourcePlugin.
 type ResourcePluginClient struct {
 	client proto.ResourcePluginClient
 }
 
-//	func (r *ResourcePluginClient) RegisterPreGetHook(req types.PreHook[types.GetInput]) error {
-//		resp := struct{}{}
-//		if err := r.client.Call("Plugin.RegisterPreGetHook", &req, &resp); err != nil {
-//			panic(err)
-//		}
-//		return nil
-//	}
-//
-//	func (r *ResourcePluginClient) RegisterPreListHook(req types.PreHook[types.ListInput]) error {
-//		resp := struct{}{}
-//		if err := r.client.Call("Plugin.RegisterPreListHook", &req, &resp); err != nil {
-//			panic(err)
-//		}
-//		return nil
-//	}
-//
-//	func (r *ResourcePluginClient) RegisterPreFindHook(req types.PreHook[types.FindInput]) error {
-//		resp := struct{}{}
-//		if err := r.client.Call("Plugin.RegisterPreFindHook", &req, &resp); err != nil {
-//			panic(err)
-//		}
-//		return nil
-//	}
-//
-//	func (r *ResourcePluginClient) RegisterPreCreateHook(req types.PreHook[types.CreateInput]) error {
-//		resp := struct{}{}
-//		if err := r.client.Call("Plugin.RegisterPreCreateHook", &req, &resp); err != nil {
-//			panic(err)
-//		}
-//		return nil
-//	}
-//
-//	func (r *ResourcePluginClient) RegisterPreUpdateHook(req types.PreHook[types.UpdateInput]) error {
-//		resp := struct{}{}
-//		if err := r.client.Call("Plugin.RegisterPreUpdateHook", &req, &resp); err != nil {
-//			panic(err)
-//		}
-//		return nil
-//	}
-//
-//	func (r *ResourcePluginClient) RegisterPreDeleteHook(req types.PreHook[types.DeleteInput]) error {
-//		resp := struct{}{}
-//		if err := r.client.Call("Plugin.RegisterPreDeleteHook", &req, &resp); err != nil {
-//			panic(err)
-//		}
-//		return nil
-//	}
-//
-//	func (r *ResourcePluginClient) RegisterPostGetHook(req types.PostHook[types.GetResult]) error {
-//		resp := struct{}{}
-//		if err := r.client.Call("Plugin.RegisterPostGetHook", &req, &resp); err != nil {
-//			panic(err)
-//		}
-//		return nil
-//	}
-//
-//	func (r *ResourcePluginClient) RegisterPostListHook(req types.PostHook[types.ListResult]) error {
-//		resp := struct{}{}
-//		if err := r.client.Call("Plugin.RegisterPostListHook", &req, &resp); err != nil {
-//			panic(err)
-//		}
-//		return nil
-//	}
-//
-//	func (r *ResourcePluginClient) RegisterPostFindHook(req types.PostHook[types.FindResult]) error {
-//		resp := struct{}{}
-//		if err := r.client.Call("Plugin.RegisterPostFindHook", &req, &resp); err != nil {
-//			panic(err)
-//		}
-//		return nil
-//	}
-//
-// func (r *ResourcePluginClient) RegisterPostCreateHook(
-//
-//	req types.PostHook[types.CreateResult],
-//
-//	) error {
-//		resp := struct{}{}
-//		if err := r.client.Call("Plugin.RegisterPostCreateHook", &req, &resp); err != nil {
-//			panic(err)
-//		}
-//		return nil
-//	}
-//
-// func (r *ResourcePluginClient) RegisterPostUpdateHook(
-//
-//	req types.PostHook[types.UpdateResult],
-//
-//	) error {
-//		resp := struct{}{}
-//		if err := r.client.Call("Plugin.RegisterPostUpdateHook", &req, &resp); err != nil {
-//			panic(err)
-//		}
-//		return nil
-//	}
-//
-// func (r *ResourcePluginClient) RegisterPostDeleteHook(
-//
-//	req types.PostHook[types.DeleteResult],
-//
-//	) error {
-//		resp := struct{}{}
-//		if err := r.client.Call("Plugin.RegisterPostDeleteHook", &req, &resp); err != nil {
-//			panic(err)
-//		}
-//		return nil
-//	}
+var _ types.ResourceProvider = (*ResourcePluginClient)(nil)
+
 func (r *ResourcePluginClient) Get(
+	ctx *pkgtypes.PluginContext,
 	key string,
-	contextID string,
 	input types.GetInput,
 ) (*types.GetResult, error) {
-	resp, err := r.client.Get(context.Background(), &proto.GetRequest{
+	if ctx.Connection == nil {
+		return nil, ErrNoConnection
+	}
+
+	resp, err := r.client.Get(ctx.Context, &proto.GetRequest{
 		Key:       key,
-		Context:   contextID,
+		Context:   ctx.Connection.ID,
 		Id:        input.ID,
 		Namespace: input.PartitionID,
 	})
@@ -143,13 +47,17 @@ func (r *ResourcePluginClient) Get(
 }
 
 func (r *ResourcePluginClient) List(
+	ctx *pkgtypes.PluginContext,
 	key string,
-	contextID string,
 	input types.ListInput,
 ) (*types.ListResult, error) {
-	resp, err := r.client.List(context.Background(), &proto.ListRequest{
+	if ctx.Connection == nil {
+		return nil, ErrNoConnection
+	}
+
+	resp, err := r.client.List(ctx.Context, &proto.ListRequest{
 		Key:        key,
-		Context:    contextID,
+		Context:    ctx.Connection.ID,
 		Namespaces: input.PartitionIDs,
 	})
 	if err != nil {
@@ -170,13 +78,17 @@ func (r *ResourcePluginClient) List(
 }
 
 func (r *ResourcePluginClient) Find(
+	ctx *pkgtypes.PluginContext,
 	key string,
-	contextID string,
 	input types.FindInput,
 ) (*types.FindResult, error) {
-	resp, err := r.client.Find(context.Background(), &proto.FindRequest{
+	if ctx.Connection == nil {
+		return nil, ErrNoConnection
+	}
+
+	resp, err := r.client.Find(ctx.Context, &proto.FindRequest{
 		Key:        key,
-		Context:    contextID,
+		Context:    ctx.Connection.ID,
 		Namespaces: input.PartitionIDs,
 	})
 	if err != nil {
@@ -196,18 +108,22 @@ func (r *ResourcePluginClient) Find(
 }
 
 func (r *ResourcePluginClient) Create(
+	ctx *pkgtypes.PluginContext,
 	key string,
-	contextID string,
 	input types.CreateInput,
 ) (*types.CreateResult, error) {
+	if ctx.Connection == nil {
+		return nil, ErrNoConnection
+	}
+
 	data, err := structpb.NewStruct(input.Input)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := r.client.Create(context.Background(), &proto.CreateRequest{
+	resp, err := r.client.Create(ctx.Context, &proto.CreateRequest{
 		Key:       key,
-		Context:   contextID,
+		Context:   ctx.Connection.ID,
 		Namespace: input.PartitionID,
 		Data:      data,
 	})
@@ -222,18 +138,22 @@ func (r *ResourcePluginClient) Create(
 }
 
 func (r *ResourcePluginClient) Update(
+	ctx *pkgtypes.PluginContext,
 	key string,
-	contextID string,
 	input types.UpdateInput,
 ) (*types.UpdateResult, error) {
+	if ctx.Connection == nil {
+		return nil, ErrNoConnection
+	}
+
 	data, err := structpb.NewStruct(input.Input)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := r.client.Update(context.Background(), &proto.UpdateRequest{
+	resp, err := r.client.Update(ctx.Context, &proto.UpdateRequest{
 		Key:       key,
-		Context:   contextID,
+		Context:   ctx.Connection.ID,
 		Id:        input.ID,
 		Namespace: input.PartitionID,
 		Data:      data,
@@ -249,13 +169,17 @@ func (r *ResourcePluginClient) Update(
 }
 
 func (r *ResourcePluginClient) Delete(
+	ctx *pkgtypes.PluginContext,
 	key string,
-	contextID string,
 	input types.DeleteInput,
 ) (*types.DeleteResult, error) {
-	resp, err := r.client.Delete(context.Background(), &proto.DeleteRequest{
+	if ctx.Connection == nil {
+		return nil, ErrNoConnection
+	}
+
+	resp, err := r.client.Delete(ctx.Context, &proto.DeleteRequest{
 		Key:       key,
-		Context:   contextID,
+		Context:   ctx.Connection.ID,
 		Id:        input.ID,
 		Namespace: input.PartitionID,
 	})
@@ -270,13 +194,17 @@ func (r *ResourcePluginClient) Delete(
 }
 
 func (r *ResourcePluginClient) StartContextInformer(
-	key string,
+	ctx *pkgtypes.PluginContext,
 	contextID string,
 ) error {
+	if ctx.Connection == nil {
+		return ErrNoConnection
+	}
+
 	_, err := r.client.StartContextInformer(
 		context.Background(),
 		&proto.StartContextInformerRequest{
-			Key:     key,
+			Key:     "",
 			Context: contextID,
 		},
 	)
@@ -284,13 +212,17 @@ func (r *ResourcePluginClient) StartContextInformer(
 }
 
 func (r *ResourcePluginClient) StopContextInformer(
-	key string,
+	ctx *pkgtypes.PluginContext,
 	contextID string,
 ) error {
+	if ctx.Connection == nil {
+		return ErrNoConnection
+	}
+
 	_, err := r.client.StopContextInformer(
-		context.Background(),
+		ctx.Context,
 		&proto.StopContextInformerRequest{
-			Key:     key,
+			Key:     "",
 			Context: contextID,
 		},
 	)
@@ -302,18 +234,22 @@ func (r *ResourcePluginClient) StopContextInformer(
 // This method is blocking, and should be run as part of the resourcer
 // controller's event loop.
 func (r *ResourcePluginClient) ListenForEvents(
-	ctx context.Context,
+	ctx *pkgtypes.PluginContext,
 	addStream chan types.InformerAddPayload,
 	updateStream chan types.InformerUpdatePayload,
 	deleteStream chan types.InformerDeletePayload,
 ) error {
-	stream, err := r.client.ListenForEvents(context.Background(), &emptypb.Empty{})
+	if ctx.Connection == nil {
+		return ErrNoConnection
+	}
+
+	stream, err := r.client.ListenForEvents(ctx.Context, &emptypb.Empty{})
 	if err != nil {
 		return err
 	}
 	for {
 		select {
-		case <-ctx.Done():
+		case <-ctx.Context.Done():
 			return nil
 		default:
 			msg, msgErr := stream.Recv()

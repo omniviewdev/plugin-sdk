@@ -6,8 +6,9 @@ import (
 	"os"
 
 	"github.com/hashicorp/go-plugin"
-	"github.com/omniviewdev/plugin-sdk/pkg/config"
 	"gopkg.in/yaml.v3"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/config"
 )
 
 type PluginType int

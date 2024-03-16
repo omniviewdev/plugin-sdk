@@ -6,7 +6,6 @@ import (
 
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
-
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 

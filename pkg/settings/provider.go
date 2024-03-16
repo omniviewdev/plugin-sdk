@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sync"
 
 	"github.com/pkg/errors"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/utils"
 )
 
 // Provider is an interface for a settings provider that can be used to
@@ -34,6 +37,7 @@ type Provider interface {
 
 type provider struct {
 	sync.Mutex
+	pluginID string
 	settings []interface{}
 	values   map[string]interface{}
 }
@@ -47,7 +51,16 @@ func (p *provider) save() error {
 	p.Lock()
 	defer p.Unlock()
 
-	file, err := os.OpenFile("./store/settings.json", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
+	path, err := utils.GetPluginStorePath(p.pluginID)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.OpenFile(
+		filepath.Join(path, "settings.json"),
+		os.O_CREATE|os.O_RDWR|os.O_TRUNC,
+		0644,
+	)
 	if err != nil {
 		return err
 	}
@@ -101,12 +114,17 @@ func (p *provider) defaulter(force bool) {
 }
 
 func (p *provider) Load() error {
-	// get the settings from the current directory in ./store/settings.json
-	// if the file does not exist, create it
-	if err := os.MkdirAll("./store", 0755); err != nil {
+	path, err := utils.GetPluginStorePath(p.pluginID)
+	if err != nil {
 		return err
 	}
-	file, err := os.OpenFile("./store/settings.json", os.O_CREATE|os.O_RDWR, 0644)
+
+	// get the settings from the current directory in ./store/settings.json
+	// if the file does not exist, create it
+	if err = os.MkdirAll(path, 0755); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(filepath.Join(path, "settings.json"), os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return err
 	}
@@ -155,8 +173,9 @@ func (p *provider) GetMultiValue(key string) ([]string, error) {
 }
 
 // NewSettingsProvider creates a new settings provider with the given settings.
-func NewSettingsProvider(settings []interface{}) Provider {
+func NewSettingsProvider(settings []interface{}, pluginID string) Provider {
 	provider := &provider{
+		pluginID: pluginID,
 		settings: settings,
 		values:   make(map[string]interface{}),
 	}

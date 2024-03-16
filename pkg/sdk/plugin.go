@@ -74,7 +74,7 @@ func NewPlugin(opts PluginOpts) *Plugin {
 	return &Plugin{
 		meta:             meta,
 		pluginMap:        make(map[string]plugin.Plugin),
-		settingsProvider: pkgsettings.NewSettingsProvider(opts.Settings),
+		settingsProvider: pkgsettings.NewSettingsProvider(opts.Settings, opts.ID),
 	}
 }
 
