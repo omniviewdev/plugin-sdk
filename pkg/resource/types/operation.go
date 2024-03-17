@@ -78,13 +78,13 @@ type FindInput struct {
 type CreateInput struct {
 	// Params is used as an injectable field for any operations that require extra data
 	Params interface{} `json:"params"`
+
 	// Input is the input to the create operation.
 	Input map[string]interface{} `json:"input"`
-	// PartitionID is an option identifier to use when a resource backend
-	// requires a partition identifier to be passed with each request, notably
-	// when a resource backend has a concept of partitioning resources (like with corev1.Namespace
-	// in Kubernetes).
-	PartitionID string `json:"namespace"`
+
+	// Namespace is an optional identifier to use when a resource backend supports
+	// a concept of partitioning resources (like with corev1.Namespace in Kubernetes)
+	Namespace string `json:"namespace"`
 }
 
 type UpdateInput struct {

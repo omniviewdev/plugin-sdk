@@ -115,7 +115,7 @@ func (r *ResourcePluginClient) Create(
 	resp, err := r.client.Create(ctx.Context, &proto.CreateRequest{
 		Key:       key,
 		Context:   ctx.Connection.ID,
-		Namespace: input.PartitionID,
+		Namespace: input.Namespace,
 		Data:      data,
 	})
 	if err != nil {
