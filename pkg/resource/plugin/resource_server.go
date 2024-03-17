@@ -70,6 +70,147 @@ func (s *ResourcePluginServer) LoadConnections(
 	}, nil
 }
 
+func (s *ResourcePluginServer) ListConnections(
+	ctx context.Context,
+	_ *emptypb.Empty,
+) (*proto.ListConnectionsResponse, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	connections, err := s.Impl.ListConnections(pluginCtx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to load connections: %s", err.Error())
+	}
+
+	mappedConnections := make([]*proto.Connection, 0, len(connections))
+	for _, conn := range connections {
+		data, err := structpb.NewStruct(conn.Data)
+		if err != nil {
+			return nil, status.Errorf(
+				codes.Internal,
+				"failed to convert connection data to struct: %s",
+				err.Error(),
+			)
+		}
+
+		labels, err := structpb.NewStruct(conn.Labels)
+		if err != nil {
+			return nil, status.Errorf(
+				codes.Internal,
+				"failed to convert connection labels to struct: %s",
+				err.Error(),
+			)
+		}
+
+		mappedConnections = append(mappedConnections, &proto.Connection{
+			Id:          conn.ID,
+			Uid:         conn.UID,
+			Name:        conn.Name,
+			Description: conn.Description,
+			Avatar:      conn.Avatar,
+			ExpiryTime:  durationpb.New(conn.ExpiryTime),
+			LastRefresh: timestamppb.New(conn.LastRefresh),
+			Labels:      labels,
+			Data:        data,
+		})
+	}
+
+	return &proto.ListConnectionsResponse{
+		Connections: mappedConnections,
+	}, nil
+}
+
+func (s *ResourcePluginServer) GetConnection(
+	ctx context.Context,
+	in *proto.GetConnectionRequest,
+) (*proto.Connection, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	conn, err := s.Impl.GetConnection(pluginCtx, in.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get connection: %s", err.Error())
+	}
+	data, err := structpb.NewStruct(conn.Data)
+	if err != nil {
+		return nil, status.Errorf(
+			codes.Internal,
+			"failed to convert connection data to struct: %s",
+			err.Error(),
+		)
+	}
+	labels, err := structpb.NewStruct(conn.Labels)
+	if err != nil {
+		return nil, status.Errorf(
+			codes.Internal,
+			"failed to convert connection labels to struct: %s",
+			err.Error(),
+		)
+	}
+	return &proto.Connection{
+		Id:          conn.ID,
+		Uid:         conn.UID,
+		Name:        conn.Name,
+		Description: conn.Description,
+		Avatar:      conn.Avatar,
+		ExpiryTime:  durationpb.New(conn.ExpiryTime),
+		LastRefresh: timestamppb.New(conn.LastRefresh),
+		Labels:      labels,
+		Data:        data,
+	}, nil
+}
+
+func (s *ResourcePluginServer) UpdateConnection(
+	ctx context.Context,
+	in *proto.UpdateConnectionRequest,
+) (*proto.UpdateConnectionResponse, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	conn := pkgtypes.Connection{
+		ID: in.GetId(),
+	}
+	if in.GetName() != nil {
+		conn.Name = in.GetName().GetValue()
+	}
+	if in.GetDescription() != nil {
+		conn.Description = in.GetDescription().GetValue()
+	}
+	if in.GetAvatar() != nil {
+		conn.Avatar = in.GetAvatar().GetValue()
+	}
+
+	labels := in.GetLabels()
+	if labels != nil {
+		conn.Labels = labels.AsMap()
+	}
+
+	conn, err := s.Impl.UpdateConnection(pluginCtx, conn)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to update connection: %s", err.Error())
+	}
+	return &proto.UpdateConnectionResponse{
+		Connection: &proto.Connection{
+			Id:          conn.ID,
+			Uid:         conn.UID,
+			Name:        conn.Name,
+			Description: conn.Description,
+			Avatar:      conn.Avatar,
+			ExpiryTime:  durationpb.New(conn.ExpiryTime),
+			LastRefresh: timestamppb.New(conn.LastRefresh),
+			Labels:      labels,
+		},
+	}, nil
+}
+
+func (s *ResourcePluginServer) DeleteConnection(
+	ctx context.Context,
+	in *proto.DeleteConnectionRequest,
+) (*emptypb.Empty, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+	if err := s.Impl.DeleteConnection(pluginCtx, in.GetId()); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to delete connection: %s", err.Error())
+	}
+	return &emptypb.Empty{}, nil
+}
+
 func (s *ResourcePluginServer) Get(
 	ctx context.Context,
 	in *proto.GetRequest,

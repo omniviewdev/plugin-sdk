@@ -19,6 +19,22 @@ type RegisterPreHookRequest[I OperationInput] struct {
 type ResourceProvider interface {
 	// LoadConnections loads the connections for the resource provider
 	LoadConnections(ctx *types.PluginContext) ([]types.Connection, error)
+
+	// ListConnections lists the connections for the resource provider
+	ListConnections(ctx *types.PluginContext) ([]types.Connection, error)
+
+	// GetConnection gets a connection for the resource provider
+	GetConnection(ctx *types.PluginContext, id string) (types.Connection, error)
+
+	// UpdateConnection updates the connection for the resource provider
+	UpdateConnection(
+		ctx *types.PluginContext,
+		connection types.Connection,
+	) (types.Connection, error)
+
+	// DeleteConnection deletes the connection for the resource provider
+	DeleteConnection(ctx *types.PluginContext, id string) error
+
 	// Get returns a single resource in the given resource namespace.
 	Get(ctx *types.PluginContext, key string, input GetInput) (*GetResult, error)
 	// Get returns a single resource in the given resource namespace.

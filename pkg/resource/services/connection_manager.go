@@ -14,15 +14,15 @@ import (
 // in order to manage working against resources within a authd resources. T is the type of the client
 // that the resource manager will manage, and O is the options type that the resource manager will use.
 //
-// Authorizations in the context of this plugin are not to be confused with Kubernetes auths,
-// which are a way to divide cluster resources between multiple users. Instead, auths
+// Authorizations in the context of this plugin are not to be confused with Kubernetes connections,
+// which are a way to divide cluster resources between multiple users. Instead, connections
 // in the context of the plugin are a way to have orchestrate multiple clients within the resource
 // backend to separate contexts and resources.
 //
 // For example, a user may have multiple AWS accounts and roles they would like to incorporate
 // into the IDE. However, each account (and role) has it's own authorizations, and must used different
 // credentials to access. As such, the user would like to separate these backends into different
-// auths, so that they can easily switch between them. For this example, a resource auth
+// connections, so that they can easily switch between them. For this example, a resource auth
 // would consist of the account and role, and the resource auth manager would be responsible for
 // setting up, switching between, and managing these authd clients.
 //
@@ -37,6 +37,21 @@ type ConnectionManager[ClientT any] interface {
 	// LoadConnections loads the possible connections for the resource manager
 	LoadConnections(ctx *types.PluginContext) ([]types.Connection, error)
 
+	// ListConnections lists the connections for the resource manager
+	ListConnections(ctx *types.PluginContext) ([]types.Connection, error)
+
+	// GetConnection returns the connection for the resource manager
+	GetConnection(ctx *types.PluginContext, id string) (types.Connection, error)
+
+	// UpdateConnection updates the connection for the resource manager
+	UpdateConnection(
+		ctx *types.PluginContext,
+		connection types.Connection,
+	) (types.Connection, error)
+
+	// DeleteConnection deletes the connection for the resource manager
+	DeleteConnection(ctx *types.PluginContext, id string) error
+
 	// Create creates a new connection for the resource manager
 	// This method should perform any necessary setup so that client retrieval
 	// can be done for the auth after it is created
@@ -45,7 +60,7 @@ type ConnectionManager[ClientT any] interface {
 	// RemoveAuthorization removes a auth from the resource manager
 	Remove(ctx *types.PluginContext, id string) error
 
-	// ListAuthorizations lists the auths for the resource manager
+	// ListAuthorizations lists the connections for the resource manager
 	List(ctx *types.PluginContext) ([]types.Connection, error)
 
 	// GetConnectionClient returns the necessary client for the given auth
@@ -72,18 +87,18 @@ func NewConnectionManager[ClientT any](
 	loader func(*types.PluginContext) ([]types.Connection, error),
 ) ConnectionManager[ClientT] {
 	return &connectionManager[ClientT]{
-		factory: factory,
-		loader:  loader,
-		auths:   make(map[string]types.Connection),
-		clients: make(map[string]*ClientT),
+		factory:     factory,
+		loader:      loader,
+		connections: make(map[string]types.Connection),
+		clients:     make(map[string]*ClientT),
 	}
 }
 
 type connectionManager[ClientT any] struct {
-	factory factories.ResourceClientFactory[ClientT]
-	loader  func(*types.PluginContext) ([]types.Connection, error)
-	auths   map[string]types.Connection
-	clients map[string]*ClientT
+	factory     factories.ResourceClientFactory[ClientT]
+	loader      func(*types.PluginContext) ([]types.Connection, error)
+	connections map[string]types.Connection
+	clients     map[string]*ClientT
 	sync.RWMutex
 }
 
@@ -94,7 +109,7 @@ func (r *connectionManager[ClientT]) InjectConnection(
 	r.RLock()
 	defer r.RUnlock()
 
-	auth, ok := r.auths[id]
+	auth, ok := r.connections[id]
 	if !ok {
 		return fmt.Errorf("auth %s does not exist", id)
 	}
@@ -110,7 +125,118 @@ func (r *connectionManager[ClientT]) LoadConnections(
 		return nil, nil
 	}
 
-	return r.loader(ctx)
+	connections, err := r.loader(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// perform an upsert on our existing connections
+	if len(r.connections) == 0 {
+		// if we have no existing connections, just set the new ones
+		for _, conn := range connections {
+			r.connections[conn.ID] = conn
+		}
+		return connections, nil
+	}
+
+	// if we have existing connections, we need to merge the new ones in
+	for _, conn := range connections {
+		existing, ok := r.connections[conn.ID]
+		if !ok {
+			r.connections[conn.ID] = conn
+			continue
+		}
+
+		// we have an existing connection, merge in the data and labels
+		for k, v := range conn.Data {
+			if _, ok = existing.Data[k]; !ok {
+				existing.Data[k] = v
+			}
+		}
+		for k, v := range conn.Labels {
+			if _, ok = existing.Labels[k]; !ok {
+				existing.Labels[k] = v
+			}
+		}
+	}
+
+	return connections, nil
+}
+
+func (r *connectionManager[ClientT]) ListConnections(
+	ctx *types.PluginContext,
+) ([]types.Connection, error) {
+	r.RLock()
+	defer r.RUnlock()
+	connections := make([]types.Connection, 0, len(r.connections))
+	for _, auth := range r.connections {
+		connections = append(connections, auth)
+	}
+	return connections, nil
+}
+
+func (r *connectionManager[ClientT]) GetConnection(
+	ctx *types.PluginContext,
+	id string,
+) (types.Connection, error) {
+	r.RLock()
+	defer r.RUnlock()
+	auth, ok := r.connections[id]
+	if !ok {
+		return types.Connection{}, fmt.Errorf("auth %s does not exist", id)
+	}
+	return auth, nil
+}
+
+func (r *connectionManager[ClientT]) UpdateConnection(
+	ctx *types.PluginContext,
+	conn types.Connection,
+) (types.Connection, error) {
+	r.Lock()
+	defer r.Unlock()
+	current, ok := r.connections[conn.ID]
+	if !ok {
+		return types.Connection{}, fmt.Errorf("connection %s does not exist", conn.ID)
+	}
+	if conn.Name != "" {
+		current.Name = conn.Name
+	}
+	if conn.Description != "" {
+		current.Description = conn.Description
+	}
+	if conn.Avatar != "" {
+		current.Avatar = conn.Avatar
+	}
+	if len(conn.Labels) > 0 {
+		for k, v := range conn.Labels {
+			current.Labels[k] = v
+		}
+	}
+	if len(conn.Data) > 0 {
+		for k, v := range conn.Data {
+			current.Data[k] = v
+		}
+	}
+
+	r.connections[conn.ID] = current
+	return current, nil
+}
+
+func (r *connectionManager[ClientT]) DeleteConnection(
+	ctx *types.PluginContext,
+	id string,
+) error {
+	r.Lock()
+	defer r.Unlock()
+	client, ok := r.clients[id]
+	if ok && client != nil {
+		delete(r.clients, id)
+		if err := r.factory.StopClient(ctx, client); err != nil {
+			return err
+		}
+	}
+	delete(r.connections, id)
+	return nil
 }
 
 func (r *connectionManager[ClientT]) Create(
@@ -121,7 +247,7 @@ func (r *connectionManager[ClientT]) Create(
 	defer r.Unlock()
 
 	_, hasClient := r.clients[auth.ID]
-	_, hasAuthorization := r.auths[auth.ID]
+	_, hasAuthorization := r.connections[auth.ID]
 
 	if hasClient || hasAuthorization {
 		return fmt.Errorf("auth %s already exists", auth.ID)
@@ -133,7 +259,7 @@ func (r *connectionManager[ClientT]) Create(
 	}
 
 	r.clients[auth.ID] = client
-	r.auths[auth.ID] = auth
+	r.connections[auth.ID] = auth
 
 	return nil
 }
@@ -154,7 +280,7 @@ func (r *connectionManager[ClientT]) Remove(
 		}
 	}
 
-	delete(r.auths, id)
+	delete(r.connections, id)
 
 	return nil
 }
@@ -165,12 +291,12 @@ func (r *connectionManager[ClientT]) List(
 	r.RLock()
 	defer r.RUnlock()
 
-	auths := make([]types.Connection, 0, len(r.auths))
+	connections := make([]types.Connection, 0, len(r.connections))
 
-	for _, auth := range r.auths {
-		auths = append(auths, auth)
+	for _, auth := range r.connections {
+		connections = append(connections, auth)
 	}
-	return auths, nil
+	return connections, nil
 }
 
 func (r *connectionManager[ClientT]) GetConnectionClient(
@@ -196,7 +322,7 @@ func (r *connectionManager[ClientT]) RefreshConnectionClient(
 	defer r.RUnlock()
 
 	client, clientOk := r.clients[id]
-	_, authOk := r.auths[id]
+	_, authOk := r.connections[id]
 
 	if !clientOk {
 		return fmt.Errorf("client for auth %s does not exist", id)
@@ -236,7 +362,7 @@ func (r *connectionManager[ClientT]) RefreshCurrentConnectionClient(
 		return fmt.Errorf("auth context is nil")
 	}
 	client, clientOk := r.clients[ctx.Connection.ID]
-	_, authOk := r.auths[ctx.Connection.ID]
+	_, authOk := r.connections[ctx.Connection.ID]
 
 	if !clientOk {
 		return fmt.Errorf("client for auth %s does not exist", ctx.Connection.ID)

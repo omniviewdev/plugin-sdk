@@ -286,3 +286,38 @@ func (c *resourceController[ClientT, InformerT]) LoadConnections(
 	ctx.SetSettingsProvider(c.settingsProvider)
 	return c.connectionManager.LoadConnections(ctx)
 }
+
+// ListConnections calls the custom connection loader func to provide the the IDE the possible connections.
+func (c *resourceController[ClientT, InformerT]) ListConnections(
+	ctx *pkgtypes.PluginContext,
+) ([]pkgtypes.Connection, error) {
+	ctx.SetSettingsProvider(c.settingsProvider)
+	return c.connectionManager.ListConnections(ctx)
+}
+
+// GetConnection gets a connection by its ID.
+func (c *resourceController[ClientT, InformerT]) GetConnection(
+	ctx *pkgtypes.PluginContext,
+	connectionID string,
+) (pkgtypes.Connection, error) {
+	ctx.SetSettingsProvider(c.settingsProvider)
+	return c.connectionManager.GetConnection(ctx, connectionID)
+}
+
+// UpdateConnection updates a connection by its ID.
+func (c *resourceController[ClientT, InformerT]) UpdateConnection(
+	ctx *pkgtypes.PluginContext,
+	connection pkgtypes.Connection,
+) (pkgtypes.Connection, error) {
+	ctx.SetSettingsProvider(c.settingsProvider)
+	return c.connectionManager.UpdateConnection(ctx, connection)
+}
+
+// DeleteConnection deletes a connection by its ID.
+func (c *resourceController[ClientT, InformerT]) DeleteConnection(
+	ctx *pkgtypes.PluginContext,
+	connectionID string,
+) error {
+	ctx.SetSettingsProvider(c.settingsProvider)
+	return c.connectionManager.DeleteConnection(ctx, connectionID)
+}

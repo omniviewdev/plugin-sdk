@@ -1,9 +1,12 @@
 syntax = "proto3";
 package com.omniview.pluginsdk;
+
 import "google/protobuf/struct.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
 option go_package = "./proto";
 
 message Connection {
@@ -18,8 +21,37 @@ message Connection {
   google.protobuf.Struct labels = 9;
 }
 
+
 message LoadConnectionsResponse {
   repeated Connection connections = 1;
+}
+
+message ListConnectionsResponse {
+  repeated Connection connections = 1;
+}
+
+message GetConnectionRequest {
+  string id = 1;
+}
+
+message GetConnectionResponse {
+  Connection connection = 1;
+}
+
+message UpdateConnectionRequest {
+  string id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue description = 3;
+  google.protobuf.StringValue avatar = 4;
+  google.protobuf.Struct labels = 5;
+}
+
+message UpdateConnectionResponse {
+  Connection connection = 1;
+}
+
+message DeleteConnectionRequest {
+  string id = 1;
 }
 
 // Get
@@ -155,6 +187,10 @@ message InformerDeleteEvent {
 
 service ResourcePlugin {
   rpc LoadConnections(google.protobuf.Empty) returns (LoadConnectionsResponse) {}
+  rpc ListConnections(google.protobuf.Empty) returns (ListConnectionsResponse) {}
+  rpc GetConnection(GetConnectionRequest) returns (Connection) {}
+  rpc UpdateConnection(UpdateConnectionRequest) returns (UpdateConnectionResponse) {}
+  rpc DeleteConnection(DeleteConnectionRequest) returns (google.protobuf.Empty) {}
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc List(ListRequest) returns (ListResponse) {}
   rpc Find(FindRequest) returns (FindResponse) {}
