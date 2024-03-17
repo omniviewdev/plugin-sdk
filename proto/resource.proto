@@ -29,7 +29,7 @@ message ListRequest {
 
 message ListResponse {
   bool success = 1;
-  repeated google.protobuf.Struct data = 2;
+  google.protobuf.Struct data = 2;
 }
 
 // Find
@@ -42,7 +42,7 @@ message FindRequest {
 
 message FindResponse {
   bool success = 1;
-  repeated google.protobuf.Struct data = 2;
+  google.protobuf.Struct data = 2;
 }
 
 // Create

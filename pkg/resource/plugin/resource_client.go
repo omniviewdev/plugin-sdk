@@ -34,7 +34,7 @@ func (r *ResourcePluginClient) Get(
 		Key:       key,
 		Context:   ctx.Connection.ID,
 		Id:        input.ID,
-		Namespace: input.PartitionID,
+		Namespace: input.Namespace,
 	})
 	if err != nil {
 		return nil, err
@@ -58,20 +58,15 @@ func (r *ResourcePluginClient) List(
 	resp, err := r.client.List(ctx.Context, &proto.ListRequest{
 		Key:        key,
 		Context:    ctx.Connection.ID,
-		Namespaces: input.PartitionIDs,
+		Namespaces: input.Namespaces,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	data := resp.GetData()
 	result := &types.ListResult{
-		Result:  make([]map[string]interface{}, 0, len(data)),
+		Result:  resp.GetData().AsMap(),
 		Success: resp.GetSuccess(),
-	}
-
-	for _, data := range data {
-		result.Result = append(result.Result, data.AsMap())
 	}
 
 	return result, nil
@@ -89,19 +84,15 @@ func (r *ResourcePluginClient) Find(
 	resp, err := r.client.Find(ctx.Context, &proto.FindRequest{
 		Key:        key,
 		Context:    ctx.Connection.ID,
-		Namespaces: input.PartitionIDs,
+		Namespaces: input.Namespaces,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	data := resp.GetData()
 	result := &types.FindResult{
-		Result:  make([]map[string]interface{}, 0, len(data)),
+		Result:  resp.GetData().AsMap(),
 		Success: resp.GetSuccess(),
-	}
-	for _, data := range data {
-		result.Result = append(result.Result, data.AsMap())
 	}
 
 	return result, nil
@@ -155,7 +146,7 @@ func (r *ResourcePluginClient) Update(
 		Key:       key,
 		Context:   ctx.Connection.ID,
 		Id:        input.ID,
-		Namespace: input.PartitionID,
+		Namespace: input.Namespace,
 		Data:      data,
 	})
 	if err != nil {
@@ -181,7 +172,7 @@ func (r *ResourcePluginClient) Delete(
 		Key:       key,
 		Context:   ctx.Connection.ID,
 		Id:        input.ID,
-		Namespace: input.PartitionID,
+		Namespace: input.Namespace,
 	})
 	if err != nil {
 		return nil, err

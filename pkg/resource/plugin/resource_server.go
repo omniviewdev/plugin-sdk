@@ -26,8 +26,8 @@ func (s *ResourcePluginServer) Get(
 	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
 
 	resp, err := s.Impl.Get(pluginCtx, in.GetKey(), types.GetInput{
-		ID:          in.GetId(),
-		PartitionID: in.GetNamespace(),
+		ID:        in.GetId(),
+		Namespace: in.GetNamespace(),
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get resource: %w", err)
