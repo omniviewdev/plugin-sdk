@@ -34,7 +34,23 @@ func (s *ResourcePluginServer) LoadConnections(
 
 	mappedConnections := make([]*proto.Connection, 0, len(connections))
 	for _, conn := range connections {
-		data, _ := structpb.NewStruct(conn.Data)
+		data, err := structpb.NewStruct(conn.Data)
+		if err != nil {
+			return nil, status.Errorf(
+				codes.Internal,
+				"failed to convert connection data to struct: %s",
+				err.Error(),
+			)
+		}
+
+		labels, err := structpb.NewStruct(conn.Labels)
+		if err != nil {
+			return nil, status.Errorf(
+				codes.Internal,
+				"failed to convert connection labels to struct: %s",
+				err.Error(),
+			)
+		}
 
 		mappedConnections = append(mappedConnections, &proto.Connection{
 			Id:          conn.ID,
@@ -44,6 +60,7 @@ func (s *ResourcePluginServer) LoadConnections(
 			Avatar:      conn.Avatar,
 			ExpiryTime:  durationpb.New(conn.ExpiryTime),
 			LastRefresh: timestamppb.New(conn.LastRefresh),
+			Labels:      labels,
 			Data:        data,
 		})
 	}

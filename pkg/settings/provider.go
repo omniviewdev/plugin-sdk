@@ -148,6 +148,7 @@ func (p *provider) SetSingleValue(key, value string) error {
 }
 
 func (p *provider) GetSingleValue(key string) (string, error) {
+	fmt.Println("GetMultiValue", key, p.values)
 	val, ok := p.values[key].(string)
 	if !ok {
 		return "", errors.New("value is not a string")
@@ -165,11 +166,12 @@ func (p *provider) SetMultiValue(key string, values []string) error {
 }
 
 func (p *provider) GetMultiValue(key string) ([]string, error) {
+	fmt.Println("GetMultiValue", key, p.values)
 	val, ok := p.values[key].([]string)
 	if !ok {
 		return nil, errors.New("value is not an array")
 	}
-	return val, p.save()
+	return val, nil
 }
 
 // NewSettingsProvider creates a new settings provider with the given settings.

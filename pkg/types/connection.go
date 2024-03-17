@@ -44,7 +44,7 @@ type Connection struct {
 
 	// Labels is a map of arbitrary key-value pairs that can be used to store additional information about the connection.
 	// Users will likely use and modify these labels to help organize and categorize their connections.
-	Labels map[string]string `json:"labels"`
+	Labels map[string]interface{} `json:"labels"`
 
 	// ID is the unique identifier for the connection that makes sense to the plugin implementation.
 	// +required
@@ -119,7 +119,7 @@ type ConnectionOpts struct {
 	SensitiveData map[string]interface{}
 
 	// Labels is a map of arbitrary key-value pairs that can be used to store additional information about the namespace.
-	Labels map[string]string
+	Labels map[string]interface{}
 
 	// ID is the unique identifier for the authorization context that makes sense to the
 	ID string
@@ -155,7 +155,7 @@ func NewConnection(opts ConnectionOpts) (*Connection, error) {
 		opts.Data = make(map[string]interface{})
 	}
 	if opts.Labels == nil {
-		opts.Labels = make(map[string]string)
+		opts.Labels = make(map[string]interface{})
 	}
 	if opts.SensitiveData == nil {
 		opts.SensitiveData = make(map[string]interface{})
