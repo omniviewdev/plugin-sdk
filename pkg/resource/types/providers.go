@@ -17,6 +17,8 @@ type RegisterPreHookRequest[I OperationInput] struct {
 // ResourceProvider provides an interface for performing operations against a resource backend
 // given a resource namespace and a resource identifier.
 type ResourceProvider interface {
+	// LoadConnections loads the connections for the resource provider
+	LoadConnections(ctx *types.PluginContext) ([]types.Connection, error)
 	// Get returns a single resource in the given resource namespace.
 	Get(ctx *types.PluginContext, key string, input GetInput) (*GetResult, error)
 	// Get returns a single resource in the given resource namespace.

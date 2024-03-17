@@ -20,6 +20,7 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
+	ResourcePlugin_LoadConnections_FullMethodName      = "/com.omniview.pluginsdk.ResourcePlugin/LoadConnections"
 	ResourcePlugin_Get_FullMethodName                  = "/com.omniview.pluginsdk.ResourcePlugin/Get"
 	ResourcePlugin_List_FullMethodName                 = "/com.omniview.pluginsdk.ResourcePlugin/List"
 	ResourcePlugin_Find_FullMethodName                 = "/com.omniview.pluginsdk.ResourcePlugin/Find"
@@ -35,6 +36,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ResourcePluginClient interface {
+	LoadConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*LoadConnectionsResponse, error)
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
 	Find(ctx context.Context, in *FindRequest, opts ...grpc.CallOption) (*FindResponse, error)
@@ -52,6 +54,15 @@ type resourcePluginClient struct {
 
 func NewResourcePluginClient(cc grpc.ClientConnInterface) ResourcePluginClient {
 	return &resourcePluginClient{cc}
+}
+
+func (c *resourcePluginClient) LoadConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*LoadConnectionsResponse, error) {
+	out := new(LoadConnectionsResponse)
+	err := c.cc.Invoke(ctx, ResourcePlugin_LoadConnections_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *resourcePluginClient) Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error) {
@@ -162,6 +173,7 @@ func (x *resourcePluginListenForEventsClient) Recv() (*InformerEvent, error) {
 // All implementations should embed UnimplementedResourcePluginServer
 // for forward compatibility
 type ResourcePluginServer interface {
+	LoadConnections(context.Context, *emptypb.Empty) (*LoadConnectionsResponse, error)
 	Get(context.Context, *GetRequest) (*GetResponse, error)
 	List(context.Context, *ListRequest) (*ListResponse, error)
 	Find(context.Context, *FindRequest) (*FindResponse, error)
@@ -177,6 +189,9 @@ type ResourcePluginServer interface {
 type UnimplementedResourcePluginServer struct {
 }
 
+func (UnimplementedResourcePluginServer) LoadConnections(context.Context, *emptypb.Empty) (*LoadConnectionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LoadConnections not implemented")
+}
 func (UnimplementedResourcePluginServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
 }
@@ -214,6 +229,24 @@ type UnsafeResourcePluginServer interface {
 
 func RegisterResourcePluginServer(s grpc.ServiceRegistrar, srv ResourcePluginServer) {
 	s.RegisterService(&ResourcePlugin_ServiceDesc, srv)
+}
+
+func _ResourcePlugin_LoadConnections_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).LoadConnections(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_LoadConnections_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).LoadConnections(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ResourcePlugin_Get_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -388,6 +421,10 @@ var ResourcePlugin_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "com.omniview.pluginsdk.ResourcePlugin",
 	HandlerType: (*ResourcePluginServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "LoadConnections",
+			Handler:    _ResourcePlugin_LoadConnections_Handler,
+		},
 		{
 			MethodName: "Get",
 			Handler:    _ResourcePlugin_Get_Handler,

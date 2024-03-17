@@ -34,6 +34,9 @@ type ConnectionManager[ClientT any] interface {
 	// InjectConnection injects the connection by id into the plugin context
 	InjectConnection(ctx *types.PluginContext, id string) error
 
+	// LoadConnections loads the possible connections for the resource manager
+	LoadConnections(ctx *types.PluginContext) ([]types.Connection, error)
+
 	// Create creates a new connection for the resource manager
 	// This method should perform any necessary setup so that client retrieval
 	// can be done for the auth after it is created
@@ -66,9 +69,11 @@ type ConnectionManager[ClientT any] interface {
 // plugin with an authenticated backend.
 func NewConnectionManager[ClientT any](
 	factory factories.ResourceClientFactory[ClientT],
+	loader func(*types.PluginContext) ([]types.Connection, error),
 ) ConnectionManager[ClientT] {
 	return &connectionManager[ClientT]{
 		factory: factory,
+		loader:  loader,
 		auths:   make(map[string]types.Connection),
 		clients: make(map[string]*ClientT),
 	}
@@ -76,6 +81,7 @@ func NewConnectionManager[ClientT any](
 
 type connectionManager[ClientT any] struct {
 	factory factories.ResourceClientFactory[ClientT]
+	loader  func(*types.PluginContext) ([]types.Connection, error)
 	auths   map[string]types.Connection
 	clients map[string]*ClientT
 	sync.RWMutex
@@ -94,6 +100,17 @@ func (r *connectionManager[ClientT]) InjectConnection(
 	}
 	ctx.Connection = &auth
 	return nil
+}
+
+func (r *connectionManager[ClientT]) LoadConnections(
+	ctx *types.PluginContext,
+) ([]types.Connection, error) {
+	if r.loader == nil {
+		// If hasn't been specified, just return nothing
+		return nil, nil
+	}
+
+	return r.loader(ctx)
 }
 
 func (r *connectionManager[ClientT]) Create(

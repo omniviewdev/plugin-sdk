@@ -17,13 +17,25 @@ type IResourcePluginOpts[CT, DT, IT any] interface {
 	GetDiscoveryFunc() func(*pkgtypes.PluginContext, *DT) ([]types.ResourceMeta, error)
 	HasInformer() bool
 	GetInformerOpts() *services.InformerOptions[CT, IT]
+	GetLoadConnectionFunc() func(*pkgtypes.PluginContext) ([]pkgtypes.Connection, error)
 }
 
 // DynamicResourcePluginOpts is a set of options for configuring a dynamic resource plugin. A dynamic resource
 // plugin must consist of a discovery client factory, a discovery function, a client factory, and a set of
 // resourcers that the plugin will manage.
 type ResourcePluginOpts[ClientT, DiscoveryClientT, InformerT any] struct {
+	// LoadConnectionFunc is a function that will be called to load the possible connections
+	// for the resource plugin. This should be used to load the possible connections available based on either
+	// settings within the ide (by pulling it off of the plugin context) or by using system defaults.
+	//
+	// TODO - move this and the client factory to the parent plugin opts so that multiple capabilities can
+	// use the same client and connection loaders
+	LoadConnectionFunc func(*pkgtypes.PluginContext) ([]pkgtypes.Connection, error)
+
 	// ClientFactory is the factory for creating a new resource client to interact with a backend.
+	//
+	// TODO - move this and the load connection func to the parent plugin opts so that multiple capabilities can
+	// use the same client
 	ClientFactory factories.ResourceClientFactory[ClientT]
 
 	// DiscoveryClientFactory is the factory for creating a new discovery client to interact with a backend.
@@ -88,4 +100,11 @@ func (opts ResourcePluginOpts[CT, DT, IT]) HasInformer() bool {
 
 func (opts ResourcePluginOpts[CT, DT, IT]) GetInformerOpts() *services.InformerOptions[CT, IT] {
 	return opts.InformerOpts
+}
+
+func (opts ResourcePluginOpts[ClientT, DiscoveryClientT, InformerT]) GetLoadConnectionFunc() func(*pkgtypes.PluginContext) (
+	[]pkgtypes.Connection,
+	error,
+) {
+	return opts.LoadConnectionFunc
 }

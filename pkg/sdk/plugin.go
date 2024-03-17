@@ -149,7 +149,7 @@ func RegisterResourcePlugin[ClientT, DiscoveryT, InformerT any](
 	controller := controllers.NewResourceController(
 		services.NewResourcerManager[ClientT](),
 		services.NewHookManager(),
-		services.NewConnectionManager(opts.GetClientFactory()),
+		services.NewConnectionManager(opts.GetClientFactory(), opts.GetLoadConnectionFunc()),
 		typeManager,
 		opts.GetInformerOpts(),
 	)

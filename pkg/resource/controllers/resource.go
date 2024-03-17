@@ -260,3 +260,11 @@ func (c *resourceController[ClientT, InformerT]) ListenForEvents(
 	}
 	return nil
 }
+
+// LoadConnections calls the custom connection loader func to provide the the IDE the possible connections
+// available.
+func (c *resourceController[ClientT, InformerT]) LoadConnections(
+	ctx *pkgtypes.PluginContext,
+) ([]pkgtypes.Connection, error) {
+	return c.connectionManager.LoadConnections(ctx)
+}

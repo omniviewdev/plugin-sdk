@@ -21,6 +21,32 @@ type ResourcePluginClient struct {
 
 var _ types.ResourceProvider = (*ResourcePluginClient)(nil)
 
+func (r *ResourcePluginClient) LoadConnections(
+	ctx *pkgtypes.PluginContext,
+) ([]pkgtypes.Connection, error) {
+	connections, err := r.client.LoadConnections(ctx.Context, &emptypb.Empty{})
+	if err != nil {
+		return nil, err
+	}
+	returned := connections.GetConnections()
+
+	result := make([]pkgtypes.Connection, 0, len(returned))
+	for _, conn := range returned {
+		result = append(result, pkgtypes.Connection{
+			ID:          conn.GetId(),
+			UID:         conn.GetUid(),
+			Name:        conn.GetName(),
+			Description: conn.GetDescription(),
+			Avatar:      conn.GetAvatar(),
+			ExpiryTime:  conn.GetExpiryTime().AsDuration(),
+			LastRefresh: conn.GetLastRefresh().AsTime(),
+			Data:        conn.GetData().AsMap(),
+		})
+	}
+
+	return result, nil
+}
+
 func (r *ResourcePluginClient) Get(
 	ctx *pkgtypes.PluginContext,
 	key string,

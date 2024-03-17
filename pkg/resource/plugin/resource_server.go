@@ -5,8 +5,10 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -17,6 +19,38 @@ import (
 type ResourcePluginServer struct {
 	// This is the real implementation
 	Impl types.ResourceProvider
+}
+
+func (s *ResourcePluginServer) LoadConnections(
+	ctx context.Context,
+	_ *emptypb.Empty,
+) (*proto.LoadConnectionsResponse, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	connections, err := s.Impl.LoadConnections(pluginCtx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to load connections: %s", err.Error())
+	}
+
+	mappedConnections := make([]*proto.Connection, 0, len(connections))
+	for _, conn := range connections {
+		data, _ := structpb.NewStruct(conn.Data)
+
+		mappedConnections = append(mappedConnections, &proto.Connection{
+			Id:          conn.ID,
+			Uid:         conn.UID,
+			Name:        conn.Name,
+			Description: conn.Description,
+			Avatar:      conn.Avatar,
+			ExpiryTime:  durationpb.New(conn.ExpiryTime),
+			LastRefresh: timestamppb.New(conn.LastRefresh),
+			Data:        data,
+		})
+	}
+
+	return &proto.LoadConnectionsResponse{
+		Connections: mappedConnections,
+	}, nil
 }
 
 func (s *ResourcePluginServer) Get(
@@ -30,12 +64,16 @@ func (s *ResourcePluginServer) Get(
 		Namespace: in.GetNamespace(),
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get resource: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to get resource: %s", err.Error())
 	}
 
 	data, err := structpb.NewStruct(resp.Result)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to convert resource to struct: %w", err)
+		return nil, status.Errorf(
+			codes.Internal,
+			"failed to convert resource to struct: %s",
+			err.Error(),
+		)
 	}
 
 	return &proto.GetResponse{
