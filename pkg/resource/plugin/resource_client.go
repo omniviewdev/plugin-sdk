@@ -3,6 +3,8 @@ package plugin
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -24,6 +26,11 @@ var _ types.ResourceProvider = (*ResourcePluginClient)(nil)
 func (r *ResourcePluginClient) LoadConnections(
 	ctx *pkgtypes.PluginContext,
 ) ([]pkgtypes.Connection, error) {
+	clientType := reflect.TypeOf(r.client)
+	for i := 0; i < clientType.NumMethod(); i++ {
+		method := clientType.Method(i)
+		fmt.Println(method.Name)
+	}
 	connections, err := r.client.LoadConnections(ctx.Context, &emptypb.Empty{})
 	if err != nil {
 		return nil, err

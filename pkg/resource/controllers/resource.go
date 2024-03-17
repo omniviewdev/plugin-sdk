@@ -6,6 +6,7 @@ import (
 
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
+	"github.com/omniviewdev/plugin-sdk/pkg/settings"
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
@@ -21,12 +22,14 @@ func NewResourceController[ClientT, InformerT any](
 	connectionManager services.ConnectionManager[ClientT],
 	resourceTypeManager services.ResourceTypeManager,
 	informerOpts *services.InformerOptions[ClientT, InformerT],
+	settingsProvider settings.Provider,
 ) types.ResourceProvider {
 	controller := &resourceController[ClientT, InformerT]{
-		resourcerManager:            resourcerManager,
-		hookManager:                 hookManager,
-		connectionManager:           connectionManager,
-		resourceResourceTypeManager: resourceTypeManager,
+		resourcerManager:    resourcerManager,
+		hookManager:         hookManager,
+		connectionManager:   connectionManager,
+		resourceTypeManager: resourceTypeManager,
+		settingsProvider:    settingsProvider,
 	}
 	if informerOpts != nil {
 		controller.withInformer = true
@@ -42,16 +45,24 @@ func NewResourceController[ClientT, InformerT any](
 type resourceController[ClientT, InformerT any] struct {
 	// signal whether informer is enabled
 	withInformer bool
+
 	// informerManager is the informer manager that the controller will use to manage informers.
 	informerManager *services.InformerManager[ClientT, InformerT]
+
 	// resourcerManager is the resource manager that the controller will execute operations on.
 	resourcerManager services.ResourcerManager[ClientT]
+
 	// hookManager is the hook manager that the controller will use to attach hooks to operations.
 	hookManager services.HookManager
+
 	// connectionManager is the namespace manager that the controller will use to manage resource namespaces.
 	connectionManager services.ConnectionManager[ClientT]
+
 	// resourceResourceTypeManager is the resource type manager that the controller will use to manage resource types.
-	resourceResourceTypeManager services.ResourceTypeManager
+	resourceTypeManager services.ResourceTypeManager
+
+	// settingsProvider provides the current settings for the application
+	settingsProvider settings.Provider
 }
 
 // get our client and resourcer outside to slim down the methods.
@@ -62,7 +73,7 @@ func (c *resourceController[ClientT, InformerT]) retrieveClientResourcer(
 	var nilResourcer types.Resourcer[ClientT]
 
 	// get the resourcer for the given resource type, and check type
-	if ok := c.resourceResourceTypeManager.HasResourceType(resource); !ok {
+	if ok := c.resourceTypeManager.HasResourceType(resource); !ok {
 		return nil, nilResourcer, fmt.Errorf(
 			"resource type %s not found in resource type manager",
 			resource,
@@ -101,6 +112,9 @@ func (c *resourceController[ClientT, InformerT]) retrieveClientResourcer(
 			ctx.Connection.ID,
 		)
 	}
+
+	// make sure we attach the current settings provider before calling the resourcer
+	ctx.SetSettingsProvider(c.settingsProvider)
 
 	return client, resourcer, nil
 }
@@ -229,6 +243,7 @@ func (c *resourceController[ClientT, InformerT]) StartContextInformer(
 	if !c.withInformer {
 		return nil
 	}
+	ctx.SetSettingsProvider(c.settingsProvider)
 	return c.informerManager.StartConnection(ctx, contextID)
 }
 
@@ -240,6 +255,7 @@ func (c *resourceController[ClientT, InformerT]) StopContextInformer(
 	if !c.withInformer {
 		return nil
 	}
+	ctx.SetSettingsProvider(c.settingsProvider)
 	return c.informerManager.StopConnection(ctx, contextID)
 }
 
@@ -255,6 +271,7 @@ func (c *resourceController[ClientT, InformerT]) ListenForEvents(
 	if !c.withInformer {
 		return nil
 	}
+	ctx.SetSettingsProvider(c.settingsProvider)
 	if err := c.informerManager.Run(ctx.Context.Done(), addChan, updateChan, deleteChan); err != nil {
 		return fmt.Errorf("error running informer manager: %w", err)
 	}
@@ -266,5 +283,6 @@ func (c *resourceController[ClientT, InformerT]) ListenForEvents(
 func (c *resourceController[ClientT, InformerT]) LoadConnections(
 	ctx *pkgtypes.PluginContext,
 ) ([]pkgtypes.Connection, error) {
+	ctx.SetSettingsProvider(c.settingsProvider)
 	return c.connectionManager.LoadConnections(ctx)
 }

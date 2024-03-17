@@ -14,8 +14,6 @@ import (
 	pkgsettings "github.com/omniviewdev/plugin-sdk/pkg/settings"
 )
 
-const DefaultPluginMetaPath = "../plugin.yaml"
-
 // PluginOpts is the options for creating a new plugin.
 type PluginOpts struct {
 	// ID is the unique identifier for the plugin
@@ -152,6 +150,7 @@ func RegisterResourcePlugin[ClientT, DiscoveryT, InformerT any](
 		services.NewConnectionManager(opts.GetClientFactory(), opts.GetLoadConnectionFunc()),
 		typeManager,
 		opts.GetInformerOpts(),
+		p.settingsProvider,
 	)
 
 	// Register the resource plugin with the plugin system.
