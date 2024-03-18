@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
-	"github.com/omniviewdev/plugin-sdk/pkg/settings"
+	"github.com/omniviewdev/settings"
 )
 
 const (

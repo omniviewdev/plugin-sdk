@@ -6,8 +6,8 @@ import (
 
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
-	"github.com/omniviewdev/plugin-sdk/pkg/settings"
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
+	"github.com/omniviewdev/settings"
 )
 
 // ResourceController is responsible for managing the execution of resource operations.

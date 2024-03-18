@@ -5,13 +5,15 @@ import (
 	"path/filepath"
 
 	"github.com/hashicorp/go-plugin"
+	"go.uber.org/zap"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/controllers"
 	resource "github.com/omniviewdev/plugin-sdk/pkg/resource/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
-	pkgsettings "github.com/omniviewdev/plugin-sdk/pkg/settings"
+	sdksettings "github.com/omniviewdev/plugin-sdk/pkg/settings"
+	pkgsettings "github.com/omniviewdev/settings"
 )
 
 // PluginOpts is the options for creating a new plugin.
@@ -20,7 +22,7 @@ type PluginOpts struct {
 	ID string
 
 	// Settings is a list of settings to be used by the plugin
-	Settings []interface{}
+	Settings []pkgsettings.Setting
 
 	// Debug is the debug mode for the plugin
 	Debug bool
@@ -69,10 +71,35 @@ func NewPlugin(opts PluginOpts) *Plugin {
 		panic(err)
 	}
 
+	// convert the plugin settings to a map
+	settings := make(map[string]pkgsettings.Setting)
+	for _, setting := range opts.Settings {
+		settings[setting.ID] = setting
+	}
+
+	// init the settings provider
+	settingsProvider := pkgsettings.NewProvider(pkgsettings.ProviderOpts{
+		Logger:   zap.S(),
+		PluginID: opts.ID,
+		PluginSettings: []pkgsettings.Category{
+			{
+				ID:       "plugin",
+				Settings: settings,
+			},
+		},
+	})
+
+	// setup the settings plugin by default
+	plugins := map[string]plugin.Plugin{
+		"settings": &sdksettings.SettingsPlugin{
+			Impl: sdksettings.NewProviderWrapper(settingsProvider),
+		},
+	}
+
 	return &Plugin{
 		meta:             meta,
-		pluginMap:        make(map[string]plugin.Plugin),
-		settingsProvider: pkgsettings.NewSettingsProvider(opts.Settings, opts.ID),
+		pluginMap:        plugins,
+		settingsProvider: settingsProvider,
 	}
 }
 
