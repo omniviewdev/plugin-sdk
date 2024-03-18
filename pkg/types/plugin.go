@@ -20,6 +20,7 @@ const (
 	MetricPlugin
 	ReporterPlugin
 	ResourcePlugin
+	SettingsPlugin // Special plugin capabity that allow for settings to be defined
 )
 
 func (pt PluginType) String() string {
@@ -36,6 +37,8 @@ func (pt PluginType) String() string {
 		return "reporter"
 	case ResourcePlugin:
 		return "resource"
+	case SettingsPlugin:
+		return "settings"
 	default:
 		return "unknown"
 	}
