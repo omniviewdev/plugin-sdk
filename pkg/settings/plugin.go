@@ -4,8 +4,9 @@ import (
 	"context"
 
 	"github.com/hashicorp/go-plugin"
-	"github.com/omniviewdev/plugin-sdk/proto"
 	"google.golang.org/grpc"
+
+	"github.com/omniviewdev/plugin-sdk/proto"
 )
 
 // This is the implementation of plugin.Plugin so we can serve/consume this.

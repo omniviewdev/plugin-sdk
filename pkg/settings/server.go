@@ -3,10 +3,11 @@ package settings
 import (
 	"context"
 
-	"github.com/omniviewdev/plugin-sdk/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/omniviewdev/plugin-sdk/proto"
 )
 
 type SettingsPluginServer struct {
@@ -44,7 +45,7 @@ func (s *SettingsPluginServer) GetSetting(
 
 func (s *SettingsPluginServer) SetSetting(
 	_ context.Context,
-	in *proto.Setting,
+	in *proto.SetSettingRequest,
 ) (*emptypb.Empty, error) {
 	value, err := ConvertAnyToInterface(in.GetValue())
 	if err != nil {

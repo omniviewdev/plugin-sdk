@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/hashicorp/go-plugin"
+	pkgsettings "github.com/omniviewdev/settings"
 	"go.uber.org/zap"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
@@ -13,7 +14,6 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	sdksettings "github.com/omniviewdev/plugin-sdk/pkg/settings"
-	pkgsettings "github.com/omniviewdev/settings"
 )
 
 // PluginOpts is the options for creating a new plugin.

@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/omniviewdev/settings"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
-	"github.com/omniviewdev/settings"
 )
 
 const (

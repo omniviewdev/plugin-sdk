@@ -3,11 +3,12 @@ package settings
 import (
 	"encoding/json"
 
-	"github.com/omniviewdev/plugin-sdk/proto"
 	"github.com/omniviewdev/settings"
 	grpcproto "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+
+	"github.com/omniviewdev/plugin-sdk/proto"
 )
 
 func SettingTypeToProtoType(t settings.SettingType) proto.SettingType {

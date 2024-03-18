@@ -28,7 +28,7 @@ type provider struct {
 // plugins
 //
 // TODO - this is a bit messy and should be refactored. It'll do for now,
-// as we're just trying to get the plugin system working for the time being
+// as we're just trying to get the plugin system working for the time being.
 func NewProviderWrapper(base settings.Provider) Provider {
 	return &provider{base: base}
 }

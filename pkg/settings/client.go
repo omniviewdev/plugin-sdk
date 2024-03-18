@@ -3,10 +3,11 @@ package settings
 import (
 	"context"
 
-	"github.com/omniviewdev/plugin-sdk/proto"
 	"github.com/omniviewdev/settings"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/omniviewdev/plugin-sdk/proto"
 )
 
 type Client struct {
@@ -43,7 +44,7 @@ func (c *Client) SetSetting(id string, value any) error {
 	if err != nil {
 		return err
 	}
-	_, err = c.client.SetSetting(context.Background(), &proto.Setting{Id: id, Value: val})
+	_, err = c.client.SetSetting(context.Background(), &proto.SetSettingRequest{Id: id, Value: val})
 	return err
 }
 
