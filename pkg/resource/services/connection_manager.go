@@ -8,28 +8,15 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
-// TODO - rename to AuthorizationsManager
-
-// ConnectionManager is an interface that resource managers must implement
-// in order to manage working against resources within a authd resources. T is the type of the client
-// that the resource manager will manage, and O is the options type that the resource manager will use.
-//
-// Authorizations in the context of this plugin are not to be confused with Kubernetes connections,
-// which are a way to divide cluster resources between multiple users. Instead, connections
-// in the context of the plugin are a way to have orchestrate multiple clients within the resource
-// backend to separate contexts and resources.
+// ConnectionManager is an interface that resource managers must implement in order to manage
+// the various authenticated targets that a resource plugin can talk to.
 //
 // For example, a user may have multiple AWS accounts and roles they would like to incorporate
 // into the IDE. However, each account (and role) has it's own authorizations, and must used different
 // credentials to access. As such, the user would like to separate these backends into different
-// connections, so that they can easily switch between them. For this example, a resource auth
+// connections, so that they can easily switch between them. For this example, a connection
 // would consist of the account and role, and the resource auth manager would be responsible for
 // setting up, switching between, and managing these authd clients.
-//
-// The resource auth manager is designed to be used in conjunction with the resource manager, and
-// acts as a provider that resourcers can use to get the appropriate client for the given auth.
-// When creating a new resource manager, the type and options type should be provided to the auth manager
-// so that it can be provided the necessary client factory to create and manage clients for the resource manager.
 type ConnectionManager[ClientT any] interface {
 	// InjectConnection injects the connection by id into the plugin context
 	InjectConnection(ctx *types.PluginContext, id string) error
@@ -43,6 +30,11 @@ type ConnectionManager[ClientT any] interface {
 	// GetConnection returns the connection for the resource manager
 	GetConnection(ctx *types.PluginContext, id string) (types.Connection, error)
 
+	// Create creates a new connection for the resource manager
+	// This method should perform any necessary setup so that client retrieval
+	// can be done for the auth after it is created
+	CreateConnection(ctx *types.PluginContext, auth types.Connection) error
+
 	// UpdateConnection updates the connection for the resource manager
 	UpdateConnection(
 		ctx *types.PluginContext,
@@ -51,17 +43,6 @@ type ConnectionManager[ClientT any] interface {
 
 	// DeleteConnection deletes the connection for the resource manager
 	DeleteConnection(ctx *types.PluginContext, id string) error
-
-	// Create creates a new connection for the resource manager
-	// This method should perform any necessary setup so that client retrieval
-	// can be done for the auth after it is created
-	Create(ctx *types.PluginContext, auth types.Connection) error
-
-	// RemoveAuthorization removes a auth from the resource manager
-	Remove(ctx *types.PluginContext, id string) error
-
-	// ListAuthorizations lists the connections for the resource manager
-	List(ctx *types.PluginContext) ([]types.Connection, error)
 
 	// GetConnectionClient returns the necessary client for the given auth
 	// This method should be used by resourcers to get the client for the given
@@ -239,7 +220,7 @@ func (r *connectionManager[ClientT]) DeleteConnection(
 	return nil
 }
 
-func (r *connectionManager[ClientT]) Create(
+func (r *connectionManager[ClientT]) CreateConnection(
 	ctx *types.PluginContext,
 	auth types.Connection,
 ) error {
@@ -262,41 +243,6 @@ func (r *connectionManager[ClientT]) Create(
 	r.connections[auth.ID] = auth
 
 	return nil
-}
-
-func (r *connectionManager[ClientT]) Remove(
-	ctx *types.PluginContext,
-	id string,
-) error {
-	r.Lock()
-	defer r.Unlock()
-
-	client, ok := r.clients[id]
-
-	if ok && client != nil {
-		delete(r.clients, id)
-		if err := r.factory.StopClient(ctx, client); err != nil {
-			return err
-		}
-	}
-
-	delete(r.connections, id)
-
-	return nil
-}
-
-func (r *connectionManager[ClientT]) List(
-	_ *types.PluginContext,
-) ([]types.Connection, error) {
-	r.RLock()
-	defer r.RUnlock()
-
-	connections := make([]types.Connection, 0, len(r.connections))
-
-	for _, auth := range r.connections {
-		connections = append(connections, auth)
-	}
-	return connections, nil
 }
 
 func (r *connectionManager[ClientT]) GetConnectionClient(

@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/factories"
-	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
 )
@@ -16,7 +15,7 @@ type IResourcePluginOpts[CT, DT, IT any] interface {
 	GetDiscoveryClientFactory() factories.ResourceDiscoveryClientFactory[DT]
 	GetDiscoveryFunc() func(*pkgtypes.PluginContext, *DT) ([]types.ResourceMeta, error)
 	HasInformer() bool
-	GetInformerOpts() *services.InformerOptions[CT, IT]
+	GetInformerOpts() *types.InformerOptions[CT, IT]
 	GetLoadConnectionFunc() func(*pkgtypes.PluginContext) ([]pkgtypes.Connection, error)
 }
 
@@ -49,7 +48,7 @@ type ResourcePluginOpts[ClientT, DiscoveryClientT, InformerT any] struct {
 
 	// InformerOpts allows for an additional set of custom options for setting up informers on the
 	// resource backend.
-	InformerOpts *services.InformerOptions[ClientT, InformerT]
+	InformerOpts *types.InformerOptions[ClientT, InformerT]
 }
 
 func (opts ResourcePluginOpts[CT, DT, IT]) HasDiscovery() (bool, error) {
@@ -98,7 +97,7 @@ func (opts ResourcePluginOpts[CT, DT, IT]) HasInformer() bool {
 	return opts.InformerOpts != nil
 }
 
-func (opts ResourcePluginOpts[CT, DT, IT]) GetInformerOpts() *services.InformerOptions[CT, IT] {
+func (opts ResourcePluginOpts[CT, DT, IT]) GetInformerOpts() *types.InformerOptions[CT, IT] {
 	return opts.InformerOpts
 }
 

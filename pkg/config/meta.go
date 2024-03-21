@@ -32,11 +32,20 @@ type PluginMeta struct {
 	Tags         []string           `json:"tags"         yaml:"tags"`
 	Dependencies []string           `json:"dependencies" yaml:"dependencies"`
 	Capabilities []string           `json:"capabilities" yaml:"capabilities"`
+	Theme        PluginTheme        `json:"theme"        yaml:"theme"`
 }
 
 type PluginMaintainer struct {
 	Name  string `json:"name"  yaml:"name"`
 	Email string `json:"email" yaml:"email"`
+}
+
+type PluginTheme struct {
+	Colors struct {
+		Primary   string `json:"primary"   yaml:"primary"`
+		Secondary string `json:"secondary" yaml:"secondary"`
+		Tertiary  string `json:"tertiary"  yaml:"tertiary"`
+	} `json:"colors" yaml:"colors"`
 }
 
 func (c *PluginMeta) Load(reader io.Reader) error {

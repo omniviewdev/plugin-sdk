@@ -17,21 +17,25 @@ type RegisterPreHookRequest[I OperationInput] struct {
 // ResourceProvider provides an interface for performing operations against a resource backend
 // given a resource namespace and a resource identifier.
 type ResourceProvider interface {
+	// GetResourceTypes returns the all of the available resource types for the resource manager
+	GetResourceTypes() map[string]ResourceMeta
+	// GetResourceType returns the resource type information by it's string representation
+	// For example, "core::v1::Pod" or "ec2::2012-12-01::EC2Instance"
+	GetResourceType(string) (*ResourceMeta, error)
+	// HasResourceType checks to see if the resource type exists
+	HasResourceType(string) bool
+
 	// LoadConnections loads the connections for the resource provider
 	LoadConnections(ctx *types.PluginContext) ([]types.Connection, error)
-
 	// ListConnections lists the connections for the resource provider
 	ListConnections(ctx *types.PluginContext) ([]types.Connection, error)
-
 	// GetConnection gets a connection for the resource provider
 	GetConnection(ctx *types.PluginContext, id string) (types.Connection, error)
-
 	// UpdateConnection updates the connection for the resource provider
 	UpdateConnection(
 		ctx *types.PluginContext,
 		connection types.Connection,
 	) (types.Connection, error)
-
 	// DeleteConnection deletes the connection for the resource provider
 	DeleteConnection(ctx *types.PluginContext, id string) error
 
@@ -60,6 +64,7 @@ type ResourceProvider interface {
 		key string,
 		input DeleteInput,
 	) (*DeleteResult, error)
+
 	// StartContextInformer signals the resource provider to start an informer for the given resource backend context
 	StartContextInformer(ctx *types.PluginContext, contextID string) error
 	// StopContextInformer signals the resource provider to stop an informer for the given resource backend context
@@ -71,32 +76,4 @@ type ResourceProvider interface {
 		updateStream chan InformerUpdatePayload,
 		deleteStream chan InformerDeletePayload,
 	) error
-
-	// TODO - rework/remove this, the IDE should be the one doing the lifecycle hooking on the data, not the plugin
-	//
-	// // RegisterPreGetHook registers a pre-get hook that will be called before a resource is retrieved
-	// RegisterPreGetHook(PreHook[GetInput]) error
-	// // RegisterPreListHook registers a pre-list hook that will be called before a resource is listed
-	// RegisterPreListHook(PreHook[ListInput]) error
-	// // RegisterPreFindHook registers a pre-find hook that will be called before a resource is found
-	// RegisterPreFindHook(PreHook[FindInput]) error
-	// // RegisterPreCreateHook registers a pre-create hook that will be called before a resource is created
-	// RegisterPreCreateHook(PreHook[CreateInput]) error
-	// // RegisterPreUpdateHook registers a pre-update hook that will be called before a resource is updated
-	// RegisterPreUpdateHook(PreHook[UpdateInput]) error
-	// // RegisterPreDeleteHook registers a pre-delete hook that will be called before a resource is deleted
-	// RegisterPreDeleteHook(PreHook[DeleteInput]) error
-	//
-	// // RegisterPostGetHook registers a post-create hook that will be called after a resource is created
-	// RegisterPostGetHook(PostHook[GetResult]) error
-	// // RegisterPostListHook registers a post-create hook that will be called after a resource is created
-	// RegisterPostListHook(PostHook[ListResult]) error
-	// // RegisterPostFindHook registers a post-create hook that will be called after a resource is created
-	// RegisterPostFindHook(PostHook[FindResult]) error
-	// // RegisterPostCreateHook registers a post-create hook that will be called after a resource is created
-	// RegisterPostCreateHook(PostHook[CreateResult]) error
-	// // RegisterPostUpdateHook registers a post-create hook that will be called after a resource is created
-	// RegisterPostUpdateHook(PostHook[UpdateResult]) error
-	// // RegisterPostDeleteHook registers a post-create hook that will be called after a resource is created
-	// RegisterPostDeleteHook(PostHook[DeleteResult]) error
 }

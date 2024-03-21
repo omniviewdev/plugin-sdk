@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"log"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -34,6 +35,46 @@ func protoToConnection(conn *proto.Connection) pkgtypes.Connection {
 		Data:        conn.GetData().AsMap(),
 		Labels:      conn.GetLabels().AsMap(),
 	}
+}
+
+func protoToResourceMeta(meta *proto.ResourceMeta) types.ResourceMeta {
+	return types.ResourceMeta{
+		Group:       meta.GetGroup(),
+		Version:     meta.GetVersion(),
+		Kind:        meta.GetKind(),
+		Description: meta.GetDescription(),
+		Category:    meta.GetCategory(),
+	}
+}
+
+func (r *ResourcePluginClient) GetResourceTypes() map[string]types.ResourceMeta {
+	resp, err := r.client.GetResourceTypes(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		log.Print("err", err)
+		return nil
+	}
+	result := make(map[string]types.ResourceMeta)
+	for id, t := range resp.GetTypes() {
+		result[id] = protoToResourceMeta(t)
+	}
+	return result
+}
+
+func (r *ResourcePluginClient) GetResourceType(id string) (*types.ResourceMeta, error) {
+	resp, err := r.client.GetResourceType(context.Background(), &proto.ResourceTypeRequest{Id: id})
+	if err != nil {
+		return nil, err
+	}
+	result := protoToResourceMeta(resp)
+	return &result, nil
+}
+
+func (r *ResourcePluginClient) HasResourceType(id string) bool {
+	resp, err := r.client.HasResourceType(context.Background(), &proto.ResourceTypeRequest{Id: id})
+	if err != nil {
+		return false
+	}
+	return resp.GetValue()
 }
 
 func (r *ResourcePluginClient) LoadConnections(

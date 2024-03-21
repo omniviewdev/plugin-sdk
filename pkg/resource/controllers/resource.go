@@ -22,7 +22,7 @@ func NewResourceController[ClientT, InformerT any](
 	hookManager services.HookManager,
 	connectionManager services.ConnectionManager[ClientT],
 	resourceTypeManager services.ResourceTypeManager,
-	informerOpts *services.InformerOptions[ClientT, InformerT],
+	informerOpts *types.InformerOptions[ClientT, InformerT],
 	settingsProvider settings.Provider,
 ) types.ResourceProvider {
 	controller := &resourceController[ClientT, InformerT]{
@@ -321,4 +321,21 @@ func (c *resourceController[ClientT, InformerT]) DeleteConnection(
 ) error {
 	ctx.SetSettingsProvider(c.settingsProvider)
 	return c.connectionManager.DeleteConnection(ctx, connectionID)
+}
+
+// GetResourceTypes gets the resource types available to the resource controller.
+func (c *resourceController[ClientT, InformerT]) GetResourceTypes() map[string]types.ResourceMeta {
+	return c.resourceTypeManager.GetResourceTypes()
+}
+
+// GetResourceType gets the resource type information by its string representation.
+func (c *resourceController[ClientT, InformerT]) GetResourceType(
+	resource string,
+) (*types.ResourceMeta, error) {
+	return c.resourceTypeManager.GetResourceType(resource)
+}
+
+// HasResourceType checks to see if the resource type exists.
+func (c *resourceController[ClientT, InformerT]) HasResourceType(resource string) bool {
+	return c.resourceTypeManager.HasResourceType(resource)
 }

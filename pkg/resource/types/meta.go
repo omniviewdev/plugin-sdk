@@ -18,7 +18,7 @@ type ResourceMeta struct {
 	// - AWS Plugin: "ec2", "s3", "rds"
 	// - GCP Plugin: "compute", "storage", "sql"
 	// - Azure Plugin: "compute", "storage", "sql"
-	Group string
+	Group string `json:"group"`
 
 	// Version is the version of the resource. This is required for all resources.
 	// If the resource does not have a version, use "v1".
@@ -26,7 +26,7 @@ type ResourceMeta struct {
 	// Some examples for versions include:
 	// - Kubernetes Plugin: "v1", "v1beta1", "v1beta2"
 	// - AWS Plugin: "2012-12-01", "2016-11-15"
-	Version string
+	Version string `json:"version"`
 
 	// Kind is the kind of the resource. This is required for all resources.
 	//
@@ -35,7 +35,7 @@ type ResourceMeta struct {
 	// - AWS Plugin: "EC2Instance", "S3Bucket", "RDSInstance"
 	// - GCP Plugin: "ComputeEngineInstance", "StorageBucket", "SQLInstance"
 	// - Azure Plugin: "VirtualMachine", "StorageAccount", "SQLDatabase"
-	Kind string
+	Kind string `json:"kind"`
 
 	// Description is a human-readable description of the resource. This is required for all resources.
 	//
@@ -44,7 +44,7 @@ type ResourceMeta struct {
 	// - AWS Plugin: "An EC2 instance is a virtual server in the AWS cloud"
 	// - GCP Plugin: "A Compute Engine instance is a virtual machine that runs on Google's infrastructure"
 	// - Azure Plugin: "A virtual machine is a computer that runs on Microsoft's infrastructure"
-	Description string
+	Description string `json:"description"`
 
 	// Category is the category of the resource. This is optional, and if not provided, the category will
 	// be set to "Uncategorized". It is highly recommended to provide a category for your resources, so that
@@ -55,7 +55,7 @@ type ResourceMeta struct {
 	// - AWS Plugin: "Compute", "Storage", "Database"
 	// - GCP Plugin: "Compute", "Storage", "Database"
 	// - Azure Plugin: "Compute", "Storage", "Database"
-	Category string
+	Category string `json:"category"`
 }
 
 // String returns the string representation of the ResourceMeta

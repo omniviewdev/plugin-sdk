@@ -12,6 +12,7 @@ import (
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
+	wrapperspb "google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -20,6 +21,9 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
+	ResourcePlugin_GetResourceTypes_FullMethodName     = "/com.omniview.pluginsdk.ResourcePlugin/GetResourceTypes"
+	ResourcePlugin_GetResourceType_FullMethodName      = "/com.omniview.pluginsdk.ResourcePlugin/GetResourceType"
+	ResourcePlugin_HasResourceType_FullMethodName      = "/com.omniview.pluginsdk.ResourcePlugin/HasResourceType"
 	ResourcePlugin_LoadConnections_FullMethodName      = "/com.omniview.pluginsdk.ResourcePlugin/LoadConnections"
 	ResourcePlugin_ListConnections_FullMethodName      = "/com.omniview.pluginsdk.ResourcePlugin/ListConnections"
 	ResourcePlugin_GetConnection_FullMethodName        = "/com.omniview.pluginsdk.ResourcePlugin/GetConnection"
@@ -40,6 +44,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ResourcePluginClient interface {
+	GetResourceTypes(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ResourceTypes, error)
+	GetResourceType(ctx context.Context, in *ResourceTypeRequest, opts ...grpc.CallOption) (*ResourceMeta, error)
+	HasResourceType(ctx context.Context, in *ResourceTypeRequest, opts ...grpc.CallOption) (*wrapperspb.BoolValue, error)
 	LoadConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*LoadConnectionsResponse, error)
 	ListConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListConnectionsResponse, error)
 	GetConnection(ctx context.Context, in *GetConnectionRequest, opts ...grpc.CallOption) (*Connection, error)
@@ -62,6 +69,33 @@ type resourcePluginClient struct {
 
 func NewResourcePluginClient(cc grpc.ClientConnInterface) ResourcePluginClient {
 	return &resourcePluginClient{cc}
+}
+
+func (c *resourcePluginClient) GetResourceTypes(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ResourceTypes, error) {
+	out := new(ResourceTypes)
+	err := c.cc.Invoke(ctx, ResourcePlugin_GetResourceTypes_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcePluginClient) GetResourceType(ctx context.Context, in *ResourceTypeRequest, opts ...grpc.CallOption) (*ResourceMeta, error) {
+	out := new(ResourceMeta)
+	err := c.cc.Invoke(ctx, ResourcePlugin_GetResourceType_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcePluginClient) HasResourceType(ctx context.Context, in *ResourceTypeRequest, opts ...grpc.CallOption) (*wrapperspb.BoolValue, error) {
+	out := new(wrapperspb.BoolValue)
+	err := c.cc.Invoke(ctx, ResourcePlugin_HasResourceType_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *resourcePluginClient) LoadConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*LoadConnectionsResponse, error) {
@@ -217,6 +251,9 @@ func (x *resourcePluginListenForEventsClient) Recv() (*InformerEvent, error) {
 // All implementations should embed UnimplementedResourcePluginServer
 // for forward compatibility
 type ResourcePluginServer interface {
+	GetResourceTypes(context.Context, *emptypb.Empty) (*ResourceTypes, error)
+	GetResourceType(context.Context, *ResourceTypeRequest) (*ResourceMeta, error)
+	HasResourceType(context.Context, *ResourceTypeRequest) (*wrapperspb.BoolValue, error)
 	LoadConnections(context.Context, *emptypb.Empty) (*LoadConnectionsResponse, error)
 	ListConnections(context.Context, *emptypb.Empty) (*ListConnectionsResponse, error)
 	GetConnection(context.Context, *GetConnectionRequest) (*Connection, error)
@@ -237,6 +274,15 @@ type ResourcePluginServer interface {
 type UnimplementedResourcePluginServer struct {
 }
 
+func (UnimplementedResourcePluginServer) GetResourceTypes(context.Context, *emptypb.Empty) (*ResourceTypes, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetResourceTypes not implemented")
+}
+func (UnimplementedResourcePluginServer) GetResourceType(context.Context, *ResourceTypeRequest) (*ResourceMeta, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetResourceType not implemented")
+}
+func (UnimplementedResourcePluginServer) HasResourceType(context.Context, *ResourceTypeRequest) (*wrapperspb.BoolValue, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HasResourceType not implemented")
+}
 func (UnimplementedResourcePluginServer) LoadConnections(context.Context, *emptypb.Empty) (*LoadConnectionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LoadConnections not implemented")
 }
@@ -289,6 +335,60 @@ type UnsafeResourcePluginServer interface {
 
 func RegisterResourcePluginServer(s grpc.ServiceRegistrar, srv ResourcePluginServer) {
 	s.RegisterService(&ResourcePlugin_ServiceDesc, srv)
+}
+
+func _ResourcePlugin_GetResourceTypes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).GetResourceTypes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_GetResourceTypes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).GetResourceTypes(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ResourcePlugin_GetResourceType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResourceTypeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).GetResourceType(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_GetResourceType_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).GetResourceType(ctx, req.(*ResourceTypeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ResourcePlugin_HasResourceType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResourceTypeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).HasResourceType(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_HasResourceType_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).HasResourceType(ctx, req.(*ResourceTypeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ResourcePlugin_LoadConnections_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -553,6 +653,18 @@ var ResourcePlugin_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "com.omniview.pluginsdk.ResourcePlugin",
 	HandlerType: (*ResourcePluginServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetResourceTypes",
+			Handler:    _ResourcePlugin_GetResourceTypes_Handler,
+		},
+		{
+			MethodName: "GetResourceType",
+			Handler:    _ResourcePlugin_GetResourceType_Handler,
+		},
+		{
+			MethodName: "HasResourceType",
+			Handler:    _ResourcePlugin_HasResourceType_Handler,
+		},
 		{
 			MethodName: "LoadConnections",
 			Handler:    _ResourcePlugin_LoadConnections_Handler,

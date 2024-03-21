@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -19,6 +20,50 @@ import (
 type ResourcePluginServer struct {
 	// This is the real implementation
 	Impl types.ResourceProvider
+}
+
+func metaToProtoResourceMeta(meta types.ResourceMeta) *proto.ResourceMeta {
+	return &proto.ResourceMeta{
+		Group:       meta.Group,
+		Version:     meta.Version,
+		Kind:        meta.Kind,
+		Description: meta.Description,
+		Category:    meta.Category,
+	}
+}
+
+func (s *ResourcePluginServer) GetResourceTypes(
+	_ context.Context,
+	_ *emptypb.Empty,
+) (*proto.ResourceTypes, error) {
+	resourceTypes := s.Impl.GetResourceTypes()
+
+	mapped := make(map[string]*proto.ResourceMeta, len(resourceTypes))
+	for id, t := range resourceTypes {
+		mapped[id] = metaToProtoResourceMeta(t)
+	}
+	return &proto.ResourceTypes{
+		Types: mapped,
+	}, nil
+}
+
+func (s *ResourcePluginServer) GetResourceType(
+	_ context.Context,
+	in *proto.ResourceTypeRequest,
+) (*proto.ResourceMeta, error) {
+	resp, err := s.Impl.GetResourceType(in.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get resource type: %s", err.Error())
+	}
+	return metaToProtoResourceMeta(*resp), nil
+}
+
+func (s *ResourcePluginServer) HasResourceType(
+	_ context.Context,
+	in *proto.ResourceTypeRequest,
+) (*wrapperspb.BoolValue, error) {
+	resp := s.Impl.HasResourceType(in.GetId())
+	return &wrapperspb.BoolValue{Value: resp}, nil
 }
 
 func (s *ResourcePluginServer) LoadConnections(

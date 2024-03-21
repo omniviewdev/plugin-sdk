@@ -9,11 +9,11 @@ import (
 type ResourceDiscoveryClientFactory[ClientT any] interface {
 	// CreateClient creates a new discovery client with the given options, and returns
 	// the client and an error if the client could not be created.
-	CreateClient(ctx *types.PluginContext, authContext *types.Connection) (*ClientT, error)
+	CreateClient(ctx *types.PluginContext) (*ClientT, error)
 
 	// RefreshClient refreshes the given client with the given options, and returns
 	// the client and an error if the client could not be refreshed.
-	RefreshClient(ctx *types.PluginContext, authContext *types.Connection, client *ClientT) error
+	RefreshClient(ctx *types.PluginContext, client *ClientT) error
 
 	// StartClient starts the given client, and returns an error if the client could not be started.
 	// This method should be called when the client is needed.
