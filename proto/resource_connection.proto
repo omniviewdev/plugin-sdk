@@ -1,0 +1,56 @@
+syntax = "proto3";
+package com.omniview.pluginsdk;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+option go_package = "./proto";
+
+
+message Connection {
+  string id = 1;
+  string uid = 2;
+  string name = 3;
+  string description = 4;
+  string avatar = 5;
+  google.protobuf.Duration expiry_time = 6;
+  google.protobuf.Timestamp last_refresh = 7;
+  google.protobuf.Struct data = 8;
+  google.protobuf.Struct labels = 9;
+}
+
+
+message LoadConnectionsResponse {
+  repeated Connection connections = 1;
+}
+
+message ListConnectionsResponse {
+  repeated Connection connections = 1;
+}
+
+message GetConnectionRequest {
+  string id = 1;
+}
+
+message GetConnectionResponse {
+  Connection connection = 1;
+}
+
+message UpdateConnectionRequest {
+  string id = 1;
+  google.protobuf.StringValue name = 2;
+  google.protobuf.StringValue description = 3;
+  google.protobuf.StringValue avatar = 4;
+  google.protobuf.Struct labels = 5;
+}
+
+message UpdateConnectionResponse {
+  Connection connection = 1;
+}
+
+message DeleteConnectionRequest {
+  string id = 1;
+}

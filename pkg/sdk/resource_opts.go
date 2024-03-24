@@ -16,6 +16,7 @@ type IResourcePluginOpts[CT, DT, IT any] interface {
 	GetDiscoveryFunc() func(*pkgtypes.PluginContext, *DT) ([]types.ResourceMeta, error)
 	HasInformer() bool
 	GetInformerOpts() *types.InformerOptions[CT, IT]
+	GetLayoutOpts() *types.LayoutOpts
 	GetLoadConnectionFunc() func(*pkgtypes.PluginContext) ([]pkgtypes.Connection, error)
 }
 
@@ -49,6 +50,9 @@ type ResourcePluginOpts[ClientT, DiscoveryClientT, InformerT any] struct {
 	// InformerOpts allows for an additional set of custom options for setting up informers on the
 	// resource backend.
 	InformerOpts *types.InformerOptions[ClientT, InformerT]
+
+	// LayoutOpts allows for customizing the layout within the UI
+	LayoutOpts *types.LayoutOpts
 }
 
 func (opts ResourcePluginOpts[CT, DT, IT]) HasDiscovery() (bool, error) {
@@ -99,6 +103,10 @@ func (opts ResourcePluginOpts[CT, DT, IT]) HasInformer() bool {
 
 func (opts ResourcePluginOpts[CT, DT, IT]) GetInformerOpts() *types.InformerOptions[CT, IT] {
 	return opts.InformerOpts
+}
+
+func (opts ResourcePluginOpts[CT, DT, IT]) GetLayoutOpts() *types.LayoutOpts {
+	return opts.LayoutOpts
 }
 
 func (opts ResourcePluginOpts[ClientT, DiscoveryClientT, InformerT]) GetLoadConnectionFunc() func(*pkgtypes.PluginContext) (

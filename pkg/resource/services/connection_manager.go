@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -111,15 +112,6 @@ func (r *connectionManager[ClientT]) LoadConnections(
 		return nil, err
 	}
 
-	// perform an upsert on our existing connections
-	if len(r.connections) == 0 {
-		// if we have no existing connections, just set the new ones
-		for _, conn := range connections {
-			r.connections[conn.ID] = conn
-		}
-		return connections, nil
-	}
-
 	// if we have existing connections, we need to merge the new ones in
 	for _, conn := range connections {
 		existing, ok := r.connections[conn.ID]
@@ -141,11 +133,22 @@ func (r *connectionManager[ClientT]) LoadConnections(
 		}
 	}
 
+	// create the clients
+	for _, conn := range connections {
+		if _, ok := r.clients[conn.ID]; !ok {
+			ctx.Connection = &conn
+			client, clienterr := r.factory.CreateClient(ctx)
+			if clienterr == nil {
+				r.clients[conn.ID] = client
+			}
+		}
+	}
+
 	return connections, nil
 }
 
 func (r *connectionManager[ClientT]) ListConnections(
-	ctx *types.PluginContext,
+	_ *types.PluginContext,
 ) ([]types.Connection, error) {
 	r.RLock()
 	defer r.RUnlock()
@@ -157,7 +160,7 @@ func (r *connectionManager[ClientT]) ListConnections(
 }
 
 func (r *connectionManager[ClientT]) GetConnection(
-	ctx *types.PluginContext,
+	_ *types.PluginContext,
 	id string,
 ) (types.Connection, error) {
 	r.RLock()
@@ -170,7 +173,7 @@ func (r *connectionManager[ClientT]) GetConnection(
 }
 
 func (r *connectionManager[ClientT]) UpdateConnection(
-	ctx *types.PluginContext,
+	_ *types.PluginContext,
 	conn types.Connection,
 ) (types.Connection, error) {
 	r.Lock()
@@ -268,16 +271,21 @@ func (r *connectionManager[ClientT]) RefreshConnectionClient(
 	defer r.RUnlock()
 
 	client, clientOk := r.clients[id]
-	_, authOk := r.connections[id]
+	_, connOk := r.connections[id]
 
 	if !clientOk {
-		return fmt.Errorf("client for auth %s does not exist", id)
+		return fmt.Errorf("client for connection %s does not exist", id)
 	}
-	if !authOk {
-		return fmt.Errorf("auth %s does not exist", id)
+	if !connOk {
+		return fmt.Errorf("connection %s does not exist", id)
 	}
 
-	return r.factory.RefreshClient(ctx, client)
+	if err := r.factory.RefreshClient(ctx, client); err != nil {
+		return err
+	}
+
+	r.clients[id] = client
+	return nil
 }
 
 func (r *connectionManager[ClientT]) GetCurrentConnectionClient(
@@ -287,7 +295,7 @@ func (r *connectionManager[ClientT]) GetCurrentConnectionClient(
 	defer r.RUnlock()
 
 	if ctx.Connection == nil {
-		return nil, fmt.Errorf("auth context is nil")
+		return nil, errors.New("connection is nil")
 	}
 
 	client, ok := r.clients[ctx.Connection.ID]
@@ -305,17 +313,21 @@ func (r *connectionManager[ClientT]) RefreshCurrentConnectionClient(
 	r.RLock()
 	defer r.RUnlock()
 	if ctx.Connection == nil {
-		return fmt.Errorf("auth context is nil")
+		return errors.New("connection is nil")
 	}
 	client, clientOk := r.clients[ctx.Connection.ID]
-	_, authOk := r.connections[ctx.Connection.ID]
+	_, connOk := r.connections[ctx.Connection.ID]
 
 	if !clientOk {
-		return fmt.Errorf("client for auth %s does not exist", ctx.Connection.ID)
+		return fmt.Errorf("client for connection %s does not exist", ctx.Connection.ID)
 	}
-	if !authOk {
-		return fmt.Errorf("auth %s does not exist", ctx.Connection.ID)
+	if !connOk {
+		return fmt.Errorf("connection %s does not exist", ctx.Connection.ID)
 	}
 
-	return r.factory.RefreshClient(ctx, client)
+	if err := r.factory.RefreshClient(ctx, client); err != nil {
+		return err
+	}
+	r.clients[ctx.Connection.ID] = client
+	return nil
 }

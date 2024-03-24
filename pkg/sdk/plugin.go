@@ -9,8 +9,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
-	"github.com/omniviewdev/plugin-sdk/pkg/resource/controllers"
-	resource "github.com/omniviewdev/plugin-sdk/pkg/resource/plugin"
+	"github.com/omniviewdev/plugin-sdk/pkg/resource"
+	rp "github.com/omniviewdev/plugin-sdk/pkg/resource/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	sdksettings "github.com/omniviewdev/plugin-sdk/pkg/settings"
@@ -146,19 +146,18 @@ func RegisterResourcePlugin[ClientT, DiscoveryT, InformerT any](
 		panic("plugin cannot be nil")
 	}
 
+	resourcers := opts.GetResourcers()
 	metas := make([]types.ResourceMeta, 0, len(opts.GetResourcers()))
-	for meta := range opts.GetResourcers() {
+	for meta := range resourcers {
 		metas = append(metas, meta)
 	}
 
 	// check for discovery
 	var typeManager services.ResourceTypeManager
-
 	hasDiscovery, err := opts.HasDiscovery()
 	if err != nil {
 		panic(err)
 	}
-
 	if hasDiscovery {
 		// dynamic resource plugin
 		typeManager = services.NewDynamicResourceTypeManager(
@@ -171,15 +170,29 @@ func RegisterResourcePlugin[ClientT, DiscoveryT, InformerT any](
 		typeManager = services.NewStaticResourceTypeManager(metas)
 	}
 
-	controller := controllers.NewResourceController(
-		services.NewResourcerManager[ClientT](),
-		services.NewHookManager(),
+	// create the layouts
+	layoutOpts := opts.GetLayoutOpts()
+	layoutManager := services.NewLayoutManager(layoutOpts)
+	if layoutOpts != nil {
+		// generate from the metas
+		layoutManager.GenerateLayoutFromMetas(metas)
+	}
+
+	// create the resourcer
+	resourcer := services.NewResourcerManager[ClientT]()
+	if err = resourcer.RegisterResourcersFromMap(resourcers); err != nil {
+		panic(err)
+	}
+
+	controller := resource.NewResourceController(
+		resourcer,
 		services.NewConnectionManager(opts.GetClientFactory(), opts.GetLoadConnectionFunc()),
 		typeManager,
+		layoutManager,
 		opts.GetInformerOpts(),
 		p.settingsProvider,
 	)
 
 	// Register the resource plugin with the plugin system.
-	p.registerCapability("resource", &resource.ResourcePlugin{Impl: controller})
+	p.registerCapability("resource", &rp.ResourcePlugin{Impl: controller})
 }

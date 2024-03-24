@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"log"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -262,6 +263,12 @@ func (s *ResourcePluginServer) Get(
 ) (*proto.GetResponse, error) {
 	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
 
+	conn, err := s.Impl.GetConnection(pluginCtx, in.GetContext())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get connection: %s", err.Error())
+	}
+	pluginCtx.SetConnection(&conn)
+
 	resp, err := s.Impl.Get(pluginCtx, in.GetKey(), types.GetInput{
 		ID:        in.GetId(),
 		Namespace: in.GetNamespace(),
@@ -286,57 +293,317 @@ func (s *ResourcePluginServer) Get(
 }
 
 func (s *ResourcePluginServer) List(
-	context.Context,
-	*proto.ListRequest,
+	ctx context.Context,
+	in *proto.ListRequest,
 ) (*proto.ListResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method List not implemented")
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	conn, err := s.Impl.GetConnection(pluginCtx, in.GetContext())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get connection: %s", err.Error())
+	}
+	pluginCtx.SetConnection(&conn)
+
+	resp, err := s.Impl.List(pluginCtx, in.GetKey(), types.ListInput{
+		Namespaces: in.GetNamespaces(),
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list resources: %s", err.Error())
+	}
+
+	data, err := structpb.NewStruct(resp.Result)
+	if err != nil {
+		return nil, status.Errorf(
+			codes.Internal,
+			"failed to convert resources to struct: %s",
+			err.Error(),
+		)
+	}
+
+	return &proto.ListResponse{
+		Success: true,
+		Data:    data,
+	}, nil
 }
 
 func (s *ResourcePluginServer) Find(
-	context.Context,
-	*proto.FindRequest,
+	ctx context.Context,
+	in *proto.FindRequest,
 ) (*proto.FindResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Find not implemented")
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	conn, err := s.Impl.GetConnection(pluginCtx, in.GetContext())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get connection: %s", err.Error())
+	}
+	pluginCtx.SetConnection(&conn)
+
+	resp, err := s.Impl.Find(pluginCtx, in.GetKey(), types.FindInput{
+		Namespaces: in.GetNamespaces(),
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to find resources: %s", err.Error())
+	}
+
+	data, err := structpb.NewStruct(resp.Result)
+	if err != nil {
+		return nil, status.Errorf(
+			codes.Internal,
+			"failed to convert resources to struct: %s",
+			err.Error(),
+		)
+	}
+
+	return &proto.FindResponse{
+		Success: true,
+		Data:    data,
+	}, nil
 }
 
 func (s *ResourcePluginServer) Create(
-	context.Context,
-	*proto.CreateRequest,
+	ctx context.Context,
+	in *proto.CreateRequest,
 ) (*proto.CreateResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Create not implemented")
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	conn, err := s.Impl.GetConnection(pluginCtx, in.GetContext())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get connection: %s", err.Error())
+	}
+	pluginCtx.SetConnection(&conn)
+
+	resp, err := s.Impl.Create(pluginCtx, in.GetKey(), types.CreateInput{
+		Namespace: in.GetNamespace(),
+		Input:     in.GetData().AsMap(),
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to create resources: %s", err.Error())
+	}
+
+	data, err := structpb.NewStruct(resp.Result)
+	if err != nil {
+		return nil, status.Errorf(
+			codes.Internal,
+			"failed to convert resources to struct: %s",
+			err.Error(),
+		)
+	}
+
+	return &proto.CreateResponse{
+		Success: true,
+		Data:    data,
+	}, nil
 }
 
 func (s *ResourcePluginServer) Update(
-	context.Context,
-	*proto.UpdateRequest,
+	ctx context.Context,
+	in *proto.UpdateRequest,
 ) (*proto.UpdateResponse, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	conn, err := s.Impl.GetConnection(pluginCtx, in.GetContext())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get connection: %s", err.Error())
+	}
+	pluginCtx.SetConnection(&conn)
+
 	return nil, status.Errorf(codes.Unimplemented, "method Update not implemented")
 }
 
 func (s *ResourcePluginServer) Delete(
-	context.Context,
-	*proto.DeleteRequest,
+	ctx context.Context,
+	in *proto.DeleteRequest,
 ) (*proto.DeleteResponse, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	conn, err := s.Impl.GetConnection(pluginCtx, in.GetContext())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get connection: %s", err.Error())
+	}
+	pluginCtx.SetConnection(&conn)
+
 	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
 }
 
-func (s *ResourcePluginServer) StartContextInformer(
-	context.Context,
-	*proto.StartContextInformerRequest,
+func (s *ResourcePluginServer) StartConnectionInformer(
+	ctx context.Context,
+	in *proto.StartConnectionInformerRequest,
 ) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StartContextInformer not implemented")
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+	if err := s.Impl.StartConnectionInformer(pluginCtx, in.GetConnection()); err != nil {
+		return nil, status.Errorf(
+			codes.Internal,
+			"failed to start connection informer: %s",
+			err.Error(),
+		)
+	}
+	return &emptypb.Empty{}, nil
 }
 
-func (s *ResourcePluginServer) StopContextInformer(
-	context.Context,
-	*proto.StopContextInformerRequest,
+func (s *ResourcePluginServer) StopConnectionInformer(
+	ctx context.Context,
+	in *proto.StopConnectionInformerRequest,
 ) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StopContextInformer not implemented")
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+	if err := s.Impl.StopConnectionInformer(pluginCtx, in.GetConnection()); err != nil {
+		return nil, status.Errorf(
+			codes.Internal,
+			"failed to start connection informer: %s",
+			err.Error(),
+		)
+	}
+	return &emptypb.Empty{}, nil
 }
 
+// Namespaceless and connectionless.
 func (s *ResourcePluginServer) ListenForEvents(
-	*emptypb.Empty,
-	proto.ResourcePlugin_ListenForEventsServer,
+	_ *emptypb.Empty,
+	stream proto.ResourcePlugin_ListenForEventsServer,
 ) error {
-	return status.Errorf(codes.Unimplemented, "method ListenForEvents not implemented")
+	log.Printf("ListenForEvents")
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(stream.Context())
+
+	addChan := make(chan types.InformerAddPayload)
+	updateChan := make(chan types.InformerUpdatePayload)
+	deleteChan := make(chan types.InformerDeletePayload)
+
+	go func() {
+		if err := s.Impl.ListenForEvents(pluginCtx, addChan, updateChan, deleteChan); err != nil {
+			log.Printf("failed to listen for events: %s", err.Error())
+			return
+		}
+	}()
+
+	for {
+		select {
+		case <-stream.Context().Done():
+			log.Printf("Context Done")
+			return status.Errorf(codes.Canceled, "context canceled")
+		case event := <-addChan:
+			data, err := structpb.NewStruct(event.Data)
+			if err != nil {
+				log.Printf("failed to convert data to struct: %s", err.Error())
+				continue
+			}
+			if err = stream.SendMsg(&proto.InformerEvent{
+				Key:        event.Key,
+				Connection: event.Connection,
+				Id:         event.ID,
+				Namespace:  event.Namespace,
+				Action: &proto.InformerEvent_Add{
+					Add: &proto.InformerAddEvent{
+						Data: data,
+					},
+				},
+			}); err != nil {
+				// do nothing for now
+				log.Printf("failed to send add event: %s", err.Error())
+			}
+		case event := <-updateChan:
+			olddata, err := structpb.NewStruct(event.OldData)
+			if err != nil {
+				log.Printf("failed to convert olddata to struct: %s", err.Error())
+				continue
+			}
+			newdata, err := structpb.NewStruct(event.NewData)
+			if err != nil {
+				log.Printf("failed to convert newdata to struct: %s", err.Error())
+				continue
+			}
+
+			if err = stream.SendMsg(&proto.InformerEvent{
+				Key:        event.Key,
+				Connection: event.Connection,
+				Id:         event.ID,
+				Namespace:  event.Namespace,
+				Action: &proto.InformerEvent_Update{
+					Update: &proto.InformerUpdateEvent{
+						OldData: olddata,
+						NewData: newdata,
+					},
+				},
+			}); err != nil {
+				// do nothing for now
+				log.Printf("failed to send add event: %s", err.Error())
+			}
+		case event := <-deleteChan:
+			data, err := structpb.NewStruct(event.Data)
+			if err != nil {
+				log.Printf("failed to convert data to struct: %s", err.Error())
+				continue
+			}
+			if err = stream.SendMsg(&proto.InformerEvent{
+				Key:        event.Key,
+				Connection: event.Connection,
+				Id:         event.ID,
+				Namespace:  event.Namespace,
+				Action: &proto.InformerEvent_Delete{
+					Delete: &proto.InformerDeleteEvent{
+						Data: data,
+					},
+				},
+			}); err != nil {
+				// do nothing for now
+				log.Printf("failed to send add event: %s", err.Error())
+			}
+		}
+	}
+}
+
+func (s *ResourcePluginServer) GetLayout(
+	ctx context.Context,
+	in *proto.GetLayoutRequest,
+) (*proto.Layout, error) {
+	layout, err := s.Impl.GetLayout(in.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get layout: %s", err.Error())
+	}
+	items := make([]*proto.LayoutItem, 0, len(layout))
+	for _, item := range layout {
+		items = append(items, &proto.LayoutItem{
+			Id:          item.ID,
+			Label:       item.Label,
+			Description: item.Description,
+		})
+	}
+	return &proto.Layout{
+		Items: items,
+	}, nil
+}
+
+func (s *ResourcePluginServer) GetDefaultLayout(
+	ctx context.Context,
+	_ *emptypb.Empty,
+) (*proto.Layout, error) {
+	layout, err := s.Impl.GetDefaultLayout()
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get default layout: %s", err.Error())
+	}
+	items := make([]*proto.LayoutItem, 0, len(layout))
+	for _, item := range layout {
+		items = append(items, &proto.LayoutItem{
+			Id:          item.ID,
+			Label:       item.Label,
+			Description: item.Description,
+		})
+	}
+	return &proto.Layout{
+		Items: items,
+	}, nil
+}
+
+func (s *ResourcePluginServer) SetLayout(
+	ctx context.Context,
+	in *proto.SetLayoutRequest,
+) (*emptypb.Empty, error) {
+	inlayout := in.GetLayout()
+
+	layout := make([]types.LayoutItem, 0, len(inlayout.GetItems()))
+	for _, item := range inlayout.GetItems() {
+		layout = append(layout, protoToLayoutItem(item))
+	}
+	if err := s.Impl.SetLayout(in.GetId(), layout); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to set layout: %s", err.Error())
+	}
+	return &emptypb.Empty{}, nil
 }

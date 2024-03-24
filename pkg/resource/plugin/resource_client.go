@@ -47,6 +47,35 @@ func protoToResourceMeta(meta *proto.ResourceMeta) types.ResourceMeta {
 	}
 }
 
+func protoToLayoutItem(item *proto.LayoutItem) types.LayoutItem {
+	items := make([]types.LayoutItem, 0, len(item.GetItems()))
+	for _, i := range item.GetItems() {
+		items = append(items, protoToLayoutItem(i))
+	}
+
+	return types.LayoutItem{
+		ID:          item.GetId(),
+		Label:       item.GetLabel(),
+		Description: item.GetDescription(),
+		Icon:        item.GetIcon(),
+		Items:       items,
+	}
+}
+
+func layoutItemToProto(item types.LayoutItem) *proto.LayoutItem {
+	items := make([]*proto.LayoutItem, 0, len(item.Items))
+	for _, i := range item.Items {
+		items = append(items, layoutItemToProto(i))
+	}
+	return &proto.LayoutItem{
+		Id:          item.ID,
+		Label:       item.Label,
+		Description: item.Description,
+		Icon:        item.Icon,
+		Items:       items,
+	}
+}
+
 func (r *ResourcePluginClient) GetResourceTypes() map[string]types.ResourceMeta {
 	resp, err := r.client.GetResourceTypes(context.Background(), &emptypb.Empty{})
 	if err != nil {
@@ -318,37 +347,27 @@ func (r *ResourcePluginClient) Delete(
 	}, nil
 }
 
-func (r *ResourcePluginClient) StartContextInformer(
+func (r *ResourcePluginClient) StartConnectionInformer(
 	ctx *pkgtypes.PluginContext,
-	contextID string,
+	connectionID string,
 ) error {
-	if ctx.Connection == nil {
-		return ErrNoConnection
-	}
-
-	_, err := r.client.StartContextInformer(
-		context.Background(),
-		&proto.StartContextInformerRequest{
-			Key:     "",
-			Context: contextID,
+	_, err := r.client.StartConnectionInformer(
+		ctx.Context,
+		&proto.StartConnectionInformerRequest{
+			Connection: connectionID,
 		},
 	)
 	return err
 }
 
-func (r *ResourcePluginClient) StopContextInformer(
+func (r *ResourcePluginClient) StopConnectionInformer(
 	ctx *pkgtypes.PluginContext,
-	contextID string,
+	connectionID string,
 ) error {
-	if ctx.Connection == nil {
-		return ErrNoConnection
-	}
-
-	_, err := r.client.StopContextInformer(
+	_, err := r.client.StopConnectionInformer(
 		ctx.Context,
-		&proto.StopContextInformerRequest{
-			Key:     "",
-			Context: contextID,
+		&proto.StopConnectionInformerRequest{
+			Connection: connectionID,
 		},
 	)
 	return err
@@ -364,10 +383,6 @@ func (r *ResourcePluginClient) ListenForEvents(
 	updateStream chan types.InformerUpdatePayload,
 	deleteStream chan types.InformerDeletePayload,
 ) error {
-	if ctx.Connection == nil {
-		return ErrNoConnection
-	}
-
 	stream, err := r.client.ListenForEvents(ctx.Context, &emptypb.Empty{})
 	if err != nil {
 		return err
@@ -381,35 +396,67 @@ func (r *ResourcePluginClient) ListenForEvents(
 			if msgErr != nil {
 				return msgErr
 			}
+
 			switch msg.GetAction().(type) {
 			case *proto.InformerEvent_Add:
 				add := msg.GetAdd()
 				addStream <- types.InformerAddPayload{
-					Key:       msg.GetKey(),
-					Context:   msg.GetContext(),
-					ID:        add.GetId(),
-					Namespace: add.GetNamespace(),
-					Data:      add.GetData().AsMap(),
+					Key:        msg.GetKey(),
+					Connection: msg.GetConnection(),
+					ID:         msg.GetId(),
+					Namespace:  msg.GetNamespace(),
+					Data:       add.GetData().AsMap(),
 				}
 			case *proto.InformerEvent_Update:
 				update := msg.GetUpdate()
 				updateStream <- types.InformerUpdatePayload{
-					Key:       msg.GetKey(),
-					Context:   msg.GetContext(),
-					ID:        update.GetId(),
-					Namespace: update.GetNamespace(),
-					OldData:   update.GetOldData().AsMap(),
-					NewData:   update.GetNewData().AsMap(),
+					Key:        msg.GetKey(),
+					Connection: msg.GetConnection(),
+					ID:         msg.GetId(),
+					Namespace:  msg.GetNamespace(),
+					OldData:    update.GetOldData().AsMap(),
+					NewData:    update.GetNewData().AsMap(),
 				}
 			case *proto.InformerEvent_Delete:
 				del := msg.GetDelete()
 				deleteStream <- types.InformerDeletePayload{
-					Key:       msg.GetKey(),
-					Context:   msg.GetContext(),
-					ID:        del.GetId(),
-					Namespace: del.GetNamespace(),
+					Key:        msg.GetKey(),
+					Connection: msg.GetConnection(),
+					ID:         msg.GetId(),
+					Namespace:  msg.GetNamespace(),
+					Data:       del.GetData().AsMap(),
 				}
 			}
 		}
 	}
+}
+
+func (r *ResourcePluginClient) GetLayout(layoutID string) ([]types.LayoutItem, error) {
+	resp, err := r.client.GetLayout(context.Background(), &proto.GetLayoutRequest{
+		Id: layoutID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]types.LayoutItem, 0, len(resp.GetItems()))
+	for _, item := range resp.GetItems() {
+		result = append(result, protoToLayoutItem(item))
+	}
+	return result, nil
+}
+
+func (r *ResourcePluginClient) GetDefaultLayout() ([]types.LayoutItem, error) {
+	resp, err := r.client.GetDefaultLayout(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]types.LayoutItem, 0, len(resp.GetItems()))
+	for _, item := range resp.GetItems() {
+		result = append(result, protoToLayoutItem(item))
+	}
+	return result, nil
+}
+
+func (r *ResourcePluginClient) SetLayout(id string, layout []types.LayoutItem) error {
+	panic("not implemented")
 }

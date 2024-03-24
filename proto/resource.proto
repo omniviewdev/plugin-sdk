@@ -7,54 +7,11 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
 
+import "proto/resource_connection.proto";
+import "proto/resource_layout.proto";
+import "proto/resource_informer.proto";
+
 option go_package = "./proto";
-
-// Connection
-
-message Connection {
-  string id = 1;
-  string uid = 2;
-  string name = 3;
-  string description = 4;
-  string avatar = 5;
-  google.protobuf.Duration expiry_time = 6;
-  google.protobuf.Timestamp last_refresh = 7;
-  google.protobuf.Struct data = 8;
-  google.protobuf.Struct labels = 9;
-}
-
-
-message LoadConnectionsResponse {
-  repeated Connection connections = 1;
-}
-
-message ListConnectionsResponse {
-  repeated Connection connections = 1;
-}
-
-message GetConnectionRequest {
-  string id = 1;
-}
-
-message GetConnectionResponse {
-  Connection connection = 1;
-}
-
-message UpdateConnectionRequest {
-  string id = 1;
-  google.protobuf.StringValue name = 2;
-  google.protobuf.StringValue description = 3;
-  google.protobuf.StringValue avatar = 4;
-  google.protobuf.Struct labels = 5;
-}
-
-message UpdateConnectionResponse {
-  Connection connection = 1;
-}
-
-message DeleteConnectionRequest {
-  string id = 1;
-}
 
 // Get
 
@@ -141,52 +98,6 @@ message DeleteResponse {
   google.protobuf.Struct data = 2;
 }
 
-// Informers
-
-message StartContextInformerRequest {
-  string key = 1;
-  string context = 2;
-}
-
-message StopContextInformerRequest {
-  string key = 1;
-  string context = 2;
-}
-
-message InformerEvent {
-  string key = 1;
-  string context = 2;
-  string namespace = 3;
-  oneof action {
-    InformerAddEvent add = 4;
-    InformerUpdateEvent update = 5;
-    InformerDeleteEvent delete = 6;
-  }
-}
-
-message InformerAddEvent {
-  string key = 1;
-  string context = 2;
-  string id = 3;
-  string namespace = 4;
-  google.protobuf.Struct data = 5;
-}
-
-message InformerUpdateEvent {
-  string key = 1;
-  string context = 2;
-  string id = 3;
-  string namespace = 4;
-  google.protobuf.Struct old_data = 5;
-  google.protobuf.Struct new_data = 6;
-}
-
-message InformerDeleteEvent {
-  string key = 1;
-  string context = 2;
-  string id = 3;
-  string namespace = 4;
-}
 
 message ResourceMeta {
   string group = 1;
@@ -207,31 +118,28 @@ message ResourceTypeRequest {
 
 service ResourcePlugin {
   // Types
-
   rpc GetResourceTypes(google.protobuf.Empty) returns (ResourceTypes) {}
   rpc GetResourceType(ResourceTypeRequest) returns (ResourceMeta) {}
   rpc HasResourceType(ResourceTypeRequest) returns (google.protobuf.BoolValue) {}
-
   // Connection
-
   rpc LoadConnections(google.protobuf.Empty) returns (LoadConnectionsResponse) {}
   rpc ListConnections(google.protobuf.Empty) returns (ListConnectionsResponse) {}
   rpc GetConnection(GetConnectionRequest) returns (Connection) {}
   rpc UpdateConnection(UpdateConnectionRequest) returns (UpdateConnectionResponse) {}
   rpc DeleteConnection(DeleteConnectionRequest) returns (google.protobuf.Empty) {}
-
   // Resource
-
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc List(ListRequest) returns (ListResponse) {}
   rpc Find(FindRequest) returns (FindResponse) {}
   rpc Create(CreateRequest) returns (CreateResponse) {}
   rpc Update(UpdateRequest) returns (UpdateResponse) {}
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
-
-  // Informers
-  
-  rpc StartContextInformer(StartContextInformerRequest) returns (google.protobuf.Empty) {}
-  rpc StopContextInformer(StopContextInformerRequest) returns (google.protobuf.Empty) {}
+  // Informers 
+  rpc StartConnectionInformer(StartConnectionInformerRequest) returns (google.protobuf.Empty) {}
+  rpc StopConnectionInformer(StopConnectionInformerRequest) returns (google.protobuf.Empty) {}
   rpc ListenForEvents(google.protobuf.Empty) returns (stream InformerEvent) {}
+  // Layout
+  rpc GetLayout(GetLayoutRequest) returns (Layout) {}
+  rpc GetDefaultLayout(google.protobuf.Empty) returns (Layout) {}
+  rpc SetLayout(SetLayoutRequest) returns (google.protobuf.Empty) {}
 }

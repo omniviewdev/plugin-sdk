@@ -2,8 +2,8 @@ package services
 
 import (
 	"fmt"
+	"log"
 
-	"github.com/omniviewdev/plugin-sdk/pkg/resource/factories"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
 )
@@ -26,15 +26,18 @@ import (
 // to set up informers, they should be injected as a dependency into the Client setup in the
 // ResourceClientFactory.
 type InformerManager[ClientT, InformerT any] struct {
-	factory             factories.InformerFactory[ClientT, InformerT]
-	registerHandler     types.RegisterResourceFunc[InformerT]
-	runHandler          types.RunInformerFunc[InformerT]
-	informers           map[string]informer[InformerT]
+	createHandler   types.CreateInformerFunc[ClientT, InformerT]
+	registerHandler types.RegisterResourceInformerFunc[InformerT]
+	runHandler      types.RunInformerFunc[InformerT]
+
+	// map of connection ids to informers
+	informers map[string]informer[InformerT]
+
 	addChan             chan types.InformerAddPayload
 	updateChan          chan types.InformerUpdatePayload
 	deleteChan          chan types.InformerDeletePayload
-	startconnectionChan chan string
-	stopconnectionChan  chan string
+	startConnectionChan chan string
+	stopConnectionChan  chan string
 }
 
 type informer[InformerT any] struct {
@@ -45,20 +48,21 @@ type informer[InformerT any] struct {
 }
 
 func NewInformerManager[ClientT, InformerT any](
-	factory factories.InformerFactory[ClientT, InformerT],
-	registerHandler types.RegisterResourceFunc[InformerT],
-	runHandler types.RunInformerFunc[InformerT],
+	opts *types.InformerOptions[ClientT, InformerT],
+	addChan chan types.InformerAddPayload,
+	updateChan chan types.InformerUpdatePayload,
+	deleteChan chan types.InformerDeletePayload,
 ) *InformerManager[ClientT, InformerT] {
 	return &InformerManager[ClientT, InformerT]{
-		factory:             factory,
-		registerHandler:     registerHandler,
-		runHandler:          runHandler,
+		createHandler:       opts.CreateInformerFunc,
+		registerHandler:     opts.RegisterResourceFunc,
+		runHandler:          opts.RunInformerFunc,
 		informers:           make(map[string]informer[InformerT]),
-		addChan:             make(chan types.InformerAddPayload),
-		updateChan:          make(chan types.InformerUpdatePayload),
-		deleteChan:          make(chan types.InformerDeletePayload),
-		startconnectionChan: make(chan string),
-		stopconnectionChan:  make(chan string),
+		addChan:             addChan,
+		updateChan:          updateChan,
+		deleteChan:          deleteChan,
+		startConnectionChan: make(chan string),
+		stopConnectionChan:  make(chan string),
 	}
 }
 
@@ -74,7 +78,8 @@ func (i *InformerManager[CT, IT]) Run(
 		select {
 		case <-stopCh:
 			return nil
-		case id := <-i.startconnectionChan:
+		case id := <-i.startConnectionChan:
+			log.Println("InformerManager: start event received", id)
 			informer := i.informers[id]
 			// TODO - handle this error case at some point
 			go i.runHandler(
@@ -84,20 +89,44 @@ func (i *InformerManager[CT, IT]) Run(
 				i.updateChan,
 				i.deleteChan,
 			)
-		case id := <-i.stopconnectionChan:
+		case id := <-i.stopConnectionChan:
+			log.Println("InformerManager: stop event received", id)
 			// stop the informer
 			informer, ok := i.informers[id]
 			if !ok {
 				// ignore, probobly already stopped
 				break
 			}
+			// close the connection and delete it
 			close(informer.cancel)
-		case add := <-i.addChan:
-			controllerAddChan <- add
-		case update := <-i.updateChan:
-			controllerUpdateChan <- update
-		case del := <-i.deleteChan:
-			controllerDeleteChan <- del
+			delete(i.informers, id)
+		case event := <-i.addChan:
+			log.Println(
+				"InformerManager: add event received",
+				event.ID,
+				event.Key,
+				event.Namespace,
+				event.Connection,
+			)
+			controllerAddChan <- event
+		case event := <-i.updateChan:
+			log.Println(
+				"InformerManager: update event received",
+				event.ID,
+				event.Key,
+				event.Namespace,
+				event.Connection,
+			)
+			controllerUpdateChan <- event
+		case event := <-i.deleteChan:
+			log.Println(
+				"InformerManager: delete event received",
+				event.ID,
+				event.Key,
+				event.Namespace,
+				event.Connection,
+			)
+			controllerDeleteChan <- event
 		}
 	}
 }
@@ -113,7 +142,7 @@ func (i *InformerManager[CT, IT]) CreateConnectionInformer(
 	}
 
 	// get an informer from the factory
-	cache, err := i.factory.CreateInformer(ctx, connection, client)
+	cache, err := i.createHandler(ctx, client)
 	if err != nil {
 		return fmt.Errorf("error creating informer for connection %s: %w", connection.ID, err)
 	}
@@ -126,7 +155,7 @@ func (i *InformerManager[CT, IT]) CreateConnectionInformer(
 // RegisterResource registers a resource with the informer manager for a given client. This is
 // called when a new context has been started for the first time.
 func (i *InformerManager[CT, IT]) RegisterResource(
-	_ *pkgtypes.PluginContext,
+	ctx *pkgtypes.PluginContext,
 	connection *pkgtypes.Connection,
 	resource types.ResourceMeta,
 ) error {
@@ -137,7 +166,14 @@ func (i *InformerManager[CT, IT]) RegisterResource(
 	}
 
 	// register the resource
-	return i.registerHandler(informer.informer, resource)
+	return i.registerHandler(
+		ctx,
+		resource,
+		informer.informer,
+		i.addChan,
+		i.updateChan,
+		i.deleteChan,
+	)
 }
 
 // Startconnection starts the informer for a given resource connection, and sends events to the given
@@ -149,10 +185,10 @@ func (i *InformerManager[CT, IT]) StartConnection(
 	// make sure the informer exists before signalling a start
 	_, ok := i.informers[connectionID]
 	if !ok {
-		return fmt.Errorf("informer not found for connection %s", connectionID)
+		return fmt.Errorf("informer does not exist for connection %s", connectionID)
 	}
 
-	i.startconnectionChan <- connectionID
+	i.startConnectionChan <- connectionID
 	return nil
 }
 
@@ -166,6 +202,6 @@ func (i *InformerManager[CT, IT]) StopConnection(
 	if !ok {
 		return fmt.Errorf("informer not found for connection %s", connectionID)
 	}
-	i.stopconnectionChan <- connectionID
+	i.stopConnectionChan <- connectionID
 	return nil
 }

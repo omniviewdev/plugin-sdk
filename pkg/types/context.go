@@ -101,9 +101,7 @@ func (c *PluginContext) SetResourceContext(resourceContext *ResourceContext) {
 }
 
 func (c *PluginContext) SetConnection(authContext *Connection) {
-	if c.ResourceContext != nil {
-		c.Connection = authContext
-	}
+	c.Connection = authContext
 }
 
 func (c *PluginContext) IsAuthenticated() bool {

@@ -1,7 +1,7 @@
 package types
 
 import (
-	"github.com/omniviewdev/plugin-sdk/pkg/resource/factories"
+	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
 type InformerAction int
@@ -15,29 +15,57 @@ const (
 	InformerActionDelete
 )
 
+type InformerControllerAddPayload struct {
+	Data       map[string]interface{}
+	PluginID   string
+	Key        string
+	Connection string
+	ID         string
+	Namespace  string
+}
+
+type InformerControllerUpdatePayload struct {
+	OldData    map[string]interface{}
+	NewData    map[string]interface{}
+	PluginID   string
+	Key        string
+	Connection string
+	ID         string
+	Namespace  string
+}
+
+type InformerControllerDeletePayload struct {
+	Data       map[string]interface{}
+	PluginID   string
+	Key        string
+	Connection string
+	ID         string
+	Namespace  string
+}
+
 type InformerAddPayload struct {
-	Data      map[string]interface{}
-	Key       string
-	Context   string
-	ID        string
-	Namespace string
+	Data       map[string]interface{}
+	Key        string
+	Connection string
+	ID         string
+	Namespace  string
 }
 
 type InformerUpdatePayload struct {
-	OldData   map[string]interface{}
-	NewData   map[string]interface{}
-	Key       string
-	Context   string
-	ID        string
-	Namespace string
+	OldData    map[string]interface{}
+	NewData    map[string]interface{}
+	Key        string
+	Connection string
+	ID         string
+	Namespace  string
 }
 
 type InformerDeletePayload struct {
-	Data      map[string]interface{}
-	Key       string
-	Context   string
-	ID        string
-	Namespace string
+	Data       map[string]interface{}
+	Key        string
+	Connection string
+	ID         string
+	Namespace  string
 }
 
 type InformerPayload interface {
@@ -46,14 +74,29 @@ type InformerPayload interface {
 
 // InformerOptions defines the behavior for the integrating informers into a resource plugin..
 type InformerOptions[ClientT, InformerT any] struct {
-	Factory         factories.InformerFactory[ClientT, InformerT]
-	RegisterHandler RegisterResourceFunc[InformerT]
-	RunHandler      RunInformerFunc[InformerT]
+	// CreateInformerFunc is a function that should create a new informer base for a given resource connection.
+	CreateInformerFunc CreateInformerFunc[ClientT, InformerT]
+
+	// RegisterResourceInformerFunc is a function that should register an informer with a resource
+	RegisterResourceFunc RegisterResourceInformerFunc[InformerT]
+
+	// RunInformerFunc is a function that should run the informer, submitting events to the three
+	// channels, and blocking until the stop channel is closed.
+	RunInformerFunc RunInformerFunc[InformerT]
 }
 
-type RegisterResourceFunc[InformerT any] func(
-	informer InformerT,
+type CreateInformerFunc[ClientT, InformerT any] func(
+	ctx *pkgtypes.PluginContext,
+	client *ClientT,
+) (InformerT, error)
+
+type RegisterResourceInformerFunc[InformerT any] func(
+	ctx *pkgtypes.PluginContext,
 	resource ResourceMeta,
+	informer InformerT,
+	addChan chan InformerAddPayload,
+	updateChan chan InformerUpdatePayload,
+	deleteChan chan InformerDeletePayload,
 ) error
 
 // RunInformerFunc is a function that should run the informer, submitting events to the three

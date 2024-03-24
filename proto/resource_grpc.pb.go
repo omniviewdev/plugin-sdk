@@ -21,46 +21,57 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	ResourcePlugin_GetResourceTypes_FullMethodName     = "/com.omniview.pluginsdk.ResourcePlugin/GetResourceTypes"
-	ResourcePlugin_GetResourceType_FullMethodName      = "/com.omniview.pluginsdk.ResourcePlugin/GetResourceType"
-	ResourcePlugin_HasResourceType_FullMethodName      = "/com.omniview.pluginsdk.ResourcePlugin/HasResourceType"
-	ResourcePlugin_LoadConnections_FullMethodName      = "/com.omniview.pluginsdk.ResourcePlugin/LoadConnections"
-	ResourcePlugin_ListConnections_FullMethodName      = "/com.omniview.pluginsdk.ResourcePlugin/ListConnections"
-	ResourcePlugin_GetConnection_FullMethodName        = "/com.omniview.pluginsdk.ResourcePlugin/GetConnection"
-	ResourcePlugin_UpdateConnection_FullMethodName     = "/com.omniview.pluginsdk.ResourcePlugin/UpdateConnection"
-	ResourcePlugin_DeleteConnection_FullMethodName     = "/com.omniview.pluginsdk.ResourcePlugin/DeleteConnection"
-	ResourcePlugin_Get_FullMethodName                  = "/com.omniview.pluginsdk.ResourcePlugin/Get"
-	ResourcePlugin_List_FullMethodName                 = "/com.omniview.pluginsdk.ResourcePlugin/List"
-	ResourcePlugin_Find_FullMethodName                 = "/com.omniview.pluginsdk.ResourcePlugin/Find"
-	ResourcePlugin_Create_FullMethodName               = "/com.omniview.pluginsdk.ResourcePlugin/Create"
-	ResourcePlugin_Update_FullMethodName               = "/com.omniview.pluginsdk.ResourcePlugin/Update"
-	ResourcePlugin_Delete_FullMethodName               = "/com.omniview.pluginsdk.ResourcePlugin/Delete"
-	ResourcePlugin_StartContextInformer_FullMethodName = "/com.omniview.pluginsdk.ResourcePlugin/StartContextInformer"
-	ResourcePlugin_StopContextInformer_FullMethodName  = "/com.omniview.pluginsdk.ResourcePlugin/StopContextInformer"
-	ResourcePlugin_ListenForEvents_FullMethodName      = "/com.omniview.pluginsdk.ResourcePlugin/ListenForEvents"
+	ResourcePlugin_GetResourceTypes_FullMethodName        = "/com.omniview.pluginsdk.ResourcePlugin/GetResourceTypes"
+	ResourcePlugin_GetResourceType_FullMethodName         = "/com.omniview.pluginsdk.ResourcePlugin/GetResourceType"
+	ResourcePlugin_HasResourceType_FullMethodName         = "/com.omniview.pluginsdk.ResourcePlugin/HasResourceType"
+	ResourcePlugin_LoadConnections_FullMethodName         = "/com.omniview.pluginsdk.ResourcePlugin/LoadConnections"
+	ResourcePlugin_ListConnections_FullMethodName         = "/com.omniview.pluginsdk.ResourcePlugin/ListConnections"
+	ResourcePlugin_GetConnection_FullMethodName           = "/com.omniview.pluginsdk.ResourcePlugin/GetConnection"
+	ResourcePlugin_UpdateConnection_FullMethodName        = "/com.omniview.pluginsdk.ResourcePlugin/UpdateConnection"
+	ResourcePlugin_DeleteConnection_FullMethodName        = "/com.omniview.pluginsdk.ResourcePlugin/DeleteConnection"
+	ResourcePlugin_Get_FullMethodName                     = "/com.omniview.pluginsdk.ResourcePlugin/Get"
+	ResourcePlugin_List_FullMethodName                    = "/com.omniview.pluginsdk.ResourcePlugin/List"
+	ResourcePlugin_Find_FullMethodName                    = "/com.omniview.pluginsdk.ResourcePlugin/Find"
+	ResourcePlugin_Create_FullMethodName                  = "/com.omniview.pluginsdk.ResourcePlugin/Create"
+	ResourcePlugin_Update_FullMethodName                  = "/com.omniview.pluginsdk.ResourcePlugin/Update"
+	ResourcePlugin_Delete_FullMethodName                  = "/com.omniview.pluginsdk.ResourcePlugin/Delete"
+	ResourcePlugin_StartConnectionInformer_FullMethodName = "/com.omniview.pluginsdk.ResourcePlugin/StartConnectionInformer"
+	ResourcePlugin_StopConnectionInformer_FullMethodName  = "/com.omniview.pluginsdk.ResourcePlugin/StopConnectionInformer"
+	ResourcePlugin_ListenForEvents_FullMethodName         = "/com.omniview.pluginsdk.ResourcePlugin/ListenForEvents"
+	ResourcePlugin_GetLayout_FullMethodName               = "/com.omniview.pluginsdk.ResourcePlugin/GetLayout"
+	ResourcePlugin_GetDefaultLayout_FullMethodName        = "/com.omniview.pluginsdk.ResourcePlugin/GetDefaultLayout"
+	ResourcePlugin_SetLayout_FullMethodName               = "/com.omniview.pluginsdk.ResourcePlugin/SetLayout"
 )
 
 // ResourcePluginClient is the client API for ResourcePlugin service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ResourcePluginClient interface {
+	// Types
 	GetResourceTypes(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ResourceTypes, error)
 	GetResourceType(ctx context.Context, in *ResourceTypeRequest, opts ...grpc.CallOption) (*ResourceMeta, error)
 	HasResourceType(ctx context.Context, in *ResourceTypeRequest, opts ...grpc.CallOption) (*wrapperspb.BoolValue, error)
+	// Connection
 	LoadConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*LoadConnectionsResponse, error)
 	ListConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListConnectionsResponse, error)
 	GetConnection(ctx context.Context, in *GetConnectionRequest, opts ...grpc.CallOption) (*Connection, error)
 	UpdateConnection(ctx context.Context, in *UpdateConnectionRequest, opts ...grpc.CallOption) (*UpdateConnectionResponse, error)
 	DeleteConnection(ctx context.Context, in *DeleteConnectionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Resource
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
 	Find(ctx context.Context, in *FindRequest, opts ...grpc.CallOption) (*FindResponse, error)
 	Create(ctx context.Context, in *CreateRequest, opts ...grpc.CallOption) (*CreateResponse, error)
 	Update(ctx context.Context, in *UpdateRequest, opts ...grpc.CallOption) (*UpdateResponse, error)
 	Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error)
-	StartContextInformer(ctx context.Context, in *StartContextInformerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	StopContextInformer(ctx context.Context, in *StopContextInformerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Informers
+	StartConnectionInformer(ctx context.Context, in *StartConnectionInformerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	StopConnectionInformer(ctx context.Context, in *StopConnectionInformerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListenForEvents(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (ResourcePlugin_ListenForEventsClient, error)
+	// Layout
+	GetLayout(ctx context.Context, in *GetLayoutRequest, opts ...grpc.CallOption) (*Layout, error)
+	GetDefaultLayout(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Layout, error)
+	SetLayout(ctx context.Context, in *SetLayoutRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type resourcePluginClient struct {
@@ -197,18 +208,18 @@ func (c *resourcePluginClient) Delete(ctx context.Context, in *DeleteRequest, op
 	return out, nil
 }
 
-func (c *resourcePluginClient) StartContextInformer(ctx context.Context, in *StartContextInformerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *resourcePluginClient) StartConnectionInformer(ctx context.Context, in *StartConnectionInformerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, ResourcePlugin_StartContextInformer_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, ResourcePlugin_StartConnectionInformer_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *resourcePluginClient) StopContextInformer(ctx context.Context, in *StopContextInformerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *resourcePluginClient) StopConnectionInformer(ctx context.Context, in *StopConnectionInformerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, ResourcePlugin_StopContextInformer_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, ResourcePlugin_StopConnectionInformer_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -247,27 +258,62 @@ func (x *resourcePluginListenForEventsClient) Recv() (*InformerEvent, error) {
 	return m, nil
 }
 
+func (c *resourcePluginClient) GetLayout(ctx context.Context, in *GetLayoutRequest, opts ...grpc.CallOption) (*Layout, error) {
+	out := new(Layout)
+	err := c.cc.Invoke(ctx, ResourcePlugin_GetLayout_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcePluginClient) GetDefaultLayout(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Layout, error) {
+	out := new(Layout)
+	err := c.cc.Invoke(ctx, ResourcePlugin_GetDefaultLayout_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcePluginClient) SetLayout(ctx context.Context, in *SetLayoutRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, ResourcePlugin_SetLayout_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ResourcePluginServer is the server API for ResourcePlugin service.
 // All implementations should embed UnimplementedResourcePluginServer
 // for forward compatibility
 type ResourcePluginServer interface {
+	// Types
 	GetResourceTypes(context.Context, *emptypb.Empty) (*ResourceTypes, error)
 	GetResourceType(context.Context, *ResourceTypeRequest) (*ResourceMeta, error)
 	HasResourceType(context.Context, *ResourceTypeRequest) (*wrapperspb.BoolValue, error)
+	// Connection
 	LoadConnections(context.Context, *emptypb.Empty) (*LoadConnectionsResponse, error)
 	ListConnections(context.Context, *emptypb.Empty) (*ListConnectionsResponse, error)
 	GetConnection(context.Context, *GetConnectionRequest) (*Connection, error)
 	UpdateConnection(context.Context, *UpdateConnectionRequest) (*UpdateConnectionResponse, error)
 	DeleteConnection(context.Context, *DeleteConnectionRequest) (*emptypb.Empty, error)
+	// Resource
 	Get(context.Context, *GetRequest) (*GetResponse, error)
 	List(context.Context, *ListRequest) (*ListResponse, error)
 	Find(context.Context, *FindRequest) (*FindResponse, error)
 	Create(context.Context, *CreateRequest) (*CreateResponse, error)
 	Update(context.Context, *UpdateRequest) (*UpdateResponse, error)
 	Delete(context.Context, *DeleteRequest) (*DeleteResponse, error)
-	StartContextInformer(context.Context, *StartContextInformerRequest) (*emptypb.Empty, error)
-	StopContextInformer(context.Context, *StopContextInformerRequest) (*emptypb.Empty, error)
+	// Informers
+	StartConnectionInformer(context.Context, *StartConnectionInformerRequest) (*emptypb.Empty, error)
+	StopConnectionInformer(context.Context, *StopConnectionInformerRequest) (*emptypb.Empty, error)
 	ListenForEvents(*emptypb.Empty, ResourcePlugin_ListenForEventsServer) error
+	// Layout
+	GetLayout(context.Context, *GetLayoutRequest) (*Layout, error)
+	GetDefaultLayout(context.Context, *emptypb.Empty) (*Layout, error)
+	SetLayout(context.Context, *SetLayoutRequest) (*emptypb.Empty, error)
 }
 
 // UnimplementedResourcePluginServer should be embedded to have forward compatible implementations.
@@ -316,14 +362,23 @@ func (UnimplementedResourcePluginServer) Update(context.Context, *UpdateRequest)
 func (UnimplementedResourcePluginServer) Delete(context.Context, *DeleteRequest) (*DeleteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
 }
-func (UnimplementedResourcePluginServer) StartContextInformer(context.Context, *StartContextInformerRequest) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StartContextInformer not implemented")
+func (UnimplementedResourcePluginServer) StartConnectionInformer(context.Context, *StartConnectionInformerRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartConnectionInformer not implemented")
 }
-func (UnimplementedResourcePluginServer) StopContextInformer(context.Context, *StopContextInformerRequest) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StopContextInformer not implemented")
+func (UnimplementedResourcePluginServer) StopConnectionInformer(context.Context, *StopConnectionInformerRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StopConnectionInformer not implemented")
 }
 func (UnimplementedResourcePluginServer) ListenForEvents(*emptypb.Empty, ResourcePlugin_ListenForEventsServer) error {
 	return status.Errorf(codes.Unimplemented, "method ListenForEvents not implemented")
+}
+func (UnimplementedResourcePluginServer) GetLayout(context.Context, *GetLayoutRequest) (*Layout, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetLayout not implemented")
+}
+func (UnimplementedResourcePluginServer) GetDefaultLayout(context.Context, *emptypb.Empty) (*Layout, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDefaultLayout not implemented")
+}
+func (UnimplementedResourcePluginServer) SetLayout(context.Context, *SetLayoutRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetLayout not implemented")
 }
 
 // UnsafeResourcePluginServer may be embedded to opt out of forward compatibility for this service.
@@ -589,38 +644,38 @@ func _ResourcePlugin_Delete_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ResourcePlugin_StartContextInformer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(StartContextInformerRequest)
+func _ResourcePlugin_StartConnectionInformer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartConnectionInformerRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ResourcePluginServer).StartContextInformer(ctx, in)
+		return srv.(ResourcePluginServer).StartConnectionInformer(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ResourcePlugin_StartContextInformer_FullMethodName,
+		FullMethod: ResourcePlugin_StartConnectionInformer_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ResourcePluginServer).StartContextInformer(ctx, req.(*StartContextInformerRequest))
+		return srv.(ResourcePluginServer).StartConnectionInformer(ctx, req.(*StartConnectionInformerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ResourcePlugin_StopContextInformer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(StopContextInformerRequest)
+func _ResourcePlugin_StopConnectionInformer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopConnectionInformerRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ResourcePluginServer).StopContextInformer(ctx, in)
+		return srv.(ResourcePluginServer).StopConnectionInformer(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: ResourcePlugin_StopContextInformer_FullMethodName,
+		FullMethod: ResourcePlugin_StopConnectionInformer_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ResourcePluginServer).StopContextInformer(ctx, req.(*StopContextInformerRequest))
+		return srv.(ResourcePluginServer).StopConnectionInformer(ctx, req.(*StopConnectionInformerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -644,6 +699,60 @@ type resourcePluginListenForEventsServer struct {
 
 func (x *resourcePluginListenForEventsServer) Send(m *InformerEvent) error {
 	return x.ServerStream.SendMsg(m)
+}
+
+func _ResourcePlugin_GetLayout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetLayoutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).GetLayout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_GetLayout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).GetLayout(ctx, req.(*GetLayoutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ResourcePlugin_GetDefaultLayout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).GetDefaultLayout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_GetDefaultLayout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).GetDefaultLayout(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ResourcePlugin_SetLayout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetLayoutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).SetLayout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_SetLayout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).SetLayout(ctx, req.(*SetLayoutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 // ResourcePlugin_ServiceDesc is the grpc.ServiceDesc for ResourcePlugin service.
@@ -710,12 +819,24 @@ var ResourcePlugin_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ResourcePlugin_Delete_Handler,
 		},
 		{
-			MethodName: "StartContextInformer",
-			Handler:    _ResourcePlugin_StartContextInformer_Handler,
+			MethodName: "StartConnectionInformer",
+			Handler:    _ResourcePlugin_StartConnectionInformer_Handler,
 		},
 		{
-			MethodName: "StopContextInformer",
-			Handler:    _ResourcePlugin_StopContextInformer_Handler,
+			MethodName: "StopConnectionInformer",
+			Handler:    _ResourcePlugin_StopConnectionInformer_Handler,
+		},
+		{
+			MethodName: "GetLayout",
+			Handler:    _ResourcePlugin_GetLayout_Handler,
+		},
+		{
+			MethodName: "GetDefaultLayout",
+			Handler:    _ResourcePlugin_GetDefaultLayout_Handler,
+		},
+		{
+			MethodName: "SetLayout",
+			Handler:    _ResourcePlugin_SetLayout_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

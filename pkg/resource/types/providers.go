@@ -2,21 +2,7 @@ package types
 
 import "github.com/omniviewdev/plugin-sdk/pkg/types"
 
-type ResourceProviderInput[I OperationInput] struct {
-	Input       I
-	ResourceID  string
-	NamespaceID string
-}
-
-type RegisterPreHookRequest[I OperationInput] struct {
-	Hook  PreHookFunc[I]
-	ID    string
-	Phase PreHookType
-}
-
-// ResourceProvider provides an interface for performing operations against a resource backend
-// given a resource namespace and a resource identifier.
-type ResourceProvider interface {
+type ResourceTypeProvider interface {
 	// GetResourceTypes returns the all of the available resource types for the resource manager
 	GetResourceTypes() map[string]ResourceMeta
 	// GetResourceType returns the resource type information by it's string representation
@@ -24,7 +10,9 @@ type ResourceProvider interface {
 	GetResourceType(string) (*ResourceMeta, error)
 	// HasResourceType checks to see if the resource type exists
 	HasResourceType(string) bool
+}
 
+type ResourceConnectionProvider interface {
 	// LoadConnections loads the connections for the resource provider
 	LoadConnections(ctx *types.PluginContext) ([]types.Connection, error)
 	// ListConnections lists the connections for the resource provider
@@ -38,7 +26,23 @@ type ResourceProvider interface {
 	) (types.Connection, error)
 	// DeleteConnection deletes the connection for the resource provider
 	DeleteConnection(ctx *types.PluginContext, id string) error
+}
 
+type ResourceInformerProvider interface {
+	// StartContextInformer signals the resource provider to start an informer for the given resource backend context
+	StartConnectionInformer(ctx *types.PluginContext, connectionID string) error
+	// StopContextInformer signals the resource provider to stop an informer for the given resource backend context
+	StopConnectionInformer(ctx *types.PluginContext, connectionID string) error
+	// ListenForEvents registers a listener for resource events
+	ListenForEvents(
+		ctx *types.PluginContext,
+		addStream chan InformerAddPayload,
+		updateStream chan InformerUpdatePayload,
+		deleteStream chan InformerDeletePayload,
+	) error
+}
+
+type ResourceOperationProvider interface {
 	// Get returns a single resource in the given resource namespace.
 	Get(ctx *types.PluginContext, key string, input GetInput) (*GetResult, error)
 	// Get returns a single resource in the given resource namespace.
@@ -64,16 +68,20 @@ type ResourceProvider interface {
 		key string,
 		input DeleteInput,
 	) (*DeleteResult, error)
+}
 
-	// StartContextInformer signals the resource provider to start an informer for the given resource backend context
-	StartContextInformer(ctx *types.PluginContext, contextID string) error
-	// StopContextInformer signals the resource provider to stop an informer for the given resource backend context
-	StopContextInformer(ctx *types.PluginContext, contextID string) error
-	// ListenForEvents registers a listener for resource events
-	ListenForEvents(
-		ctx *types.PluginContext,
-		addStream chan InformerAddPayload,
-		updateStream chan InformerUpdatePayload,
-		deleteStream chan InformerDeletePayload,
-	) error
+type ResourceLayoutProvider interface {
+	GetLayout(id string) ([]LayoutItem, error)
+	SetLayout(id string, layout []LayoutItem) error
+	GetDefaultLayout() ([]LayoutItem, error)
+}
+
+// ResourceProvider provides an interface for performing operations against a resource backend
+// given a resource namespace and a resource identifier.
+type ResourceProvider interface {
+	ResourceTypeProvider
+	ResourceConnectionProvider
+	ResourceInformerProvider
+	ResourceLayoutProvider
+	ResourceOperationProvider
 }

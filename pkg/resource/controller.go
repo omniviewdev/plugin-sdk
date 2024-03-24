@@ -1,8 +1,8 @@
-package controllers
+package resource
 
 import (
 	"fmt"
-	"reflect"
+	"log"
 
 	"github.com/omniviewdev/settings"
 
@@ -19,51 +19,49 @@ import (
 // operates as the plugin host for the installed resource plugin.
 func NewResourceController[ClientT, InformerT any](
 	resourcerManager services.ResourcerManager[ClientT],
-	hookManager services.HookManager,
 	connectionManager services.ConnectionManager[ClientT],
 	resourceTypeManager services.ResourceTypeManager,
+	layoutManager services.LayoutManager,
 	informerOpts *types.InformerOptions[ClientT, InformerT],
 	settingsProvider settings.Provider,
 ) types.ResourceProvider {
 	controller := &resourceController[ClientT, InformerT]{
+		stopChan:            make(chan struct{}),
 		resourcerManager:    resourcerManager,
-		hookManager:         hookManager,
 		connectionManager:   connectionManager,
 		resourceTypeManager: resourceTypeManager,
+		layoutManager:       layoutManager,
 		settingsProvider:    settingsProvider,
 	}
 	if informerOpts != nil {
 		controller.withInformer = true
+		controller.addChan = make(chan types.InformerAddPayload)
+		controller.updateChan = make(chan types.InformerUpdatePayload)
+		controller.deleteChan = make(chan types.InformerDeletePayload)
 		controller.informerManager = services.NewInformerManager(
-			informerOpts.Factory,
-			informerOpts.RegisterHandler,
-			informerOpts.RunHandler,
+			informerOpts,
+			controller.addChan,
+			controller.updateChan,
+			controller.deleteChan,
 		)
 	}
 	return controller
 }
 
 type resourceController[ClientT, InformerT any] struct {
-	// signal whether informer is enabled
-	withInformer bool
-
-	// informerManager is the informer manager that the controller will use to manage informers.
-	informerManager *services.InformerManager[ClientT, InformerT]
-
-	// resourcerManager is the resource manager that the controller will execute operations on.
-	resourcerManager services.ResourcerManager[ClientT]
-
-	// hookManager is the hook manager that the controller will use to attach hooks to operations.
-	hookManager services.HookManager
-
-	// connectionManager is the namespace manager that the controller will use to manage resource namespaces.
-	connectionManager services.ConnectionManager[ClientT]
-
-	// resourceResourceTypeManager is the resource type manager that the controller will use to manage resource types.
+	stopChan            chan struct{}
+	resourcerManager    services.ResourcerManager[ClientT]
+	connectionManager   services.ConnectionManager[ClientT]
 	resourceTypeManager services.ResourceTypeManager
+	layoutManager       services.LayoutManager
+	settingsProvider    settings.Provider
 
-	// settingsProvider provides the current settings for the application
-	settingsProvider settings.Provider
+	// signal whether informer is enabled
+	withInformer    bool
+	informerManager *services.InformerManager[ClientT, InformerT]
+	addChan         chan types.InformerAddPayload
+	updateChan      chan types.InformerUpdatePayload
+	deleteChan      chan types.InformerDeletePayload
 }
 
 // get our client and resourcer outside to slim down the methods.
@@ -72,6 +70,9 @@ func (c *resourceController[ClientT, InformerT]) retrieveClientResourcer(
 	resource string,
 ) (*ClientT, types.Resourcer[ClientT], error) {
 	var nilResourcer types.Resourcer[ClientT]
+	if ctx.Connection == nil {
+		return nil, nilResourcer, fmt.Errorf("connection is nil")
+	}
 
 	// get the resourcer for the given resource type, and check type
 	if ok := c.resourceTypeManager.HasResourceType(resource); !ok {
@@ -100,25 +101,27 @@ func (c *resourceController[ClientT, InformerT]) retrieveClientResourcer(
 		)
 	}
 
-	// ensure the client is of the correct type for the resource controller
-	expectedType := reflect.TypeOf((*ClientT)(nil)).Elem()
-	clientType := reflect.TypeOf(client)
-
-	// check the type enforcement first before continuing
-	if clientType != expectedType {
-		return nil, nilResourcer, fmt.Errorf(
-			"client type %s does not match expected type %s for auth context %s",
-			clientType,
-			expectedType,
-			ctx.Connection.ID,
-		)
-	}
+	// // ensure the client is of the correct type for the resource controller
+	// expectedType := reflect.TypeOf((*ClientT)(nil)).Elem()
+	// clientType := reflect.TypeOf(client)
+	//
+	// // check the type enforcement first before continuing
+	// if clientType != expectedType {
+	// 	return nil, nilResourcer, fmt.Errorf(
+	// 		"client type %s does not match expected type %s for auth context %s",
+	// 		clientType,
+	// 		expectedType,
+	// 		ctx.Connection.ID,
+	// 	)
+	// }
 
 	// make sure we attach the current settings provider before calling the resourcer
 	ctx.SetSettingsProvider(c.settingsProvider)
 
 	return client, resourcer, nil
 }
+
+// ================================= Operation Methods ================================= //
 
 // TODO - combine the common logic for the operations here, lots of repetativeness
 // Get gets a resource within a resource namespace given an identifier and input options.
@@ -235,29 +238,63 @@ func (c *resourceController[ClientT, InformerT]) Delete(
 	return result, nil
 }
 
+// ================================= Informer Methods ================================= //
+
 // StartContextInformer signals to the listen runner to start the informer for the given context.
 // If the informer is not enabled, this method will return a nil error.
-func (c *resourceController[ClientT, InformerT]) StartContextInformer(
+func (c *resourceController[ClientT, InformerT]) StartConnectionInformer(
 	ctx *pkgtypes.PluginContext,
-	contextID string,
+	connectionID string,
 ) error {
 	if !c.withInformer {
 		return nil
 	}
+
+	if err := c.connectionManager.InjectConnection(ctx, connectionID); err != nil {
+		return fmt.Errorf("unable to inject connection: %w", err)
+	}
+	client, err := c.connectionManager.GetConnectionClient(ctx, connectionID)
+	if err != nil {
+		return fmt.Errorf("unable to get connection client: %w", err)
+	}
 	ctx.SetSettingsProvider(c.settingsProvider)
-	return c.informerManager.StartConnection(ctx, contextID)
+
+	// first create the connection informer
+	if err = c.informerManager.CreateConnectionInformer(ctx, ctx.Connection, client); err != nil {
+		return err
+	}
+
+	// get all the resource types
+	resourceTypes := c.GetResourceTypes()
+	for _, resource := range resourceTypes {
+		if err = c.informerManager.RegisterResource(ctx, ctx.Connection, resource); err != nil {
+			return fmt.Errorf("unable to register resource: %w", err)
+		}
+	}
+
+	// finally, start it
+	return c.informerManager.StartConnection(ctx, connectionID)
 }
 
 // StopContextInformer signals to the listen runner to stop the informer for the given context.
-func (c *resourceController[ClientT, InformerT]) StopContextInformer(
+func (c *resourceController[ClientT, InformerT]) StopConnectionInformer(
 	ctx *pkgtypes.PluginContext,
-	contextID string,
+	connectionID string,
 ) error {
 	if !c.withInformer {
 		return nil
 	}
+	if err := c.connectionManager.InjectConnection(ctx, connectionID); err != nil {
+		return fmt.Errorf("unable to inject connection: %w", err)
+	}
 	ctx.SetSettingsProvider(c.settingsProvider)
-	return c.informerManager.StopConnection(ctx, contextID)
+
+	if err := c.informerManager.StopConnection(ctx, connectionID); err != nil {
+		return fmt.Errorf("unable to stop connection: %w", err)
+	}
+
+	// remake the client
+	return c.connectionManager.RefreshConnectionClient(ctx, connectionID)
 }
 
 // ListenForEvents listens for events from the informer and sends them to the given event channels.
@@ -270,14 +307,18 @@ func (c *resourceController[ClientT, InformerT]) ListenForEvents(
 	deleteChan chan types.InformerDeletePayload,
 ) error {
 	if !c.withInformer {
+		log.Println("informer not enabled")
 		return nil
 	}
 	ctx.SetSettingsProvider(c.settingsProvider)
-	if err := c.informerManager.Run(ctx.Context.Done(), addChan, updateChan, deleteChan); err != nil {
+	if err := c.informerManager.Run(c.stopChan, addChan, updateChan, deleteChan); err != nil {
+		log.Println("error running informer manager:", err)
 		return fmt.Errorf("error running informer manager: %w", err)
 	}
 	return nil
 }
+
+// ================================= Connection Methods ================================= //
 
 // LoadConnections calls the custom connection loader func to provide the the IDE the possible connections
 // available.
@@ -323,6 +364,8 @@ func (c *resourceController[ClientT, InformerT]) DeleteConnection(
 	return c.connectionManager.DeleteConnection(ctx, connectionID)
 }
 
+// ================================= Resource Type Methods ================================= //
+
 // GetResourceTypes gets the resource types available to the resource controller.
 func (c *resourceController[ClientT, InformerT]) GetResourceTypes() map[string]types.ResourceMeta {
 	return c.resourceTypeManager.GetResourceTypes()
@@ -338,4 +381,23 @@ func (c *resourceController[ClientT, InformerT]) GetResourceType(
 // HasResourceType checks to see if the resource type exists.
 func (c *resourceController[ClientT, InformerT]) HasResourceType(resource string) bool {
 	return c.resourceTypeManager.HasResourceType(resource)
+}
+
+// ================================= Resource Type Methods ================================= //
+
+func (c *resourceController[ClientT, InformerT]) GetLayout(
+	layoutID string,
+) ([]types.LayoutItem, error) {
+	return c.layoutManager.GetLayout(layoutID)
+}
+
+func (c *resourceController[ClientT, InformerT]) GetDefaultLayout() ([]types.LayoutItem, error) {
+	return c.layoutManager.GetDefaultLayout()
+}
+
+func (c *resourceController[ClientT, InformerT]) SetLayout(
+	id string,
+	layout []types.LayoutItem,
+) error {
+	return c.layoutManager.SetLayout(id, layout)
 }

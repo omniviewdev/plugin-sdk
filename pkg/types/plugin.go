@@ -55,7 +55,10 @@ type Plugin struct {
 	Config       config.PluginConfig   `json:"config"`
 	Enabled      bool                  `json:"enabled"`
 	Running      bool                  `json:"running"`
-	LoadError    string                `json:"load_error"`
+	DevMode      bool                  `json:"devMode"`
+	DevPath      string                `json:"devPath"`
+	Loading      bool                  `json:"loading"`
+	LoadError    string                `json:"loadError"`
 	Capabilities []PluginType          `json:"capabilities"`
 	RPCClient    plugin.ClientProtocol `json:"-"`
 	PluginClient *plugin.Client        `json:"-"`
