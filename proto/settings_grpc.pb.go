@@ -20,11 +20,10 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	SettingsPlugin_ListSettings_FullMethodName        = "/com.omniview.pluginsdk.SettingsPlugin/ListSettings"
-	SettingsPlugin_GetSetting_FullMethodName          = "/com.omniview.pluginsdk.SettingsPlugin/GetSetting"
-	SettingsPlugin_SetSetting_FullMethodName          = "/com.omniview.pluginsdk.SettingsPlugin/SetSetting"
-	SettingsPlugin_SetSettings_FullMethodName         = "/com.omniview.pluginsdk.SettingsPlugin/SetSettings"
-	SettingsPlugin_GetVisualComponents_FullMethodName = "/com.omniview.pluginsdk.SettingsPlugin/GetVisualComponents"
+	SettingsPlugin_ListSettings_FullMethodName = "/com.omniview.pluginsdk.SettingsPlugin/ListSettings"
+	SettingsPlugin_GetSetting_FullMethodName   = "/com.omniview.pluginsdk.SettingsPlugin/GetSetting"
+	SettingsPlugin_SetSetting_FullMethodName   = "/com.omniview.pluginsdk.SettingsPlugin/SetSetting"
+	SettingsPlugin_SetSettings_FullMethodName  = "/com.omniview.pluginsdk.SettingsPlugin/SetSettings"
 )
 
 // SettingsPluginClient is the client API for SettingsPlugin service.
@@ -35,8 +34,6 @@ type SettingsPluginClient interface {
 	GetSetting(ctx context.Context, in *GetSettingRequest, opts ...grpc.CallOption) (*Setting, error)
 	SetSetting(ctx context.Context, in *SetSettingRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	SetSettings(ctx context.Context, in *SetSettingsRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	// UI
-	GetVisualComponents(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*VisualComponentList, error)
 }
 
 type settingsPluginClient struct {
@@ -83,15 +80,6 @@ func (c *settingsPluginClient) SetSettings(ctx context.Context, in *SetSettingsR
 	return out, nil
 }
 
-func (c *settingsPluginClient) GetVisualComponents(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*VisualComponentList, error) {
-	out := new(VisualComponentList)
-	err := c.cc.Invoke(ctx, SettingsPlugin_GetVisualComponents_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // SettingsPluginServer is the server API for SettingsPlugin service.
 // All implementations should embed UnimplementedSettingsPluginServer
 // for forward compatibility
@@ -100,8 +88,6 @@ type SettingsPluginServer interface {
 	GetSetting(context.Context, *GetSettingRequest) (*Setting, error)
 	SetSetting(context.Context, *SetSettingRequest) (*emptypb.Empty, error)
 	SetSettings(context.Context, *SetSettingsRequest) (*emptypb.Empty, error)
-	// UI
-	GetVisualComponents(context.Context, *emptypb.Empty) (*VisualComponentList, error)
 }
 
 // UnimplementedSettingsPluginServer should be embedded to have forward compatible implementations.
@@ -119,9 +105,6 @@ func (UnimplementedSettingsPluginServer) SetSetting(context.Context, *SetSetting
 }
 func (UnimplementedSettingsPluginServer) SetSettings(context.Context, *SetSettingsRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetSettings not implemented")
-}
-func (UnimplementedSettingsPluginServer) GetVisualComponents(context.Context, *emptypb.Empty) (*VisualComponentList, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetVisualComponents not implemented")
 }
 
 // UnsafeSettingsPluginServer may be embedded to opt out of forward compatibility for this service.
@@ -207,24 +190,6 @@ func _SettingsPlugin_SetSettings_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SettingsPlugin_GetVisualComponents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(emptypb.Empty)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SettingsPluginServer).GetVisualComponents(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: SettingsPlugin_GetVisualComponents_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SettingsPluginServer).GetVisualComponents(ctx, req.(*emptypb.Empty))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // SettingsPlugin_ServiceDesc is the grpc.ServiceDesc for SettingsPlugin service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -247,10 +212,6 @@ var SettingsPlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetSettings",
 			Handler:    _SettingsPlugin_SetSettings_Handler,
-		},
-		{
-			MethodName: "GetVisualComponents",
-			Handler:    _SettingsPlugin_GetVisualComponents_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
