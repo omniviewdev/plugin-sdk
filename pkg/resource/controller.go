@@ -1,6 +1,7 @@
 package resource
 
 import (
+	"errors"
 	"fmt"
 	"log"
 
@@ -49,19 +50,17 @@ func NewResourceController[ClientT, InformerT any](
 }
 
 type resourceController[ClientT, InformerT any] struct {
-	stopChan            chan struct{}
 	resourcerManager    services.ResourcerManager[ClientT]
 	connectionManager   services.ConnectionManager[ClientT]
 	resourceTypeManager services.ResourceTypeManager
 	layoutManager       services.LayoutManager
 	settingsProvider    settings.Provider
-
-	// signal whether informer is enabled
-	withInformer    bool
-	informerManager *services.InformerManager[ClientT, InformerT]
-	addChan         chan types.InformerAddPayload
-	updateChan      chan types.InformerUpdatePayload
-	deleteChan      chan types.InformerDeletePayload
+	stopChan            chan struct{}
+	informerManager     *services.InformerManager[ClientT, InformerT]
+	addChan             chan types.InformerAddPayload
+	updateChan          chan types.InformerUpdatePayload
+	deleteChan          chan types.InformerDeletePayload
+	withInformer        bool
 }
 
 // get our client and resourcer outside to slim down the methods.
@@ -71,7 +70,7 @@ func (c *resourceController[ClientT, InformerT]) retrieveClientResourcer(
 ) (*ClientT, types.Resourcer[ClientT], error) {
 	var nilResourcer types.Resourcer[ClientT]
 	if ctx.Connection == nil {
-		return nil, nilResourcer, fmt.Errorf("connection is nil")
+		return nil, nilResourcer, errors.New("connection is nil")
 	}
 
 	// get the resourcer for the given resource type, and check type
@@ -240,13 +239,24 @@ func (c *resourceController[ClientT, InformerT]) Delete(
 
 // ================================= Informer Methods ================================= //
 
+func (c *resourceController[ClientT, InformerT]) HasInformer(
+	ctx *pkgtypes.PluginContext,
+	connectionID string,
+) bool {
+	return c.informerManager.HasInformer(ctx, connectionID)
+}
+
 // StartContextInformer signals to the listen runner to start the informer for the given context.
 // If the informer is not enabled, this method will return a nil error.
+//
+// This typically should not be called by the client, but there may be situations where we need
+// to start the informer manually. This gets handled on the StartConnection method.
 func (c *resourceController[ClientT, InformerT]) StartConnectionInformer(
 	ctx *pkgtypes.PluginContext,
 	connectionID string,
 ) error {
 	if !c.withInformer {
+		// safety guard just in case
 		return nil
 	}
 
@@ -282,6 +292,7 @@ func (c *resourceController[ClientT, InformerT]) StopConnectionInformer(
 	connectionID string,
 ) error {
 	if !c.withInformer {
+		// safety guard just in case
 		return nil
 	}
 	if err := c.connectionManager.InjectConnection(ctx, connectionID); err != nil {
@@ -319,6 +330,31 @@ func (c *resourceController[ClientT, InformerT]) ListenForEvents(
 }
 
 // ================================= Connection Methods ================================= //
+
+// StartConnection starts a connection, initializing any informers as necessary.
+func (c *resourceController[ClientT, InformerT]) StartConnection(
+	ctx *pkgtypes.PluginContext,
+	connectionID string,
+) (pkgtypes.Connection, error) {
+	conn, err := c.connectionManager.StartConnection(ctx, connectionID)
+	if err != nil {
+		return conn, fmt.Errorf("unable to start connection: %w", err)
+	}
+
+	// check if has informer. if so, start it
+	return conn, c.StartConnectionInformer(ctx, connectionID)
+}
+
+// StopConnection stops a connection, stopping any informers as necessary.
+func (c *resourceController[ClientT, InformerT]) StopConnection(
+	ctx *pkgtypes.PluginContext,
+	connectionID string,
+) (pkgtypes.Connection, error) {
+	if err := c.StopConnectionInformer(ctx, connectionID); err != nil {
+		return pkgtypes.Connection{}, fmt.Errorf("unable to stop connection informer: %w", err)
+	}
+	return c.connectionManager.StopConnection(ctx, connectionID)
+}
 
 // LoadConnections calls the custom connection loader func to provide the the IDE the possible connections
 // available.
@@ -365,6 +401,18 @@ func (c *resourceController[ClientT, InformerT]) DeleteConnection(
 }
 
 // ================================= Resource Type Methods ================================= //
+
+// GetResourceGroups gets the resource groups available to the resource controller.
+func (c *resourceController[ClientT, InformerT]) GetResourceGroups() map[string]types.ResourceGroup {
+	return c.resourceTypeManager.GetGroups()
+}
+
+// GetResourceGroup gets the resource group by its name.
+func (c *resourceController[ClientT, InformerT]) GetResourceGroup(
+	name string,
+) (types.ResourceGroup, error) {
+	return c.resourceTypeManager.GetGroup(name)
+}
 
 // GetResourceTypes gets the resource types available to the resource controller.
 func (c *resourceController[ClientT, InformerT]) GetResourceTypes() map[string]types.ResourceMeta {

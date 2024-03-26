@@ -58,6 +58,31 @@ message ListSettingsResponse {
   map<string, Setting> settings = 1;
 }
 
+// UI Configuration
+
+// VisualComponentList is a list of all the visual components provided
+// by the plugin, grouped by the section they are applicable to.
+message VisualComponentList {
+  repeated VisualResourceComponent resource = 1;
+}
+
+// VisualResourceComponent is a visual component that can be displayed
+// in the UI within a resource.
+message VisualResourceComponent {
+  enum ComponentType {
+    SIDEBAR = 0;
+  }
+
+  // The unique identifier of the component.
+  string id = 1;
+  // The plugin for which this component is applicable.
+  string plugin = 2;
+  // The type of the component.
+  ComponentType type = 3;
+  // The resources for which this component is applicable.
+  repeated string resources = 4;
+}
+
 service SettingsPlugin {
   rpc ListSettings(google.protobuf.Empty) returns (ListSettingsResponse);
   rpc GetSetting(GetSettingRequest) returns (Setting);

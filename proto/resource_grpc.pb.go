@@ -21,9 +21,13 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
+	ResourcePlugin_GetResourceGroups_FullMethodName       = "/com.omniview.pluginsdk.ResourcePlugin/GetResourceGroups"
+	ResourcePlugin_GetResourceGroup_FullMethodName        = "/com.omniview.pluginsdk.ResourcePlugin/GetResourceGroup"
 	ResourcePlugin_GetResourceTypes_FullMethodName        = "/com.omniview.pluginsdk.ResourcePlugin/GetResourceTypes"
 	ResourcePlugin_GetResourceType_FullMethodName         = "/com.omniview.pluginsdk.ResourcePlugin/GetResourceType"
 	ResourcePlugin_HasResourceType_FullMethodName         = "/com.omniview.pluginsdk.ResourcePlugin/HasResourceType"
+	ResourcePlugin_StartConnection_FullMethodName         = "/com.omniview.pluginsdk.ResourcePlugin/StartConnection"
+	ResourcePlugin_StopConnection_FullMethodName          = "/com.omniview.pluginsdk.ResourcePlugin/StopConnection"
 	ResourcePlugin_LoadConnections_FullMethodName         = "/com.omniview.pluginsdk.ResourcePlugin/LoadConnections"
 	ResourcePlugin_ListConnections_FullMethodName         = "/com.omniview.pluginsdk.ResourcePlugin/ListConnections"
 	ResourcePlugin_GetConnection_FullMethodName           = "/com.omniview.pluginsdk.ResourcePlugin/GetConnection"
@@ -35,6 +39,7 @@ const (
 	ResourcePlugin_Create_FullMethodName                  = "/com.omniview.pluginsdk.ResourcePlugin/Create"
 	ResourcePlugin_Update_FullMethodName                  = "/com.omniview.pluginsdk.ResourcePlugin/Update"
 	ResourcePlugin_Delete_FullMethodName                  = "/com.omniview.pluginsdk.ResourcePlugin/Delete"
+	ResourcePlugin_HasInformer_FullMethodName             = "/com.omniview.pluginsdk.ResourcePlugin/HasInformer"
 	ResourcePlugin_StartConnectionInformer_FullMethodName = "/com.omniview.pluginsdk.ResourcePlugin/StartConnectionInformer"
 	ResourcePlugin_StopConnectionInformer_FullMethodName  = "/com.omniview.pluginsdk.ResourcePlugin/StopConnectionInformer"
 	ResourcePlugin_ListenForEvents_FullMethodName         = "/com.omniview.pluginsdk.ResourcePlugin/ListenForEvents"
@@ -48,15 +53,19 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ResourcePluginClient interface {
 	// Types
+	GetResourceGroups(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ResourceGroupListResponse, error)
+	GetResourceGroup(ctx context.Context, in *ResourceGroupRequest, opts ...grpc.CallOption) (*ResourceGroup, error)
 	GetResourceTypes(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ResourceTypes, error)
 	GetResourceType(ctx context.Context, in *ResourceTypeRequest, opts ...grpc.CallOption) (*ResourceMeta, error)
 	HasResourceType(ctx context.Context, in *ResourceTypeRequest, opts ...grpc.CallOption) (*wrapperspb.BoolValue, error)
 	// Connection
-	LoadConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*LoadConnectionsResponse, error)
-	ListConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListConnectionsResponse, error)
-	GetConnection(ctx context.Context, in *GetConnectionRequest, opts ...grpc.CallOption) (*Connection, error)
-	UpdateConnection(ctx context.Context, in *UpdateConnectionRequest, opts ...grpc.CallOption) (*UpdateConnectionResponse, error)
-	DeleteConnection(ctx context.Context, in *DeleteConnectionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	StartConnection(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*Connection, error)
+	StopConnection(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*Connection, error)
+	LoadConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ConnectionList, error)
+	ListConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ConnectionList, error)
+	GetConnection(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*Connection, error)
+	UpdateConnection(ctx context.Context, in *UpdateConnectionRequest, opts ...grpc.CallOption) (*Connection, error)
+	DeleteConnection(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Resource
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
@@ -65,6 +74,7 @@ type ResourcePluginClient interface {
 	Update(ctx context.Context, in *UpdateRequest, opts ...grpc.CallOption) (*UpdateResponse, error)
 	Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error)
 	// Informers
+	HasInformer(ctx context.Context, in *HasInformerRequest, opts ...grpc.CallOption) (*wrapperspb.BoolValue, error)
 	StartConnectionInformer(ctx context.Context, in *StartConnectionInformerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	StopConnectionInformer(ctx context.Context, in *StopConnectionInformerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListenForEvents(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (ResourcePlugin_ListenForEventsClient, error)
@@ -80,6 +90,24 @@ type resourcePluginClient struct {
 
 func NewResourcePluginClient(cc grpc.ClientConnInterface) ResourcePluginClient {
 	return &resourcePluginClient{cc}
+}
+
+func (c *resourcePluginClient) GetResourceGroups(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ResourceGroupListResponse, error) {
+	out := new(ResourceGroupListResponse)
+	err := c.cc.Invoke(ctx, ResourcePlugin_GetResourceGroups_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcePluginClient) GetResourceGroup(ctx context.Context, in *ResourceGroupRequest, opts ...grpc.CallOption) (*ResourceGroup, error) {
+	out := new(ResourceGroup)
+	err := c.cc.Invoke(ctx, ResourcePlugin_GetResourceGroup_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *resourcePluginClient) GetResourceTypes(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ResourceTypes, error) {
@@ -109,8 +137,26 @@ func (c *resourcePluginClient) HasResourceType(ctx context.Context, in *Resource
 	return out, nil
 }
 
-func (c *resourcePluginClient) LoadConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*LoadConnectionsResponse, error) {
-	out := new(LoadConnectionsResponse)
+func (c *resourcePluginClient) StartConnection(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*Connection, error) {
+	out := new(Connection)
+	err := c.cc.Invoke(ctx, ResourcePlugin_StartConnection_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcePluginClient) StopConnection(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*Connection, error) {
+	out := new(Connection)
+	err := c.cc.Invoke(ctx, ResourcePlugin_StopConnection_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcePluginClient) LoadConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ConnectionList, error) {
+	out := new(ConnectionList)
 	err := c.cc.Invoke(ctx, ResourcePlugin_LoadConnections_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -118,8 +164,8 @@ func (c *resourcePluginClient) LoadConnections(ctx context.Context, in *emptypb.
 	return out, nil
 }
 
-func (c *resourcePluginClient) ListConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListConnectionsResponse, error) {
-	out := new(ListConnectionsResponse)
+func (c *resourcePluginClient) ListConnections(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ConnectionList, error) {
+	out := new(ConnectionList)
 	err := c.cc.Invoke(ctx, ResourcePlugin_ListConnections_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -127,7 +173,7 @@ func (c *resourcePluginClient) ListConnections(ctx context.Context, in *emptypb.
 	return out, nil
 }
 
-func (c *resourcePluginClient) GetConnection(ctx context.Context, in *GetConnectionRequest, opts ...grpc.CallOption) (*Connection, error) {
+func (c *resourcePluginClient) GetConnection(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*Connection, error) {
 	out := new(Connection)
 	err := c.cc.Invoke(ctx, ResourcePlugin_GetConnection_FullMethodName, in, out, opts...)
 	if err != nil {
@@ -136,8 +182,8 @@ func (c *resourcePluginClient) GetConnection(ctx context.Context, in *GetConnect
 	return out, nil
 }
 
-func (c *resourcePluginClient) UpdateConnection(ctx context.Context, in *UpdateConnectionRequest, opts ...grpc.CallOption) (*UpdateConnectionResponse, error) {
-	out := new(UpdateConnectionResponse)
+func (c *resourcePluginClient) UpdateConnection(ctx context.Context, in *UpdateConnectionRequest, opts ...grpc.CallOption) (*Connection, error) {
+	out := new(Connection)
 	err := c.cc.Invoke(ctx, ResourcePlugin_UpdateConnection_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -145,7 +191,7 @@ func (c *resourcePluginClient) UpdateConnection(ctx context.Context, in *UpdateC
 	return out, nil
 }
 
-func (c *resourcePluginClient) DeleteConnection(ctx context.Context, in *DeleteConnectionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *resourcePluginClient) DeleteConnection(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, ResourcePlugin_DeleteConnection_FullMethodName, in, out, opts...)
 	if err != nil {
@@ -202,6 +248,15 @@ func (c *resourcePluginClient) Update(ctx context.Context, in *UpdateRequest, op
 func (c *resourcePluginClient) Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error) {
 	out := new(DeleteResponse)
 	err := c.cc.Invoke(ctx, ResourcePlugin_Delete_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcePluginClient) HasInformer(ctx context.Context, in *HasInformerRequest, opts ...grpc.CallOption) (*wrapperspb.BoolValue, error) {
+	out := new(wrapperspb.BoolValue)
+	err := c.cc.Invoke(ctx, ResourcePlugin_HasInformer_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -290,15 +345,19 @@ func (c *resourcePluginClient) SetLayout(ctx context.Context, in *SetLayoutReque
 // for forward compatibility
 type ResourcePluginServer interface {
 	// Types
+	GetResourceGroups(context.Context, *emptypb.Empty) (*ResourceGroupListResponse, error)
+	GetResourceGroup(context.Context, *ResourceGroupRequest) (*ResourceGroup, error)
 	GetResourceTypes(context.Context, *emptypb.Empty) (*ResourceTypes, error)
 	GetResourceType(context.Context, *ResourceTypeRequest) (*ResourceMeta, error)
 	HasResourceType(context.Context, *ResourceTypeRequest) (*wrapperspb.BoolValue, error)
 	// Connection
-	LoadConnections(context.Context, *emptypb.Empty) (*LoadConnectionsResponse, error)
-	ListConnections(context.Context, *emptypb.Empty) (*ListConnectionsResponse, error)
-	GetConnection(context.Context, *GetConnectionRequest) (*Connection, error)
-	UpdateConnection(context.Context, *UpdateConnectionRequest) (*UpdateConnectionResponse, error)
-	DeleteConnection(context.Context, *DeleteConnectionRequest) (*emptypb.Empty, error)
+	StartConnection(context.Context, *ConnectionRequest) (*Connection, error)
+	StopConnection(context.Context, *ConnectionRequest) (*Connection, error)
+	LoadConnections(context.Context, *emptypb.Empty) (*ConnectionList, error)
+	ListConnections(context.Context, *emptypb.Empty) (*ConnectionList, error)
+	GetConnection(context.Context, *ConnectionRequest) (*Connection, error)
+	UpdateConnection(context.Context, *UpdateConnectionRequest) (*Connection, error)
+	DeleteConnection(context.Context, *ConnectionRequest) (*emptypb.Empty, error)
 	// Resource
 	Get(context.Context, *GetRequest) (*GetResponse, error)
 	List(context.Context, *ListRequest) (*ListResponse, error)
@@ -307,6 +366,7 @@ type ResourcePluginServer interface {
 	Update(context.Context, *UpdateRequest) (*UpdateResponse, error)
 	Delete(context.Context, *DeleteRequest) (*DeleteResponse, error)
 	// Informers
+	HasInformer(context.Context, *HasInformerRequest) (*wrapperspb.BoolValue, error)
 	StartConnectionInformer(context.Context, *StartConnectionInformerRequest) (*emptypb.Empty, error)
 	StopConnectionInformer(context.Context, *StopConnectionInformerRequest) (*emptypb.Empty, error)
 	ListenForEvents(*emptypb.Empty, ResourcePlugin_ListenForEventsServer) error
@@ -320,6 +380,12 @@ type ResourcePluginServer interface {
 type UnimplementedResourcePluginServer struct {
 }
 
+func (UnimplementedResourcePluginServer) GetResourceGroups(context.Context, *emptypb.Empty) (*ResourceGroupListResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetResourceGroups not implemented")
+}
+func (UnimplementedResourcePluginServer) GetResourceGroup(context.Context, *ResourceGroupRequest) (*ResourceGroup, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetResourceGroup not implemented")
+}
 func (UnimplementedResourcePluginServer) GetResourceTypes(context.Context, *emptypb.Empty) (*ResourceTypes, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetResourceTypes not implemented")
 }
@@ -329,19 +395,25 @@ func (UnimplementedResourcePluginServer) GetResourceType(context.Context, *Resou
 func (UnimplementedResourcePluginServer) HasResourceType(context.Context, *ResourceTypeRequest) (*wrapperspb.BoolValue, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HasResourceType not implemented")
 }
-func (UnimplementedResourcePluginServer) LoadConnections(context.Context, *emptypb.Empty) (*LoadConnectionsResponse, error) {
+func (UnimplementedResourcePluginServer) StartConnection(context.Context, *ConnectionRequest) (*Connection, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartConnection not implemented")
+}
+func (UnimplementedResourcePluginServer) StopConnection(context.Context, *ConnectionRequest) (*Connection, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StopConnection not implemented")
+}
+func (UnimplementedResourcePluginServer) LoadConnections(context.Context, *emptypb.Empty) (*ConnectionList, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LoadConnections not implemented")
 }
-func (UnimplementedResourcePluginServer) ListConnections(context.Context, *emptypb.Empty) (*ListConnectionsResponse, error) {
+func (UnimplementedResourcePluginServer) ListConnections(context.Context, *emptypb.Empty) (*ConnectionList, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListConnections not implemented")
 }
-func (UnimplementedResourcePluginServer) GetConnection(context.Context, *GetConnectionRequest) (*Connection, error) {
+func (UnimplementedResourcePluginServer) GetConnection(context.Context, *ConnectionRequest) (*Connection, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetConnection not implemented")
 }
-func (UnimplementedResourcePluginServer) UpdateConnection(context.Context, *UpdateConnectionRequest) (*UpdateConnectionResponse, error) {
+func (UnimplementedResourcePluginServer) UpdateConnection(context.Context, *UpdateConnectionRequest) (*Connection, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateConnection not implemented")
 }
-func (UnimplementedResourcePluginServer) DeleteConnection(context.Context, *DeleteConnectionRequest) (*emptypb.Empty, error) {
+func (UnimplementedResourcePluginServer) DeleteConnection(context.Context, *ConnectionRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteConnection not implemented")
 }
 func (UnimplementedResourcePluginServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
@@ -361,6 +433,9 @@ func (UnimplementedResourcePluginServer) Update(context.Context, *UpdateRequest)
 }
 func (UnimplementedResourcePluginServer) Delete(context.Context, *DeleteRequest) (*DeleteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
+}
+func (UnimplementedResourcePluginServer) HasInformer(context.Context, *HasInformerRequest) (*wrapperspb.BoolValue, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HasInformer not implemented")
 }
 func (UnimplementedResourcePluginServer) StartConnectionInformer(context.Context, *StartConnectionInformerRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartConnectionInformer not implemented")
@@ -390,6 +465,42 @@ type UnsafeResourcePluginServer interface {
 
 func RegisterResourcePluginServer(s grpc.ServiceRegistrar, srv ResourcePluginServer) {
 	s.RegisterService(&ResourcePlugin_ServiceDesc, srv)
+}
+
+func _ResourcePlugin_GetResourceGroups_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).GetResourceGroups(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_GetResourceGroups_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).GetResourceGroups(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ResourcePlugin_GetResourceGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResourceGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).GetResourceGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_GetResourceGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).GetResourceGroup(ctx, req.(*ResourceGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ResourcePlugin_GetResourceTypes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -446,6 +557,42 @@ func _ResourcePlugin_HasResourceType_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ResourcePlugin_StartConnection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConnectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).StartConnection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_StartConnection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).StartConnection(ctx, req.(*ConnectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ResourcePlugin_StopConnection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConnectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).StopConnection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_StopConnection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).StopConnection(ctx, req.(*ConnectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ResourcePlugin_LoadConnections_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(emptypb.Empty)
 	if err := dec(in); err != nil {
@@ -483,7 +630,7 @@ func _ResourcePlugin_ListConnections_Handler(srv interface{}, ctx context.Contex
 }
 
 func _ResourcePlugin_GetConnection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetConnectionRequest)
+	in := new(ConnectionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -495,7 +642,7 @@ func _ResourcePlugin_GetConnection_Handler(srv interface{}, ctx context.Context,
 		FullMethod: ResourcePlugin_GetConnection_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ResourcePluginServer).GetConnection(ctx, req.(*GetConnectionRequest))
+		return srv.(ResourcePluginServer).GetConnection(ctx, req.(*ConnectionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -519,7 +666,7 @@ func _ResourcePlugin_UpdateConnection_Handler(srv interface{}, ctx context.Conte
 }
 
 func _ResourcePlugin_DeleteConnection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteConnectionRequest)
+	in := new(ConnectionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -531,7 +678,7 @@ func _ResourcePlugin_DeleteConnection_Handler(srv interface{}, ctx context.Conte
 		FullMethod: ResourcePlugin_DeleteConnection_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ResourcePluginServer).DeleteConnection(ctx, req.(*DeleteConnectionRequest))
+		return srv.(ResourcePluginServer).DeleteConnection(ctx, req.(*ConnectionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -640,6 +787,24 @@ func _ResourcePlugin_Delete_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ResourcePluginServer).Delete(ctx, req.(*DeleteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ResourcePlugin_HasInformer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HasInformerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).HasInformer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_HasInformer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).HasInformer(ctx, req.(*HasInformerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -763,6 +928,14 @@ var ResourcePlugin_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*ResourcePluginServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "GetResourceGroups",
+			Handler:    _ResourcePlugin_GetResourceGroups_Handler,
+		},
+		{
+			MethodName: "GetResourceGroup",
+			Handler:    _ResourcePlugin_GetResourceGroup_Handler,
+		},
+		{
 			MethodName: "GetResourceTypes",
 			Handler:    _ResourcePlugin_GetResourceTypes_Handler,
 		},
@@ -773,6 +946,14 @@ var ResourcePlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HasResourceType",
 			Handler:    _ResourcePlugin_HasResourceType_Handler,
+		},
+		{
+			MethodName: "StartConnection",
+			Handler:    _ResourcePlugin_StartConnection_Handler,
+		},
+		{
+			MethodName: "StopConnection",
+			Handler:    _ResourcePlugin_StopConnection_Handler,
 		},
 		{
 			MethodName: "LoadConnections",
@@ -817,6 +998,10 @@ var ResourcePlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Delete",
 			Handler:    _ResourcePlugin_Delete_Handler,
+		},
+		{
+			MethodName: "HasInformer",
+			Handler:    _ResourcePlugin_HasInformer_Handler,
 		},
 		{
 			MethodName: "StartConnectionInformer",

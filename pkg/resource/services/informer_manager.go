@@ -176,7 +176,7 @@ func (i *InformerManager[CT, IT]) RegisterResource(
 	)
 }
 
-// Startconnection starts the informer for a given resource connection, and sends events to the given
+// StartConnection starts the informer for a given resource connection, and sends events to the given
 // event channels.
 func (i *InformerManager[CT, IT]) StartConnection(
 	_ *pkgtypes.PluginContext,
@@ -192,7 +192,7 @@ func (i *InformerManager[CT, IT]) StartConnection(
 	return nil
 }
 
-// Stopconnection stops the informer for a given resource connection.
+// StopConnection stops the informer for a given resource connection.
 func (i *InformerManager[CT, IT]) StopConnection(
 	_ *pkgtypes.PluginContext,
 	connectionID string,
@@ -204,4 +204,13 @@ func (i *InformerManager[CT, IT]) StopConnection(
 	}
 	i.stopConnectionChan <- connectionID
 	return nil
+}
+
+// HasInformer checks to see if the informer manager has an informer for the given connection.
+func (i *InformerManager[CT, IT]) HasInformer(
+	_ *pkgtypes.PluginContext,
+	connectionID string,
+) bool {
+	_, ok := i.informers[connectionID]
+	return ok
 }

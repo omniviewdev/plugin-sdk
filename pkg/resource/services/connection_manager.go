@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/factories"
+	rt "github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
@@ -19,31 +21,10 @@ import (
 // would consist of the account and role, and the resource auth manager would be responsible for
 // setting up, switching between, and managing these authd clients.
 type ConnectionManager[ClientT any] interface {
+	rt.ResourceConnectionProvider
+
 	// InjectConnection injects the connection by id into the plugin context
 	InjectConnection(ctx *types.PluginContext, id string) error
-
-	// LoadConnections loads the possible connections for the resource manager
-	LoadConnections(ctx *types.PluginContext) ([]types.Connection, error)
-
-	// ListConnections lists the connections for the resource manager
-	ListConnections(ctx *types.PluginContext) ([]types.Connection, error)
-
-	// GetConnection returns the connection for the resource manager
-	GetConnection(ctx *types.PluginContext, id string) (types.Connection, error)
-
-	// Create creates a new connection for the resource manager
-	// This method should perform any necessary setup so that client retrieval
-	// can be done for the auth after it is created
-	CreateConnection(ctx *types.PluginContext, auth types.Connection) error
-
-	// UpdateConnection updates the connection for the resource manager
-	UpdateConnection(
-		ctx *types.PluginContext,
-		connection types.Connection,
-	) (types.Connection, error)
-
-	// DeleteConnection deletes the connection for the resource manager
-	DeleteConnection(ctx *types.PluginContext, id string) error
 
 	// GetConnectionClient returns the necessary client for the given auth
 	// This method should be used by resourcers to get the client for the given
@@ -330,4 +311,62 @@ func (r *connectionManager[ClientT]) RefreshCurrentConnectionClient(
 	}
 	r.clients[ctx.Connection.ID] = client
 	return nil
+}
+
+func (r *connectionManager[ClientT]) StartConnection(
+	ctx *types.PluginContext,
+	connectionID string,
+) (types.Connection, error) {
+	r.Lock()
+	defer r.Unlock()
+	client, ok := r.clients[connectionID]
+	if !ok {
+		return types.Connection{}, fmt.Errorf(
+			"client for connection %s does not exist",
+			connectionID,
+		)
+	}
+
+	if err := r.factory.StartClient(ctx, client); err != nil {
+		return types.Connection{}, err
+	}
+
+	// mark the last refresh time on the connection
+	conn, ok := r.connections[connectionID]
+	if !ok {
+		return types.Connection{}, fmt.Errorf("connection %s does not exist", connectionID)
+	}
+	conn.LastRefresh = time.Now()
+	// default to 24 hours
+	conn.ExpiryTime = time.Hour * 24
+
+	r.connections[connectionID] = conn
+	return conn, nil
+}
+
+func (r *connectionManager[ClientT]) StopConnection(
+	ctx *types.PluginContext,
+	connectionID string,
+) (types.Connection, error) {
+	r.Lock()
+	defer r.Unlock()
+	client, ok := r.clients[connectionID]
+	if !ok {
+		return types.Connection{}, fmt.Errorf(
+			"client for connection %s does not exist",
+			connectionID,
+		)
+	}
+	if err := r.factory.StopClient(ctx, client); err != nil {
+		return types.Connection{}, err
+	}
+	conn, ok := r.connections[connectionID]
+	if !ok {
+		return types.Connection{}, fmt.Errorf("connection %s does not exist", connectionID)
+	}
+	conn.LastRefresh = time.Time{}
+	conn.ExpiryTime = 0
+	r.connections[connectionID] = conn
+
+	return conn, nil
 }

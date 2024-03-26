@@ -16,56 +16,56 @@ const (
 )
 
 type InformerControllerAddPayload struct {
-	Data       map[string]interface{}
-	PluginID   string
-	Key        string
-	Connection string
-	ID         string
-	Namespace  string
+	Data       map[string]interface{} `json:"data"`
+	PluginID   string                 `json:"pluginId"`
+	Key        string                 `json:"key"`
+	Connection string                 `json:"connection"`
+	ID         string                 `json:"id"`
+	Namespace  string                 `json:"namespace"`
 }
 
 type InformerControllerUpdatePayload struct {
-	OldData    map[string]interface{}
-	NewData    map[string]interface{}
-	PluginID   string
-	Key        string
-	Connection string
-	ID         string
-	Namespace  string
+	OldData    map[string]interface{} `json:"oldData"`
+	NewData    map[string]interface{} `json:"newData"`
+	PluginID   string                 `json:"pluginId"`
+	Key        string                 `json:"key"`
+	Connection string                 `json:"connection"`
+	ID         string                 `json:"id"`
+	Namespace  string                 `json:"namespace"`
 }
 
 type InformerControllerDeletePayload struct {
-	Data       map[string]interface{}
-	PluginID   string
-	Key        string
-	Connection string
-	ID         string
-	Namespace  string
+	Data       map[string]interface{} `json:"data"`
+	PluginID   string                 `json:"pluginId"`
+	Key        string                 `json:"key"`
+	Connection string                 `json:"connection"`
+	ID         string                 `json:"id"`
+	Namespace  string                 `json:"namespace"`
 }
 
 type InformerAddPayload struct {
-	Data       map[string]interface{}
-	Key        string
-	Connection string
-	ID         string
-	Namespace  string
+	Data       map[string]interface{} `json:"data"`
+	Key        string                 `json:"key"`
+	Connection string                 `json:"connection"`
+	ID         string                 `json:"id"`
+	Namespace  string                 `json:"namespace"`
 }
 
 type InformerUpdatePayload struct {
-	OldData    map[string]interface{}
-	NewData    map[string]interface{}
-	Key        string
-	Connection string
-	ID         string
-	Namespace  string
+	OldData    map[string]interface{} `json:"oldData"`
+	NewData    map[string]interface{} `json:"newData"`
+	Key        string                 `json:"key"`
+	Connection string                 `json:"connection"`
+	ID         string                 `json:"id"`
+	Namespace  string                 `json:"namespace"`
 }
 
 type InformerDeletePayload struct {
-	Data       map[string]interface{}
-	Key        string
-	Connection string
-	ID         string
-	Namespace  string
+	Data       map[string]interface{} `json:"data"`
+	Key        string                 `json:"key"`
+	Connection string                 `json:"connection"`
+	ID         string                 `json:"id"`
+	Namespace  string                 `json:"namespace"`
 }
 
 type InformerPayload interface {

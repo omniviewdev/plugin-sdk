@@ -10,6 +10,7 @@ import "google/protobuf/wrappers.proto";
 option go_package = "./proto";
 
 
+// Connection represents a connection to a authenticate backend target.
 message Connection {
   string id = 1;
   string uid = 2;
@@ -22,21 +23,12 @@ message Connection {
   google.protobuf.Struct labels = 9;
 }
 
-
-message LoadConnectionsResponse {
+message ConnectionList {
   repeated Connection connections = 1;
 }
 
-message ListConnectionsResponse {
-  repeated Connection connections = 1;
-}
-
-message GetConnectionRequest {
+message ConnectionRequest {
   string id = 1;
-}
-
-message GetConnectionResponse {
-  Connection connection = 1;
 }
 
 message UpdateConnectionRequest {
@@ -45,12 +37,4 @@ message UpdateConnectionRequest {
   google.protobuf.StringValue description = 3;
   google.protobuf.StringValue avatar = 4;
   google.protobuf.Struct labels = 5;
-}
-
-message UpdateConnectionResponse {
-  Connection connection = 1;
-}
-
-message DeleteConnectionRequest {
-  string id = 1;
 }

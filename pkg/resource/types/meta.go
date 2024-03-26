@@ -1,5 +1,26 @@
 package types
 
+// ResourceGroup is a categorization of resources within a plugin. The only property
+// required is the ID, but it is highly recommended to provide a name and description
+// for the UI.
+type ResourceGroup struct {
+	// ID is the unique identifier of the resource group
+	ID string `json:"id"`
+
+	// Name is the name of the resource group
+	Name string `json:"name"`
+
+	// Description is the description of the resource group
+	Description string `json:"description"`
+
+	// Icon is an optional icon for the resource group. This can be either an icon name from the react-icons package,
+	// a data uri string, or a URL to the icon.
+	Icon string `json:"icon"`
+
+	// Resources is a map of resource versions to the resources in that version.
+	Resources map[string][]ResourceMeta `json:"resources"`
+}
+
 // ResourceMeta contains information about the categorization of a resource
 // within a specific plugin. This information is used to categorize resources
 // within the IDE and provide a consistent interface for plugins and the core
@@ -36,6 +57,14 @@ type ResourceMeta struct {
 	// - GCP Plugin: "ComputeEngineInstance", "StorageBucket", "SQLInstance"
 	// - Azure Plugin: "VirtualMachine", "StorageAccount", "SQLDatabase"
 	Kind string `json:"kind"`
+
+	// Label is a human-readable label of the resource. This is optional, and if not provided, the label will
+	// be set to the kind of the resource.
+	Label string `json:"label"`
+
+	// Icon is an optional icon for the resource. This can be either an icon name from the react-icons package,
+	// a data uri string, or a URL to the icon.
+	Icon string `json:"icon"`
 
 	// Description is a human-readable description of the resource. This is required for all resources.
 	//

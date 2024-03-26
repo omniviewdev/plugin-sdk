@@ -3,6 +3,10 @@ package types
 import "github.com/omniviewdev/plugin-sdk/pkg/types"
 
 type ResourceTypeProvider interface {
+	// GetResourceGroups returns the available groups
+	GetResourceGroups() map[string]ResourceGroup
+	// GetResourceGroup returns a group by name
+	GetResourceGroup(string) (ResourceGroup, error)
 	// GetResourceTypes returns the all of the available resource types for the resource manager
 	GetResourceTypes() map[string]ResourceMeta
 	// GetResourceType returns the resource type information by it's string representation
@@ -13,6 +17,12 @@ type ResourceTypeProvider interface {
 }
 
 type ResourceConnectionProvider interface {
+	// StartConnection starts a connection for the resource provider and begins signalling
+	// the resource provider to start syncing resources
+	StartConnection(ctx *types.PluginContext, connectionID string) (types.Connection, error)
+	// StopConnection stops a connection for the resource provider and stops signalling
+	// the resource provider to stop syncing resources
+	StopConnection(ctx *types.PluginContext, connectionID string) (types.Connection, error)
 	// LoadConnections loads the connections for the resource provider
 	LoadConnections(ctx *types.PluginContext) ([]types.Connection, error)
 	// ListConnections lists the connections for the resource provider
@@ -40,6 +50,8 @@ type ResourceInformerProvider interface {
 		updateStream chan InformerUpdatePayload,
 		deleteStream chan InformerDeletePayload,
 	) error
+	// HasInformer checks to see if the informer manager has an informer for the given connection.
+	HasInformer(ctx *types.PluginContext, connectionID string) bool
 }
 
 type ResourceOperationProvider interface {

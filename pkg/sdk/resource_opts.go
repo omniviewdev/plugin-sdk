@@ -12,6 +12,7 @@ type IResourcePluginOpts[CT, DT, IT any] interface {
 	HasDiscovery() (bool, error)
 	GetClientFactory() factories.ResourceClientFactory[CT]
 	GetResourcers() map[types.ResourceMeta]types.Resourcer[CT]
+	GetResourceGroups() []types.ResourceGroup
 	GetDiscoveryClientFactory() factories.ResourceDiscoveryClientFactory[DT]
 	GetDiscoveryFunc() func(*pkgtypes.PluginContext, *DT) ([]types.ResourceMeta, error)
 	HasInformer() bool
@@ -47,6 +48,10 @@ type ResourcePluginOpts[ClientT, DiscoveryClientT, InformerT any] struct {
 	// Resourcers is a map of resource metadata to resourcers that the plugin will manage.
 	Resourcers map[types.ResourceMeta]types.Resourcer[ClientT]
 
+	// ResourceGroups is an optional array of resource groups to provide more details about the groups that
+	// contain the resources. Is is highly recommended to provide this information to enrich the UI.
+	ResourceGroups []types.ResourceGroup
+
 	// InformerOpts allows for an additional set of custom options for setting up informers on the
 	// resource backend.
 	InformerOpts *types.InformerOptions[ClientT, InformerT]
@@ -78,6 +83,10 @@ func (opts ResourcePluginOpts[CT, DT, IT]) GetClientFactory() factories.Resource
 
 func (opts ResourcePluginOpts[CT, DT, IT]) GetResourcers() map[types.ResourceMeta]types.Resourcer[CT] {
 	return opts.Resourcers
+}
+
+func (opts ResourcePluginOpts[CT, DT, IT]) GetResourceGroups() []types.ResourceGroup {
+	return opts.ResourceGroups
 }
 
 func (opts ResourcePluginOpts[CT, DT, IT]) GetDiscoveryClientFactory() factories.ResourceDiscoveryClientFactory[DT] {

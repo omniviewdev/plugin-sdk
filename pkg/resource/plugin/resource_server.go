@@ -6,10 +6,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
@@ -33,15 +31,83 @@ func metaToProtoResourceMeta(meta types.ResourceMeta) *proto.ResourceMeta {
 	}
 }
 
+func groupToProtoResourceGroup(group types.ResourceGroup) *proto.ResourceGroup {
+	versioned := &proto.VersionedResourceTypes{
+		Versions: make(map[string]*proto.ResourceTypes),
+	}
+	for version, resources := range group.Resources {
+		v, ok := versioned.GetVersions()[version]
+		if !ok {
+			v = &proto.ResourceTypes{
+				Types: make([]*proto.ResourceMeta, 0, len(resources)),
+			}
+		}
+		for _, r := range resources {
+			v.Types = append(v.GetTypes(), metaToProtoResourceMeta(r))
+		}
+		versioned.Versions[version] = v
+	}
+
+	return &proto.ResourceGroup{
+		Id:          group.ID,
+		Name:        group.Name,
+		Description: group.Description,
+		Icon:        group.Icon,
+		Resources:   versioned,
+	}
+}
+
+func protoToResourceGroup(group *proto.ResourceGroup) types.ResourceGroup {
+	resources := make(map[string][]types.ResourceMeta)
+	for version, v := range group.GetResources().GetVersions() {
+		for _, r := range v.GetTypes() {
+			resources[version] = append(resources[version], protoToResourceMeta(r))
+		}
+	}
+	return types.ResourceGroup{
+		ID:          group.GetId(),
+		Name:        group.GetName(),
+		Description: group.GetDescription(),
+		Icon:        group.GetIcon(),
+		Resources:   resources,
+	}
+}
+
+func (s *ResourcePluginServer) GetResourceGroups(
+	_ context.Context,
+	_ *emptypb.Empty,
+) (*proto.ResourceGroupListResponse, error) {
+	resourceGroups := s.Impl.GetResourceGroups()
+	mapped := make(map[string]*proto.ResourceGroup, len(resourceGroups))
+
+	for id, g := range resourceGroups {
+		mapped[id] = groupToProtoResourceGroup(g)
+	}
+	return &proto.ResourceGroupListResponse{
+		Groups: mapped,
+	}, nil
+}
+
+func (s *ResourcePluginServer) GetResourceGroup(
+	_ context.Context,
+	in *proto.ResourceGroupRequest,
+) (*proto.ResourceGroup, error) {
+	group, err := s.Impl.GetResourceGroup(in.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get resource group: %s", err.Error())
+	}
+	return groupToProtoResourceGroup(group), nil
+}
+
 func (s *ResourcePluginServer) GetResourceTypes(
 	_ context.Context,
 	_ *emptypb.Empty,
 ) (*proto.ResourceTypes, error) {
 	resourceTypes := s.Impl.GetResourceTypes()
 
-	mapped := make(map[string]*proto.ResourceMeta, len(resourceTypes))
-	for id, t := range resourceTypes {
-		mapped[id] = metaToProtoResourceMeta(t)
+	mapped := make([]*proto.ResourceMeta, 0, len(resourceTypes))
+	for _, t := range resourceTypes {
+		mapped = append(mapped, metaToProtoResourceMeta(t))
 	}
 	return &proto.ResourceTypes{
 		Types: mapped,
@@ -65,196 +131,6 @@ func (s *ResourcePluginServer) HasResourceType(
 ) (*wrapperspb.BoolValue, error) {
 	resp := s.Impl.HasResourceType(in.GetId())
 	return &wrapperspb.BoolValue{Value: resp}, nil
-}
-
-func (s *ResourcePluginServer) LoadConnections(
-	ctx context.Context,
-	_ *emptypb.Empty,
-) (*proto.LoadConnectionsResponse, error) {
-	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
-
-	connections, err := s.Impl.LoadConnections(pluginCtx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to load connections: %s", err.Error())
-	}
-
-	mappedConnections := make([]*proto.Connection, 0, len(connections))
-	for _, conn := range connections {
-		data, err := structpb.NewStruct(conn.Data)
-		if err != nil {
-			return nil, status.Errorf(
-				codes.Internal,
-				"failed to convert connection data to struct: %s",
-				err.Error(),
-			)
-		}
-
-		labels, err := structpb.NewStruct(conn.Labels)
-		if err != nil {
-			return nil, status.Errorf(
-				codes.Internal,
-				"failed to convert connection labels to struct: %s",
-				err.Error(),
-			)
-		}
-
-		mappedConnections = append(mappedConnections, &proto.Connection{
-			Id:          conn.ID,
-			Uid:         conn.UID,
-			Name:        conn.Name,
-			Description: conn.Description,
-			Avatar:      conn.Avatar,
-			ExpiryTime:  durationpb.New(conn.ExpiryTime),
-			LastRefresh: timestamppb.New(conn.LastRefresh),
-			Labels:      labels,
-			Data:        data,
-		})
-	}
-
-	return &proto.LoadConnectionsResponse{
-		Connections: mappedConnections,
-	}, nil
-}
-
-func (s *ResourcePluginServer) ListConnections(
-	ctx context.Context,
-	_ *emptypb.Empty,
-) (*proto.ListConnectionsResponse, error) {
-	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
-
-	connections, err := s.Impl.ListConnections(pluginCtx)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to load connections: %s", err.Error())
-	}
-
-	mappedConnections := make([]*proto.Connection, 0, len(connections))
-	for _, conn := range connections {
-		data, err := structpb.NewStruct(conn.Data)
-		if err != nil {
-			return nil, status.Errorf(
-				codes.Internal,
-				"failed to convert connection data to struct: %s",
-				err.Error(),
-			)
-		}
-
-		labels, err := structpb.NewStruct(conn.Labels)
-		if err != nil {
-			return nil, status.Errorf(
-				codes.Internal,
-				"failed to convert connection labels to struct: %s",
-				err.Error(),
-			)
-		}
-
-		mappedConnections = append(mappedConnections, &proto.Connection{
-			Id:          conn.ID,
-			Uid:         conn.UID,
-			Name:        conn.Name,
-			Description: conn.Description,
-			Avatar:      conn.Avatar,
-			ExpiryTime:  durationpb.New(conn.ExpiryTime),
-			LastRefresh: timestamppb.New(conn.LastRefresh),
-			Labels:      labels,
-			Data:        data,
-		})
-	}
-
-	return &proto.ListConnectionsResponse{
-		Connections: mappedConnections,
-	}, nil
-}
-
-func (s *ResourcePluginServer) GetConnection(
-	ctx context.Context,
-	in *proto.GetConnectionRequest,
-) (*proto.Connection, error) {
-	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
-
-	conn, err := s.Impl.GetConnection(pluginCtx, in.GetId())
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get connection: %s", err.Error())
-	}
-	data, err := structpb.NewStruct(conn.Data)
-	if err != nil {
-		return nil, status.Errorf(
-			codes.Internal,
-			"failed to convert connection data to struct: %s",
-			err.Error(),
-		)
-	}
-	labels, err := structpb.NewStruct(conn.Labels)
-	if err != nil {
-		return nil, status.Errorf(
-			codes.Internal,
-			"failed to convert connection labels to struct: %s",
-			err.Error(),
-		)
-	}
-	return &proto.Connection{
-		Id:          conn.ID,
-		Uid:         conn.UID,
-		Name:        conn.Name,
-		Description: conn.Description,
-		Avatar:      conn.Avatar,
-		ExpiryTime:  durationpb.New(conn.ExpiryTime),
-		LastRefresh: timestamppb.New(conn.LastRefresh),
-		Labels:      labels,
-		Data:        data,
-	}, nil
-}
-
-func (s *ResourcePluginServer) UpdateConnection(
-	ctx context.Context,
-	in *proto.UpdateConnectionRequest,
-) (*proto.UpdateConnectionResponse, error) {
-	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
-
-	conn := pkgtypes.Connection{
-		ID: in.GetId(),
-	}
-	if in.GetName() != nil {
-		conn.Name = in.GetName().GetValue()
-	}
-	if in.GetDescription() != nil {
-		conn.Description = in.GetDescription().GetValue()
-	}
-	if in.GetAvatar() != nil {
-		conn.Avatar = in.GetAvatar().GetValue()
-	}
-
-	labels := in.GetLabels()
-	if labels != nil {
-		conn.Labels = labels.AsMap()
-	}
-
-	conn, err := s.Impl.UpdateConnection(pluginCtx, conn)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update connection: %s", err.Error())
-	}
-	return &proto.UpdateConnectionResponse{
-		Connection: &proto.Connection{
-			Id:          conn.ID,
-			Uid:         conn.UID,
-			Name:        conn.Name,
-			Description: conn.Description,
-			Avatar:      conn.Avatar,
-			ExpiryTime:  durationpb.New(conn.ExpiryTime),
-			LastRefresh: timestamppb.New(conn.LastRefresh),
-			Labels:      labels,
-		},
-	}, nil
-}
-
-func (s *ResourcePluginServer) DeleteConnection(
-	ctx context.Context,
-	in *proto.DeleteConnectionRequest,
-) (*emptypb.Empty, error) {
-	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
-	if err := s.Impl.DeleteConnection(pluginCtx, in.GetId()); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete connection: %s", err.Error())
-	}
-	return &emptypb.Empty{}, nil
 }
 
 func (s *ResourcePluginServer) Get(
@@ -425,6 +301,17 @@ func (s *ResourcePluginServer) Delete(
 	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
 }
 
+// ============================== Informer ============================== //
+
+func (s *ResourcePluginServer) HasInformer(
+	ctx context.Context,
+	in *proto.HasInformerRequest,
+) (*wrapperspb.BoolValue, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+	resp := s.Impl.HasInformer(pluginCtx, in.GetConnection())
+	return &wrapperspb.BoolValue{Value: resp}, nil
+}
+
 func (s *ResourcePluginServer) StartConnectionInformer(
 	ctx context.Context,
 	in *proto.StartConnectionInformerRequest,
@@ -550,8 +437,10 @@ func (s *ResourcePluginServer) ListenForEvents(
 	}
 }
 
+// ============================== Layout ============================== //
+
 func (s *ResourcePluginServer) GetLayout(
-	ctx context.Context,
+	_ context.Context,
 	in *proto.GetLayoutRequest,
 ) (*proto.Layout, error) {
 	layout, err := s.Impl.GetLayout(in.GetId())
@@ -572,7 +461,7 @@ func (s *ResourcePluginServer) GetLayout(
 }
 
 func (s *ResourcePluginServer) GetDefaultLayout(
-	ctx context.Context,
+	_ context.Context,
 	_ *emptypb.Empty,
 ) (*proto.Layout, error) {
 	layout, err := s.Impl.GetDefaultLayout()
@@ -593,7 +482,7 @@ func (s *ResourcePluginServer) GetDefaultLayout(
 }
 
 func (s *ResourcePluginServer) SetLayout(
-	ctx context.Context,
+	_ context.Context,
 	in *proto.SetLayoutRequest,
 ) (*emptypb.Empty, error) {
 	inlayout := in.GetLayout()
@@ -604,6 +493,187 @@ func (s *ResourcePluginServer) SetLayout(
 	}
 	if err := s.Impl.SetLayout(in.GetId(), layout); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to set layout: %s", err.Error())
+	}
+	return &emptypb.Empty{}, nil
+}
+
+// ============================== Connection ============================== //
+
+func (s *ResourcePluginServer) StartConnection(
+	ctx context.Context,
+	in *proto.ConnectionRequest,
+) (*proto.Connection, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	conn, err := s.Impl.StartConnection(pluginCtx, in.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to start connection: %s", err.Error())
+	}
+
+	protoconn, err := connectionToProto(conn)
+	if err != nil {
+		return nil, status.Errorf(
+			codes.Internal,
+			"failed to convert connection to proto: %s",
+			err.Error(),
+		)
+	}
+
+	return protoconn, err
+}
+
+func (s *ResourcePluginServer) StopConnection(
+	ctx context.Context,
+	in *proto.ConnectionRequest,
+) (*proto.Connection, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	conn, err := s.Impl.StopConnection(pluginCtx, in.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to stop connection: %s", err.Error())
+	}
+
+	protoconn, err := connectionToProto(conn)
+	if err != nil {
+		return nil, status.Errorf(
+			codes.Internal,
+			"failed to convert connection to proto: %s",
+			err.Error(),
+		)
+	}
+
+	return protoconn, err
+}
+
+func (s *ResourcePluginServer) LoadConnections(
+	ctx context.Context,
+	_ *emptypb.Empty,
+) (*proto.ConnectionList, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	connections, err := s.Impl.LoadConnections(pluginCtx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to load connections: %s", err.Error())
+	}
+
+	mappedConnections := make([]*proto.Connection, 0, len(connections))
+	for _, conn := range connections {
+		protoconn, err := connectionToProto(conn)
+		if err != nil {
+			return nil, status.Errorf(
+				codes.Internal,
+				"failed to convert connection to proto: %s",
+				err.Error(),
+			)
+		}
+		mappedConnections = append(mappedConnections, protoconn)
+	}
+
+	return &proto.ConnectionList{
+		Connections: mappedConnections,
+	}, nil
+}
+
+func (s *ResourcePluginServer) ListConnections(
+	ctx context.Context,
+	_ *emptypb.Empty,
+) (*proto.ConnectionList, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	connections, err := s.Impl.ListConnections(pluginCtx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to load connections: %s", err.Error())
+	}
+
+	mappedConnections := make([]*proto.Connection, 0, len(connections))
+	for _, conn := range connections {
+		protoconn, err := connectionToProto(conn)
+		if err != nil {
+			return nil, status.Errorf(
+				codes.Internal,
+				"failed to convert connection to proto: %s",
+				err.Error(),
+			)
+		}
+		mappedConnections = append(mappedConnections, protoconn)
+	}
+
+	return &proto.ConnectionList{
+		Connections: mappedConnections,
+	}, nil
+}
+
+func (s *ResourcePluginServer) GetConnection(
+	ctx context.Context,
+	in *proto.ConnectionRequest,
+) (*proto.Connection, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	conn, err := s.Impl.GetConnection(pluginCtx, in.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get connection: %s", err.Error())
+	}
+
+	protoconn, err := connectionToProto(conn)
+	if err != nil {
+		return nil, status.Errorf(
+			codes.Internal,
+			"failed to convert connection to proto: %s",
+			err.Error(),
+		)
+	}
+
+	return protoconn, err
+}
+
+func (s *ResourcePluginServer) UpdateConnection(
+	ctx context.Context,
+	in *proto.UpdateConnectionRequest,
+) (*proto.Connection, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+
+	conn := pkgtypes.Connection{
+		ID: in.GetId(),
+	}
+	if in.GetName() != nil {
+		conn.Name = in.GetName().GetValue()
+	}
+	if in.GetDescription() != nil {
+		conn.Description = in.GetDescription().GetValue()
+	}
+	if in.GetAvatar() != nil {
+		conn.Avatar = in.GetAvatar().GetValue()
+	}
+
+	labels := in.GetLabels()
+	if labels != nil {
+		conn.Labels = labels.AsMap()
+	}
+
+	conn, err := s.Impl.UpdateConnection(pluginCtx, conn)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to update connection: %s", err.Error())
+	}
+
+	protoconn, err := connectionToProto(conn)
+	if err != nil {
+		return nil, status.Errorf(
+			codes.Internal,
+			"failed to convert connection to proto: %s",
+			err.Error(),
+		)
+	}
+
+	return protoconn, err
+}
+
+func (s *ResourcePluginServer) DeleteConnection(
+	ctx context.Context,
+	in *proto.ConnectionRequest,
+) (*emptypb.Empty, error) {
+	pluginCtx := pkgtypes.NewPluginContextFromCtx(ctx)
+	if err := s.Impl.DeleteConnection(pluginCtx, in.GetId()); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to delete connection: %s", err.Error())
 	}
 	return &emptypb.Empty{}, nil
 }

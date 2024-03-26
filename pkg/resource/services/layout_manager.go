@@ -67,7 +67,7 @@ func generateItemsFromMetas(metas []types.ResourceMeta) []types.LayoutItem {
 		found := false
 		// make sure a layout item exists for the group
 		for idx, item := range items {
-			if item.ID == meta.Group {
+			if item.ID == meta.GetGroup() {
 				found = true
 				items[idx].Items = append(items[idx].Items, types.LayoutItem{
 					ID:          meta.String(),
@@ -80,11 +80,12 @@ func generateItemsFromMetas(metas []types.ResourceMeta) []types.LayoutItem {
 
 		if !found {
 			items = append(items, types.LayoutItem{
-				ID:    meta.Group,
-				Label: meta.Group,
+				ID:    meta.GetGroup(),
+				Label: meta.GetGroup(),
 				Items: []types.LayoutItem{},
 			})
 		}
 	}
+
 	return items
 }

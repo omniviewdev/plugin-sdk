@@ -9,6 +9,11 @@ import (
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
+const (
+	StartingGroupMapCapacity    = 10
+	StartingResourceMapCapacity = 10
+)
+
 // ResourceTypeManager is the interface for which resource type managers must implement.
 //
 // If a resource backend has a dynamic set of resource types that can change with each
@@ -19,6 +24,12 @@ import (
 // connection (for example, AWS, GCP, Azure, etc.), it should instantiate the
 // StaticResourceTypeManager.
 type ResourceTypeManager interface {
+	// GetGroups returns the grouped tree of resources available.
+	GetGroups() map[string]types.ResourceGroup
+
+	// GetGroup returns the group information by it's string representation
+	GetGroup(string) (types.ResourceGroup, error)
+
 	// GetResourceTypes returns the all of the available resource types for the resource manager
 	GetResourceTypes() map[string]types.ResourceMeta
 
@@ -45,6 +56,9 @@ type ResourceTypeManager interface {
 // a static set of resource types that does not change with each connection, for example, AWS,
 // GCP, Azure, etc.
 type StaticResourceTypeManager struct {
+	// resourceGroups is a list of resource groups for the resource manager
+	groups map[string]types.ResourceGroup
+
 	// resourceTypes is a map of available resource types for the resource manager
 	resourceTypes map[string]types.ResourceMeta
 
@@ -59,22 +73,83 @@ type StaticResourceTypeManager struct {
 // For example, AWS, GCP, Azure, etc.
 func NewStaticResourceTypeManager(
 	resourceTypes []types.ResourceMeta,
+	resourceGroups []types.ResourceGroup,
 ) ResourceTypeManager {
-	manager := newStaticResourceTypeManager(resourceTypes)
+	manager := newStaticResourceTypeManager(resourceTypes, resourceGroups)
 	return manager
 }
 
 func newStaticResourceTypeManager(
 	resourceTypes []types.ResourceMeta,
+	resourceGroups []types.ResourceGroup,
 ) *StaticResourceTypeManager {
 	resourceTypesMap := make(map[string]types.ResourceMeta)
 	for _, resource := range resourceTypes {
 		resourceTypesMap[resource.String()] = resource
 	}
 	return &StaticResourceTypeManager{
+		groups:                  addResourcesToGroups(resourceGroups, resourceTypes),
 		resourceTypes:           resourceTypesMap,
 		namespacedResourceTypes: make(map[string][]types.ResourceMeta),
 	}
+}
+
+func addResourcesToGroups(
+	groups []types.ResourceGroup,
+	resourceTypes []types.ResourceMeta,
+) map[string]types.ResourceGroup {
+	groupsMap := make(map[string]types.ResourceGroup, StartingGroupMapCapacity)
+
+	for _, group := range groups {
+		if _, ok := groupsMap[group.ID]; !ok {
+			group.Resources = make(map[string][]types.ResourceMeta)
+			groupsMap[group.ID] = group
+		}
+	}
+
+	for _, resource := range resourceTypes {
+		groupID := resource.GetGroup()
+
+		// check if the group exists
+		group, ok := groupsMap[groupID]
+		if !ok {
+			// didn't declare the group - make a minimal one
+			group = types.ResourceGroup{
+				ID:        groupID,
+				Name:      groupID,
+				Resources: make(map[string][]types.ResourceMeta),
+			}
+		}
+
+		// check for version
+		if _, ok := group.Resources[resource.Version]; !ok {
+			group.Resources[resource.Version] = make(
+				[]types.ResourceMeta,
+				0,
+				StartingResourceMapCapacity,
+			)
+		}
+
+		group.Resources[resource.Version] = append(group.Resources[resource.Version], resource)
+		groupsMap[groupID] = group
+	}
+
+	return groupsMap
+}
+
+func (r *StaticResourceTypeManager) GetGroups() map[string]types.ResourceGroup {
+	r.RLock()
+	defer r.RUnlock()
+	return r.groups
+}
+
+func (r *StaticResourceTypeManager) GetGroup(s string) (types.ResourceGroup, error) {
+	r.RLock()
+	defer r.RUnlock()
+	if group, ok := r.groups[s]; ok {
+		return group, nil
+	}
+	return types.ResourceGroup{}, fmt.Errorf("group %s does not exist", s)
 }
 
 func (r *StaticResourceTypeManager) GetResourceTypes() map[string]types.ResourceMeta {
@@ -192,12 +267,14 @@ type DynamicResourceTypeManager[DiscoveryClientT any] struct {
 // used with the the resource backend, given a client factory and a sync function.
 func NewDynamicResourceTypeManager[DiscoveryClientT any](
 	resourceTypes []types.ResourceMeta,
+	resourceGroups []types.ResourceGroup,
 	factory factories.ResourceDiscoveryClientFactory[DiscoveryClientT],
 	syncer func(ctx *pkgtypes.PluginContext, client *DiscoveryClientT) ([]types.ResourceMeta, error),
 ) ResourceTypeManager {
 	return &DynamicResourceTypeManager[DiscoveryClientT]{
 		StaticResourceTypeManager: newStaticResourceTypeManager(
 			resourceTypes,
+			resourceGroups,
 		),
 		clientFactory: factory,
 		clients:       make(map[string]*DiscoveryClientT),

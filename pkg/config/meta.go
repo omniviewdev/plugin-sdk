@@ -33,6 +33,7 @@ type PluginMeta struct {
 	Dependencies []string           `json:"dependencies" yaml:"dependencies"`
 	Capabilities []string           `json:"capabilities" yaml:"capabilities"`
 	Theme        PluginTheme        `json:"theme"        yaml:"theme"`
+	Components   PluginComponents   `json:"components"   yaml:"components"`
 }
 
 type PluginMaintainer struct {
@@ -46,6 +47,24 @@ type PluginTheme struct {
 		Secondary string `json:"secondary" yaml:"secondary"`
 		Tertiary  string `json:"tertiary"  yaml:"tertiary"`
 	} `json:"colors" yaml:"colors"`
+}
+
+type PluginComponents struct {
+	Resource []PluginResourceComponent `json:"resource" yaml:"resource"`
+}
+
+type PluginComponentArea string
+
+const (
+	PluginComponentAreaEditor  PluginComponentArea = "EDITOR"
+	PluginComponentAreaSidebar PluginComponentArea = "SIDEBAR"
+)
+
+type PluginResourceComponent struct {
+	Name      string              `json:"name"      yaml:"name"`
+	Plugin    string              `json:"plugin"    yaml:"plugin"`
+	Area      PluginComponentArea `json:"area"      yaml:"area"`
+	Resources []string            `json:"resources" yaml:"resources"`
 }
 
 func (c *PluginMeta) Load(reader io.Reader) error {

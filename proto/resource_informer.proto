@@ -9,6 +9,9 @@ import "google/protobuf/wrappers.proto";
 
 option go_package = "./proto";
 
+message HasInformerRequest {
+  string connection = 1;
+}
 
 message StartConnectionInformerRequest {
   string key = 1;

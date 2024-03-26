@@ -162,12 +162,16 @@ func RegisterResourcePlugin[ClientT, DiscoveryT, InformerT any](
 		// dynamic resource plugin
 		typeManager = services.NewDynamicResourceTypeManager(
 			metas,
+			opts.GetResourceGroups(),
 			opts.GetDiscoveryClientFactory(),
 			opts.GetDiscoveryFunc(),
 		)
 	} else {
 		// static resource plugin
-		typeManager = services.NewStaticResourceTypeManager(metas)
+		typeManager = services.NewStaticResourceTypeManager(
+			metas,
+			opts.GetResourceGroups(),
+		)
 	}
 
 	// create the layouts

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"log"
 
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
@@ -37,6 +39,29 @@ func protoToConnection(conn *proto.Connection) pkgtypes.Connection {
 	}
 }
 
+func connectionToProto(conn pkgtypes.Connection) (*proto.Connection, error) {
+	data, err := structpb.NewStruct(conn.Data)
+	if err != nil {
+		return nil, err
+	}
+	labels, err := structpb.NewStruct(conn.Labels)
+	if err != nil {
+		return nil, err
+	}
+
+	return &proto.Connection{
+		Id:          conn.ID,
+		Uid:         conn.UID,
+		Name:        conn.Name,
+		Description: conn.Description,
+		Avatar:      conn.Avatar,
+		ExpiryTime:  durationpb.New(conn.ExpiryTime),
+		LastRefresh: timestamppb.New(conn.LastRefresh),
+		Data:        data,
+		Labels:      labels,
+	}, nil
+}
+
 func protoToResourceMeta(meta *proto.ResourceMeta) types.ResourceMeta {
 	return types.ResourceMeta{
 		Group:       meta.GetGroup(),
@@ -62,18 +87,58 @@ func protoToLayoutItem(item *proto.LayoutItem) types.LayoutItem {
 	}
 }
 
-func layoutItemToProto(item types.LayoutItem) *proto.LayoutItem {
-	items := make([]*proto.LayoutItem, 0, len(item.Items))
-	for _, i := range item.Items {
-		items = append(items, layoutItemToProto(i))
+// func layoutItemToProto(item types.LayoutItem) *proto.LayoutItem {
+// 	items := make([]*proto.LayoutItem, 0, len(item.Items))
+// 	for _, i := range item.Items {
+// 		items = append(items, layoutItemToProto(i))
+// 	}
+// 	return &proto.LayoutItem{
+// 		Id:          item.ID,
+// 		Label:       item.Label,
+// 		Description: item.Description,
+// 		Icon:        item.Icon,
+// 		Items:       items,
+// 	}
+// }
+
+// ============================== Resource Types ============================== //
+
+func (r *ResourcePluginClient) GetResourceGroups() map[string]types.ResourceGroup {
+	resp, err := r.client.GetResourceGroups(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		log.Print("err", err)
+		return nil
 	}
-	return &proto.LayoutItem{
-		Id:          item.ID,
-		Label:       item.Label,
-		Description: item.Description,
-		Icon:        item.Icon,
-		Items:       items,
+	result := make(map[string]types.ResourceGroup)
+
+	for id, g := range resp.GetGroups() {
+		versioned := g.GetResources()
+		versions := make(map[string][]types.ResourceMeta)
+
+		for _, rts := range versioned.GetVersions() {
+			for _, t := range rts.GetTypes() {
+				v, ok := versions[t.GetVersion()]
+				if !ok {
+					v = make([]types.ResourceMeta, 0, len(rts.GetTypes()))
+				}
+				v = append(v, protoToResourceMeta(t))
+				versions[t.GetVersion()] = v
+			}
+		}
+
+		result[id] = types.ResourceGroup{
+			ID:          g.GetId(),
+			Name:        g.GetName(),
+			Description: g.GetDescription(),
+			Icon:        g.GetIcon(),
+			Resources:   versions,
+		}
 	}
+	return result
+}
+
+func (r *ResourcePluginClient) GetResourceGroup(id string) (types.ResourceGroup, error) {
+	panic("not implemented")
 }
 
 func (r *ResourcePluginClient) GetResourceTypes() map[string]types.ResourceMeta {
@@ -83,8 +148,8 @@ func (r *ResourcePluginClient) GetResourceTypes() map[string]types.ResourceMeta 
 		return nil
 	}
 	result := make(map[string]types.ResourceMeta)
-	for id, t := range resp.GetTypes() {
-		result[id] = protoToResourceMeta(t)
+	for _, t := range resp.GetTypes() {
+		result[t.GetKind()] = protoToResourceMeta(t)
 	}
 	return result
 }
@@ -106,83 +171,7 @@ func (r *ResourcePluginClient) HasResourceType(id string) bool {
 	return resp.GetValue()
 }
 
-func (r *ResourcePluginClient) LoadConnections(
-	ctx *pkgtypes.PluginContext,
-) ([]pkgtypes.Connection, error) {
-	connections, err := r.client.LoadConnections(ctx.Context, &emptypb.Empty{})
-	if err != nil {
-		return nil, err
-	}
-	returned := connections.GetConnections()
-
-	result := make([]pkgtypes.Connection, 0, len(returned))
-	for _, conn := range returned {
-		result = append(result, protoToConnection(conn))
-	}
-
-	return result, nil
-}
-
-func (r *ResourcePluginClient) ListConnections(
-	ctx *pkgtypes.PluginContext,
-) ([]pkgtypes.Connection, error) {
-	connections, err := r.client.ListConnections(ctx.Context, &emptypb.Empty{})
-	if err != nil {
-		return nil, err
-	}
-	returned := connections.GetConnections()
-	result := make([]pkgtypes.Connection, 0, len(returned))
-	for _, conn := range returned {
-		result = append(result, protoToConnection(conn))
-	}
-	return result, nil
-}
-
-func (r *ResourcePluginClient) GetConnection(
-	ctx *pkgtypes.PluginContext,
-	id string,
-) (pkgtypes.Connection, error) {
-	conn, err := r.client.GetConnection(ctx.Context, &proto.GetConnectionRequest{
-		Id: id,
-	})
-	if err != nil {
-		return pkgtypes.Connection{}, err
-	}
-	return protoToConnection(conn), nil
-}
-
-func (r *ResourcePluginClient) UpdateConnection(
-	ctx *pkgtypes.PluginContext,
-	conn pkgtypes.Connection,
-) (pkgtypes.Connection, error) {
-	labels, err := structpb.NewStruct(conn.Labels)
-	if err != nil {
-		return pkgtypes.Connection{}, err
-	}
-
-	resp, err := r.client.UpdateConnection(ctx.Context, &proto.UpdateConnectionRequest{
-		Id:          conn.ID,
-		Name:        wrapperspb.String(conn.Name),
-		Description: wrapperspb.String(conn.Description),
-		Avatar:      wrapperspb.String(conn.Avatar),
-		Labels:      labels,
-	})
-	if err != nil {
-		return pkgtypes.Connection{}, err
-	}
-
-	return protoToConnection(resp.GetConnection()), nil
-}
-
-func (r *ResourcePluginClient) DeleteConnection(
-	ctx *pkgtypes.PluginContext,
-	id string,
-) error {
-	_, err := r.client.DeleteConnection(ctx.Context, &proto.DeleteConnectionRequest{
-		Id: id,
-	})
-	return err
-}
+// ============================== Operations ============================== //
 
 func (r *ResourcePluginClient) Get(
 	ctx *pkgtypes.PluginContext,
@@ -347,6 +336,21 @@ func (r *ResourcePluginClient) Delete(
 	}, nil
 }
 
+// ============================== Informer ============================== //
+
+func (r *ResourcePluginClient) HasInformer(
+	_ *pkgtypes.PluginContext,
+	connectionID string,
+) bool {
+	resp, err := r.client.HasInformer(context.Background(), &proto.HasInformerRequest{
+		Connection: connectionID,
+	})
+	if err != nil {
+		return false
+	}
+	return resp.GetValue()
+}
+
 func (r *ResourcePluginClient) StartConnectionInformer(
 	ctx *pkgtypes.PluginContext,
 	connectionID string,
@@ -431,6 +435,8 @@ func (r *ResourcePluginClient) ListenForEvents(
 	}
 }
 
+// ============================== Layout ============================== //
+
 func (r *ResourcePluginClient) GetLayout(layoutID string) ([]types.LayoutItem, error) {
 	resp, err := r.client.GetLayout(context.Background(), &proto.GetLayoutRequest{
 		Id: layoutID,
@@ -457,6 +463,112 @@ func (r *ResourcePluginClient) GetDefaultLayout() ([]types.LayoutItem, error) {
 	return result, nil
 }
 
-func (r *ResourcePluginClient) SetLayout(id string, layout []types.LayoutItem) error {
+func (r *ResourcePluginClient) SetLayout(_ string, _ []types.LayoutItem) error {
 	panic("not implemented")
+}
+
+// ============================== Connection ============================== //
+
+func (r *ResourcePluginClient) StartConnection(
+	ctx *pkgtypes.PluginContext,
+	connectionID string,
+) (pkgtypes.Connection, error) {
+	conn, err := r.client.StartConnection(ctx.Context, &proto.ConnectionRequest{
+		Id: connectionID,
+	})
+	if err != nil {
+		return pkgtypes.Connection{}, err
+	}
+	return protoToConnection(conn), nil
+}
+
+func (r *ResourcePluginClient) StopConnection(
+	ctx *pkgtypes.PluginContext,
+	connectionID string,
+) (pkgtypes.Connection, error) {
+	conn, err := r.client.StopConnection(ctx.Context, &proto.ConnectionRequest{
+		Id: connectionID,
+	})
+	if err != nil {
+		return pkgtypes.Connection{}, err
+	}
+	return protoToConnection(conn), nil
+}
+
+func (r *ResourcePluginClient) LoadConnections(
+	ctx *pkgtypes.PluginContext,
+) ([]pkgtypes.Connection, error) {
+	connections, err := r.client.LoadConnections(ctx.Context, &emptypb.Empty{})
+	if err != nil {
+		return nil, err
+	}
+	returned := connections.GetConnections()
+
+	result := make([]pkgtypes.Connection, 0, len(returned))
+	for _, conn := range returned {
+		result = append(result, protoToConnection(conn))
+	}
+
+	return result, nil
+}
+
+func (r *ResourcePluginClient) ListConnections(
+	ctx *pkgtypes.PluginContext,
+) ([]pkgtypes.Connection, error) {
+	connections, err := r.client.ListConnections(ctx.Context, &emptypb.Empty{})
+	if err != nil {
+		return nil, err
+	}
+	returned := connections.GetConnections()
+	result := make([]pkgtypes.Connection, 0, len(returned))
+	for _, conn := range returned {
+		result = append(result, protoToConnection(conn))
+	}
+	return result, nil
+}
+
+func (r *ResourcePluginClient) GetConnection(
+	ctx *pkgtypes.PluginContext,
+	id string,
+) (pkgtypes.Connection, error) {
+	conn, err := r.client.GetConnection(ctx.Context, &proto.ConnectionRequest{
+		Id: id,
+	})
+	if err != nil {
+		return pkgtypes.Connection{}, err
+	}
+	return protoToConnection(conn), nil
+}
+
+func (r *ResourcePluginClient) UpdateConnection(
+	ctx *pkgtypes.PluginContext,
+	conn pkgtypes.Connection,
+) (pkgtypes.Connection, error) {
+	labels, err := structpb.NewStruct(conn.Labels)
+	if err != nil {
+		return pkgtypes.Connection{}, err
+	}
+
+	resp, err := r.client.UpdateConnection(ctx.Context, &proto.UpdateConnectionRequest{
+		Id:          conn.ID,
+		Name:        wrapperspb.String(conn.Name),
+		Description: wrapperspb.String(conn.Description),
+		Avatar:      wrapperspb.String(conn.Avatar),
+		Labels:      labels,
+	})
+	if err != nil {
+		return pkgtypes.Connection{}, err
+	}
+
+	return protoToConnection(resp), nil
+}
+
+func (r *ResourcePluginClient) DeleteConnection(
+	ctx *pkgtypes.PluginContext,
+	id string,
+) error {
+	_, err := r.client.DeleteConnection(ctx.Context, &proto.ConnectionRequest{
+		Id: id,
+	})
+	return err
 }

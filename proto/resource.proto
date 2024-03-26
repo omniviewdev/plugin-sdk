@@ -107,26 +107,50 @@ message ResourceMeta {
   string category = 5;
 }
 
+message ResourceGroup {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string icon = 4;
+  VersionedResourceTypes resources = 5;
+}
+
 message ResourceTypes {
-  map<string, ResourceMeta> types = 1;
+  repeated ResourceMeta types = 1;
+}
+
+message VersionedResourceTypes {
+  map<string, ResourceTypes> versions = 1;
 }
 
 message ResourceTypeRequest {
   string id = 1;
 }
 
+message ResourceGroupRequest {
+  string id = 1;
+}
+
+message ResourceGroupListResponse {
+  map<string, ResourceGroup> groups = 1;
+}
+
 
 service ResourcePlugin {
   // Types
+  rpc GetResourceGroups(google.protobuf.Empty) returns (ResourceGroupListResponse) {}
+  rpc GetResourceGroup(ResourceGroupRequest) returns (ResourceGroup) {}
   rpc GetResourceTypes(google.protobuf.Empty) returns (ResourceTypes) {}
   rpc GetResourceType(ResourceTypeRequest) returns (ResourceMeta) {}
   rpc HasResourceType(ResourceTypeRequest) returns (google.protobuf.BoolValue) {}
   // Connection
-  rpc LoadConnections(google.protobuf.Empty) returns (LoadConnectionsResponse) {}
-  rpc ListConnections(google.protobuf.Empty) returns (ListConnectionsResponse) {}
-  rpc GetConnection(GetConnectionRequest) returns (Connection) {}
-  rpc UpdateConnection(UpdateConnectionRequest) returns (UpdateConnectionResponse) {}
-  rpc DeleteConnection(DeleteConnectionRequest) returns (google.protobuf.Empty) {}
+  rpc StartConnection(ConnectionRequest) returns (Connection) {}
+  rpc StopConnection(ConnectionRequest) returns (Connection) {}
+  rpc LoadConnections(google.protobuf.Empty) returns (ConnectionList) {}
+  rpc ListConnections(google.protobuf.Empty) returns (ConnectionList) {}
+  rpc GetConnection(ConnectionRequest) returns (Connection) {}
+  rpc UpdateConnection(UpdateConnectionRequest) returns (Connection) {}
+  rpc DeleteConnection(ConnectionRequest) returns (google.protobuf.Empty) {}
   // Resource
   rpc Get(GetRequest) returns (GetResponse) {}
   rpc List(ListRequest) returns (ListResponse) {}
@@ -135,6 +159,7 @@ service ResourcePlugin {
   rpc Update(UpdateRequest) returns (UpdateResponse) {}
   rpc Delete(DeleteRequest) returns (DeleteResponse) {}
   // Informers 
+  rpc HasInformer(HasInformerRequest) returns (google.protobuf.BoolValue) {}
   rpc StartConnectionInformer(StartConnectionInformerRequest) returns (google.protobuf.Empty) {}
   rpc StopConnectionInformer(StopConnectionInformerRequest) returns (google.protobuf.Empty) {}
   rpc ListenForEvents(google.protobuf.Empty) returns (stream InformerEvent) {}
