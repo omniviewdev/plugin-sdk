@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 
 	"github.com/hashicorp/go-plugin"
 	"gopkg.in/yaml.v3"
@@ -24,19 +25,84 @@ type PluginMeta struct {
 	Version      string             `json:"version"      yaml:"version"`
 	Name         string             `json:"name"         yaml:"name"`
 	Icon         string             `json:"icon"         yaml:"icon"`
+	IconURL      string             `json:"icon_url"     yaml:"icon_url,omitempty"`
 	Description  string             `json:"description"  yaml:"description"`
 	Repository   string             `json:"repository"   yaml:"repository"`
 	Website      string             `json:"website"      yaml:"website"`
+	Category     string             `json:"category"     yaml:"category,omitempty"`
+	License      string             `json:"license"      yaml:"license,omitempty"`
 	Markdown     string             `json:"-"            yaml:"-"`
+	Author       *PluginAuthor      `json:"author,omitempty"      yaml:"author,omitempty"`
 	Maintainers  []PluginMaintainer `json:"maintainers"  yaml:"maintainers"`
 	Tags         []string           `json:"tags"         yaml:"tags"`
 	Dependencies []string           `json:"dependencies" yaml:"dependencies"`
 	Capabilities []string           `json:"capabilities" yaml:"capabilities"`
+	Theme        PluginTheme        `json:"theme"        yaml:"theme"`
+	Components   PluginComponents   `json:"components"   yaml:"components"`
+}
+
+// HasUICapabilities checks if the plugin has UI capabilities. This is used
+// to verify plugin loading and staring.
+func (m *PluginMeta) HasUICapabilities() bool {
+	for _, capability := range m.Capabilities {
+		if capability == "ui" {
+			return true
+		}
+	}
+	return false
+}
+
+// HasBackendCapabilities checks if the plugin has UI capabilities. This is used
+// to verify plugin loading and staring.
+func (m *PluginMeta) HasBackendCapabilities() bool {
+	caps := []string{"resource", "exec", "networker", "settings", "log", "metric"}
+
+	for _, capability := range m.Capabilities {
+		if slices.Contains(caps, capability) {
+			return true
+		}
+	}
+	return false
 }
 
 type PluginMaintainer struct {
 	Name  string `json:"name"  yaml:"name"`
 	Email string `json:"email" yaml:"email"`
+}
+
+type PluginAuthor struct {
+	Name  string `json:"name"  yaml:"name"`
+	Email string `json:"email" yaml:"email,omitempty"`
+	URL   string `json:"url"   yaml:"url,omitempty"`
+}
+
+type PluginThemeColors struct {
+	Primary   string `json:"primary"   yaml:"primary"`
+	Secondary string `json:"secondary" yaml:"secondary"`
+	Tertiary  string `json:"tertiary"  yaml:"tertiary"`
+}
+
+type PluginTheme struct {
+	Colors PluginThemeColors `json:"colors" yaml:"colors"`
+}
+
+type PluginComponents struct {
+	Resource []PluginResourceComponent `json:"resource" yaml:"resource"`
+}
+
+type PluginComponentArea string
+
+const (
+	PluginComponentAreaEditor  PluginComponentArea = "EDITOR"
+	PluginComponentAreaSidebar PluginComponentArea = "SIDEBAR"
+)
+
+type PluginResourceComponent struct {
+	Name           string              `json:"name"      yaml:"name"`
+	Plugin         string              `json:"plugin"    yaml:"plugin"`
+	Area           PluginComponentArea `json:"area"      yaml:"area"`
+	Resources      []string            `json:"resources" yaml:"resources"`
+	ExtensionPoint string              `json:"extension" yaml:"extension"`
 }
 
 func (c *PluginMeta) Load(reader io.Reader) error {

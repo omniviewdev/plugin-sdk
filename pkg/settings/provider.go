@@ -1,169 +1,63 @@
 package settings
 
-import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"reflect"
-	"sync"
+import "github.com/omniviewdev/plugin-sdk/settings"
 
-	"github.com/pkg/errors"
-)
-
-// Provider is an interface for a settings provider that can be used to
-// get and set settings for a plugin.
+// Provider is the interface that must be implemented by the settings provider
+// plugin implementations on either side of the RPC.
 type Provider interface {
-	// List the settings from the provider.
-	List() ([]interface{}, error)
+	// ListSettings returns the settings store
+	ListSettings() map[string]settings.Setting
 
-	// GetSingleValue returns the string value for the given key
-	GetSingleValue(key string) (string, error)
+	// GetSetting returns the setting by ID. This ID should be in the form of a dot separated string
+	// that represents the path to the setting. For example, "appearance.theme"
+	GetSetting(id string) (settings.Setting, error)
 
-	// GetMultivalue returns the array of values for the given key
-	GetMultiValue(key string) ([]string, error)
+	// GetSettingValue returns the value of the setting by ID
+	GetSettingValue(id string) (any, error)
 
-	// Set the settings in the provider, this will also save the settings to the users local store
-	SetSingleValue(key, value string) error
+	// SetSetting sets the value of the setting by ID
+	SetSetting(id string, value any) error
 
-	// SetMultiValue sets the array of values for the given key
-	SetMultiValue(key string, values []string) error
-
-	// Load the settings from the users local store
-	Load() error
+	// SetSettings sets multiple settings at once
+	SetSettings(settings map[string]any) error
 }
 
 type provider struct {
-	sync.Mutex
-	settings []interface{}
-	values   map[string]interface{}
+	base settings.Provider
 }
 
-func (p *provider) List() ([]interface{}, error) {
-	return p.settings, nil
+// NewProviderWrapper wraps the settings provider to allow for the scoped
+// semantics of using the same setting provider for the core and for the
+// plugins
+//
+// TODO - this is a bit messy and should be refactored. It'll do for now,
+// as we're just trying to get the plugin system working for the time being.
+func NewProviderWrapper(base settings.Provider) Provider {
+	return &provider{base: base}
 }
 
-func (p *provider) save() error {
-	// prevent concurrent writes
-	p.Lock()
-	defer p.Unlock()
-
-	file, err := os.OpenFile("./store/settings.json", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	// clear out the file before writing to it
-	if err = file.Truncate(0); err != nil {
-		return err
-	}
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "    ")
-	return encoder.Encode(p.values)
-}
-
-// set any defaults that haven't already been set from an already loaded settings file.
-func (p *provider) defaulter(force bool) {
-	if p.values == nil {
-		p.values = make(map[string]interface{})
-	}
-
-	for _, setting := range p.settings {
-		switch s := setting.(type) {
-		case Select:
-			if _, ok := p.values[s.ID]; !ok || force {
-				p.values[s.ID] = s.Default
-			}
-		case Multiselect:
-			if _, ok := p.values[s.ID]; !ok || force {
-				p.values[s.ID] = s.Default
-			}
-		case Text:
-			if _, ok := p.values[s.ID]; !ok || force {
-				p.values[s.ID] = s.Default
-			}
-		case Multitext:
-			if _, ok := p.values[s.ID]; !ok || force {
-				p.values[s.ID] = s.Default
-			}
-		case KV:
-			if _, ok := p.values[s.ID]; !ok || force {
-				p.values[s.ID] = s.Default
-			}
-		default:
-			panic(fmt.Sprintf("Unknown setting type: %v", reflect.TypeOf(setting)))
-		}
-	}
-	if err := p.save(); err != nil {
-		panic(err)
-	}
-}
-
-func (p *provider) Load() error {
-	// get the settings from the current directory in ./store/settings.json
-	// if the file does not exist, create it
-	if err := os.MkdirAll("./store", 0755); err != nil {
-		return err
-	}
-	file, err := os.OpenFile("./store/settings.json", os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	// load the settings from the file
-	if err = json.NewDecoder(file).Decode(&p.values); err != nil {
-		// if the file is empty, set the defaults and save the file
-		return err
-	}
-	return nil
-}
-
-func (p *provider) SetSingleValue(key, value string) error {
-	_, ok := p.values[key].(string)
+func (p *provider) ListSettings() map[string]settings.Setting {
+	store := p.base.ListSettings()
+	// will always be at "plugin" key
+	found, ok := store["plugin"]
 	if !ok {
-		return errors.New("value is not a string")
+		return nil
 	}
-	p.values[key] = value
-	return p.save()
+	return found.Settings
 }
 
-func (p *provider) GetSingleValue(key string) (string, error) {
-	val, ok := p.values[key].(string)
-	if !ok {
-		return "", errors.New("value is not a string")
-	}
-	return val, nil
+func (p *provider) GetSetting(id string) (settings.Setting, error) {
+	return p.base.GetSetting(id)
 }
 
-func (p *provider) SetMultiValue(key string, values []string) error {
-	_, ok := p.values[key].([]string)
-	if !ok {
-		return errors.New("value is not an array")
-	}
-	p.values[key] = values
-	return p.save()
+func (p *provider) GetSettingValue(id string) (any, error) {
+	return p.base.GetSettingValue(id)
 }
 
-func (p *provider) GetMultiValue(key string) ([]string, error) {
-	val, ok := p.values[key].([]string)
-	if !ok {
-		return nil, errors.New("value is not an array")
-	}
-	return val, p.save()
+func (p *provider) SetSetting(id string, value any) error {
+	return p.base.SetSetting(id, value)
 }
 
-// NewSettingsProvider creates a new settings provider with the given settings.
-func NewSettingsProvider(settings []interface{}) Provider {
-	provider := &provider{
-		settings: settings,
-		values:   make(map[string]interface{}),
-	}
-
-	if err := provider.Load(); err != nil {
-		provider.defaulter(true)
-	}
-
-	return provider
+func (p *provider) SetSettings(settings map[string]any) error {
+	return p.base.SetSettings(settings)
 }
