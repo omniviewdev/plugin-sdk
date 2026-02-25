@@ -5,12 +5,13 @@ import (
 	"io"
 	"os"
 
-	"github.com/hashicorp/go-plugin"
 	"gopkg.in/yaml.v3"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
 )
 
+// PluginType is the legacy integer enum for plugin capabilities.
+// Deprecated: Use Capability instead.
 type PluginType int
 
 const (
@@ -20,7 +21,7 @@ const (
 	MetricPlugin
 	ReporterPlugin
 	ResourcePlugin
-	SettingsPlugin // Special plugin capabity that allow for settings to be defined
+	SettingsPlugin
 	NetworkerPlugin
 	UIPlugin
 )
@@ -54,20 +55,45 @@ func (pt PluginType) MarshalText() ([]byte, error) {
 	return []byte(pt.String()), nil
 }
 
-// Plugin represents a plugin that is installed and managed by the plugin manager.
+// ToCapability converts a legacy PluginType to the new Capability type.
+func (pt PluginType) ToCapability() Capability {
+	return Capability(pt.String())
+}
+
+// PluginInfo represents the display/API-facing view of a plugin.
+// This type is safe to serialize to JSON for the frontend.
+// Runtime fields (RPCClient, PluginClient) live in the host-only PluginRecord.
+type PluginInfo struct {
+	ID           string            `json:"id"`
+	Metadata     config.PluginMeta `json:"metadata"`
+	Phase        string            `json:"phase"`
+	Enabled      bool              `json:"enabled"`
+	DevMode      bool              `json:"devMode"`
+	DevPath      string            `json:"devPath,omitempty"`
+	Capabilities []Capability      `json:"capabilities"`
+	LastError    string            `json:"lastError,omitempty"`
+}
+
+// Plugin is the legacy type that combines display + runtime state.
+// Deprecated: New code should use PluginInfo for display and
+// host-side PluginRecord for runtime state.
 type Plugin struct {
-	ID           string                `json:"id"`
-	Metadata     config.PluginMeta     `json:"metadata"`
-	Config       config.PluginConfig   `json:"-"`
-	Enabled      bool                  `json:"enabled"`
-	Running      bool                  `json:"running"`
-	DevMode      bool                  `json:"devMode"`
-	DevPath      string                `json:"devPath"`
-	Loading      bool                  `json:"loading"`
-	LoadError    string                `json:"loadError"`
-	Capabilities []PluginType          `json:"capabilities"`
-	RPCClient    plugin.ClientProtocol `json:"-"`
-	PluginClient *plugin.Client        `json:"-"`
+	ID           string              `json:"id"`
+	Metadata     config.PluginMeta   `json:"metadata"`
+	Config       config.PluginConfig `json:"-"`
+	Enabled      bool                `json:"enabled"`
+	Running      bool                `json:"running"`
+	DevMode      bool                `json:"devMode"`
+	DevPath      string              `json:"devPath"`
+	Loading      bool                `json:"loading"`
+	LoadError    string              `json:"loadError"`
+	Phase        string              `json:"phase,omitempty"`
+	Capabilities []PluginType        `json:"capabilities"`
+	LastError    string              `json:"lastError,omitempty"`
+
+	// Runtime fields — not serialized.
+	RPCClient    interface{} `json:"-"`
+	PluginClient interface{} `json:"-"`
 }
 
 func (p *Plugin) HasCapability(capability PluginType) bool {
@@ -99,11 +125,44 @@ func (p *Plugin) IsRunning() bool {
 	return p.Running
 }
 
+// ToInfo converts a legacy Plugin to a PluginInfo for API responses.
+func (p *Plugin) ToInfo() PluginInfo {
+	caps := make([]Capability, 0, len(p.Capabilities))
+	for _, c := range p.Capabilities {
+		caps = append(caps, c.ToCapability())
+	}
+	phase := p.Phase
+	if phase == "" {
+		if p.Running {
+			phase = "Running"
+		} else if p.Loading {
+			phase = "Starting"
+		} else if p.LoadError != "" {
+			phase = "Failed"
+		} else {
+			phase = "Installed"
+		}
+	}
+	lastErr := p.LastError
+	if lastErr == "" {
+		lastErr = p.LoadError
+	}
+	return PluginInfo{
+		ID:           p.ID,
+		Metadata:     p.Metadata,
+		Phase:        phase,
+		Enabled:      p.Enabled,
+		DevMode:      p.DevMode,
+		DevPath:      p.DevPath,
+		Capabilities: caps,
+		LastError:    lastErr,
+	}
+}
+
 // LoadPluginMetadata loads the metadata for a plugin from the given path.
 func LoadPluginMetadata(path string) (config.PluginMeta, error) {
 	var settings config.PluginMeta
 
-	// read in the yaml config
 	configFile, err := os.Open(path + "/plugin.yaml")
 	if err != nil {
 		return config.PluginMeta{}, fmt.Errorf("error loading plugin config file: %w", err)

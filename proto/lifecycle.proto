@@ -1,0 +1,41 @@
+syntax = "proto3";
+package com.omniview.pluginsdk;
+
+import "google/protobuf/empty.proto";
+
+option go_package = "./proto";
+
+// PluginLifecycle is auto-registered by sdk.Plugin.Serve() and provides
+// capability advertisement and health checking without requiring any
+// plugin-author code changes.
+service PluginLifecycle {
+  // GetInfo returns plugin identification and version information.
+  rpc GetInfo(google.protobuf.Empty) returns (GetInfoResponse);
+
+  // GetCapabilities returns the list of capabilities this plugin serves.
+  // Replaces exception-based gRPC probing on the host side.
+  rpc GetCapabilities(google.protobuf.Empty) returns (GetCapabilitiesResponse);
+
+  // HealthCheck returns the current health status of the plugin process.
+  rpc HealthCheck(google.protobuf.Empty) returns (HealthCheckResponse);
+}
+
+message GetInfoResponse {
+  string plugin_id = 1;
+  string version = 2;
+  int32 sdk_protocol_version = 3;
+}
+
+message GetCapabilitiesResponse {
+  repeated string capabilities = 1;
+}
+
+enum ServingStatus {
+  UNKNOWN = 0;
+  SERVING = 1;
+  NOT_SERVING = 2;
+}
+
+message HealthCheckResponse {
+  ServingStatus status = 1;
+}

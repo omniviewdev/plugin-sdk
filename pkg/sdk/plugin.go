@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
+	"github.com/omniviewdev/plugin-sdk/pkg/lifecycle"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource"
 	rp "github.com/omniviewdev/plugin-sdk/pkg/resource/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
@@ -159,11 +160,16 @@ func GRPCDialOptions() []grpc.DialOption {
 // Serve begins serving the plugin over the given RPC server. This should be called
 // after all capabilities have been registered.
 //
+// The lifecycle service is auto-registered before serving — it reads capabilities
+// from the plugin map so plugin authors never need to touch it.
+//
 // When the OMNIVIEW_DEV environment variable is set to "1", the function will:
 //   - Intercept the go-plugin handshake line from stdout to capture the listen address
 //   - Write a .devinfo file so the IDE can connect via ReattachConfig
 //   - Register a signal handler to clean up .devinfo on graceful shutdown
 func (p *Plugin) Serve() {
+	// Auto-register the lifecycle service from the current plugin map.
+	p.registerLifecycle()
 	isDev := os.Getenv("OMNIVIEW_DEV") == "1"
 	if !isDev {
 		p.serveNormal()
@@ -250,6 +256,29 @@ func (p *Plugin) serveNormal() {
 			Level: hclog.Debug,
 		}),
 	})
+}
+
+// registerLifecycle auto-registers the PluginLifecycle gRPC service.
+// It reads the current plugin map to build the capabilities list.
+func (p *Plugin) registerLifecycle() {
+	caps := make([]string, 0, len(p.pluginMap))
+	for name := range p.pluginMap {
+		caps = append(caps, name)
+	}
+
+	sdkProtoVersion := int32(1)
+	if p.meta.SDKProtocolVersion > 0 {
+		sdkProtoVersion = int32(p.meta.SDKProtocolVersion)
+	}
+
+	p.pluginMap["lifecycle"] = &lifecycle.Plugin{
+		Impl: &lifecycle.Server{
+			PluginID:           p.meta.ID,
+			Version:            p.meta.Version,
+			SDKProtocolVersion: sdkProtoVersion,
+			Capabilities:       caps,
+		},
+	}
 }
 
 // RegisterResourcePlugin registers a resource plugin with the given options. Resource plugins are
