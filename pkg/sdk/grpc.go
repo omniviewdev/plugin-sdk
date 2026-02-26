@@ -2,7 +2,9 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/metadata"
@@ -10,7 +12,6 @@ import (
 	grpcMetadata "google.golang.org/grpc/metadata"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	"github.com/omniviewdev/plugin-sdk/pkg/utils"
 )
 
 // Individual metadata keys for the new format.
@@ -18,34 +19,34 @@ const (
 	MDKeyRequestID       = "omniview-request-id"
 	MDKeyRequesterID     = "omniview-requester-id"
 	MDKeyConnectionID    = "omniview-connection-id"
+	MDKeyConnectionData  = "omniview-connection-data"
 	MDKeyResourceKey     = "omniview-resource-key"
 	MDKeyProtocolVersion = "omniview-protocol-version"
 )
 
 // UseClientPluginContext serializes the plugin context and injects it into
-// gRPC metadata using both the new individual keys and the legacy JSON blob
-// for backward compatibility with older plugin binaries.
+// gRPC metadata using individual keys.
 func UseClientPluginContext(ctx context.Context) (context.Context, error) {
 	pc := types.PluginContextFromContext(ctx)
 	if pc == nil {
 		return ctx, errors.New("no plugin context in context")
 	}
 
-	// Legacy JSON blob (backward compat with older plugin binaries).
-	serialized, err := types.SerializePluginContext(pc)
-	if err != nil {
-		return ctx, err
-	}
-
 	pairs := []string{
-		utils.PluginContextMDKey, serialized,
 		MDKeyRequestID, pc.RequestID,
 		MDKeyRequesterID, pc.RequesterID,
-		MDKeyProtocolVersion, "1",
+		MDKeyProtocolVersion, "2",
 	}
 
 	if pc.Connection != nil {
 		pairs = append(pairs, MDKeyConnectionID, pc.Connection.ID)
+		if pc.Connection.Data != nil {
+			encoded, err := json.Marshal(pc.Connection.Data)
+			if err != nil {
+				return ctx, fmt.Errorf("failed to encode connection data: %w", err)
+			}
+			pairs = append(pairs, MDKeyConnectionData, string(encoded))
+		}
 	}
 	if pc.ResourceContext != nil && pc.ResourceContext.Key != "" {
 		pairs = append(pairs, MDKeyResourceKey, pc.ResourceContext.Key)

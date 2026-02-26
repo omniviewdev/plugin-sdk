@@ -2,6 +2,7 @@ package interceptors
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,29 +13,129 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
-// helper: build a context with the given plugin_context metadata value.
-func ctxWithPluginContextMD(serialized string) context.Context {
-	md := grpcmd.Pairs("plugin_context", serialized)
+// helper: build an incoming context with the given metadata pairs.
+func ctxWithMD(pairs ...string) context.Context {
+	md := grpcmd.Pairs(pairs...)
 	return grpcmd.NewIncomingContext(context.Background(), md)
 }
 
 // ---------------------------------------------------------------------------
-// UnaryPluginContext
+// Connection data round-trip tests
+// ---------------------------------------------------------------------------
+
+func TestConnectionDataRoundTrip(t *testing.T) {
+	data := map[string]any{"foo": "bar", "count": float64(42)}
+	encoded, err := json.Marshal(data)
+	require.NoError(t, err)
+
+	ctx := ctxWithMD(
+		mdKeyRequestID, "req-1",
+		mdKeyRequesterID, "user-1",
+		mdKeyConnectionID, "conn-1",
+		mdKeyConnectionData, string(encoded),
+		mdKeyProtocolVersion, "2",
+	)
+
+	ctx, err = useServerPluginContext(ctx)
+	require.NoError(t, err)
+
+	pc := types.PluginContextFromContext(ctx)
+	require.NotNil(t, pc)
+	assert.Equal(t, "req-1", pc.RequestID)
+	assert.Equal(t, "user-1", pc.RequesterID)
+	require.NotNil(t, pc.Connection)
+	assert.Equal(t, "conn-1", pc.Connection.ID)
+	require.NotNil(t, pc.Connection.Data)
+	assert.Equal(t, "bar", pc.Connection.Data["foo"])
+	assert.Equal(t, float64(42), pc.Connection.Data["count"])
+}
+
+func TestConnectionDataWithKubeconfig(t *testing.T) {
+	data := map[string]any{"kubeconfig": "/home/user/.kube/config"}
+	encoded, err := json.Marshal(data)
+	require.NoError(t, err)
+
+	ctx := ctxWithMD(
+		mdKeyRequestID, "req-2",
+		mdKeyConnectionID, "ctx-kube",
+		mdKeyConnectionData, string(encoded),
+	)
+
+	ctx, err = useServerPluginContext(ctx)
+	require.NoError(t, err)
+
+	pc := types.PluginContextFromContext(ctx)
+	require.NotNil(t, pc)
+	require.NotNil(t, pc.Connection)
+	require.NotNil(t, pc.Connection.Data)
+	assert.Equal(t, "/home/user/.kube/config", pc.Connection.Data["kubeconfig"])
+}
+
+func TestNilConnectionData(t *testing.T) {
+	ctx := ctxWithMD(
+		mdKeyRequestID, "req-3",
+		mdKeyConnectionID, "conn-nodata",
+	)
+
+	ctx, err := useServerPluginContext(ctx)
+	require.NoError(t, err)
+
+	pc := types.PluginContextFromContext(ctx)
+	require.NotNil(t, pc)
+	require.NotNil(t, pc.Connection)
+	assert.Equal(t, "conn-nodata", pc.Connection.ID)
+	assert.Nil(t, pc.Connection.Data)
+}
+
+func TestNoConnection(t *testing.T) {
+	ctx := ctxWithMD(
+		mdKeyRequestID, "req-4",
+		mdKeyRequesterID, "user-4",
+	)
+
+	ctx, err := useServerPluginContext(ctx)
+	require.NoError(t, err)
+
+	pc := types.PluginContextFromContext(ctx)
+	require.NotNil(t, pc)
+	assert.Equal(t, "req-4", pc.RequestID)
+	assert.Nil(t, pc.Connection)
+}
+
+func TestEmptyRequestID(t *testing.T) {
+	// No metadata at all — should return original context with no error.
+	ctx, err := useServerPluginContext(context.Background())
+	require.NoError(t, err)
+
+	pc := types.PluginContextFromContext(ctx)
+	assert.Nil(t, pc)
+}
+
+func TestInvalidConnectionData(t *testing.T) {
+	ctx := ctxWithMD(
+		mdKeyRequestID, "req-5",
+		mdKeyConnectionID, "conn-bad",
+		mdKeyConnectionData, "%%%not-json%%%",
+	)
+
+	_, err := useServerPluginContext(ctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to decode connection data")
+}
+
+// ---------------------------------------------------------------------------
+// UnaryPluginContext interceptor tests
 // ---------------------------------------------------------------------------
 
 func TestUnaryPluginContext_ValidMetadata(t *testing.T) {
 	interceptor := UnaryPluginContext()
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/CtxOK"}
 
-	// Build a real PluginContext and serialize it.
-	pc := &types.PluginContext{
-		RequestID:   "req-123",
-		RequesterID: "user-456",
-	}
-	serialized, err := types.SerializePluginContext(pc)
-	require.NoError(t, err)
-
-	ctx := ctxWithPluginContextMD(serialized)
+	ctx := ctxWithMD(
+		mdKeyRequestID, "req-123",
+		mdKeyRequesterID, "user-456",
+		mdKeyProtocolVersion, "2",
+	)
 
 	var captured context.Context
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
@@ -47,9 +148,8 @@ func TestUnaryPluginContext_ValidMetadata(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ok", resp)
 
-	// The handler's context should contain the deserialized PluginContext.
 	extracted := types.PluginContextFromContext(captured)
-	require.NotNil(t, extracted, "PluginContext should be present in handler context")
+	require.NotNil(t, extracted)
 	assert.Equal(t, "req-123", extracted.RequestID)
 	assert.Equal(t, "user-456", extracted.RequesterID)
 }
@@ -64,50 +164,30 @@ func TestUnaryPluginContext_NoMetadata(t *testing.T) {
 		return "ok", nil
 	}
 
-	// Plain context with no gRPC metadata at all.
 	resp, err := interceptor(context.Background(), "req", info, handler)
 
 	require.NoError(t, err)
 	assert.Equal(t, "ok", resp)
-	assert.True(t, called, "handler should still be called when metadata is absent")
-}
-
-func TestUnaryPluginContext_InvalidMetadata(t *testing.T) {
-	interceptor := UnaryPluginContext()
-	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/BadMD"}
-
-	ctx := ctxWithPluginContextMD("%%%not-json%%%")
-
-	called := false
-	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
-		called = true
-		return "ok", nil
-	}
-
-	// Should gracefully degrade: log the error but still call the handler.
-	resp, err := interceptor(ctx, "req", info, handler)
-
-	require.NoError(t, err)
-	assert.Equal(t, "ok", resp)
-	assert.True(t, called, "handler should still be called even with invalid metadata")
+	assert.True(t, called)
 }
 
 // ---------------------------------------------------------------------------
-// StreamPluginContext
+// StreamPluginContext interceptor tests
 // ---------------------------------------------------------------------------
 
 func TestStreamPluginContext_ValidMetadata(t *testing.T) {
 	interceptor := StreamPluginContext()
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamCtxOK"}
 
-	pc := &types.PluginContext{
-		RequestID:   "stream-req-1",
-		RequesterID: "stream-user-1",
-	}
-	serialized, err := types.SerializePluginContext(pc)
-	require.NoError(t, err)
+	data := map[string]any{"kubeconfig": "/path/to/kubeconfig"}
+	encoded, _ := json.Marshal(data)
 
-	ctx := ctxWithPluginContextMD(serialized)
+	ctx := ctxWithMD(
+		mdKeyRequestID, "stream-req-1",
+		mdKeyRequesterID, "stream-user-1",
+		mdKeyConnectionID, "conn-stream",
+		mdKeyConnectionData, string(encoded),
+	)
 	ss := &mockServerStream{ctx: ctx}
 
 	var capturedCtx context.Context
@@ -116,13 +196,15 @@ func TestStreamPluginContext_ValidMetadata(t *testing.T) {
 		return nil
 	}
 
-	err = interceptor(nil, ss, info, handler)
+	err := interceptor(nil, ss, info, handler)
 
 	require.NoError(t, err)
 	extracted := types.PluginContextFromContext(capturedCtx)
-	require.NotNil(t, extracted, "PluginContext should be present in stream context")
+	require.NotNil(t, extracted)
 	assert.Equal(t, "stream-req-1", extracted.RequestID)
 	assert.Equal(t, "stream-user-1", extracted.RequesterID)
+	require.NotNil(t, extracted.Connection)
+	assert.Equal(t, "/path/to/kubeconfig", extracted.Connection.Data["kubeconfig"])
 }
 
 func TestStreamPluginContext_NoMetadata(t *testing.T) {
@@ -139,49 +221,26 @@ func TestStreamPluginContext_NoMetadata(t *testing.T) {
 
 	err := interceptor(nil, ss, info, handler)
 	require.NoError(t, err)
-	assert.True(t, called, "handler should still be called when metadata is absent")
-}
-
-func TestStreamPluginContext_InvalidMetadata(t *testing.T) {
-	interceptor := StreamPluginContext()
-	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamBadMD"}
-
-	ctx := ctxWithPluginContextMD("{invalid json")
-	ss := &mockServerStream{ctx: ctx}
-
-	called := false
-	handler := func(_ interface{}, _ grpc.ServerStream) error {
-		called = true
-		return nil
-	}
-
-	err := interceptor(nil, ss, info, handler)
-	require.NoError(t, err)
-	assert.True(t, called, "handler should still be called even with invalid metadata")
+	assert.True(t, called)
 }
 
 func TestStreamPluginContext_WrappedStreamOverridesContext(t *testing.T) {
 	interceptor := StreamPluginContext()
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamWrapped"}
 
-	pc := &types.PluginContext{
-		RequestID: "wrapped-req",
-	}
-	serialized, err := types.SerializePluginContext(pc)
-	require.NoError(t, err)
-
-	ctx := ctxWithPluginContextMD(serialized)
+	ctx := ctxWithMD(
+		mdKeyRequestID, "wrapped-req",
+		mdKeyRequesterID, "wrapped-user",
+	)
 	ss := &mockServerStream{ctx: ctx}
 
 	handler := func(_ interface{}, stream grpc.ServerStream) error {
-		// The stream passed to the handler should be a wrappedServerStream,
-		// not the original mock. Verify context has the plugin context.
 		extracted := types.PluginContextFromContext(stream.Context())
 		require.NotNil(t, extracted)
 		assert.Equal(t, "wrapped-req", extracted.RequestID)
 		return nil
 	}
 
-	err = interceptor(nil, ss, info, handler)
+	err := interceptor(nil, ss, info, handler)
 	require.NoError(t, err)
 }

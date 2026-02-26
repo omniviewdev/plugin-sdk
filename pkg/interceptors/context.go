@@ -2,6 +2,8 @@ package interceptors
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/metadata"
@@ -11,54 +13,48 @@ import (
 )
 
 const (
-	// Legacy single JSON blob key.
-	pluginContextMDKey = "plugin_context"
-
-	// New individual metadata keys.
 	mdKeyRequestID       = "omniview-request-id"
 	mdKeyRequesterID     = "omniview-requester-id"
 	mdKeyConnectionID    = "omniview-connection-id"
+	mdKeyConnectionData  = "omniview-connection-data"
 	mdKeyResourceKey     = "omniview-resource-key"
 	mdKeyProtocolVersion = "omniview-protocol-version"
 )
 
 // useServerPluginContext extracts the plugin context from gRPC metadata and
-// attaches it to ctx. It tries the new individual keys first, then falls back
-// to the legacy JSON blob for backward compatibility.
+// attaches it to ctx.
 func useServerPluginContext(ctx context.Context) (context.Context, error) {
 	incoming := metadata.ExtractIncoming(ctx)
 
-	// Try new individual keys first.
 	requestID := incoming.Get(mdKeyRequestID)
-	if requestID != "" {
-		pc := &types.PluginContext{
-			RequestID:   requestID,
-			RequesterID: incoming.Get(mdKeyRequesterID),
-		}
-
-		connID := incoming.Get(mdKeyConnectionID)
-		if connID != "" {
-			pc.Connection = &types.Connection{ID: connID}
-		}
-
-		resourceKey := incoming.Get(mdKeyResourceKey)
-		if resourceKey != "" {
-			pc.ResourceContext = &types.ResourceContext{Key: resourceKey}
-		}
-
-		return types.WithPluginContext(ctx, pc), nil
-	}
-
-	// Fall back to legacy JSON blob.
-	serialized := incoming.Get(pluginContextMDKey)
-	if serialized == "" {
+	if requestID == "" {
 		return ctx, nil
 	}
-	deserialized, err := types.DeserializePluginContext(serialized)
-	if err != nil {
-		return ctx, err
+
+	pc := &types.PluginContext{
+		RequestID:   requestID,
+		RequesterID: incoming.Get(mdKeyRequesterID),
 	}
-	return types.WithPluginContext(ctx, deserialized), nil
+
+	connID := incoming.Get(mdKeyConnectionID)
+	if connID != "" {
+		conn := &types.Connection{ID: connID}
+		if dataStr := incoming.Get(mdKeyConnectionData); dataStr != "" {
+			var data map[string]any
+			if err := json.Unmarshal([]byte(dataStr), &data); err != nil {
+				return ctx, fmt.Errorf("failed to decode connection data: %w", err)
+			}
+			conn.Data = data
+		}
+		pc.Connection = conn
+	}
+
+	resourceKey := incoming.Get(mdKeyResourceKey)
+	if resourceKey != "" {
+		pc.ResourceContext = &types.ResourceContext{Key: resourceKey}
+	}
+
+	return types.WithPluginContext(ctx, pc), nil
 }
 
 // UnaryPluginContext returns a unary server interceptor that extracts PluginContext

@@ -2,7 +2,6 @@ package types
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,26 +61,6 @@ func PluginContextFromContext(ctx context.Context) *PluginContext {
 		pluginctx.Context = ctx
 	}
 	return pluginctx
-}
-
-// SerializePluginContext serializes the PluginContext into a JSON string. Used to pass
-// the context between the IDE and the plugin.
-func SerializePluginContext(pc *PluginContext) (string, error) {
-	data, err := json.Marshal(pc)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
-}
-
-// DeserializePluginContext deserializes the JSON string back into a PluginContext. Used to pass
-// the context between the IDE and the plugin.
-func DeserializePluginContext(data string) (*PluginContext, error) {
-	pc := &PluginContext{}
-	if err := json.Unmarshal([]byte(data), pc); err != nil {
-		return nil, err
-	}
-	return pc, nil
 }
 
 // Construct a new plugin context with the given requester, resource key, and resource context.
