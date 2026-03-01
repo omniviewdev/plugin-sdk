@@ -1,0 +1,94 @@
+syntax = "proto3";
+package omniview.sdk.resource.v1;
+
+option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/resource;resourcepb";
+
+// ─────────────────────────────────────────────────────────────────────
+// Relationship Types
+// ─────────────────────────────────────────────────────────────────────
+
+enum RelationshipType {
+    RELATIONSHIP_TYPE_UNSPECIFIED = 0;
+    RELATIONSHIP_TYPE_OWNS = 1;
+    RELATIONSHIP_TYPE_RUNS_ON = 2;
+    RELATIONSHIP_TYPE_USES = 3;
+    RELATIONSHIP_TYPE_EXPOSES = 4;
+    RELATIONSHIP_TYPE_MANAGES = 5;
+    RELATIONSHIP_TYPE_MEMBER_OF = 6;
+}
+
+// RelationshipDescriptor declares a relationship from one resource type to another.
+message RelationshipDescriptor {
+    RelationshipType type = 1;
+    string target_resource_key = 2;
+    string label = 3;
+    string inverse_label = 4;
+    string cardinality = 5;
+    RelationshipExtractor extractor = 6;
+}
+
+// RelationshipExtractor defines how to find related resource IDs from source data.
+message RelationshipExtractor {
+    string method = 1;
+    string field_path = 2;
+    string owner_ref_kind = 3;
+    map<string, string> label_selector = 4;
+}
+
+// ResourceRef is a reference to a specific resource instance.
+message ResourceRef {
+    string plugin_id = 1;
+    string connection_id = 2;
+    string resource_key = 3;
+    string id = 4;
+    string namespace = 5;
+    string display_name = 6;
+}
+
+// ResolvedRelationship contains actual relationship instances for a resource.
+message ResolvedRelationship {
+    RelationshipDescriptor descriptor = 1;
+    repeated ResourceRef targets = 2;
+}
+
+// RelationshipEdge is a single edge in the relationship graph.
+message RelationshipEdge {
+    ResourceRef source = 1;
+    ResourceRef target = 2;
+    RelationshipDescriptor descriptor = 3;
+}
+
+// DependencyTree is an ownership/dependency hierarchy rooted at a resource.
+message DependencyTree {
+    ResourceRef root = 1;
+    repeated DependencyNode children = 2;
+}
+
+// DependencyNode is a node in the dependency tree (self-referencing).
+message DependencyNode {
+    RelationshipEdge edge = 1;
+    repeated DependencyNode children = 2;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// RPC Messages
+// ─────────────────────────────────────────────────────────────────────
+
+message RelationshipsRequest {
+    string resource_key = 1;
+}
+
+message RelationshipsResponse {
+    repeated RelationshipDescriptor relationships = 1;
+}
+
+message ResolveRelationshipsRequest {
+    string connection_id = 1;
+    string resource_key = 2;
+    string id = 3;
+    string namespace = 4;
+}
+
+message ResolveRelationshipsResponse {
+    repeated ResolvedRelationship relationships = 1;
+}

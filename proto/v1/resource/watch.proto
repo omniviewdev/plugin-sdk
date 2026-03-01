@@ -1,0 +1,104 @@
+syntax = "proto3";
+package omniview.sdk.resource.v1;
+
+option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/resource;resourcepb";
+
+// ─────────────────────────────────────────────────────────────────────
+// Watch Events (server → engine via ListenForEvents stream)
+// ─────────────────────────────────────────────────────────────────────
+
+// WatchEvent is the unified event type sent over the ListenForEvents stream.
+message WatchEvent {
+    string connection_id = 1;
+    string resource_key = 2;
+
+    oneof event {
+        WatchAddPayload add = 10;
+        WatchUpdatePayload update = 11;
+        WatchDeletePayload delete = 12;
+        WatchStateEvent state = 13;
+    }
+}
+
+// WatchAddPayload — a resource was added.
+message WatchAddPayload {
+    string id = 1;
+    string namespace = 2;
+    bytes data = 3;
+}
+
+// WatchUpdatePayload — a resource was modified.
+// Only carries the new state. OldData dropped to halve wire cost (doc 12).
+message WatchUpdatePayload {
+    string id = 1;
+    string namespace = 2;
+    bytes data = 3;
+}
+
+// WatchDeletePayload — a resource was deleted.
+message WatchDeletePayload {
+    string id = 1;
+    string namespace = 2;
+    bytes data = 3;
+}
+
+// WatchState represents the synchronization state of a resource watch.
+enum WatchState {
+    WATCH_STATE_UNSPECIFIED = 0;
+    WATCH_STATE_SYNCING = 1;
+    WATCH_STATE_SYNCED = 2;
+    WATCH_STATE_ERROR = 3;
+    WATCH_STATE_FAILED = 4;
+    WATCH_STATE_STOPPED = 5;
+}
+
+// WatchStateEvent — watch state changed for a resource type.
+message WatchStateEvent {
+    WatchState state = 1;
+    int32 resource_count = 2;
+    string error_message = 3;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Watch Control (engine → plugin RPCs)
+// ─────────────────────────────────────────────────────────────────────
+
+// ListenRequest starts the event stream.
+message ListenRequest {}
+
+// WatchResourceRequest asks the plugin to start/stop watching a specific resource type.
+message WatchResourceRequest {
+    string connection_id = 1;
+    string resource_key = 2;
+}
+
+// WatchResourceResponse confirms the watch operation.
+message WatchResourceResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Connection Watching + Watch State
+// ─────────────────────────────────────────────────────────────────────
+
+import "proto/v1/common/common.proto";
+
+// WatchConnectionsRequest starts the connection change stream.
+message WatchConnectionsRequest {}
+
+// WatchConnectionsResponse is sent whenever the set of connections changes.
+message WatchConnectionsResponse {
+    repeated omniview.sdk.common.v1.Connection connections = 1;
+}
+
+// GetWatchStateRequest asks for the current watch state summary for a connection.
+message GetWatchStateRequest {
+    string connection_id = 1;
+}
+
+// GetWatchStateResponse returns per-resource watch states for a connection.
+message GetWatchStateResponse {
+    string connection_id = 1;
+    map<string, WatchState> resources = 2;
+}

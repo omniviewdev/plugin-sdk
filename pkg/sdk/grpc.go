@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/metadata"
 	"google.golang.org/grpc"
@@ -64,10 +63,7 @@ func ClientPluginContextInterceptor(
 	invoker grpc.UnaryInvoker,
 	opts ...grpc.CallOption,
 ) error {
-	ctx, err := UseClientPluginContext(ctx)
-	if err != nil {
-		log.Println("error:", err)
-	}
+	ctx, _ = UseClientPluginContext(ctx)
 	return invoker(ctx, method, req, reply, cc, opts...)
 }
 
