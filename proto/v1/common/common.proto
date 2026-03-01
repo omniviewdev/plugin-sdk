@@ -1,0 +1,138 @@
+syntax = "proto3";
+package omniview.sdk.common.v1;
+
+option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/common;commonpb";
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// Connection represents a configured connection to a backend system.
+message Connection {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    string avatar = 4;
+    map<string, string> labels = 5;
+    google.protobuf.Struct data = 6;
+}
+
+// ConnectionStatus reports the health of a connection.
+message ConnectionStatus {
+    Connection connection = 1;
+    ConnectionState state = 2;
+    string message = 3;
+    string error = 4;
+    google.protobuf.Struct metadata = 5;
+}
+
+enum ConnectionState {
+    CONNECTION_STATE_UNSPECIFIED = 0;
+    CONNECTION_STATE_CONNECTED = 1;
+    CONNECTION_STATE_DISCONNECTED = 2;
+    CONNECTION_STATE_RECONNECTING = 3;
+    CONNECTION_STATE_ERROR = 4;
+}
+
+// ResourceMeta uniquely identifies a resource type within a plugin.
+message ResourceMeta {
+    string group = 1;
+    string version = 2;
+    string kind = 3;
+    string singular = 4;
+    string plural = 5;
+    string display_name = 6;
+    string description = 7;
+    repeated string short_names = 8;
+}
+
+// ResourceGroup is a logical grouping of resource types for UI rendering.
+message ResourceGroup {
+    string id = 1;
+    string name = 2;
+    string icon = 3;
+    string description = 4;
+    repeated ResourceMeta resources = 5;
+}
+
+// ResourceDefinition provides UI rendering metadata for a resource type.
+message ResourceDefinition {
+    ResourceMeta meta = 1;
+    string id_accessor = 2;
+    string namespace_accessor = 3;
+    string memoizer_accessor = 4;
+    repeated ColumnDefinition column_definitions = 5;
+    repeated OperationType supported_operations = 6;
+}
+
+// ColumnDefinition describes a table column for UI rendering.
+message ColumnDefinition {
+    string id = 1;
+    string header = 2;
+    repeated string accessors = 3;
+    ColumnType type = 4;
+    ColumnAlignment alignment = 5;
+    int32 width = 6;
+    string formatter = 7;
+    ResourceLink resource_link = 8;
+    bool sortable = 9;
+    bool hidden = 10;
+}
+
+enum ColumnType {
+    COLUMN_TYPE_UNSPECIFIED = 0;
+    COLUMN_TYPE_STRING = 1;
+    COLUMN_TYPE_NUMBER = 2;
+    COLUMN_TYPE_DATE = 3;
+    COLUMN_TYPE_BOOLEAN = 4;
+    COLUMN_TYPE_ENUM = 5;
+    COLUMN_TYPE_PROGRESS = 6;
+    COLUMN_TYPE_STATUS = 7;
+    COLUMN_TYPE_ARRAY = 8;
+    COLUMN_TYPE_OBJECT = 9;
+}
+
+enum ColumnAlignment {
+    COLUMN_ALIGNMENT_UNSPECIFIED = 0;
+    COLUMN_ALIGNMENT_LEFT = 1;
+    COLUMN_ALIGNMENT_CENTER = 2;
+    COLUMN_ALIGNMENT_RIGHT = 3;
+}
+
+// ResourceLink connects a column value to another resource type for navigation.
+message ResourceLink {
+    string id_accessor = 1;
+    string namespace_accessor = 2;
+    bool namespaced = 3;
+    string key = 4;
+    string key_accessor = 5;
+    map<string, string> key_map = 6;
+    map<string, string> detail_extractors = 7;
+    string display_id = 8;
+}
+
+enum OperationType {
+    OPERATION_TYPE_UNSPECIFIED = 0;
+    OPERATION_TYPE_GET = 1;
+    OPERATION_TYPE_LIST = 2;
+    OPERATION_TYPE_FIND = 3;
+    OPERATION_TYPE_CREATE = 4;
+    OPERATION_TYPE_UPDATE = 5;
+    OPERATION_TYPE_DELETE = 6;
+}
+
+// ResourceError is a structured error for resource operations.
+message ResourceError {
+    int32 code = 1;
+    string title = 2;
+    string message = 3;
+    repeated string suggestions = 4;
+    google.protobuf.Struct details = 5;
+}
+
+// EditorSchema provides Monaco editor validation for a resource type.
+message EditorSchema {
+    string uri = 1;
+    repeated string file_match = 2;
+    string language = 3;
+    bytes schema = 4;
+}

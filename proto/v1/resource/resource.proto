@@ -1,0 +1,320 @@
+syntax = "proto3";
+package omniview.sdk.resource.v1;
+
+option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/resource;resourcepb";
+
+import "google/protobuf/struct.proto";
+import "proto/v1/common/common.proto";
+import "proto/v1/resource/filter.proto";
+import "proto/v1/resource/watch.proto";
+import "proto/v1/resource/relationship.proto";
+import "proto/v1/resource/health.proto";
+
+// ─────────────────────────────────────────────────────────────────────
+// Service Definition — 27 RPCs
+// ─────────────────────────────────────────────────────────────────────
+
+service ResourcePlugin {
+    // Connection lifecycle
+    rpc LoadConnections(LoadConnectionsRequest) returns (LoadConnectionsResponse);
+    rpc StartConnection(ConnectionRequest) returns (ConnectionStatusResponse);
+    rpc StopConnection(ConnectionRequest) returns (ConnectionResponse);
+    rpc GetConnectionNamespaces(ConnectionRequest) returns (NamespacesResponse);
+
+    // CRUD
+    rpc Get(GetRequest) returns (GetResponse);
+    rpc List(ListRequest) returns (ListResponse);
+    rpc Find(FindRequest) returns (FindResponse);
+    rpc Create(CreateRequest) returns (CreateResponse);
+    rpc Update(UpdateRequest) returns (UpdateResponse);
+    rpc Delete(DeleteRequest) returns (DeleteResponse);
+
+    // Type information
+    rpc GetResourceGroups(ResourceGroupsRequest) returns (ResourceGroupsResponse);
+    rpc GetResourceTypes(ResourceTypesRequest) returns (ResourceTypesResponse);
+    rpc GetResourceCapabilities(ResourceCapabilitiesRequest) returns (ResourceCapabilitiesResponse);
+    rpc GetFilterFields(FilterFieldsRequest) returns (FilterFieldsResponse);
+    rpc GetResourceSchema(ResourceSchemaRequest) returns (ResourceSchemaResponse);
+    rpc GetEditorSchemas(EditorSchemasRequest) returns (EditorSchemasResponse);
+
+    // Actions
+    rpc GetActions(GetActionsRequest) returns (GetActionsResponse);
+    rpc ExecuteAction(ExecuteActionRequest) returns (ExecuteActionResponse);
+    rpc StreamAction(ExecuteActionRequest) returns (stream StreamActionEvent);
+
+    // Watch
+    rpc ListenForEvents(ListenRequest) returns (stream WatchEvent);
+    rpc EnsureResourceWatch(WatchResourceRequest) returns (WatchResourceResponse);
+    rpc StopResourceWatch(WatchResourceRequest) returns (WatchResourceResponse);
+    rpc WatchConnections(WatchConnectionsRequest) returns (stream WatchConnectionsResponse);
+    rpc GetWatchState(GetWatchStateRequest) returns (GetWatchStateResponse);
+
+    // Relationships
+    rpc GetRelationships(RelationshipsRequest) returns (RelationshipsResponse);
+    rpc ResolveRelationships(ResolveRelationshipsRequest) returns (ResolveRelationshipsResponse);
+
+    // Health
+    rpc GetHealth(HealthRequest) returns (HealthResponse);
+    rpc GetResourceEvents(ResourceEventsRequest) returns (ResourceEventsResponse);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Connection Lifecycle
+// ─────────────────────────────────────────────────────────────────────
+
+message LoadConnectionsRequest {}
+
+message LoadConnectionsResponse {
+    repeated omniview.sdk.common.v1.Connection connections = 1;
+}
+
+message ConnectionRequest {
+    string connection_id = 1;
+}
+
+message ConnectionStatusResponse {
+    omniview.sdk.common.v1.ConnectionStatus status = 1;
+}
+
+message ConnectionResponse {
+    omniview.sdk.common.v1.Connection connection = 1;
+}
+
+message NamespacesResponse {
+    repeated string namespaces = 1;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// CRUD Operations
+// ─────────────────────────────────────────────────────────────────────
+
+message GetRequest {
+    string resource_key = 1;
+    string connection_id = 2;
+    string id = 3;
+    string namespace = 4;
+}
+
+message GetResponse {
+    bytes data = 1;
+    omniview.sdk.common.v1.ResourceError error = 2;
+}
+
+message ListRequest {
+    string resource_key = 1;
+    string connection_id = 2;
+    repeated string namespaces = 3;
+    repeated OrderField order = 4;
+    PaginationParams pagination = 5;
+}
+
+message ListResponse {
+    repeated bytes items = 1;
+    int32 total = 2;
+    string next_cursor = 3;
+    omniview.sdk.common.v1.ResourceError error = 4;
+}
+
+message FindRequest {
+    string resource_key = 1;
+    string connection_id = 2;
+    repeated string namespaces = 3;
+    FilterExpression filters = 4;
+    string text_query = 5;
+    repeated OrderField order = 6;
+    PaginationParams pagination = 7;
+}
+
+message FindResponse {
+    repeated bytes items = 1;
+    int32 total = 2;
+    string next_cursor = 3;
+    omniview.sdk.common.v1.ResourceError error = 4;
+}
+
+message CreateRequest {
+    string resource_key = 1;
+    string connection_id = 2;
+    string namespace = 3;
+    bytes data = 4;
+}
+
+message CreateResponse {
+    bytes data = 1;
+    omniview.sdk.common.v1.ResourceError error = 2;
+}
+
+message UpdateRequest {
+    string resource_key = 1;
+    string connection_id = 2;
+    string id = 3;
+    string namespace = 4;
+    bytes data = 5;
+}
+
+message UpdateResponse {
+    bytes data = 1;
+    omniview.sdk.common.v1.ResourceError error = 2;
+}
+
+message DeleteRequest {
+    string resource_key = 1;
+    string connection_id = 2;
+    string id = 3;
+    string namespace = 4;
+    optional int32 grace_period_seconds = 5;
+}
+
+message DeleteResponse {
+    bool success = 1;
+    omniview.sdk.common.v1.ResourceError error = 2;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Type Information
+// ─────────────────────────────────────────────────────────────────────
+
+message ResourceGroupsRequest {
+    string connection_id = 1;
+}
+
+message ResourceGroupsResponse {
+    map<string, omniview.sdk.common.v1.ResourceGroup> groups = 1;
+}
+
+message ResourceTypesRequest {
+    string connection_id = 1;
+}
+
+message ResourceTypesResponse {
+    map<string, omniview.sdk.common.v1.ResourceMeta> types = 1;
+}
+
+message ResourceCapabilitiesRequest {
+    string resource_key = 1;
+}
+
+message ResourceCapabilitiesResponse {
+    ResourceCapabilities capabilities = 1;
+}
+
+message ResourceCapabilities {
+    bool can_get = 1;
+    bool can_list = 2;
+    bool can_find = 3;
+    bool can_create = 4;
+    bool can_update = 5;
+    bool can_delete = 6;
+    bool watchable = 7;
+    bool filterable = 8;
+    bool searchable = 9;
+    bool has_actions = 10;
+    bool has_schema = 11;
+    bool namespace_scoped = 12;
+    bool has_relationships = 13;
+    bool has_health = 14;
+    bool has_events = 15;
+    ScaleHint scale_hint = 16;
+}
+
+message ScaleHint {
+    ScaleCategory expected_count = 1;
+    int32 default_page_size = 2;
+}
+
+enum ScaleCategory {
+    SCALE_CATEGORY_UNSPECIFIED = 0;
+    SCALE_CATEGORY_FEW = 1;
+    SCALE_CATEGORY_MODERATE = 2;
+    SCALE_CATEGORY_MANY = 3;
+}
+
+message FilterFieldsRequest {
+    string connection_id = 1;
+    string resource_key = 2;
+}
+
+message FilterFieldsResponse {
+    repeated FilterField fields = 1;
+}
+
+message ResourceSchemaRequest {
+    string connection_id = 1;
+    string resource_key = 2;
+}
+
+message ResourceSchemaResponse {
+    bytes schema = 1;
+}
+
+message EditorSchemasRequest {
+    string connection_id = 1;
+}
+
+message EditorSchemasResponse {
+    repeated omniview.sdk.common.v1.EditorSchema schemas = 1;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Actions
+// ─────────────────────────────────────────────────────────────────────
+
+message GetActionsRequest {
+    string resource_key = 1;
+    string connection_id = 2;
+}
+
+message GetActionsResponse {
+    repeated ActionDescriptor actions = 1;
+}
+
+message ActionDescriptor {
+    string id = 1;
+    string label = 2;
+    string description = 3;
+    string icon = 4;
+    ActionScope scope = 5;
+    bool streaming = 6;
+    bytes params_schema = 7;
+    bytes output_schema = 8;
+    bool dangerous = 9;
+}
+
+enum ActionScope {
+    ACTION_SCOPE_UNSPECIFIED = 0;
+    ACTION_SCOPE_INSTANCE = 1;
+    ACTION_SCOPE_COLLECTION = 2;
+    ACTION_SCOPE_GLOBAL = 3;
+}
+
+message ExecuteActionRequest {
+    string resource_key = 1;
+    string connection_id = 2;
+    string action_id = 3;
+    ActionInput input = 4;
+}
+
+message ActionInput {
+    string resource_id = 1;
+    string namespace = 2;
+    google.protobuf.Struct params = 3;
+}
+
+message ExecuteActionResponse {
+    ActionResult result = 1;
+}
+
+message ActionResult {
+    bool success = 1;
+    string message = 2;
+    google.protobuf.Struct data = 3;
+    omniview.sdk.common.v1.ResourceError error = 4;
+}
+
+// StreamActionEvent is sent during streaming actions.
+message StreamActionEvent {
+    string type = 1;
+    string message = 2;
+    float progress = 3;
+    google.protobuf.Struct data = 4;
+}
