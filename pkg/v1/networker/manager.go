@@ -187,6 +187,9 @@ func (m *Manager) StartPortForwardSession(
 	}
 
 	sessionID := uuid.NewString()
+	pctxCopy.Logger = m.log.With(
+		logging.String("session", sessionID),
+	)
 
 	// Reject new sessions if the manager is shutting down, before starting
 	// any external forwarder work that may have side effects.

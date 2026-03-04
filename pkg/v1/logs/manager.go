@@ -206,6 +206,10 @@ func (m *Manager) CreateSession(
 	if m.settings != nil {
 		pctxCopy.SetSettingsProvider(m.settings)
 	}
+	pctxCopy.Logger = m.log.With(
+		logging.String("session_id", sessionID),
+		logging.String("resource_key", opts.ResourceKey),
+	)
 
 	session := LogSession{
 		ID:          sessionID,
@@ -637,6 +641,7 @@ func (m *Manager) streamWithReconnect(
 		// so the handler respects per-source cancellation.
 		pctxCopy := *ss.pluginCtx
 		pctxCopy.Context = ctx
+		pctxCopy.Logger = logger
 		reader, err := handler.Handler(&pctxCopy, req)
 		if err != nil {
 			if ctx.Err() != nil {

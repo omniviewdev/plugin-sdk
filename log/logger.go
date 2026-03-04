@@ -68,6 +68,22 @@ func NewNop() Logger {
 	return New(Config{Backend: NewHCLBackend(hclog.NewNullLogger())})
 }
 
+// ContextEnricher extracts structured fields from a context.
+// Registered via RegisterContextEnricher to break import cycles.
+type ContextEnricher func(context.Context) []Field
+
+// enricherHolder wraps a ContextEnricher so atomic.Value always stores the
+// same concrete type.
+type enricherHolder struct{ fn ContextEnricher }
+
+var contextEnricher atomic.Value // stores *enricherHolder
+
+// RegisterContextEnricher sets the global context enricher used by all loggers.
+// Typically called from an init() in the package that owns PluginContext.
+func RegisterContextEnricher(fn ContextEnricher) {
+	contextEnricher.Store(&enricherHolder{fn: fn})
+}
+
 // loggerHolder wraps a Logger so that atomic.Value always sees the same
 // concrete type, regardless of the underlying Logger implementation.
 type loggerHolder struct{ l Logger }

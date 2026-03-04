@@ -254,6 +254,10 @@ func (m *Manager) CreateSession(
 	if m.settingsProvider != nil {
 		pctxCopy.SetSettingsProvider(m.settingsProvider)
 	}
+	pctxCopy.Logger = m.log.With(
+		logging.String("session", opts.ID),
+		logging.String("resource", opts.ResourceKey),
+	)
 
 	// Create terminal via factory
 	terminal, err := m.terminalFactory()

@@ -5,28 +5,17 @@ import (
 	"strings"
 
 	grpcmetadata "google.golang.org/grpc/metadata"
-
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
 func enrichFromContext(ctx context.Context) []Field {
-	fields := make([]Field, 0, 8)
+	var fields []Field
 
-	if pc := types.PluginContextFromContext(ctx); pc != nil {
-		if pc.RequestID != "" {
-			fields = append(fields, String("request_id", pc.RequestID))
-		}
-		if pc.RequesterID != "" {
-			fields = append(fields, String("requester_id", pc.RequesterID))
-		}
-		if pc.Connection != nil && pc.Connection.ID != "" {
-			fields = append(fields, String("connection_id", pc.Connection.ID))
-		}
-		if pc.ResourceContext != nil && pc.ResourceContext.Key != "" {
-			fields = append(fields, String("resource_key", pc.ResourceContext.Key))
-		}
+	// Registered enricher (PluginContext fields injected via types.init()).
+	if h, ok := contextEnricher.Load().(*enricherHolder); ok && h != nil && h.fn != nil {
+		fields = append(fields, h.fn(ctx)...)
 	}
 
+	// Trace IDs from gRPC metadata.
 	traceID, spanID := extractTraceIDs(ctx)
 	if traceID != "" {
 		fields = append(fields, String("trace_id", traceID))
