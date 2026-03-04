@@ -1,6 +1,10 @@
 package exec
 
-import "github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
+import (
+	"maps"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
+)
 
 // ManagerSink returns the Manager's OutputSink for test inspection.
 func ManagerSink(m *Manager) OutputSink {
@@ -30,11 +34,7 @@ func WaitDone(m *Manager) { m.wg.Wait() }
 func Sessions(m *Manager) map[string]*sessionState {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	cp := make(map[string]*sessionState, len(m.sessions))
-	for k, v := range m.sessions {
-		cp[k] = v
-	}
-	return cp
+	return maps.Clone(m.sessions)
 }
 
 // SessionDone returns the done channel for a session state.

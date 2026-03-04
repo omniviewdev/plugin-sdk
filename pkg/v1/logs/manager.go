@@ -2,10 +2,11 @@ package logs
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -59,11 +60,7 @@ type sessionState struct {
 func (s *sessionState) snapshot() LogSession {
 	s.mu.RLock()
 	cp := s.session
-	// Deep-copy ActiveSources slice
-	if s.session.ActiveSources != nil {
-		cp.ActiveSources = make([]LogSource, len(s.session.ActiveSources))
-		copy(cp.ActiveSources, s.session.ActiveSources)
-	}
+	cp.ActiveSources = slices.Clone(s.session.ActiveSources)
 	s.mu.RUnlock()
 	return cp
 }
@@ -90,8 +87,7 @@ func (s *sessionState) setStatus(to LogSessionStatus) {
 // setSources replaces the active sources list.
 func (s *sessionState) setSources(sources []LogSource) {
 	s.mu.Lock()
-	s.session.ActiveSources = make([]LogSource, len(sources))
-	copy(s.session.ActiveSources, sources)
+	s.session.ActiveSources = slices.Clone(sources)
 	s.mu.Unlock()
 }
 
@@ -262,8 +258,8 @@ func (m *Manager) ListSessions(_ *types.PluginContext) ([]*LogSession, error) {
 	}
 
 	// Sort by ID for deterministic output (map iteration order is random).
-	sort.Slice(sessions, func(i, j int) bool {
-		return sessions[i].ID < sessions[j].ID
+	slices.SortFunc(sessions, func(a, b *LogSession) int {
+		return cmp.Compare(a.ID, b.ID)
 	})
 
 	return sessions, nil

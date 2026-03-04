@@ -1,6 +1,7 @@
 package logtest
 
 import (
+	"slices"
 	"sync"
 	"time"
 
@@ -52,27 +53,21 @@ func (r *RecordingOutput) RecordStatus(status logs.LogSessionStatus) {
 func (r *RecordingOutput) Lines() []logs.LogLine {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	cp := make([]logs.LogLine, len(r.lines))
-	copy(cp, r.lines)
-	return cp
+	return slices.Clone(r.lines)
 }
 
 // Events returns a copy of all recorded events.
 func (r *RecordingOutput) Events() []logs.LogStreamEvent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	cp := make([]logs.LogStreamEvent, len(r.events))
-	copy(cp, r.events)
-	return cp
+	return slices.Clone(r.events)
 }
 
 // Statuses returns a copy of all recorded statuses.
 func (r *RecordingOutput) Statuses() []logs.LogSessionStatus {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	cp := make([]logs.LogSessionStatus, len(r.statuses))
-	copy(cp, r.statuses)
-	return cp
+	return slices.Clone(r.statuses)
 }
 
 // WaitForLines waits until at least count lines have been recorded, or times out.
@@ -81,8 +76,7 @@ func (r *RecordingOutput) WaitForLines(count int, timeout time.Duration) []logs.
 	for {
 		r.mu.Lock()
 		if len(r.lines) >= count {
-			cp := make([]logs.LogLine, len(r.lines))
-			copy(cp, r.lines)
+			cp := slices.Clone(r.lines)
 			r.mu.Unlock()
 			return cp
 		}

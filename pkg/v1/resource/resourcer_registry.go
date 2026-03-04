@@ -1,8 +1,9 @@
 package resource
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -223,8 +224,8 @@ func (r *resourcerRegistry[ClientT]) ListAll() []ResourceMeta {
 	for _, entry := range r.entries {
 		metas = append(metas, entry.meta)
 	}
-	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].Key() < metas[j].Key()
+	slices.SortFunc(metas, func(a, b ResourceMeta) int {
+		return cmp.Compare(a.Key(), b.Key())
 	})
 	return metas
 }
@@ -240,8 +241,8 @@ func (r *resourcerRegistry[ClientT]) ListWatchable() []ResourceMeta {
 			metas = append(metas, entry.meta)
 		}
 	}
-	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].Key() < metas[j].Key()
+	slices.SortFunc(metas, func(a, b ResourceMeta) int {
+		return cmp.Compare(a.Key(), b.Key())
 	})
 	return metas
 }

@@ -2,6 +2,7 @@ package exectest
 
 import (
 	"os"
+	"slices"
 	"sync"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/exec"
@@ -83,9 +84,7 @@ func (t *FakeTerminal) InjectOutput(data []byte) (int, error) {
 func (t *FakeTerminal) Resizes() []ResizeRecord {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	cp := make([]ResizeRecord, len(t.resizes))
-	copy(cp, t.resizes)
-	return cp
+	return slices.Clone(t.resizes)
 }
 
 // FakeTerminalFactory returns an exec.TerminalFactory that creates the given

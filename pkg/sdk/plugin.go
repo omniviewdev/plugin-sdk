@@ -2,9 +2,11 @@ package sdk
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -270,10 +272,7 @@ func (p *Plugin) serveNormal() {
 // registerLifecycle auto-registers the PluginLifecycle gRPC service.
 // It reads the current plugin map to build the capabilities list.
 func (p *Plugin) registerLifecycle() {
-	caps := make([]string, 0, len(p.pluginMap))
-	for name := range p.pluginMap {
-		caps = append(caps, name)
-	}
+	caps := slices.Collect(maps.Keys(p.pluginMap))
 
 	sdkProtoVersion := int32(CurrentProtocolVersion)
 	if p.meta.SDKProtocolVersion > 0 {

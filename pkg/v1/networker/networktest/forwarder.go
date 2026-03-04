@@ -2,6 +2,7 @@ package networktest
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -73,9 +74,7 @@ func (s *StubResourceForwarder) Calls() int {
 func (s *StubResourceForwarder) RecordedOpts() []networker.ResourcePortForwardHandlerOpts {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	cp := make([]networker.ResourcePortForwardHandlerOpts, len(s.opts))
-	copy(cp, s.opts)
-	return cp
+	return slices.Clone(s.opts)
 }
 
 // StubStaticForwarder implements networker.StaticForwarder with configurable behavior.

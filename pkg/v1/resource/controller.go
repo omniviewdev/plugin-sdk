@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -383,14 +384,7 @@ func (c *resourceController[ClientT]) validateFilterExpr(expr *FilterExpression,
 		if len(allowed) == 0 {
 			allowed = []FilterOperator{OpEqual, OpNotEqual}
 		}
-		found := false
-		for _, a := range allowed {
-			if a == pred.Operator {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(allowed, pred.Operator) {
 			return ErrFilterInvalidOperator(pred.Field, pred.Operator, allowed)
 		}
 	}

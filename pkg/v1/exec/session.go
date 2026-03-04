@@ -3,6 +3,8 @@ package exec
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -79,23 +81,9 @@ type sessionState struct {
 func (ss *sessionState) snapshot() Session {
 	ss.mu.RLock()
 	cp := ss.session
-	// Deep-copy maps
-	if ss.session.Labels != nil {
-		cp.Labels = make(map[string]string, len(ss.session.Labels))
-		for k, v := range ss.session.Labels {
-			cp.Labels[k] = v
-		}
-	}
-	if ss.session.Params != nil {
-		cp.Params = make(map[string]string, len(ss.session.Params))
-		for k, v := range ss.session.Params {
-			cp.Params[k] = v
-		}
-	}
-	if ss.session.Command != nil {
-		cp.Command = make([]string, len(ss.session.Command))
-		copy(cp.Command, ss.session.Command)
-	}
+	cp.Labels = maps.Clone(ss.session.Labels)
+	cp.Params = maps.Clone(ss.session.Params)
+	cp.Command = slices.Clone(ss.session.Command)
 	ss.mu.RUnlock()
 	return cp
 }

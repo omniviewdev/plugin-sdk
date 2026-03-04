@@ -1,6 +1,7 @@
 package resourcetest
 
 import (
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -167,13 +168,9 @@ func (s *RecordingSink) WaitForState(t *testing.T, resourceKey string, state res
 	defer timer.Stop()
 	for {
 		s.mu.Lock()
-		found := false
-		for _, e := range s.States {
-			if e.ResourceKey == resourceKey && e.State == state {
-				found = true
-				break
-			}
-		}
+		found := slices.ContainsFunc(s.States, func(e resource.WatchStateEvent) bool {
+			return e.ResourceKey == resourceKey && e.State == state
+		})
 		ch := s.changed
 		s.mu.Unlock()
 		if found {

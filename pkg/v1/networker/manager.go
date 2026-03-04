@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -60,14 +62,8 @@ func NewManager(cfg ManagerConfig, opts PluginOpts) *Manager {
 	}
 
 	// Defensive copy of forwarder maps to prevent external mutation.
-	rf := make(map[string]ResourceForwarder, len(opts.ResourceForwarders))
-	for k, v := range opts.ResourceForwarders {
-		rf[k] = v
-	}
-	sf := make(map[string]StaticForwarder, len(opts.StaticForwarders))
-	for k, v := range opts.StaticForwarders {
-		sf[k] = v
-	}
+	rf := maps.Clone(opts.ResourceForwarders)
+	sf := maps.Clone(opts.StaticForwarders)
 
 	return &Manager{
 		log:                logger.Named("NetworkerManager"),
@@ -86,11 +82,7 @@ func NewManager(cfg ManagerConfig, opts PluginOpts) *Manager {
 // ---------------------------------------------------------------------------
 
 func (m *Manager) GetSupportedPortForwardTargets(_ *types.PluginContext) ([]string, error) {
-	resources := make([]string, 0, len(m.resourceForwarders))
-	for rt := range m.resourceForwarders {
-		resources = append(resources, rt)
-	}
-	return resources, nil
+	return slices.Collect(maps.Keys(m.resourceForwarders)), nil
 }
 
 func (m *Manager) GetPortForwardSession(
@@ -271,13 +263,7 @@ func (m *Manager) StartPortForwardSession(
 	}
 
 	// Defensive copy of labels to prevent external mutation.
-	var labels map[string]string
-	if opts.Labels != nil {
-		labels = make(map[string]string, len(opts.Labels))
-		for k, v := range opts.Labels {
-			labels[k] = v
-		}
-	}
+	labels := maps.Clone(opts.Labels)
 
 	now := m.clock.Now()
 	newSession := PortForwardSession{

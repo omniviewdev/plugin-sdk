@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 	"sync"
@@ -130,11 +131,7 @@ func (r *resourcerManager[ClientT]) GetResourcers() map[string]types.Resourcer[C
 	r.RLock()
 	defer r.RUnlock()
 
-	result := make(map[string]types.Resourcer[ClientT], len(r.store))
-	for k, v := range r.store {
-		result[k] = v
-	}
-	return result
+	return maps.Clone(r.store)
 }
 
 // DeregisterResourcer deregisters the resourcer for the given resource type.

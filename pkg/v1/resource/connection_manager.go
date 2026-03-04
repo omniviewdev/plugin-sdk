@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"sync"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -316,9 +318,5 @@ func (m *connectionManager[ClientT]) DeleteConnection(ctx context.Context, conne
 func (m *connectionManager[ClientT]) ActiveConnectionIDs() []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	ids := make([]string, 0, len(m.conns))
-	for id := range m.conns {
-		ids = append(ids, id)
-	}
-	return ids
+	return slices.Collect(maps.Keys(m.conns))
 }

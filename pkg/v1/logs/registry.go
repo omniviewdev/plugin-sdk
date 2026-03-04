@@ -2,7 +2,8 @@ package logs
 
 import (
 	"log"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -67,11 +68,7 @@ func (r *handlerRegistry) FindResolver(resourceKey string) (SourceResolver, bool
 
 // AllHandlers returns all registered handlers in deterministic (sorted key) order.
 func (r *handlerRegistry) AllHandlers() []Handler {
-	keys := make([]string, 0, len(r.handlers))
-	for k := range r.handlers {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(r.handlers))
 	result := make([]Handler, 0, len(keys))
 	for _, k := range keys {
 		result = append(result, r.handlers[k])
@@ -83,13 +80,9 @@ func (r *handlerRegistry) AllHandlers() []Handler {
 // or false if the registry is empty.
 // Used when a resolver's sources need a handler but no direct mapping exists.
 func (r *handlerRegistry) AnyHandler() (Handler, bool) {
-	keys := make([]string, 0, len(r.handlers))
-	for k := range r.handlers {
-		keys = append(keys, k)
-	}
+	keys := slices.Sorted(maps.Keys(r.handlers))
 	if len(keys) == 0 {
 		return Handler{}, false
 	}
-	sort.Strings(keys)
 	return r.handlers[keys[0]], true
 }

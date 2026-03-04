@@ -1,6 +1,7 @@
 package exectest
 
 import (
+	"slices"
 	"sync"
 	"time"
 
@@ -41,9 +42,7 @@ func (r *RecordingOutput) broadcast() {
 func (r *RecordingOutput) Outputs() []exec.StreamOutput {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	cp := make([]exec.StreamOutput, len(r.outputs))
-	copy(cp, r.outputs)
-	return cp
+	return slices.Clone(r.outputs)
 }
 
 // Count returns the number of recorded outputs.
@@ -60,8 +59,7 @@ func (r *RecordingOutput) WaitForOutputs(count int, timeout time.Duration) []exe
 	for {
 		r.mu.Lock()
 		if len(r.outputs) >= count {
-			cp := make([]exec.StreamOutput, len(r.outputs))
-			copy(cp, r.outputs)
+			cp := slices.Clone(r.outputs)
 			r.mu.Unlock()
 			return cp
 		}

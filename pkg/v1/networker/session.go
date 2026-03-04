@@ -1,6 +1,7 @@
 package networker
 
 import (
+	"maps"
 	"sync"
 	"time"
 
@@ -169,12 +170,7 @@ func (e *sessionEntry) transition(to SessionState) error {
 func (e *sessionEntry) snapshot() PortForwardSession {
 	e.mu.RLock()
 	cp := e.session
-	if e.session.Labels != nil {
-		cp.Labels = make(map[string]string, len(e.session.Labels))
-		for k, v := range e.session.Labels {
-			cp.Labels[k] = v
-		}
-	}
+	cp.Labels = maps.Clone(e.session.Labels)
 	e.mu.RUnlock()
 	return cp
 }

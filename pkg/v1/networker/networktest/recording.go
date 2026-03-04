@@ -1,6 +1,7 @@
 package networktest
 
 import (
+	"slices"
 	"sync"
 	"time"
 
@@ -45,9 +46,7 @@ func (r *RecordingObserver) Record(sessionID string, state networker.SessionStat
 func (r *RecordingObserver) Changes() []SessionStateChange {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	cp := make([]SessionStateChange, len(r.changes))
-	copy(cp, r.changes)
-	return cp
+	return slices.Clone(r.changes)
 }
 
 // WaitForState blocks until a change with the given state for the given session is recorded.

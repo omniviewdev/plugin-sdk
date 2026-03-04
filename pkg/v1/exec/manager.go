@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -77,10 +79,7 @@ func NewManager(cfg ManagerConfig) *Manager {
 	}
 
 	// Defensive copy to prevent external mutation of the manager's handler map.
-	handlers := make(map[string]Handler, len(cfg.Handlers))
-	for k, v := range cfg.Handlers {
-		handlers[k] = v
-	}
+	handlers := maps.Clone(cfg.Handlers)
 
 	return &Manager{
 		log:              logger.Named("ExecManager"),
@@ -227,10 +226,7 @@ func (m *Manager) CreateSession(
 	handlerKey := opts.ResourcePlugin + "/" + opts.ResourceKey
 	handler, ok := m.handlers[handlerKey]
 	if !ok {
-		available := make([]string, 0, len(m.handlers))
-		for k := range m.handlers {
-			available = append(available, k)
-		}
+		available := slices.Collect(maps.Keys(m.handlers))
 		return nil, NewHandlerNotFoundError(handlerKey, available)
 	}
 
@@ -280,9 +276,9 @@ func (m *Manager) CreateSession(
 	ss := &sessionState{
 		session: Session{
 			ID:        opts.ID,
-			Labels:    opts.Labels,
-			Params:    opts.Params,
-			Command:   opts.Command,
+			Labels:    maps.Clone(opts.Labels),
+			Params:    maps.Clone(opts.Params),
+			Command:   slices.Clone(opts.Command),
 			Attached:  false,
 			CreatedAt: m.clock.Now(),
 		},
@@ -536,11 +532,7 @@ func sanitizeMapKeys(m map[string]string) []string {
 	if m == nil {
 		return nil
 	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
+	return slices.Collect(maps.Keys(m))
 }
 
 // emitOutput sends output through the sink if available.

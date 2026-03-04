@@ -1,6 +1,10 @@
 package networker
 
-import "github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
+import (
+	"maps"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
+)
 
 // SetClock replaces the Manager's Clock for testing.
 func SetClock(m *Manager, c timeutil.Clock) {
@@ -16,11 +20,7 @@ func WaitDone(m *Manager) { m.wg.Wait() }
 func Sessions(m *Manager) map[string]*sessionEntry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	cp := make(map[string]*sessionEntry, len(m.sessions))
-	for k, v := range m.sessions {
-		cp[k] = v
-	}
-	return cp
+	return maps.Clone(m.sessions)
 }
 
 // EntryState returns the current state of a session entry.

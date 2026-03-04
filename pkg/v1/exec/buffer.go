@@ -1,6 +1,9 @@
 package exec
 
-import "sync"
+import (
+	"slices"
+	"sync"
+)
 
 // OutputBuffer stores terminal output bytes, providing a fixed-size cyclic buffer.
 type OutputBuffer struct {
@@ -63,7 +66,7 @@ func (b *OutputBuffer) Append(data []byte) {
 func (b *OutputBuffer) GetAll() []byte {
 	b.lock.Lock()
 	defer b.lock.Unlock()
-	return append([]byte(nil), b.buf...)
+	return slices.Clone(b.buf)
 }
 
 // Len returns the current number of bytes in the buffer.
