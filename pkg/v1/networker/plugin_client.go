@@ -62,6 +62,9 @@ func (p *PluginClient) GetPortForwardSession(
 	if err != nil {
 		return nil, err
 	}
+	if resp.GetSession() == nil {
+		return &PortForwardSession{}, nil
+	}
 
 	return NewPortForwardSessionFromProto(resp.GetSession()), nil
 }
@@ -122,6 +125,9 @@ func (p *PluginClient) StartPortForwardSession(
 	if err != nil {
 		return nil, err
 	}
+	if resp.GetSession() == nil {
+		return &PortForwardSession{}, nil
+	}
 
 	return NewPortForwardSessionFromProto(resp.GetSession()), nil
 }
@@ -137,6 +143,9 @@ func (p *PluginClient) ClosePortForwardSession(
 	)
 	if err != nil {
 		return nil, err
+	}
+	if resp.GetSession() == nil {
+		return &PortForwardSession{}, nil
 	}
 
 	return NewPortForwardSessionFromProto(resp.GetSession()), nil

@@ -94,6 +94,9 @@ func (s *PluginServer) ListPortForwardSessions(
 	}
 	sessions := make([]*networkerpb.PortForwardSession, 0, len(resp))
 	for _, session := range resp {
+		if session == nil {
+			continue
+		}
 		sessions = append(sessions, session.ToProto())
 	}
 
@@ -116,6 +119,9 @@ func (s *PluginServer) FindPortForwardSessions(
 
 	sessions := make([]*networkerpb.PortForwardSession, 0, len(resp))
 	for _, session := range resp {
+		if session == nil {
+			continue
+		}
 		sessions = append(sessions, session.ToProto())
 	}
 

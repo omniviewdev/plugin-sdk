@@ -76,9 +76,10 @@ func NewManager(cfg ManagerConfig) *Manager {
 		tf = NewRealTerminalFactory()
 	}
 
-	handlers := cfg.Handlers
-	if handlers == nil {
-		handlers = make(map[string]Handler)
+	// Defensive copy to prevent external mutation of the manager's handler map.
+	handlers := make(map[string]Handler, len(cfg.Handlers))
+	for k, v := range cfg.Handlers {
+		handlers[k] = v
 	}
 
 	return &Manager{
@@ -113,14 +114,17 @@ func (m *Manager) GetSupportedResources(_ *types.PluginContext) []Handler {
 
 // Stream creates a new stream to multiplex sessions.
 func (m *Manager) Stream(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
+	m.mu.Lock()
 	if m.sink == nil {
 		m.out = make(chan StreamOutput, DefaultStreamBufferSize)
 		m.sink = NewChannelSink(ctx, m.out)
 	}
+	out := m.out
+	m.mu.Unlock()
 
 	go m.handleStreamInput(ctx, in)
 
-	return m.out, nil
+	return out, nil
 }
 
 func (m *Manager) handleStreamInput(ctx context.Context, in chan StreamInput) {
@@ -233,9 +237,18 @@ func (m *Manager) CreateSession(
 	}
 	m.mu.RUnlock()
 
+	// Nil-guard to avoid panicking on nil PluginContext.
+	if pluginctx == nil {
+		pluginctx = &types.PluginContext{Context: context.Background()}
+	}
+
 	// Shallow-copy PluginContext to avoid mutating the caller's shared instance.
 	pctxCopy := *pluginctx
-	ctx, cancel := context.WithCancel(pluginctx.Context)
+	baseCtx := pctxCopy.Context
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(baseCtx)
 	pctxCopy.Context = ctx
 	if m.settingsProvider != nil {
 		pctxCopy.SetSettingsProvider(m.settingsProvider)
@@ -343,14 +356,11 @@ func (m *Manager) handleStream(ss *sessionState) {
 		}
 
 		if read > 0 {
-			output := StreamOutput{
+			m.emitOutput(StreamOutput{
 				SessionID: ss.session.ID,
 				Target:    StreamTargetStdOut,
 				Data:      buf[:read],
-			}
-			if m.sink != nil {
-				m.sink.OnOutput(output)
-			}
+			})
 			ss.buffer.Append(buf[:read])
 		}
 	}
@@ -392,26 +402,22 @@ func (m *Manager) cleanupSession(ss *sessionState, handlerErr error) {
 				Retryable:  true,
 			}
 		}
-		if m.sink != nil {
-			m.sink.OnOutput(StreamOutput{
-				SessionID: sessionID,
-				Target:    StreamTargetStdErr,
-				Data:      []byte(handlerErr.Error()),
-				Signal:    StreamSignalError,
-				Error:     streamErr,
-			})
-		}
+		m.emitOutput(StreamOutput{
+			SessionID: sessionID,
+			Target:    StreamTargetStdErr,
+			Data:      []byte(handlerErr.Error()),
+			Signal:    StreamSignalError,
+			Error:     streamErr,
+		})
 	}
 
 	// Signal close
-	if m.sink != nil {
-		m.sink.OnOutput(StreamOutput{
-			SessionID: sessionID,
-			Target:    StreamTargetStdOut,
-			Data:      []byte("\nSession closed\n"),
-			Signal:    StreamSignalClose,
-		})
-	}
+	m.emitOutput(StreamOutput{
+		SessionID: sessionID,
+		Target:    StreamTargetStdOut,
+		Data:      []byte("\nSession closed\n"),
+		Signal:    StreamSignalClose,
+	})
 }
 
 func (m *Manager) writeToSession(ss *sessionState, data []byte) error {
@@ -495,6 +501,14 @@ func (m *Manager) ResizeSession(
 	if rows < 1 || rows > 65535 || cols < 1 || cols > 65535 {
 		return fmt.Errorf("invalid resize dimensions: rows=%d cols=%d (must be 1..65535)", rows, cols)
 	}
+
+	m.mu.RLock()
+	_, exists := m.sessions[sessionID]
+	m.mu.RUnlock()
+	if !exists {
+		return NewSessionNotFoundError(sessionID)
+	}
+
 	select {
 	case m.resize <- StreamResize{
 		SessionID: sessionID,
@@ -508,9 +522,13 @@ func (m *Manager) ResizeSession(
 }
 
 // emitOutput sends output through the sink if available.
+// It acquires the read lock to safely access the sink field.
 func (m *Manager) emitOutput(output StreamOutput) {
-	if m.sink == nil {
+	m.mu.RLock()
+	sink := m.sink
+	m.mu.RUnlock()
+	if sink == nil {
 		return
 	}
-	m.sink.OnOutput(output)
+	sink.OnOutput(output)
 }

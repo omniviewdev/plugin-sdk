@@ -164,11 +164,13 @@ func (m *Manager) StartPortForwardSession(
 	pluginctx *types.PluginContext,
 	opts PortForwardSessionOptions,
 ) (*PortForwardSession, error) {
+	// Read from pluginctx without mutating it.
 	if pluginctx == nil {
-		pluginctx = &types.PluginContext{Context: context.Background()}
+		pluginctx = &types.PluginContext{}
 	}
-	if pluginctx.Context == nil {
-		pluginctx.Context = context.Background()
+	baseCtx := pluginctx.Context
+	if baseCtx == nil {
+		baseCtx = context.Background()
 	}
 
 	logger := m.log.With("connection_type", opts.ConnectionType)
@@ -184,9 +186,9 @@ func (m *Manager) StartPortForwardSession(
 		return nil, NewPortUnavailableError(opts.LocalPort)
 	}
 
-	// Shallow-copy PluginContext
+	// Shallow-copy PluginContext — never mutate the caller's instance.
 	pctxCopy := *pluginctx
-	ctx, cancel := context.WithCancel(pluginctx.Context)
+	ctx, cancel := context.WithCancel(baseCtx)
 	pctxCopy.Context = ctx
 	if m.settingsProvider != nil {
 		pctxCopy.SetSettingsProvider(m.settingsProvider)
@@ -243,6 +245,9 @@ func (m *Manager) StartPortForwardSession(
 				if !ok {
 					return nil, NewForwarderFailedError(sessionID, fmt.Errorf("forwarder error channel closed before ready"))
 				}
+				if err == nil {
+					return nil, NewForwarderFailedError(sessionID, fmt.Errorf("forwarder error channel returned nil error"))
+				}
 				return nil, NewForwarderFailedError(sessionID, err)
 			case <-ctx.Done():
 				cancel()
@@ -254,11 +259,20 @@ func (m *Manager) StartPortForwardSession(
 		}
 	}
 
+	// Defensive copy of labels to prevent external mutation.
+	var labels map[string]string
+	if opts.Labels != nil {
+		labels = make(map[string]string, len(opts.Labels))
+		for k, v := range opts.Labels {
+			labels[k] = v
+		}
+	}
+
 	now := m.clock.Now()
 	newSession := PortForwardSession{
 		CreatedAt:      now,
 		UpdatedAt:      now,
-		Labels:         opts.Labels,
+		Labels:         labels,
 		Connection:     opts.Connection,
 		ID:             sessionID,
 		Protocol:       opts.Protocol,

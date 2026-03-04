@@ -32,7 +32,14 @@ func NewChannelSink(ctx context.Context, out chan StreamOutput) *ChannelSink {
 }
 
 func (s *ChannelSink) OnOutput(output StreamOutput) {
-	if s.out == nil {
+	if s == nil || s.out == nil {
+		return
+	}
+	if s.ctx == nil {
+		select {
+		case s.out <- output:
+		default:
+		}
 		return
 	}
 	select {
