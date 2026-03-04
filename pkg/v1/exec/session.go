@@ -25,6 +25,9 @@ type Session struct {
 }
 
 func (s *Session) ToProto() *execpb.Session {
+	if s == nil {
+		return nil
+	}
 	return &execpb.Session{
 		Id:        s.ID,
 		Command:   s.Command,
@@ -149,6 +152,9 @@ func NewSessionOptionsFromProto(opts *execpb.SessionOptions) *SessionOptions {
 }
 
 func (o *SessionOptions) ToProto() (*execpb.SessionOptions, error) {
+	if o == nil {
+		return nil, fmt.Errorf("nil SessionOptions receiver")
+	}
 	data, err := structpb.NewStruct(o.ResourceData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert resource data: %w", err)

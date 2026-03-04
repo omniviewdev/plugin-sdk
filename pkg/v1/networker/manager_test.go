@@ -95,6 +95,9 @@ func TestManager_StartSession_ForwarderFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from failing forwarder")
 	}
+	if !errors.Is(err, networker.ErrNetForwarderFailed) {
+		t.Fatalf("expected ForwarderFailed, got: %v", err)
+	}
 }
 
 func TestManager_CloseSession_Success(t *testing.T) {

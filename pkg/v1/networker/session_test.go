@@ -16,6 +16,7 @@ func TestCanTransition_ValidPaths(t *testing.T) {
 		{networker.SessionStateActive, networker.SessionStateFailed},
 		{networker.SessionStatePaused, networker.SessionStateActive},
 		{networker.SessionStatePaused, networker.SessionStateStopped},
+		{networker.SessionStatePaused, networker.SessionStateFailed},
 	}
 	for _, tt := range valid {
 		if !networker.CanTransition(tt.from, tt.to) {
@@ -33,7 +34,6 @@ func TestCanTransition_InvalidPaths(t *testing.T) {
 		{networker.SessionStateFailed, networker.SessionStateActive},
 		{networker.SessionStateStopped, networker.SessionStatePaused},
 		{networker.SessionStateFailed, networker.SessionStatePaused},
-		{networker.SessionStatePaused, networker.SessionStateFailed},
 	}
 	for _, tt := range invalid {
 		if networker.CanTransition(tt.from, tt.to) {

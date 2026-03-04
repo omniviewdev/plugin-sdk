@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -225,12 +226,12 @@ func (m *Manager) CreateSession(
 
 	opts.ID = ensureSessionID(opts.ID)
 
-	m.mu.Lock()
+	m.mu.RLock()
 	if _, exists := m.sessions[opts.ID]; exists {
-		m.mu.Unlock()
+		m.mu.RUnlock()
 		return nil, NewSessionExistsError(opts.ID)
 	}
-	m.mu.Unlock()
+	m.mu.RUnlock()
 
 	// Shallow-copy PluginContext to avoid mutating the caller's shared instance.
 	pctxCopy := *pluginctx
@@ -277,6 +278,12 @@ func (m *Manager) CreateSession(
 	}
 
 	m.mu.Lock()
+	if _, exists := m.sessions[opts.ID]; exists {
+		m.mu.Unlock()
+		cancel()
+		terminal.Close()
+		return nil, NewSessionExistsError(opts.ID)
+	}
 	m.sessions[opts.ID] = ss
 	m.mu.Unlock()
 
@@ -485,12 +492,19 @@ func (m *Manager) ResizeSession(
 	sessionID string,
 	rows, cols int32,
 ) error {
-	m.resize <- StreamResize{
+	if rows < 1 || rows > 65535 || cols < 1 || cols > 65535 {
+		return fmt.Errorf("invalid resize dimensions: rows=%d cols=%d (must be 1..65535)", rows, cols)
+	}
+	select {
+	case m.resize <- StreamResize{
 		SessionID: sessionID,
 		Rows:      uint16(rows),
 		Cols:      uint16(cols),
+	}:
+		return nil
+	case <-m.clock.After(ResizeTimeout):
+		return fmt.Errorf("timeout sending resize for session %s", sessionID)
 	}
-	return nil
 }
 
 // emitOutput sends output through the sink if available.

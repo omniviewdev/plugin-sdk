@@ -262,8 +262,6 @@ func TestManager_ConcurrentSessions(t *testing.T) {
 	}
 
 	// List should show all sessions
-	pctx := &exec.Session{} // just need the count
-	_ = pctx
 	sessions, err := h.Manager.ListSessions(nil)
 	if err != nil {
 		t.Fatalf("ListSessions: %v", err)

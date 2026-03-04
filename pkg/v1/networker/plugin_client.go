@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -12,15 +13,25 @@ import (
 
 type PluginClient struct {
 	client networkerpb.NetworkerPluginClient
+	log    hclog.Logger
 }
 
 var _ Provider = (*PluginClient)(nil)
+
+// ensurePluginCtx returns a non-nil PluginContext to avoid nil dereference in
+// types.WithPluginContext.
+func ensurePluginCtx(ctx *types.PluginContext) *types.PluginContext {
+	if ctx == nil {
+		return &types.PluginContext{}
+	}
+	return ctx
+}
 
 // GetSupportedPortForwardTargets returns the list of targets that are supported
 // by this plugin for port forwarding.
 func (p *PluginClient) GetSupportedPortForwardTargets(ctx *types.PluginContext) ([]string, error) {
 	resp, err := p.client.GetSupportedPortForwardTargets(
-		types.WithPluginContext(context.Background(), ctx),
+		types.WithPluginContext(context.Background(), ensurePluginCtx(ctx)),
 		&emptypb.Empty{},
 	)
 	if err != nil {
@@ -36,7 +47,7 @@ func (p *PluginClient) GetPortForwardSession(
 	sessionID string,
 ) (*PortForwardSession, error) {
 	resp, err := p.client.GetPortForwardSession(
-		types.WithPluginContext(context.Background(), ctx),
+		types.WithPluginContext(context.Background(), ensurePluginCtx(ctx)),
 		&networkerpb.PortForwardSessionByIdRequest{Id: sessionID},
 	)
 	if err != nil {
@@ -51,7 +62,7 @@ func (p *PluginClient) ListPortForwardSessions(
 	ctx *types.PluginContext,
 ) ([]*PortForwardSession, error) {
 	resp, err := p.client.ListPortForwardSessions(
-		types.WithPluginContext(context.Background(), ctx),
+		types.WithPluginContext(context.Background(), ensurePluginCtx(ctx)),
 		&emptypb.Empty{},
 	)
 	if err != nil {
@@ -73,7 +84,7 @@ func (p *PluginClient) FindPortForwardSessions(
 	req FindPortForwardSessionRequest,
 ) ([]*PortForwardSession, error) {
 	resp, err := p.client.FindPortForwardSessions(
-		types.WithPluginContext(context.Background(), ctx),
+		types.WithPluginContext(context.Background(), ensurePluginCtx(ctx)),
 		req.ToProto(),
 	)
 	if err != nil {
@@ -93,7 +104,7 @@ func (p *PluginClient) StartPortForwardSession(
 	opts PortForwardSessionOptions,
 ) (*PortForwardSession, error) {
 	resp, err := p.client.StartPortForwardSession(
-		types.WithPluginContext(context.Background(), ctx),
+		types.WithPluginContext(context.Background(), ensurePluginCtx(ctx)),
 		opts.ToProto(),
 	)
 	if err != nil {
@@ -108,7 +119,7 @@ func (p *PluginClient) ClosePortForwardSession(
 	sessionID string,
 ) (*PortForwardSession, error) {
 	resp, err := p.client.ClosePortForwardSession(
-		types.WithPluginContext(context.Background(), ctx),
+		types.WithPluginContext(context.Background(), ensurePluginCtx(ctx)),
 		&networkerpb.PortForwardSessionByIdRequest{Id: sessionID},
 	)
 	if err != nil {
@@ -119,14 +130,20 @@ func (p *PluginClient) ClosePortForwardSession(
 }
 
 // StopAll performs a best-effort shutdown of all remote sessions by listing
-// them and closing each individually. Errors are logged per-session but
-// do not stop the loop.
+// them and closing each individually. Per-session close errors are logged
+// but do not stop the loop.
 func (p *PluginClient) StopAll() {
+	log := p.log
+	if log == nil {
+		log = hclog.NewNullLogger()
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	resp, err := p.client.ListPortForwardSessions(ctx, &emptypb.Empty{})
 	if err != nil {
+		log.Warn("StopAll: failed to list sessions", "error", err)
 		return
 	}
 
@@ -134,8 +151,10 @@ func (p *PluginClient) StopAll() {
 		if s.GetId() == "" {
 			continue
 		}
-		_, _ = p.client.ClosePortForwardSession(ctx,
+		if _, closeErr := p.client.ClosePortForwardSession(ctx,
 			&networkerpb.PortForwardSessionByIdRequest{Id: s.GetId()},
-		)
+		); closeErr != nil {
+			log.Warn("StopAll: failed to close session", "session_id", s.GetId(), "error", closeErr)
+		}
 	}
 }

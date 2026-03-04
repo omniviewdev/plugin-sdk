@@ -54,7 +54,10 @@ func (p *Plugin) GRPCClient(
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
 ) (interface{}, error) {
-	return &PluginClient{client: networkerpb.NewNetworkerPluginClient(c)}, nil
+	return &PluginClient{
+		client: networkerpb.NewNetworkerPluginClient(c),
+		log:    hclog.Default().Named("NetworkerPluginClient"),
+	}, nil
 }
 
 func RegisterPlugin(

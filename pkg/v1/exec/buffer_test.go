@@ -80,10 +80,13 @@ func TestOutputBuffer_DefaultCapacity(t *testing.T) {
 func TestOutputBuffer_NegativeCapacity(t *testing.T) {
 	buf := exec.NewOutputBuffer(-1)
 	buf.Append([]byte("abc"))
-	// With capacity -1, every Append triggers eviction to the last -1 bytes,
-	// which is effectively zero. Verify it doesn't panic.
-	if buf.Len() < 0 {
-		t.Fatal("negative length")
+	// Capacity clamped to 0 — all appends discarded.
+	if buf.Len() != 0 {
+		t.Fatalf("expected len 0 after append to zero-capacity buffer, got %d", buf.Len())
+	}
+	got := buf.GetAll()
+	if len(got) != 0 {
+		t.Fatalf("expected empty GetAll, got %d bytes", len(got))
 	}
 }
 

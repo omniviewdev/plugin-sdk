@@ -90,7 +90,13 @@ func (t *FakeTerminal) Resizes() []ResizeRecord {
 
 // FakeTerminalFactory returns an exec.TerminalFactory that creates the given
 // FakeTerminal on the first call and returns an error on subsequent calls.
+// If ft is nil, the factory always returns (nil, os.ErrClosed).
 func FakeTerminalFactory(ft *FakeTerminal) exec.TerminalFactory {
+	if ft == nil {
+		return func() (exec.Terminal, error) {
+			return nil, os.ErrClosed
+		}
+	}
 	var once sync.Once
 	return func() (exec.Terminal, error) {
 		var used bool

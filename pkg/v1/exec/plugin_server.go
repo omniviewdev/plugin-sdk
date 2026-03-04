@@ -22,7 +22,19 @@ type PluginServer struct {
 }
 
 // grpcCodeForError maps ExecSessionError codes to gRPC status codes.
+// It also preserves context cancellation/deadline and existing gRPC statuses.
 func grpcCodeForError(err error) codes.Code {
+	// Preserve existing gRPC status codes.
+	if s, ok := status.FromError(err); ok && s.Code() != codes.OK {
+		return s.Code()
+	}
+	// Map context errors.
+	if errors.Is(err, context.Canceled) {
+		return codes.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return codes.DeadlineExceeded
+	}
 	var sessionErr *ExecSessionError
 	if errors.As(err, &sessionErr) {
 		switch sessionErr.Code {
@@ -177,8 +189,8 @@ func (s *PluginServer) ResizeSession(
 	if err := s.Impl.ResizeSession(
 		types.PluginContextFromContext(ctx),
 		in.GetId(),
-		in.GetCols(),
 		in.GetRows(),
+		in.GetCols(),
 	); err != nil {
 		return nil, status.Errorf(grpcCodeForError(err), "%v", err)
 	}
@@ -212,7 +224,12 @@ func (s *PluginServer) Stream(stream execpb.ExecPlugin_StreamServer) error {
 			}
 			return fmt.Errorf("failed to receive stream: %w", err)
 		}
-		multiplexer <- NewStreamInputFromProto(in)
+		msg := NewStreamInputFromProto(in)
+		select {
+		case multiplexer <- msg:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 

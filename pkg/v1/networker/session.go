@@ -67,6 +67,7 @@ var validTransitions = map[SessionState]map[SessionState]bool{
 	SessionStatePaused: {
 		SessionStateActive:  true,
 		SessionStateStopped: true,
+		SessionStateFailed:  true,
 	},
 	// STOPPED and FAILED are terminal states.
 }

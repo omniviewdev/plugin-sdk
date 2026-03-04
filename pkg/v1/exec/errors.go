@@ -42,16 +42,27 @@ type ExecSessionError struct {
 }
 
 func (e *ExecSessionError) Error() string {
+	if e == nil {
+		return "<nil ExecSessionError>"
+	}
 	if e.SessionID != "" {
 		return fmt.Sprintf("[%s] session %s: %s", e.Code, e.SessionID, e.Message)
 	}
 	return fmt.Sprintf("[%s] %s", e.Code, e.Message)
 }
 
-func (e *ExecSessionError) Unwrap() error { return e.Err }
+func (e *ExecSessionError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
 
 // Is reports whether target matches this error's code.
 func (e *ExecSessionError) Is(target error) bool {
+	if e == nil {
+		return false
+	}
 	var t *ExecSessionError
 	if errors.As(target, &t) {
 		return e.Code == t.Code

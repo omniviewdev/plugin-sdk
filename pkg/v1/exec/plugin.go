@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
@@ -31,7 +32,7 @@ type Provider interface {
 	// CloseSession closes a session
 	CloseSession(ctx *types.PluginContext, sessionID string) error
 	// ResizeSession resizes a session
-	ResizeSession(ctx *types.PluginContext, sessionID string, cols, rows int32) error
+	ResizeSession(ctx *types.PluginContext, sessionID string, rows, cols int32) error
 	// Stream starts a new stream to multiplex sessions
 	Stream(context.Context, chan StreamInput) (chan StreamOutput, error)
 	// Close shuts down the provider, releasing all resources.
@@ -67,9 +68,13 @@ func RegisterPlugin(
 		return errors.New("plugin is nil")
 	}
 
-	handlers := make(map[string]Handler)
+	handlers := make(map[string]Handler, len(opts.Handlers))
 	for _, handler := range opts.Handlers {
-		handlers[handler.Plugin+"/"+handler.Resource] = handler
+		key := handler.Plugin + "/" + handler.Resource
+		if _, exists := handlers[key]; exists {
+			return fmt.Errorf("duplicate exec handler key %q", key)
+		}
+		handlers[key] = handler
 	}
 
 	impl := NewManager(ManagerConfig{

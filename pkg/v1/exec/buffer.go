@@ -27,16 +27,36 @@ func NewDefaultOutputBuffer() *OutputBuffer {
 }
 
 // Append adds data to the buffer, evicting the oldest bytes when capacity is exceeded.
+// The backing array never grows beyond capacity to avoid retaining oversized memory.
 func (b *OutputBuffer) Append(data []byte) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
-	b.buf = append(b.buf, data...)
-
-	// Cyclic eviction: if we've exceeded capacity, trim from the front.
-	if len(b.buf) > b.capacity {
-		b.buf = b.buf[len(b.buf)-b.capacity:]
+	if b.capacity == 0 {
+		b.buf = nil
+		return
 	}
+
+	if len(data) >= b.capacity {
+		// Data alone exceeds capacity — keep only the last capacity bytes.
+		newBuf := make([]byte, b.capacity)
+		copy(newBuf, data[len(data)-b.capacity:])
+		b.buf = newBuf
+		return
+	}
+
+	total := len(b.buf) + len(data)
+	if total <= b.capacity {
+		b.buf = append(b.buf, data...)
+		return
+	}
+
+	// Total exceeds capacity — allocate a new slice and copy the tail of old + new data.
+	newBuf := make([]byte, b.capacity)
+	keep := b.capacity - len(data)
+	copy(newBuf, b.buf[len(b.buf)-keep:])
+	copy(newBuf[keep:], data)
+	b.buf = newBuf
 }
 
 // GetAll retrieves a copy of all stored bytes in the buffer.

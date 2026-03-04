@@ -93,4 +93,7 @@ func TestStubForwarder_FailWith(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+	if !errors.Is(err, networker.ErrNetForwarderFailed) {
+		t.Fatalf("expected ForwarderFailed, got: %v", err)
+	}
 }

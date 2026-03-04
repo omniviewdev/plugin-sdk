@@ -154,6 +154,13 @@ func (m *Manager) StartPortForwardSession(
 	pluginctx *types.PluginContext,
 	opts PortForwardSessionOptions,
 ) (*PortForwardSession, error) {
+	if pluginctx == nil {
+		pluginctx = &types.PluginContext{Context: context.Background()}
+	}
+	if pluginctx.Context == nil {
+		pluginctx.Context = context.Background()
+	}
+
 	logger := m.log.With("connection_type", opts.ConnectionType)
 
 	// Resolve port
@@ -191,7 +198,7 @@ func (m *Manager) StartPortForwardSession(
 
 	if err != nil {
 		cancel()
-		return nil, err
+		return nil, NewForwarderFailedError(sessionID, err)
 	}
 
 	if result == nil {
@@ -378,7 +385,7 @@ func (m *Manager) StopAll() {
 
 	select {
 	case <-done:
-	case <-time.After(m.closeTimeout):
+	case <-m.clock.After(m.closeTimeout):
 		m.log.Warn("StopAll timed out waiting for monitor goroutines")
 	}
 }

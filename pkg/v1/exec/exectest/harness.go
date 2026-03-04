@@ -184,6 +184,7 @@ func FailingTTYHandler(err error) exec.TTYHandlerFunc {
 
 // StopChTTYHandler returns a TTYHandlerFunc that sends the given error on
 // the stopCh after a delay, simulating a handler that fails after starting.
+// The send is non-blocking so the goroutine never leaks if the session ends early.
 func StopChTTYHandler(stopErr error, delay time.Duration) exec.TTYHandlerFunc {
 	return func(
 		_ *types.PluginContext,
@@ -194,7 +195,10 @@ func StopChTTYHandler(stopErr error, delay time.Duration) exec.TTYHandlerFunc {
 	) error {
 		go func() {
 			time.Sleep(delay)
-			stopCh <- stopErr
+			select {
+			case stopCh <- stopErr:
+			default:
+			}
 		}()
 		return nil
 	}

@@ -19,8 +19,20 @@ type PluginServer struct {
 	Impl Provider
 }
 
-// grpcCodeForError maps NetworkerError codes to gRPC status codes.
+// grpcCodeForNetworkerError maps NetworkerError codes to gRPC status codes.
+// It also preserves context cancellation/deadline and existing gRPC statuses.
 func grpcCodeForNetworkerError(err error) codes.Code {
+	// Preserve existing gRPC status codes.
+	if s, ok := status.FromError(err); ok && s.Code() != codes.OK {
+		return s.Code()
+	}
+	// Map context errors.
+	if errors.Is(err, context.Canceled) {
+		return codes.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return codes.DeadlineExceeded
+	}
 	var nerr *NetworkerError
 	if errors.As(err, &nerr) {
 		switch nerr.Code {
