@@ -84,11 +84,59 @@ type ConnectionLifecycleProvider interface {
 }
 
 // WatchProvider manages watch lifecycle and event streaming over the gRPC boundary.
+//
+// # Lifecycle
+//
+// A typical watch lifecycle proceeds as follows:
+//
+//  1. The engine calls StartConnectionWatch after a connection is established.
+//     This starts watches for all resource types whose SyncPolicy is SyncOnConnect.
+//  2. The engine calls ListenForEvents to open a long-lived event stream. The
+//     WatchEventSink receives ADD/UPDATE/DELETE data events and STATE change
+//     notifications. ListenForEvents blocks until the provided context is cancelled.
+//  3. For resource types with SyncPolicy SyncOnFirstQuery, the engine calls
+//     EnsureResourceWatch on the first List or Get call for that resource type.
+//  4. On shutdown or disconnect, the engine calls StopConnectionWatch, which
+//     cancels all active watches and transitions them to WatchStateStopped.
+//
+// # SyncPolicy Interaction
+//
+//   - SyncOnConnect: Watch starts immediately in step 1. The initial LIST+WATCH
+//     runs in the background; ADD events arrive via the sink before the first
+//     user query completes.
+//   - SyncOnFirstQuery: Watch is deferred until EnsureResourceWatch is called.
+//     The first user query triggers the watch; subsequent queries hit the cache.
+//   - SyncNever: No watch is started. All reads go through direct API calls.
+//
+// # Thread Safety
+//
+// All methods are safe for concurrent use. StartConnectionWatch and
+// StopConnectionWatch are serialised internally. EnsureResourceWatch is
+// idempotent — concurrent calls for the same resource type result in a
+// single watch.
+//
+// # Error Handling and Retries
+//
+// When a watch encounters an error (API server disconnect, timeout), the
+// implementation transitions to WatchStateError and retries with exponential
+// backoff. After exhausting the retry budget, the state moves to
+// WatchStateFailed (terminal). A failed watch can be manually restarted via
+// RestartResourceWatch.
+//
+// # Individual Resource Watch Management
+//
+// EnsureResourceWatch, StopResourceWatch, and RestartResourceWatch allow
+// fine-grained control over individual resource type watches within a
+// connection. This is useful for on-demand resource types (SyncOnFirstQuery)
+// and for manual recovery after WatchStateFailed.
 type WatchProvider interface {
 	// StartConnectionWatch starts all watches for a connection.
+	// Resources with SyncOnConnect policy begin watching immediately.
+	// Resources with SyncOnFirstQuery are registered but not started.
 	StartConnectionWatch(ctx context.Context, connectionID string) error
 
 	// StopConnectionWatch stops all watches for a connection.
+	// All active watches transition to WatchStateStopped.
 	StopConnectionWatch(ctx context.Context, connectionID string) error
 
 	// HasWatch returns whether any watches are active for a connection.
@@ -99,16 +147,22 @@ type WatchProvider interface {
 
 	// ListenForEvents opens a long-lived event stream.
 	// Blocks until ctx is cancelled, delivering events via the sink.
+	// Must be called after StartConnectionWatch. Events that arrive before
+	// ListenForEvents is called are buffered internally.
 	ListenForEvents(ctx context.Context, sink WatchEventSink) error
 
 	// EnsureResourceWatch ensures a watch is running for a specific resource type.
-	// No-op if already running.
+	// No-op if already running. Used by SyncOnFirstQuery resources and for
+	// restarting failed watches.
 	EnsureResourceWatch(ctx context.Context, connectionID string, resourceKey string) error
 
 	// StopResourceWatch stops the watch for a specific resource type.
+	// Transitions the watch to WatchStateStopped.
 	StopResourceWatch(ctx context.Context, connectionID string, resourceKey string) error
 
 	// RestartResourceWatch restarts the watch for a specific resource type.
+	// Stops the current watch (if any) and starts a fresh one.
+	// Useful for recovering from WatchStateFailed.
 	RestartResourceWatch(ctx context.Context, connectionID string, resourceKey string) error
 
 	// IsResourceWatchRunning returns whether a watch is running for a specific resource type.

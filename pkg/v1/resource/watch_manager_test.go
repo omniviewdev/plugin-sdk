@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/resource/resourcetest"
 )
@@ -50,7 +51,7 @@ func TestWM_StartConnectionWatch(t *testing.T) {
 	defer cancel()
 
 	client := "test-client"
-	if err := wm.StartConnectionWatch(ctx, "conn-1", &client, ctx); err != nil {
+	if err := wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -91,7 +92,7 @@ func TestWM_SkipsSyncOnFirstQuery(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	if !wm.IsResourceWatchRunning("conn-1", "core::v1::Pod") {
 		t.Fatal("Pod should be running")
@@ -121,7 +122,7 @@ func TestWM_SkipsNonWatcher(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	if !wm.IsResourceWatchRunning("conn-1", "core::v1::Pod") {
 		t.Fatal("Pod should be running")
@@ -147,7 +148,7 @@ func TestWM_StopConnectionWatch(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	if err := wm.StopConnectionWatch(ctx, "conn-1"); err != nil {
 		t.Fatal(err)
@@ -176,7 +177,7 @@ func TestWM_EnsureResourceWatch(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	if wm.IsResourceWatchRunning("conn-1", "core::v1::Secret") {
 		t.Fatal("Secret should not be running yet")
@@ -214,7 +215,7 @@ func TestWM_EnsureResourceWatchIdempotent(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -248,7 +249,7 @@ func TestWM_EnsureResourceWatchNonWatcher(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	err := wm.EnsureResourceWatch(ctx, "conn-1", "core::v1::Service")
 	if err == nil {
@@ -276,7 +277,7 @@ func TestWM_StopResourceWatch(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	if err := wm.StopResourceWatch(ctx, "conn-1", "core::v1::Pod"); err != nil {
 		t.Fatal(err)
@@ -313,7 +314,7 @@ func TestWM_RestartResourceWatch(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -363,7 +364,7 @@ func TestWM_EventsFlow(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	sink.WaitForAdds(t, 1, 2*time.Second)
 	sink.WaitForUpdates(t, 1, 2*time.Second)
@@ -402,7 +403,7 @@ func TestWM_WatchErrorRestart(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for the third call to succeed and start blocking.
 	select {
@@ -448,7 +449,7 @@ func TestWM_WatchMaxRetriesExceeded(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for the watch goroutine to finish (max retries exhausted).
 	tCtx, tCancel := testCtx(t)
@@ -503,7 +504,7 @@ func TestWM_WatchPanicRecovered(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for panic recovery and retry to start.
 	select {
@@ -533,7 +534,7 @@ func TestWM_GetWatchState(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	state, err := wm.GetWatchState("conn-1")
 	if err != nil {
@@ -570,7 +571,7 @@ func TestWM_SkipsSyncNever(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	if !wm.IsResourceWatchRunning("conn-1", "core::v1::Pod") {
 		t.Fatal("Pod should be running (SyncOnConnect)")
@@ -596,7 +597,7 @@ func TestWM_ZeroWatchable(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	err := wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	err := wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -628,7 +629,7 @@ func TestWM_StopConnectionWatchIdempotent(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 	wm.StopConnectionWatch(ctx, "conn-1")
 
 	// Second stop should not panic.
@@ -652,7 +653,7 @@ func TestWM_EnsureResourceWatchUnknownKey(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	err := wm.EnsureResourceWatch(ctx, "conn-1", "unknown::v1::Foo")
 	if err == nil {
@@ -694,7 +695,7 @@ func TestWM_StopResourceWatchNotRunning(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Secret was never started (SyncOnFirstQuery) — stop should not panic.
 	err := wm.StopResourceWatch(ctx, "conn-1", "core::v1::Secret")
@@ -727,7 +728,7 @@ func TestWM_RestartResourceWatchFreshContext(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -791,7 +792,7 @@ func TestWM_StateEventsFlow(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	sink.WaitForState(t, "core::v1::Pod", resource.WatchStateSynced, 2*time.Second)
 
@@ -820,8 +821,8 @@ func TestWM_EventsMultipleConnections(t *testing.T) {
 
 	c1 := "client-1"
 	c2 := "client-2"
-	wm.StartConnectionWatch(ctx, "conn-1", &c1, ctx)
-	wm.StartConnectionWatch(ctx, "conn-2", &c2, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &c1, ctx, nil)
+	wm.StartConnectionWatch(ctx, "conn-2", &c2, ctx, nil)
 
 	sink.WaitForAdds(t, 2, 2*time.Second)
 
@@ -858,7 +859,7 @@ func TestWM_EventsMultipleResourceTypes(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	sink.WaitForAdds(t, 2, 2*time.Second)
 
@@ -899,7 +900,7 @@ func TestWM_NoEventsAfterStop(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	<-emitting
 	sink.WaitForAdds(t, 1, 2*time.Second)
@@ -939,7 +940,7 @@ func TestWM_MultipleListeners(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	sink1.WaitForAdds(t, 1, 2*time.Second)
 	sink2.WaitForAdds(t, 1, 2*time.Second)
@@ -976,7 +977,7 @@ func TestWM_ListenerDisconnect(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Remove sink1 before events emit.
 	wm.RemoveListener(sink1)
@@ -1021,7 +1022,7 @@ func TestWM_ErrorThenSuccessResetsRetries(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for retry to succeed.
 	select {
@@ -1067,7 +1068,7 @@ func TestWM_ContextCancelledDuringBackoff(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for first failure.
 	select {
@@ -1102,7 +1103,7 @@ func TestWM_ConnectionContextCancelStopsAll(t *testing.T) {
 	connCtx, connCancel := context.WithCancel(context.Background())
 
 	client := "test"
-	wm.StartConnectionWatch(connCtx, "conn-1", &client, connCtx)
+	wm.StartConnectionWatch(connCtx, "conn-1", &client, connCtx, nil)
 
 	if !wm.IsResourceWatchRunning("conn-1", "core::v1::Pod") {
 		t.Fatal("Pod should be running")
@@ -1132,7 +1133,7 @@ func TestWM_WatchBlocksUntilCancelled(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for watch to be running.
 	tCtx, tCancel := testCtx(t)
@@ -1153,13 +1154,18 @@ func TestWM_WatchBlocksUntilCancelled(t *testing.T) {
 func TestWM_ConcurrentEnsureResourceWatch(t *testing.T) {
 	syncFirst := resource.SyncOnFirstQuery
 	var callCount int32
+	// started is closed once the WatchFunc is actually executing, avoiding the
+	// race between the ready channel (fires before Watch) and callCount.
+	started := make(chan struct{})
 	wm, _, _ := setupWatchTest(t,
 		resource.ResourceRegistration[string]{
 			Meta: resourcetest.SecretMeta,
 			Resourcer: &resourcetest.WatchableResourcer[string]{
 				PolicyVal: &syncFirst,
 				WatchFunc: func(ctx context.Context, _ *string, _ resource.ResourceMeta, _ resource.WatchEventSink) error {
-					atomic.AddInt32(&callCount, 1)
+					if atomic.AddInt32(&callCount, 1) == 1 {
+						close(started)
+					}
 					<-ctx.Done()
 					return nil
 				},
@@ -1171,7 +1177,7 @@ func TestWM_ConcurrentEnsureResourceWatch(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// 10 concurrent EnsureResourceWatch calls.
 	var wg sync.WaitGroup
@@ -1184,15 +1190,17 @@ func TestWM_ConcurrentEnsureResourceWatch(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Wait for the watch to be ready (one of the Ensure calls started it).
+	// Wait for the watch goroutine to actually enter Watch().
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
-	if err := resource.WaitForWatchReadyWM(tCtx, wm, "conn-1", "core::v1::Secret"); err != nil {
-		t.Fatalf("WaitForWatchReady: %v", err)
+	select {
+	case <-started:
+	case <-tCtx.Done():
+		t.Fatal("timed out waiting for Watch to start")
 	}
 
-	if atomic.LoadInt32(&callCount) != 1 {
-		t.Fatalf("expected Watch called once, got %d", callCount)
+	if count := atomic.LoadInt32(&callCount); count != 1 {
+		t.Fatalf("expected Watch called once, got %d", count)
 	}
 
 	cancel()
@@ -1218,7 +1226,7 @@ func TestWM_ConcurrentStartStopWatch(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+			wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 		}()
 		go func() {
 			defer wg.Done()
@@ -1254,7 +1262,7 @@ func TestWM_RestartConnectionNewClient(t *testing.T) {
 	defer cancel()
 
 	c1 := "client-1"
-	wm.StartConnectionWatch(ctx, "conn-1", &c1, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &c1, ctx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -1266,7 +1274,7 @@ func TestWM_RestartConnectionNewClient(t *testing.T) {
 	wm.Wait()
 
 	c2 := "client-2"
-	wm.StartConnectionWatch(ctx, "conn-1", &c2, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &c2, ctx, nil)
 
 	if err := resource.WaitForWatchReadyWM(tCtx, wm, "conn-1", "core::v1::Pod"); err != nil {
 		t.Fatalf("WaitForWatchReady after restart: %v", err)
@@ -1306,7 +1314,7 @@ func TestWM_StopConnectionWatchCleanShutdown(t *testing.T) {
 	connCtx, connCancel := context.WithCancel(ctx)
 	defer connCancel()
 
-	wm.StartConnectionWatch(ctx, "conn-1", &client, connCtx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, connCtx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -1340,7 +1348,7 @@ func TestWM_IsResourceWatchRunningStates(t *testing.T) {
 		t.Fatal("expected false before any start")
 	}
 
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -1397,7 +1405,7 @@ func TestWM_NoEventsFromStoppedResource(t *testing.T) {
 	defer cancel()
 	client := "test"
 
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for at least one event so we know the watch is emitting.
 	sink.WaitForAdds(t, 1, 2*time.Second)
@@ -1426,7 +1434,7 @@ func TestWM_NoEventsFromStoppedResource(t *testing.T) {
 
 // --- WM-033: Backoff increases exponentially (uses FakeClock) ---
 func TestWM_BackoffExponential(t *testing.T) {
-	fc := resourcetest.NewFakeClock()
+	fc := timeutil.NewFakeClock()
 	retryCount := 0
 	watchCalled := make(chan struct{}, 20)
 
@@ -1452,7 +1460,7 @@ func TestWM_BackoffExponential(t *testing.T) {
 	defer cancel()
 	client := "test"
 
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for first Watch() call to complete (and fail).
 	<-watchCalled
@@ -1521,7 +1529,7 @@ func TestWM_WatchReturnsNilNoRestart(t *testing.T) {
 	defer cancel()
 	client := "test"
 
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for the watch goroutine to finish (returns nil immediately, no retry).
 	tCtx, tCancel := testCtx(t)
@@ -1551,7 +1559,7 @@ func TestWM_RootContextCancelStopsAll(t *testing.T) {
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 	client := "test"
 
-	wm.StartConnectionWatch(rootCtx, "conn-1", &client, rootCtx)
+	wm.StartConnectionWatch(rootCtx, "conn-1", &client, rootCtx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -1580,7 +1588,7 @@ func TestWM_PerResourceCancelIsolation(t *testing.T) {
 	defer cancel()
 	client := "test"
 
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -1621,7 +1629,7 @@ func TestWM_NoWatchableNoGoroutines(t *testing.T) {
 	defer cancel()
 	client := "test"
 
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// No watches running — StubResourcer is not a Watcher, so no goroutines started.
 	// No need to wait, just verify immediately.
@@ -1669,7 +1677,7 @@ func TestWM_StartConnectionWatchIdempotent(t *testing.T) {
 	defer cancel()
 	client := "test"
 
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -1678,7 +1686,7 @@ func TestWM_StartConnectionWatchIdempotent(t *testing.T) {
 	}
 
 	// Second call should be no-op.
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Give the second call a moment to potentially cause a duplicate Watch.
 	// Since StartConnectionWatch returns immediately when already started,
@@ -1693,7 +1701,7 @@ func TestWM_StartConnectionWatchIdempotent(t *testing.T) {
 
 // --- WM-072: Watch error — backoff capped at max interval ---
 func TestWM_BackoffCappedAtMax(t *testing.T) {
-	fc := resourcetest.NewFakeClock()
+	fc := timeutil.NewFakeClock()
 	watchCalled := make(chan struct{}, 20)
 
 	wm, _, _ := setupWatchTest(t,
@@ -1719,7 +1727,7 @@ func TestWM_BackoffCappedAtMax(t *testing.T) {
 	defer cancel()
 	client := "test"
 
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 	<-watchCalled // first failure
 
 	tCtx, tCancel := testCtx(t)
@@ -1761,7 +1769,7 @@ func TestWM_HasWatch(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	if !wm.HasWatch("conn-1") {
 		t.Fatal("should be true after starting watches")
@@ -1792,7 +1800,7 @@ func TestWM_PerResourceContextChildOfConnCtx(t *testing.T) {
 	connCtx, connCancel := context.WithCancel(context.Background())
 
 	client := "test"
-	wm.StartConnectionWatch(connCtx, "conn-1", &client, connCtx)
+	wm.StartConnectionWatch(connCtx, "conn-1", &client, connCtx, nil)
 
 	// Wait for the Watch goroutine to send us its ctx.Done channel.
 	var resourceCtxDone <-chan struct{}
@@ -1845,7 +1853,7 @@ func TestWM_WatchHighEventRate(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	sink.WaitForAdds(t, eventCount, 5*time.Second)
 
@@ -1876,7 +1884,7 @@ func TestWM_WatchWrongResourceKey(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	sink.WaitForAdds(t, 1, 2*time.Second)
 
@@ -1919,7 +1927,7 @@ func TestWM_WatchWrongStateOrder(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for both state events.
 	sink.WaitForState(t, "core::v1::Pod", resource.WatchStateSyncing, 2*time.Second)
@@ -1952,7 +1960,7 @@ func TestWM_EnsureAfterConnectionStopped(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -2009,7 +2017,7 @@ func TestWM_RestartDuringBackoff(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for first failure.
 	select {
@@ -2049,7 +2057,7 @@ func TestWM_StopDuringRestart(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -2103,7 +2111,7 @@ func TestWM_RapidRestarts(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -2166,7 +2174,7 @@ func TestWM_ErrorWithPartialEvents(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for adds and the failed state.
 	sink.WaitForAdds(t, 3, 2*time.Second)
@@ -2218,7 +2226,7 @@ func TestWM_StateMachineExactTransitions(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	sink.WaitForState(t, "core::v1::Pod", resource.WatchStateSynced, 2*time.Second)
 
@@ -2276,7 +2284,7 @@ func TestWM_StateMachineErrorPath(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	sink.WaitForState(t, "core::v1::Pod", resource.WatchStateSynced, 2*time.Second)
 
@@ -2338,7 +2346,7 @@ func TestWM_StateMachineFailedTerminal(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	sink.WaitForState(t, "core::v1::Pod", resource.WatchStateFailed, 3*time.Second)
 
@@ -2404,7 +2412,7 @@ func TestWM_GetWatchStateZeroStarted(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	summary, err := wm.GetWatchState("conn-1")
 	if err != nil {
@@ -2434,7 +2442,7 @@ func TestWM_ListenNoWatchesActive(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// No watches started (StubResourcer is not a Watcher), so no goroutines.
 	// Wait and verify no events arrived.
@@ -2481,7 +2489,7 @@ func TestWM_ListenBeforeStart(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Allow the watch to emit.
 	close(ready)
@@ -2527,7 +2535,7 @@ func TestWM_SinkAfterListenerRemoved(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	close(ready)
 
@@ -2568,7 +2576,7 @@ func TestWM_LargeNumberOfWatches(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -2616,7 +2624,7 @@ func TestWM_GoroutineLeakDetection(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	tCtx, tCancel := testCtx(t)
 	defer tCancel()
@@ -2674,7 +2682,7 @@ func TestWM_EnsureResourceWatchSyncNever(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// SyncNever means it should not auto-start. No watches are started,
 	// so no ready channel exists yet. Just verify immediately.
@@ -2728,7 +2736,7 @@ func TestWM_EventOrderingPreserved(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	sink.WaitForAdds(t, 2, 2*time.Second)
 	sink.WaitForUpdates(t, 1, 2*time.Second)
@@ -2769,7 +2777,7 @@ func TestWM_EventOrderingPreserved(t *testing.T) {
 // NOTE: Jitter is NOT currently implemented. This test documents that backoff
 // is deterministic (exponential without jitter). Jitter is a future enhancement.
 func TestWM_BackoffWithJitter(t *testing.T) {
-	fc := resourcetest.NewFakeClock()
+	fc := timeutil.NewFakeClock()
 	var callTimestamps []int32
 	var callCount int32
 	watchCalled := make(chan struct{}, 20)
@@ -2798,7 +2806,7 @@ func TestWM_BackoffWithJitter(t *testing.T) {
 	defer cancel()
 
 	client := "test"
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 	<-watchCalled // first failure
 
 	tCtx, tCancel := testCtx(t)
@@ -2877,7 +2885,7 @@ func TestWM_WatchReturnsNilActiveContextNoLoop(t *testing.T) {
 	defer cancel()
 	client := "test"
 
-	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx)
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
 
 	// Wait for the goroutine to exit.
 	tCtx, tCancel := testCtx(t)
@@ -2894,6 +2902,710 @@ func TestWM_WatchReturnsNilActiveContextNoLoop(t *testing.T) {
 	// Verify the watch is marked as stopped (not retrying).
 	if wm.IsResourceWatchRunning("conn-1", "core::v1::Pod") {
 		t.Fatal("watch should be stopped after nil return")
+	}
+
+	cancel()
+	wm.Wait()
+}
+
+// =============================================================================
+// fanOutSink connection enrichment tests
+// =============================================================================
+
+// TestWM_FanOutSink_EnrichesAddConnection verifies that when a plugin Watch
+// function emits an ADD event without setting Connection, the fanOutSink
+// injects the correct connectionID before delivering to listeners.
+func TestWM_FanOutSink_EnrichesAddConnection(t *testing.T) {
+	const connID = "enrichment-conn"
+	wm, _, sink := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, s resource.WatchEventSink) error {
+					// Emit ADD without setting Connection — simulates real plugin behavior.
+					s.OnAdd(resource.WatchAddPayload{
+						Data: []byte(`{"name":"nginx"}`),
+						Key:  meta.Key(),
+						ID:   "nginx",
+					})
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := "test"
+	if err := wm.StartConnectionWatch(ctx, connID, &client, ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	sink.WaitForAdds(t, 1, 5*time.Second)
+
+	if got := sink.Adds[0].Connection; got != connID {
+		t.Fatalf("expected Connection=%q on ADD, got %q", connID, got)
+	}
+
+	cancel()
+	wm.Wait()
+}
+
+// TestWM_FanOutSink_EnrichesUpdateConnection verifies Connection enrichment on UPDATE events.
+func TestWM_FanOutSink_EnrichesUpdateConnection(t *testing.T) {
+	const connID = "enrichment-conn"
+	wm, _, sink := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, s resource.WatchEventSink) error {
+					s.OnUpdate(resource.WatchUpdatePayload{
+						Data: []byte(`{"name":"nginx","version":"2"}`),
+						Key:  meta.Key(),
+						ID:   "nginx",
+					})
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := "test"
+	if err := wm.StartConnectionWatch(ctx, connID, &client, ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	sink.WaitForUpdates(t, 1, 5*time.Second)
+
+	if got := sink.Updates[0].Connection; got != connID {
+		t.Fatalf("expected Connection=%q on UPDATE, got %q", connID, got)
+	}
+
+	cancel()
+	wm.Wait()
+}
+
+// TestWM_FanOutSink_EnrichesDeleteConnection verifies Connection enrichment on DELETE events.
+func TestWM_FanOutSink_EnrichesDeleteConnection(t *testing.T) {
+	const connID = "enrichment-conn"
+	wm, _, sink := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, s resource.WatchEventSink) error {
+					s.OnDelete(resource.WatchDeletePayload{
+						Data: []byte(`{"name":"nginx"}`),
+						Key:  meta.Key(),
+						ID:   "nginx",
+					})
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := "test"
+	if err := wm.StartConnectionWatch(ctx, connID, &client, ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	sink.WaitForDeletes(t, 1, 5*time.Second)
+
+	if got := sink.Deletes[0].Connection; got != connID {
+		t.Fatalf("expected Connection=%q on DELETE, got %q", connID, got)
+	}
+
+	cancel()
+	wm.Wait()
+}
+
+// TestWM_FanOutSink_EnrichesStateConnection verifies Connection enrichment on STATE events.
+func TestWM_FanOutSink_EnrichesStateConnection(t *testing.T) {
+	const connID = "enrichment-conn"
+	wm, _, sink := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, s resource.WatchEventSink) error {
+					// Plugin emits STATE without Connection — like the real K8s plugin does.
+					s.OnStateChange(resource.WatchStateEvent{
+						ResourceKey:   meta.Key(),
+						State:         resource.WatchStateSyncing,
+						ResourceCount: 42,
+					})
+					s.OnStateChange(resource.WatchStateEvent{
+						ResourceKey: meta.Key(),
+						State:       resource.WatchStateSynced,
+					})
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := "test"
+	if err := wm.StartConnectionWatch(ctx, connID, &client, ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	sink.WaitForState(t, "core::v1::Pod", resource.WatchStateSynced, 5*time.Second)
+
+	for i, e := range sink.States {
+		if e.Connection != connID {
+			t.Fatalf("State event %d: expected Connection=%q, got %q", i, connID, e.Connection)
+		}
+	}
+
+	cancel()
+	wm.Wait()
+}
+
+// TestWM_FanOutSink_MultipleConnections verifies that events from different connections
+// are enriched with the correct connectionID for each.
+func TestWM_FanOutSink_MultipleConnections(t *testing.T) {
+	wm, _, sink := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, s resource.WatchEventSink) error {
+					s.OnAdd(resource.WatchAddPayload{
+						Data: []byte(`{"name":"pod-1"}`),
+						Key:  meta.Key(),
+						ID:   "pod-1",
+					})
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c1 := "client-1"
+	c2 := "client-2"
+	if err := wm.StartConnectionWatch(ctx, "conn-alpha", &c1, ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := wm.StartConnectionWatch(ctx, "conn-beta", &c2, ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	sink.WaitForAdds(t, 2, 5*time.Second)
+
+	connections := map[string]bool{}
+	for _, a := range sink.Adds {
+		connections[a.Connection] = true
+	}
+	if !connections["conn-alpha"] {
+		t.Fatal("expected ADD event with Connection=conn-alpha")
+	}
+	if !connections["conn-beta"] {
+		t.Fatal("expected ADD event with Connection=conn-beta")
+	}
+
+	cancel()
+	wm.Wait()
+}
+
+// --- WM: GetWatchState includes ResourceCounts from STATE events ---
+func TestWM_GetWatchStateIncludesResourceCounts(t *testing.T) {
+	counted := make(chan struct{})
+	wm, _, _ := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, _ resource.ResourceMeta, sink resource.WatchEventSink) error {
+					sink.OnStateChange(resource.WatchStateEvent{
+						ResourceKey:   "core::v1::Pod",
+						State:         resource.WatchStateSynced,
+						ResourceCount: 42,
+					})
+					close(counted)
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := "test"
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
+
+	// Wait for the WatchFunc to emit its STATE event.
+	tCtx, tCancel := testCtx(t)
+	defer tCancel()
+	select {
+	case <-counted:
+	case <-tCtx.Done():
+		t.Fatal("timed out waiting for STATE event")
+	}
+
+	summary, err := wm.GetWatchState("conn-1")
+	if err != nil {
+		t.Fatalf("GetWatchState: %v", err)
+	}
+	if summary.ResourceCounts == nil {
+		t.Fatal("ResourceCounts should not be nil")
+	}
+	if summary.ResourceCounts["core::v1::Pod"] != 42 {
+		t.Fatalf("expected Pod count 42, got %d", summary.ResourceCounts["core::v1::Pod"])
+	}
+
+	cancel()
+	wm.Wait()
+}
+
+// --- WM: GetWatchState reflects SYNCED after plugin emits Synced event ---
+func TestWM_GetWatchStateReflectsSynced(t *testing.T) {
+	synced := make(chan struct{})
+	wm, _, _ := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, _ resource.ResourceMeta, sink resource.WatchEventSink) error {
+					sink.OnStateChange(resource.WatchStateEvent{
+						ResourceKey:   "core::v1::Pod",
+						State:         resource.WatchStateSyncing,
+						ResourceCount: 0,
+					})
+					sink.OnStateChange(resource.WatchStateEvent{
+						ResourceKey:   "core::v1::Pod",
+						State:         resource.WatchStateSynced,
+						ResourceCount: 10,
+					})
+					close(synced)
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := "test"
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
+
+	// Wait for WatchFunc to emit both state events.
+	tCtx, tCancel := testCtx(t)
+	defer tCancel()
+	select {
+	case <-synced:
+	case <-tCtx.Done():
+		t.Fatal("timed out waiting for Synced event")
+	}
+
+	summary, err := wm.GetWatchState("conn-1")
+	if err != nil {
+		t.Fatalf("GetWatchState: %v", err)
+	}
+
+	gotState := summary.Resources["core::v1::Pod"]
+	if gotState != resource.WatchStateSynced {
+		t.Fatalf("expected WatchStateSynced (%d), got %d", resource.WatchStateSynced, gotState)
+	}
+	if summary.ResourceCounts["core::v1::Pod"] != 10 {
+		t.Fatalf("expected count 10, got %d", summary.ResourceCounts["core::v1::Pod"])
+	}
+
+	cancel()
+	wm.Wait()
+}
+
+// --- WM: State events are buffered when no listeners and replayed on AddListener ---
+func TestWM_StateEventBuffering(t *testing.T) {
+	// Create a WatchFunc that emits SYNCING then SYNCED then blocks.
+	synced := make(chan struct{})
+	wm, _, _ := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, sink resource.WatchEventSink) error {
+					sink.OnStateChange(resource.WatchStateEvent{
+						ResourceKey:   meta.Key(),
+						State:         resource.WatchStateSyncing,
+						ResourceCount: 0,
+					})
+					sink.OnStateChange(resource.WatchStateEvent{
+						ResourceKey:   meta.Key(),
+						State:         resource.WatchStateSynced,
+						ResourceCount: 5,
+					})
+					close(synced)
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+	)
+
+	// Do NOT add a listener yet — remove the one added by setupWatchTest.
+	// We need to create the wm without a listener to test buffering.
+	// Since setupWatchTest already added a sink, let's create a fresh wm.
+	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
+	reg.Register(resource.ResourceRegistration[string]{
+		Meta: resourcetest.PodMeta,
+		Resourcer: &resourcetest.WatchableResourcer[string]{
+			WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, sink resource.WatchEventSink) error {
+				sink.OnStateChange(resource.WatchStateEvent{
+					ResourceKey:   meta.Key(),
+					State:         resource.WatchStateSyncing,
+					ResourceCount: 0,
+				})
+				sink.OnStateChange(resource.WatchStateEvent{
+					ResourceKey:   meta.Key(),
+					State:         resource.WatchStateSynced,
+					ResourceCount: 5,
+				})
+				close(synced)
+				<-ctx.Done()
+				return nil
+			},
+		},
+	})
+
+	// Reset: use a fresh wm without any listeners.
+	synced = make(chan struct{})
+	wm = resource.NewWatchManagerForTest(reg)
+	resource.SetWatchManagerBackoff(wm, 3, 10*time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := "test"
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
+
+	// Wait for WatchFunc to emit both state events (no listener yet).
+	tCtx, tCancel := testCtx(t)
+	defer tCancel()
+	select {
+	case <-synced:
+	case <-tCtx.Done():
+		t.Fatal("timed out waiting for WatchFunc to emit events")
+	}
+
+	// Now add a listener — buffered state events should be replayed.
+	sink := resourcetest.NewRecordingSink()
+	wm.AddListener(sink)
+
+	// Wait for replayed SYNCED event.
+	sink.WaitForState(t, "core::v1::Pod", resource.WatchStateSynced, 5*time.Second)
+
+	if sink.StateCount() < 2 {
+		t.Fatalf("expected at least 2 replayed state events, got %d", sink.StateCount())
+	}
+
+	cancel()
+	wm.Wait()
+}
+
+// --- WM: Data events (Add/Update/Delete) are NOT buffered when no listeners ---
+func TestWM_DataEventsNotBuffered(t *testing.T) {
+	addEmitted := make(chan struct{})
+	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
+	reg.Register(resource.ResourceRegistration[string]{
+		Meta: resourcetest.PodMeta,
+		Resourcer: &resourcetest.WatchableResourcer[string]{
+			WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, sink resource.WatchEventSink) error {
+				sink.OnAdd(resource.WatchAddPayload{
+					Key:  meta.Key(),
+					ID:   "pod-1",
+					Data: []byte(`{"name":"test"}`),
+				})
+				close(addEmitted)
+				<-ctx.Done()
+				return nil
+			},
+		},
+	})
+
+	wm := resource.NewWatchManagerForTest(reg)
+	resource.SetWatchManagerBackoff(wm, 3, 10*time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := "test"
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil)
+
+	// Wait for the add to be emitted.
+	tCtx, tCancel := testCtx(t)
+	defer tCancel()
+	select {
+	case <-addEmitted:
+	case <-tCtx.Done():
+		t.Fatal("timed out waiting for add event")
+	}
+
+	// Add listener after the fact.
+	sink := resourcetest.NewRecordingSink()
+	wm.AddListener(sink)
+
+	// Give a brief window — no add events should appear since data events are not buffered.
+	time.Sleep(50 * time.Millisecond)
+
+	if sink.AddCount() != 0 {
+		t.Fatalf("expected 0 add events (data not buffered), got %d", sink.AddCount())
+	}
+
+	cancel()
+	wm.Wait()
+}
+
+// =============================================================================
+// Discovery-gated watch startup tests
+// =============================================================================
+
+// TestWM_StartConnectionWatch_WithDiscoveredTypes verifies that resources not in
+// the discoveredTypes set are immediately marked SKIPPED without spawning goroutines.
+func TestWM_StartConnectionWatch_WithDiscoveredTypes(t *testing.T) {
+	wm, _, sink := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, s resource.WatchEventSink) error {
+					s.OnStateChange(resource.WatchStateEvent{
+						ResourceKey: meta.Key(), State: resource.WatchStateSynced, ResourceCount: 1,
+					})
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.DeploymentMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, s resource.WatchEventSink) error {
+					s.OnStateChange(resource.WatchStateEvent{
+						ResourceKey: meta.Key(), State: resource.WatchStateSynced, ResourceCount: 2,
+					})
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.SecretMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, s resource.WatchEventSink) error {
+					t.Fatal("Secret Watch should not be called when not in discoveredTypes")
+					return nil
+				},
+			},
+		},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := "test"
+	// Only Pod and Deployment are "discovered" — Secret should be SKIPPED.
+	discoveredTypes := map[string]bool{
+		resourcetest.PodMeta.Key():        true,
+		resourcetest.DeploymentMeta.Key(): true,
+	}
+	if err := wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, discoveredTypes); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for Secret to be SKIPPED.
+	sink.WaitForState(t, resourcetest.SecretMeta.Key(), resource.WatchStateSkipped, 5*time.Second)
+
+	// Wait for Pod and Deployment to be SYNCED.
+	sink.WaitForState(t, resourcetest.PodMeta.Key(), resource.WatchStateSynced, 5*time.Second)
+	sink.WaitForState(t, resourcetest.DeploymentMeta.Key(), resource.WatchStateSynced, 5*time.Second)
+
+	// Verify Secret's state in the watch summary.
+	summary, err := wm.GetWatchState("conn-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Resources[resourcetest.SecretMeta.Key()] != resource.WatchStateSkipped {
+		t.Fatalf("expected Secret state SKIPPED, got %d", summary.Resources[resourcetest.SecretMeta.Key()])
+	}
+
+	cancel()
+	wm.Wait()
+}
+
+// TestWM_StartConnectionWatch_NilDiscoveredTypes_WatchesAll verifies that passing nil
+// for discoveredTypes starts watches for all resources (no filtering).
+func TestWM_StartConnectionWatch_NilDiscoveredTypes_WatchesAll(t *testing.T) {
+	wm, _, sink := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, s resource.WatchEventSink) error {
+					s.OnStateChange(resource.WatchStateEvent{
+						ResourceKey: meta.Key(), State: resource.WatchStateSynced, ResourceCount: 1,
+					})
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.SecretMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, s resource.WatchEventSink) error {
+					s.OnStateChange(resource.WatchStateEvent{
+						ResourceKey: meta.Key(), State: resource.WatchStateSynced, ResourceCount: 3,
+					})
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := "test"
+	// nil discoveredTypes → watch all.
+	if err := wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	sink.WaitForState(t, resourcetest.PodMeta.Key(), resource.WatchStateSynced, 5*time.Second)
+	sink.WaitForState(t, resourcetest.SecretMeta.Key(), resource.WatchStateSynced, 5*time.Second)
+
+	cancel()
+	wm.Wait()
+}
+
+// TestWM_GetWatchState_IncludesSkipped verifies that GetWatchState includes
+// SKIPPED resources with correct state.
+func TestWM_GetWatchState_IncludesSkipped(t *testing.T) {
+	wm, _, sink := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, s resource.WatchEventSink) error {
+					s.OnStateChange(resource.WatchStateEvent{
+						ResourceKey: meta.Key(), State: resource.WatchStateSynced, ResourceCount: 1,
+					})
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.SecretMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, _ resource.ResourceMeta, _ resource.WatchEventSink) error {
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := "test"
+	discoveredTypes := map[string]bool{
+		resourcetest.PodMeta.Key(): true,
+		// Secret omitted → should be SKIPPED.
+	}
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, discoveredTypes)
+
+	sink.WaitForState(t, resourcetest.SecretMeta.Key(), resource.WatchStateSkipped, 5*time.Second)
+	sink.WaitForState(t, resourcetest.PodMeta.Key(), resource.WatchStateSynced, 5*time.Second)
+
+	summary, err := wm.GetWatchState("conn-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Both resources should appear in the summary.
+	if len(summary.Resources) != 2 {
+		t.Fatalf("expected 2 resources in summary, got %d", len(summary.Resources))
+	}
+	if summary.Resources[resourcetest.SecretMeta.Key()] != resource.WatchStateSkipped {
+		t.Fatalf("expected Secret=SKIPPED, got %d", summary.Resources[resourcetest.SecretMeta.Key()])
+	}
+	if summary.Resources[resourcetest.PodMeta.Key()] != resource.WatchStateSynced {
+		t.Fatalf("expected Pod=SYNCED, got %d", summary.Resources[resourcetest.PodMeta.Key()])
+	}
+
+	cancel()
+	wm.Wait()
+}
+
+// TestWM_WaitForConnectionReady_SkippedDontBlock verifies that WaitForConnectionReady
+// returns immediately for SKIPPED resources (their ready channels are pre-closed).
+func TestWM_WaitForConnectionReady_SkippedDontBlock(t *testing.T) {
+	wm, _, _ := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, s resource.WatchEventSink) error {
+					s.OnStateChange(resource.WatchStateEvent{
+						ResourceKey: meta.Key(), State: resource.WatchStateSynced, ResourceCount: 1,
+					})
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.SecretMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, _ resource.ResourceMeta, _ resource.WatchEventSink) error {
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+		resource.ResourceRegistration[string]{
+			Meta: resourcetest.DeploymentMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{
+				WatchFunc: func(ctx context.Context, _ *string, _ resource.ResourceMeta, _ resource.WatchEventSink) error {
+					<-ctx.Done()
+					return nil
+				},
+			},
+		},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client := "test"
+	// Only Pod is discovered — Secret and Deployment are SKIPPED.
+	discoveredTypes := map[string]bool{
+		resourcetest.PodMeta.Key(): true,
+	}
+	wm.StartConnectionWatch(ctx, "conn-1", &client, ctx, discoveredTypes)
+
+	// WaitForConnectionReady should complete quickly — SKIPPED resources have
+	// pre-closed ready channels and Pod's goroutine signals ready immediately.
+	tCtx, tCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer tCancel()
+	if err := resource.WaitForConnectionReadyWM(tCtx, wm, "conn-1"); err != nil {
+		t.Fatalf("WaitForConnectionReady should not block on SKIPPED resources: %v", err)
 	}
 
 	cancel()

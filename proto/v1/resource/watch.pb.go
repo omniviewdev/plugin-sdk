@@ -32,6 +32,9 @@ const (
 	WatchState_WATCH_STATE_ERROR       WatchState = 3
 	WatchState_WATCH_STATE_FAILED      WatchState = 4
 	WatchState_WATCH_STATE_STOPPED     WatchState = 5
+	WatchState_WATCH_STATE_IDLE        WatchState = 6
+	WatchState_WATCH_STATE_FORBIDDEN   WatchState = 7
+	WatchState_WATCH_STATE_SKIPPED     WatchState = 8
 )
 
 // Enum value maps for WatchState.
@@ -43,6 +46,9 @@ var (
 		3: "WATCH_STATE_ERROR",
 		4: "WATCH_STATE_FAILED",
 		5: "WATCH_STATE_STOPPED",
+		6: "WATCH_STATE_IDLE",
+		7: "WATCH_STATE_FORBIDDEN",
+		8: "WATCH_STATE_SKIPPED",
 	}
 	WatchState_value = map[string]int32{
 		"WATCH_STATE_UNSPECIFIED": 0,
@@ -51,6 +57,9 @@ var (
 		"WATCH_STATE_ERROR":       3,
 		"WATCH_STATE_FAILED":      4,
 		"WATCH_STATE_STOPPED":     5,
+		"WATCH_STATE_IDLE":        6,
+		"WATCH_STATE_FORBIDDEN":   7,
+		"WATCH_STATE_SKIPPED":     8,
 	}
 )
 
@@ -402,6 +411,7 @@ type WatchStateEvent struct {
 	State         WatchState             `protobuf:"varint,1,opt,name=state,proto3,enum=omniview.sdk.resource.v1.WatchState" json:"state,omitempty"`
 	ResourceCount int32                  `protobuf:"varint,2,opt,name=resource_count,json=resourceCount,proto3" json:"resource_count,omitempty"`
 	ErrorMessage  string                 `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	ErrorCode     string                 `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -453,6 +463,13 @@ func (x *WatchStateEvent) GetResourceCount() int32 {
 func (x *WatchStateEvent) GetErrorMessage() string {
 	if x != nil {
 		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *WatchStateEvent) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
 	}
 	return ""
 }
@@ -727,13 +744,15 @@ func (x *GetWatchStateRequest) GetConnectionId() string {
 	return ""
 }
 
-// GetWatchStateResponse returns per-resource watch states for a connection.
+// GetWatchStateResponse returns per-resource watch states and counts for a connection.
 type GetWatchStateResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ConnectionId  string                 `protobuf:"bytes,1,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
-	Resources     map[string]WatchState  `protobuf:"bytes,2,rep,name=resources,proto3" json:"resources,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value,enum=omniview.sdk.resource.v1.WatchState"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ConnectionId    string                 `protobuf:"bytes,1,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
+	Resources       map[string]WatchState  `protobuf:"bytes,2,rep,name=resources,proto3" json:"resources,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value,enum=omniview.sdk.resource.v1.WatchState"`
+	ResourceCounts  map[string]int32       `protobuf:"bytes,3,rep,name=resource_counts,json=resourceCounts,proto3" json:"resource_counts,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	ScopePartitions []string               `protobuf:"bytes,4,rep,name=scope_partitions,json=scopePartitions,proto3" json:"scope_partitions,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *GetWatchStateResponse) Reset() {
@@ -780,6 +799,20 @@ func (x *GetWatchStateResponse) GetResources() map[string]WatchState {
 	return nil
 }
 
+func (x *GetWatchStateResponse) GetResourceCounts() map[string]int32 {
+	if x != nil {
+		return x.ResourceCounts
+	}
+	return nil
+}
+
+func (x *GetWatchStateResponse) GetScopePartitions() []string {
+	if x != nil {
+		return x.ScopePartitions
+	}
+	return nil
+}
+
 var File_proto_v1_resource_watch_proto protoreflect.FileDescriptor
 
 const file_proto_v1_resource_watch_proto_rawDesc = "" +
@@ -806,11 +839,13 @@ const file_proto_v1_resource_watch_proto_rawDesc = "" +
 	"\x12WatchDeletePayload\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x12\n" +
-	"\x04data\x18\x03 \x01(\fR\x04data\"\x99\x01\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data\"\xb8\x01\n" +
 	"\x0fWatchStateEvent\x12:\n" +
 	"\x05state\x18\x01 \x01(\x0e2$.omniview.sdk.resource.v1.WatchStateR\x05state\x12%\n" +
 	"\x0eresource_count\x18\x02 \x01(\x05R\rresourceCount\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"\x0f\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x04 \x01(\tR\terrorCode\"\x0f\n" +
 	"\rListenRequest\"^\n" +
 	"\x14WatchResourceRequest\x12#\n" +
 	"\rconnection_id\x18\x01 \x01(\tR\fconnectionId\x12!\n" +
@@ -822,13 +857,18 @@ const file_proto_v1_resource_watch_proto_rawDesc = "" +
 	"\x18WatchConnectionsResponse\x12D\n" +
 	"\vconnections\x18\x01 \x03(\v2\".omniview.sdk.common.v1.ConnectionR\vconnections\";\n" +
 	"\x14GetWatchStateRequest\x12#\n" +
-	"\rconnection_id\x18\x01 \x01(\tR\fconnectionId\"\xfe\x01\n" +
+	"\rconnection_id\x18\x01 \x01(\tR\fconnectionId\"\xda\x03\n" +
 	"\x15GetWatchStateResponse\x12#\n" +
 	"\rconnection_id\x18\x01 \x01(\tR\fconnectionId\x12\\\n" +
-	"\tresources\x18\x02 \x03(\v2>.omniview.sdk.resource.v1.GetWatchStateResponse.ResourcesEntryR\tresources\x1ab\n" +
+	"\tresources\x18\x02 \x03(\v2>.omniview.sdk.resource.v1.GetWatchStateResponse.ResourcesEntryR\tresources\x12l\n" +
+	"\x0fresource_counts\x18\x03 \x03(\v2C.omniview.sdk.resource.v1.GetWatchStateResponse.ResourceCountsEntryR\x0eresourceCounts\x12)\n" +
+	"\x10scope_partitions\x18\x04 \x03(\tR\x0fscopePartitions\x1ab\n" +
 	"\x0eResourcesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12:\n" +
-	"\x05value\x18\x02 \x01(\x0e2$.omniview.sdk.resource.v1.WatchStateR\x05value:\x028\x01*\xa2\x01\n" +
+	"\x05value\x18\x02 \x01(\x0e2$.omniview.sdk.resource.v1.WatchStateR\x05value:\x028\x01\x1aA\n" +
+	"\x13ResourceCountsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01*\xec\x01\n" +
 	"\n" +
 	"WatchState\x12\x1b\n" +
 	"\x17WATCH_STATE_UNSPECIFIED\x10\x00\x12\x17\n" +
@@ -836,7 +876,10 @@ const file_proto_v1_resource_watch_proto_rawDesc = "" +
 	"\x12WATCH_STATE_SYNCED\x10\x02\x12\x15\n" +
 	"\x11WATCH_STATE_ERROR\x10\x03\x12\x16\n" +
 	"\x12WATCH_STATE_FAILED\x10\x04\x12\x17\n" +
-	"\x13WATCH_STATE_STOPPED\x10\x05B@Z>github.com/omniviewdev/plugin-sdk/proto/v1/resource;resourcepbb\x06proto3"
+	"\x13WATCH_STATE_STOPPED\x10\x05\x12\x14\n" +
+	"\x10WATCH_STATE_IDLE\x10\x06\x12\x19\n" +
+	"\x15WATCH_STATE_FORBIDDEN\x10\a\x12\x17\n" +
+	"\x13WATCH_STATE_SKIPPED\x10\bB@Z>github.com/omniviewdev/plugin-sdk/proto/v1/resource;resourcepbb\x06proto3"
 
 var (
 	file_proto_v1_resource_watch_proto_rawDescOnce sync.Once
@@ -851,7 +894,7 @@ func file_proto_v1_resource_watch_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_v1_resource_watch_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_v1_resource_watch_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_proto_v1_resource_watch_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_proto_v1_resource_watch_proto_goTypes = []any{
 	(WatchState)(0),                  // 0: omniview.sdk.resource.v1.WatchState
 	(*WatchEvent)(nil),               // 1: omniview.sdk.resource.v1.WatchEvent
@@ -867,7 +910,8 @@ var file_proto_v1_resource_watch_proto_goTypes = []any{
 	(*GetWatchStateRequest)(nil),     // 11: omniview.sdk.resource.v1.GetWatchStateRequest
 	(*GetWatchStateResponse)(nil),    // 12: omniview.sdk.resource.v1.GetWatchStateResponse
 	nil,                              // 13: omniview.sdk.resource.v1.GetWatchStateResponse.ResourcesEntry
-	(*common.Connection)(nil),        // 14: omniview.sdk.common.v1.Connection
+	nil,                              // 14: omniview.sdk.resource.v1.GetWatchStateResponse.ResourceCountsEntry
+	(*common.Connection)(nil),        // 15: omniview.sdk.common.v1.Connection
 }
 var file_proto_v1_resource_watch_proto_depIdxs = []int32{
 	2,  // 0: omniview.sdk.resource.v1.WatchEvent.add:type_name -> omniview.sdk.resource.v1.WatchAddPayload
@@ -875,14 +919,15 @@ var file_proto_v1_resource_watch_proto_depIdxs = []int32{
 	4,  // 2: omniview.sdk.resource.v1.WatchEvent.delete:type_name -> omniview.sdk.resource.v1.WatchDeletePayload
 	5,  // 3: omniview.sdk.resource.v1.WatchEvent.state:type_name -> omniview.sdk.resource.v1.WatchStateEvent
 	0,  // 4: omniview.sdk.resource.v1.WatchStateEvent.state:type_name -> omniview.sdk.resource.v1.WatchState
-	14, // 5: omniview.sdk.resource.v1.WatchConnectionsResponse.connections:type_name -> omniview.sdk.common.v1.Connection
+	15, // 5: omniview.sdk.resource.v1.WatchConnectionsResponse.connections:type_name -> omniview.sdk.common.v1.Connection
 	13, // 6: omniview.sdk.resource.v1.GetWatchStateResponse.resources:type_name -> omniview.sdk.resource.v1.GetWatchStateResponse.ResourcesEntry
-	0,  // 7: omniview.sdk.resource.v1.GetWatchStateResponse.ResourcesEntry.value:type_name -> omniview.sdk.resource.v1.WatchState
-	8,  // [8:8] is the sub-list for method output_type
-	8,  // [8:8] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	14, // 7: omniview.sdk.resource.v1.GetWatchStateResponse.resource_counts:type_name -> omniview.sdk.resource.v1.GetWatchStateResponse.ResourceCountsEntry
+	0,  // 8: omniview.sdk.resource.v1.GetWatchStateResponse.ResourcesEntry.value:type_name -> omniview.sdk.resource.v1.WatchState
+	9,  // [9:9] is the sub-list for method output_type
+	9,  // [9:9] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_resource_watch_proto_init() }
@@ -902,7 +947,7 @@ func file_proto_v1_resource_watch_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_resource_watch_proto_rawDesc), len(file_proto_v1_resource_watch_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   13,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

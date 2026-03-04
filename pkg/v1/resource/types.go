@@ -458,20 +458,20 @@ const (
 
 // ActionDescriptor describes an available action on a resource type.
 type ActionDescriptor struct {
-	ID          string          `json:"id"`
-	Label       string          `json:"label"`
-	Description string          `json:"description"`
-	Icon        string          `json:"icon"`
-	Scope       ActionScope     `json:"scope"`
-	Streaming   bool            `json:"streaming"`
+	ID          string      `json:"id"`
+	Label       string      `json:"label"`
+	Description string      `json:"description"`
+	Icon        string      `json:"icon"`
+	Scope       ActionScope `json:"scope"`
+	Streaming   bool        `json:"streaming"`
 
-	// ParamsSchema is a JSON Schema describing the action's parameters.
-	// Used by MCP tool generators as inputSchema.
-	ParamsSchema json.RawMessage `json:"paramsSchema,omitempty"`
+	// ParamsSchema describes the action's input parameters as a typed JSON Schema.
+	// Serialized to JSON Schema bytes for gRPC and MCP tool generators.
+	ParamsSchema *Schema `json:"paramsSchema,omitempty"`
 
-	// OutputSchema is a JSON Schema describing the action's result.
-	// Used by MCP tool generators as outputSchema.
-	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
+	// OutputSchema describes the action's result structure as a typed JSON Schema.
+	// Serialized to JSON Schema bytes for gRPC and MCP tool generators.
+	OutputSchema *Schema `json:"outputSchema,omitempty"`
 
 	// Dangerous indicates this action has destructive side effects.
 	// AI agents should confirm before executing.

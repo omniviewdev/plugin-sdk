@@ -16,14 +16,19 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
-	"github.com/omniviewdev/plugin-sdk/pkg/lifecycle"
+	"github.com/omniviewdev/plugin-sdk/pkg/v1/lifecycle"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource"
 	rp "github.com/omniviewdev/plugin-sdk/pkg/resource/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
-	sdksettings "github.com/omniviewdev/plugin-sdk/pkg/settings"
+	sdksettings "github.com/omniviewdev/plugin-sdk/pkg/v1/settings"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils"
 )
+
+// CurrentProtocolVersion is the SDK protocol version that this SDK release
+// implements. It is used as the key in go-plugin's VersionedPlugins map so
+// that the engine and plugin can negotiate the highest common version.
+const CurrentProtocolVersion = 1
 
 // PluginOpts is the options for creating a new plugin.
 type PluginOpts struct {
@@ -201,8 +206,10 @@ func (p *Plugin) Serve() {
 	go func() {
 		plugin.Serve(&plugin.ServeConfig{
 			HandshakeConfig: p.meta.GenerateHandshakeConfig(),
-			Plugins:         p.pluginMap,
-			GRPCServer:      GRPCServerFactory,
+			VersionedPlugins: map[int]plugin.PluginSet{
+				CurrentProtocolVersion: p.pluginMap,
+			},
+			GRPCServer: GRPCServerFactory,
 			Logger: hclog.New(&hclog.LoggerOptions{
 				Name:  "plugin",
 				Level: hclog.Debug,
@@ -249,8 +256,10 @@ func (p *Plugin) Serve() {
 func (p *Plugin) serveNormal() {
 	plugin.Serve(&plugin.ServeConfig{
 		HandshakeConfig: p.meta.GenerateHandshakeConfig(),
-		Plugins:         p.pluginMap,
-		GRPCServer:      GRPCServerFactory,
+		VersionedPlugins: map[int]plugin.PluginSet{
+			CurrentProtocolVersion: p.pluginMap,
+		},
+		GRPCServer: GRPCServerFactory,
 		Logger: hclog.New(&hclog.LoggerOptions{
 			Name:  "plugin",
 			Level: hclog.Debug,
@@ -266,7 +275,7 @@ func (p *Plugin) registerLifecycle() {
 		caps = append(caps, name)
 	}
 
-	sdkProtoVersion := int32(1)
+	sdkProtoVersion := int32(CurrentProtocolVersion)
 	if p.meta.SDKProtocolVersion > 0 {
 		sdkProtoVersion = int32(p.meta.SDKProtocolVersion)
 	}

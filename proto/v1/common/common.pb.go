@@ -261,6 +261,92 @@ func (OperationType) EnumDescriptor() ([]byte, []int) {
 	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{3}
 }
 
+// ResourceErrorCode enumerates structured error codes for resource operations.
+type ResourceErrorCode int32
+
+const (
+	ResourceErrorCode_RESOURCE_ERROR_UNSPECIFIED             ResourceErrorCode = 0
+	ResourceErrorCode_RESOURCE_ERROR_NOT_FOUND               ResourceErrorCode = 1
+	ResourceErrorCode_RESOURCE_ERROR_ALREADY_EXISTS          ResourceErrorCode = 2
+	ResourceErrorCode_RESOURCE_ERROR_PERMISSION_DENIED       ResourceErrorCode = 3
+	ResourceErrorCode_RESOURCE_ERROR_INVALID_INPUT           ResourceErrorCode = 4
+	ResourceErrorCode_RESOURCE_ERROR_CONFLICT                ResourceErrorCode = 5
+	ResourceErrorCode_RESOURCE_ERROR_INTERNAL                ResourceErrorCode = 6
+	ResourceErrorCode_RESOURCE_ERROR_UNAVAILABLE             ResourceErrorCode = 7
+	ResourceErrorCode_RESOURCE_ERROR_TIMEOUT                 ResourceErrorCode = 8
+	ResourceErrorCode_RESOURCE_ERROR_FILTER_UNKNOWN_FIELD    ResourceErrorCode = 9
+	ResourceErrorCode_RESOURCE_ERROR_FILTER_INVALID_OPERATOR ResourceErrorCode = 10
+	ResourceErrorCode_RESOURCE_ERROR_FORBIDDEN               ResourceErrorCode = 11
+	ResourceErrorCode_RESOURCE_ERROR_UNAUTHORIZED            ResourceErrorCode = 12
+	ResourceErrorCode_RESOURCE_ERROR_CONNECTION_ERROR        ResourceErrorCode = 13
+	ResourceErrorCode_RESOURCE_ERROR_CERTIFICATE_ERROR       ResourceErrorCode = 14
+)
+
+// Enum value maps for ResourceErrorCode.
+var (
+	ResourceErrorCode_name = map[int32]string{
+		0:  "RESOURCE_ERROR_UNSPECIFIED",
+		1:  "RESOURCE_ERROR_NOT_FOUND",
+		2:  "RESOURCE_ERROR_ALREADY_EXISTS",
+		3:  "RESOURCE_ERROR_PERMISSION_DENIED",
+		4:  "RESOURCE_ERROR_INVALID_INPUT",
+		5:  "RESOURCE_ERROR_CONFLICT",
+		6:  "RESOURCE_ERROR_INTERNAL",
+		7:  "RESOURCE_ERROR_UNAVAILABLE",
+		8:  "RESOURCE_ERROR_TIMEOUT",
+		9:  "RESOURCE_ERROR_FILTER_UNKNOWN_FIELD",
+		10: "RESOURCE_ERROR_FILTER_INVALID_OPERATOR",
+		11: "RESOURCE_ERROR_FORBIDDEN",
+		12: "RESOURCE_ERROR_UNAUTHORIZED",
+		13: "RESOURCE_ERROR_CONNECTION_ERROR",
+		14: "RESOURCE_ERROR_CERTIFICATE_ERROR",
+	}
+	ResourceErrorCode_value = map[string]int32{
+		"RESOURCE_ERROR_UNSPECIFIED":             0,
+		"RESOURCE_ERROR_NOT_FOUND":               1,
+		"RESOURCE_ERROR_ALREADY_EXISTS":          2,
+		"RESOURCE_ERROR_PERMISSION_DENIED":       3,
+		"RESOURCE_ERROR_INVALID_INPUT":           4,
+		"RESOURCE_ERROR_CONFLICT":                5,
+		"RESOURCE_ERROR_INTERNAL":                6,
+		"RESOURCE_ERROR_UNAVAILABLE":             7,
+		"RESOURCE_ERROR_TIMEOUT":                 8,
+		"RESOURCE_ERROR_FILTER_UNKNOWN_FIELD":    9,
+		"RESOURCE_ERROR_FILTER_INVALID_OPERATOR": 10,
+		"RESOURCE_ERROR_FORBIDDEN":               11,
+		"RESOURCE_ERROR_UNAUTHORIZED":            12,
+		"RESOURCE_ERROR_CONNECTION_ERROR":        13,
+		"RESOURCE_ERROR_CERTIFICATE_ERROR":       14,
+	}
+)
+
+func (x ResourceErrorCode) Enum() *ResourceErrorCode {
+	p := new(ResourceErrorCode)
+	*p = x
+	return p
+}
+
+func (x ResourceErrorCode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ResourceErrorCode) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_v1_common_common_proto_enumTypes[4].Descriptor()
+}
+
+func (ResourceErrorCode) Type() protoreflect.EnumType {
+	return &file_proto_v1_common_common_proto_enumTypes[4]
+}
+
+func (x ResourceErrorCode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ResourceErrorCode.Descriptor instead.
+func (ResourceErrorCode) EnumDescriptor() ([]byte, []int) {
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{4}
+}
+
 // Connection represents a configured connection to a backend system.
 type Connection struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -434,6 +520,8 @@ type ResourceMeta struct {
 	DisplayName   string                 `protobuf:"bytes,6,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	Description   string                 `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
 	ShortNames    []string               `protobuf:"bytes,8,rep,name=short_names,json=shortNames,proto3" json:"short_names,omitempty"`
+	Icon          string                 `protobuf:"bytes,9,opt,name=icon,proto3" json:"icon,omitempty"`
+	Category      string                 `protobuf:"bytes,10,opt,name=category,proto3" json:"category,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -522,6 +610,20 @@ func (x *ResourceMeta) GetShortNames() []string {
 		return x.ShortNames
 	}
 	return nil
+}
+
+func (x *ResourceMeta) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
+}
+
+func (x *ResourceMeta) GetCategory() string {
+	if x != nil {
+		return x.Category
+	}
+	return ""
 }
 
 // ResourceGroup is a logical grouping of resource types for UI rendering.
@@ -1050,6 +1152,144 @@ func (x *EditorSchema) GetSchema() []byte {
 	return nil
 }
 
+// ActionTarget is a static target for an action.
+type ActionTarget struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Label         string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
+	Icon          string                 `protobuf:"bytes,2,opt,name=icon,proto3" json:"icon,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	Selectors     map[string]string      `protobuf:"bytes,4,rep,name=selectors,proto3" json:"selectors,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ActionTarget) Reset() {
+	*x = ActionTarget{}
+	mi := &file_proto_v1_common_common_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActionTarget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActionTarget) ProtoMessage() {}
+
+func (x *ActionTarget) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_common_common_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActionTarget.ProtoReflect.Descriptor instead.
+func (*ActionTarget) Descriptor() ([]byte, []int) {
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ActionTarget) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *ActionTarget) GetIcon() string {
+	if x != nil {
+		return x.Icon
+	}
+	return ""
+}
+
+func (x *ActionTarget) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ActionTarget) GetSelectors() map[string]string {
+	if x != nil {
+		return x.Selectors
+	}
+	return nil
+}
+
+// ActionTargetBuilder builds a dynamic list of targets for an action.
+type ActionTargetBuilder struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Label         string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
+	LabelSelector string                 `protobuf:"bytes,2,opt,name=label_selector,json=labelSelector,proto3" json:"label_selector,omitempty"`
+	Paths         []string               `protobuf:"bytes,3,rep,name=paths,proto3" json:"paths,omitempty"`
+	Selectors     map[string]string      `protobuf:"bytes,4,rep,name=selectors,proto3" json:"selectors,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ActionTargetBuilder) Reset() {
+	*x = ActionTargetBuilder{}
+	mi := &file_proto_v1_common_common_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActionTargetBuilder) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActionTargetBuilder) ProtoMessage() {}
+
+func (x *ActionTargetBuilder) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_common_common_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActionTargetBuilder.ProtoReflect.Descriptor instead.
+func (*ActionTargetBuilder) Descriptor() ([]byte, []int) {
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ActionTargetBuilder) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *ActionTargetBuilder) GetLabelSelector() string {
+	if x != nil {
+		return x.LabelSelector
+	}
+	return ""
+}
+
+func (x *ActionTargetBuilder) GetPaths() []string {
+	if x != nil {
+		return x.Paths
+	}
+	return nil
+}
+
+func (x *ActionTargetBuilder) GetSelectors() map[string]string {
+	if x != nil {
+		return x.Selectors
+	}
+	return nil
+}
+
 var File_proto_v1_common_common_proto protoreflect.FileDescriptor
 
 const file_proto_v1_common_common_proto_rawDesc = "" +
@@ -1073,7 +1313,7 @@ const file_proto_v1_common_common_proto_rawDesc = "" +
 	"\x05state\x18\x02 \x01(\x0e2'.omniview.sdk.common.v1.ConnectionStateR\x05state\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12\x14\n" +
 	"\x05error\x18\x04 \x01(\tR\x05error\x123\n" +
-	"\bmetadata\x18\x05 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"\xec\x01\n" +
+	"\bmetadata\x18\x05 \x01(\v2\x17.google.protobuf.StructR\bmetadata\"\x9c\x02\n" +
 	"\fResourceMeta\x12\x14\n" +
 	"\x05group\x18\x01 \x01(\tR\x05group\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x12\n" +
@@ -1083,7 +1323,10 @@ const file_proto_v1_common_common_proto_rawDesc = "" +
 	"\fdisplay_name\x18\x06 \x01(\tR\vdisplayName\x12 \n" +
 	"\vdescription\x18\a \x01(\tR\vdescription\x12\x1f\n" +
 	"\vshort_names\x18\b \x03(\tR\n" +
-	"shortNames\"\xad\x01\n" +
+	"shortNames\x12\x12\n" +
+	"\x04icon\x18\t \x01(\tR\x04icon\x12\x1a\n" +
+	"\bcategory\x18\n" +
+	" \x01(\tR\bcategory\"\xad\x01\n" +
 	"\rResourceGroup\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -1140,7 +1383,23 @@ const file_proto_v1_common_common_proto_rawDesc = "" +
 	"\n" +
 	"file_match\x18\x02 \x03(\tR\tfileMatch\x12\x1a\n" +
 	"\blanguage\x18\x03 \x01(\tR\blanguage\x12\x16\n" +
-	"\x06schema\x18\x04 \x01(\fR\x06schema*\xb5\x01\n" +
+	"\x06schema\x18\x04 \x01(\fR\x06schema\"\xeb\x01\n" +
+	"\fActionTarget\x12\x14\n" +
+	"\x05label\x18\x01 \x01(\tR\x05label\x12\x12\n" +
+	"\x04icon\x18\x02 \x01(\tR\x04icon\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12Q\n" +
+	"\tselectors\x18\x04 \x03(\v23.omniview.sdk.common.v1.ActionTarget.SelectorsEntryR\tselectors\x1a<\n" +
+	"\x0eSelectorsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x80\x02\n" +
+	"\x13ActionTargetBuilder\x12\x14\n" +
+	"\x05label\x18\x01 \x01(\tR\x05label\x12%\n" +
+	"\x0elabel_selector\x18\x02 \x01(\tR\rlabelSelector\x12\x14\n" +
+	"\x05paths\x18\x03 \x03(\tR\x05paths\x12X\n" +
+	"\tselectors\x18\x04 \x03(\v2:.omniview.sdk.common.v1.ActionTargetBuilder.SelectorsEntryR\tselectors\x1a<\n" +
+	"\x0eSelectorsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xb5\x01\n" +
 	"\x0fConnectionState\x12 \n" +
 	"\x1cCONNECTION_STATE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aCONNECTION_STATE_CONNECTED\x10\x01\x12!\n" +
@@ -1171,7 +1430,24 @@ const file_proto_v1_common_common_proto_rawDesc = "" +
 	"\x13OPERATION_TYPE_FIND\x10\x03\x12\x19\n" +
 	"\x15OPERATION_TYPE_CREATE\x10\x04\x12\x19\n" +
 	"\x15OPERATION_TYPE_UPDATE\x10\x05\x12\x19\n" +
-	"\x15OPERATION_TYPE_DELETE\x10\x06B<Z:github.com/omniviewdev/plugin-sdk/proto/v1/common;commonpbb\x06proto3"
+	"\x15OPERATION_TYPE_DELETE\x10\x06*\x91\x04\n" +
+	"\x11ResourceErrorCode\x12\x1e\n" +
+	"\x1aRESOURCE_ERROR_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18RESOURCE_ERROR_NOT_FOUND\x10\x01\x12!\n" +
+	"\x1dRESOURCE_ERROR_ALREADY_EXISTS\x10\x02\x12$\n" +
+	" RESOURCE_ERROR_PERMISSION_DENIED\x10\x03\x12 \n" +
+	"\x1cRESOURCE_ERROR_INVALID_INPUT\x10\x04\x12\x1b\n" +
+	"\x17RESOURCE_ERROR_CONFLICT\x10\x05\x12\x1b\n" +
+	"\x17RESOURCE_ERROR_INTERNAL\x10\x06\x12\x1e\n" +
+	"\x1aRESOURCE_ERROR_UNAVAILABLE\x10\a\x12\x1a\n" +
+	"\x16RESOURCE_ERROR_TIMEOUT\x10\b\x12'\n" +
+	"#RESOURCE_ERROR_FILTER_UNKNOWN_FIELD\x10\t\x12*\n" +
+	"&RESOURCE_ERROR_FILTER_INVALID_OPERATOR\x10\n" +
+	"\x12\x1c\n" +
+	"\x18RESOURCE_ERROR_FORBIDDEN\x10\v\x12\x1f\n" +
+	"\x1bRESOURCE_ERROR_UNAUTHORIZED\x10\f\x12#\n" +
+	"\x1fRESOURCE_ERROR_CONNECTION_ERROR\x10\r\x12$\n" +
+	" RESOURCE_ERROR_CERTIFICATE_ERROR\x10\x0eB<Z:github.com/omniviewdev/plugin-sdk/proto/v1/common;commonpbb\x06proto3"
 
 var (
 	file_proto_v1_common_common_proto_rawDescOnce sync.Once
@@ -1185,48 +1461,55 @@ func file_proto_v1_common_common_proto_rawDescGZIP() []byte {
 	return file_proto_v1_common_common_proto_rawDescData
 }
 
-var file_proto_v1_common_common_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_proto_v1_common_common_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_proto_v1_common_common_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_proto_v1_common_common_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_proto_v1_common_common_proto_goTypes = []any{
-	(ConnectionState)(0),       // 0: omniview.sdk.common.v1.ConnectionState
-	(ColumnType)(0),            // 1: omniview.sdk.common.v1.ColumnType
-	(ColumnAlignment)(0),       // 2: omniview.sdk.common.v1.ColumnAlignment
-	(OperationType)(0),         // 3: omniview.sdk.common.v1.OperationType
-	(*Connection)(nil),         // 4: omniview.sdk.common.v1.Connection
-	(*ConnectionStatus)(nil),   // 5: omniview.sdk.common.v1.ConnectionStatus
-	(*ResourceMeta)(nil),       // 6: omniview.sdk.common.v1.ResourceMeta
-	(*ResourceGroup)(nil),      // 7: omniview.sdk.common.v1.ResourceGroup
-	(*ResourceDefinition)(nil), // 8: omniview.sdk.common.v1.ResourceDefinition
-	(*ColumnDefinition)(nil),   // 9: omniview.sdk.common.v1.ColumnDefinition
-	(*ResourceLink)(nil),       // 10: omniview.sdk.common.v1.ResourceLink
-	(*ResourceError)(nil),      // 11: omniview.sdk.common.v1.ResourceError
-	(*EditorSchema)(nil),       // 12: omniview.sdk.common.v1.EditorSchema
-	nil,                        // 13: omniview.sdk.common.v1.Connection.LabelsEntry
-	nil,                        // 14: omniview.sdk.common.v1.ResourceLink.KeyMapEntry
-	nil,                        // 15: omniview.sdk.common.v1.ResourceLink.DetailExtractorsEntry
-	(*structpb.Struct)(nil),    // 16: google.protobuf.Struct
+	(ConnectionState)(0),        // 0: omniview.sdk.common.v1.ConnectionState
+	(ColumnType)(0),             // 1: omniview.sdk.common.v1.ColumnType
+	(ColumnAlignment)(0),        // 2: omniview.sdk.common.v1.ColumnAlignment
+	(OperationType)(0),          // 3: omniview.sdk.common.v1.OperationType
+	(ResourceErrorCode)(0),      // 4: omniview.sdk.common.v1.ResourceErrorCode
+	(*Connection)(nil),          // 5: omniview.sdk.common.v1.Connection
+	(*ConnectionStatus)(nil),    // 6: omniview.sdk.common.v1.ConnectionStatus
+	(*ResourceMeta)(nil),        // 7: omniview.sdk.common.v1.ResourceMeta
+	(*ResourceGroup)(nil),       // 8: omniview.sdk.common.v1.ResourceGroup
+	(*ResourceDefinition)(nil),  // 9: omniview.sdk.common.v1.ResourceDefinition
+	(*ColumnDefinition)(nil),    // 10: omniview.sdk.common.v1.ColumnDefinition
+	(*ResourceLink)(nil),        // 11: omniview.sdk.common.v1.ResourceLink
+	(*ResourceError)(nil),       // 12: omniview.sdk.common.v1.ResourceError
+	(*EditorSchema)(nil),        // 13: omniview.sdk.common.v1.EditorSchema
+	(*ActionTarget)(nil),        // 14: omniview.sdk.common.v1.ActionTarget
+	(*ActionTargetBuilder)(nil), // 15: omniview.sdk.common.v1.ActionTargetBuilder
+	nil,                         // 16: omniview.sdk.common.v1.Connection.LabelsEntry
+	nil,                         // 17: omniview.sdk.common.v1.ResourceLink.KeyMapEntry
+	nil,                         // 18: omniview.sdk.common.v1.ResourceLink.DetailExtractorsEntry
+	nil,                         // 19: omniview.sdk.common.v1.ActionTarget.SelectorsEntry
+	nil,                         // 20: omniview.sdk.common.v1.ActionTargetBuilder.SelectorsEntry
+	(*structpb.Struct)(nil),     // 21: google.protobuf.Struct
 }
 var file_proto_v1_common_common_proto_depIdxs = []int32{
-	13, // 0: omniview.sdk.common.v1.Connection.labels:type_name -> omniview.sdk.common.v1.Connection.LabelsEntry
-	16, // 1: omniview.sdk.common.v1.Connection.data:type_name -> google.protobuf.Struct
-	4,  // 2: omniview.sdk.common.v1.ConnectionStatus.connection:type_name -> omniview.sdk.common.v1.Connection
+	16, // 0: omniview.sdk.common.v1.Connection.labels:type_name -> omniview.sdk.common.v1.Connection.LabelsEntry
+	21, // 1: omniview.sdk.common.v1.Connection.data:type_name -> google.protobuf.Struct
+	5,  // 2: omniview.sdk.common.v1.ConnectionStatus.connection:type_name -> omniview.sdk.common.v1.Connection
 	0,  // 3: omniview.sdk.common.v1.ConnectionStatus.state:type_name -> omniview.sdk.common.v1.ConnectionState
-	16, // 4: omniview.sdk.common.v1.ConnectionStatus.metadata:type_name -> google.protobuf.Struct
-	6,  // 5: omniview.sdk.common.v1.ResourceGroup.resources:type_name -> omniview.sdk.common.v1.ResourceMeta
-	6,  // 6: omniview.sdk.common.v1.ResourceDefinition.meta:type_name -> omniview.sdk.common.v1.ResourceMeta
-	9,  // 7: omniview.sdk.common.v1.ResourceDefinition.column_definitions:type_name -> omniview.sdk.common.v1.ColumnDefinition
+	21, // 4: omniview.sdk.common.v1.ConnectionStatus.metadata:type_name -> google.protobuf.Struct
+	7,  // 5: omniview.sdk.common.v1.ResourceGroup.resources:type_name -> omniview.sdk.common.v1.ResourceMeta
+	7,  // 6: omniview.sdk.common.v1.ResourceDefinition.meta:type_name -> omniview.sdk.common.v1.ResourceMeta
+	10, // 7: omniview.sdk.common.v1.ResourceDefinition.column_definitions:type_name -> omniview.sdk.common.v1.ColumnDefinition
 	3,  // 8: omniview.sdk.common.v1.ResourceDefinition.supported_operations:type_name -> omniview.sdk.common.v1.OperationType
 	1,  // 9: omniview.sdk.common.v1.ColumnDefinition.type:type_name -> omniview.sdk.common.v1.ColumnType
 	2,  // 10: omniview.sdk.common.v1.ColumnDefinition.alignment:type_name -> omniview.sdk.common.v1.ColumnAlignment
-	10, // 11: omniview.sdk.common.v1.ColumnDefinition.resource_link:type_name -> omniview.sdk.common.v1.ResourceLink
-	14, // 12: omniview.sdk.common.v1.ResourceLink.key_map:type_name -> omniview.sdk.common.v1.ResourceLink.KeyMapEntry
-	15, // 13: omniview.sdk.common.v1.ResourceLink.detail_extractors:type_name -> omniview.sdk.common.v1.ResourceLink.DetailExtractorsEntry
-	16, // 14: omniview.sdk.common.v1.ResourceError.details:type_name -> google.protobuf.Struct
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	11, // 11: omniview.sdk.common.v1.ColumnDefinition.resource_link:type_name -> omniview.sdk.common.v1.ResourceLink
+	17, // 12: omniview.sdk.common.v1.ResourceLink.key_map:type_name -> omniview.sdk.common.v1.ResourceLink.KeyMapEntry
+	18, // 13: omniview.sdk.common.v1.ResourceLink.detail_extractors:type_name -> omniview.sdk.common.v1.ResourceLink.DetailExtractorsEntry
+	21, // 14: omniview.sdk.common.v1.ResourceError.details:type_name -> google.protobuf.Struct
+	19, // 15: omniview.sdk.common.v1.ActionTarget.selectors:type_name -> omniview.sdk.common.v1.ActionTarget.SelectorsEntry
+	20, // 16: omniview.sdk.common.v1.ActionTargetBuilder.selectors:type_name -> omniview.sdk.common.v1.ActionTargetBuilder.SelectorsEntry
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_common_common_proto_init() }
@@ -1239,8 +1522,8 @@ func file_proto_v1_common_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_common_common_proto_rawDesc), len(file_proto_v1_common_common_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   12,
+			NumEnums:      5,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -3,10 +3,26 @@ package resource
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
+
+// versionStability returns a sort priority for API version strings.
+// Higher = more stable. GA > beta > alpha > unknown.
+func versionStability(v string) int {
+	switch {
+	case !strings.Contains(v, "alpha") && !strings.Contains(v, "beta"):
+		return 3 // GA: v1, v2
+	case strings.Contains(v, "beta"):
+		return 2
+	case strings.Contains(v, "alpha"):
+		return 1
+	default:
+		return 0
+	}
+}
 
 // typeManager manages static and dynamically discovered resource types.
 type typeManager[ClientT any] struct {
@@ -30,29 +46,172 @@ func newTypeManager[ClientT any](
 	}
 }
 
-// GetResourceGroups returns all resource groups, including discovered resources.
+// GetResourceGroups returns all resource groups with their Resources fields
+// populated from the static registry and any discovered types for the connection.
+// Deduplication is applied per (group, Kind): static registrations win over
+// discovered, and GA versions win over beta/alpha within the same source.
 func (m *typeManager[ClientT]) GetResourceGroups(ctx context.Context, connectionID string) map[string]ResourceGroup {
+	staticMetas := m.registry.ListAll()
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	// Build a set of static keys for exact-key dedup against discovered.
+	staticKeys := make(map[string]bool, len(staticMetas))
+	for _, meta := range staticMetas {
+		staticKeys[meta.Key()] = true
+	}
+
+	// Collect all candidate metas: static first, then discovered (minus exact key matches).
+	type candidate struct {
+		meta     ResourceMeta
+		isStatic bool
+	}
+	var candidates []candidate
+	for _, meta := range staticMetas {
+		candidates = append(candidates, candidate{meta: meta, isStatic: true})
+	}
+	if discovered, ok := m.discovered[connectionID]; ok {
+		for _, meta := range discovered {
+			if staticKeys[meta.Key()] {
+				continue // exact key match — static already covers it
+			}
+			candidates = append(candidates, candidate{meta: meta, isStatic: false})
+		}
+	}
+
+	// Deduplicate by (group, Kind): keep the best version per Kind in each group.
+	// "Best" = static wins over discovered; among equal source, higher versionStability wins.
+	type dedupKey struct{ group, kind string }
+	best := make(map[dedupKey]candidate)
+	for _, c := range candidates {
+		dk := dedupKey{c.meta.Group, c.meta.Kind}
+		existing, exists := best[dk]
+		if !exists {
+			best[dk] = c
+			continue
+		}
+		// Static always wins over discovered.
+		if c.isStatic && !existing.isStatic {
+			best[dk] = c
+		} else if c.isStatic == existing.isStatic {
+			// Same source — prefer more stable version.
+			if versionStability(c.meta.Version) > versionStability(existing.meta.Version) {
+				best[dk] = c
+			}
+		}
+	}
+
+	// Build result groups.
 	result := make(map[string]ResourceGroup, len(m.groups))
 	for _, g := range m.groups {
-		result[g.ID] = g
+		result[g.ID] = ResourceGroup{
+			ID:          g.ID,
+			Name:        g.Name,
+			Description: g.Description,
+			Icon:        g.Icon,
+			Resources:   make(map[string][]ResourceMeta),
+		}
 	}
+
+	for _, c := range best {
+		meta := c.meta
+		grp, ok := result[meta.Group]
+		if !ok {
+			grp = ResourceGroup{
+				ID:        meta.Group,
+				Name:      meta.Group,
+				Resources: make(map[string][]ResourceMeta),
+			}
+		}
+		grp.Resources[meta.Version] = append(grp.Resources[meta.Version], meta)
+		result[grp.ID] = grp
+	}
+
 	return result
 }
 
-// GetResourceGroup returns a single resource group.
+// GetResourceGroup returns a single resource group with its Resources populated.
+// Applies the same (group, Kind) dedup as GetResourceGroups.
 func (m *typeManager[ClientT]) GetResourceGroup(ctx context.Context, id string) (ResourceGroup, error) {
+	staticMetas := m.registry.ListAll()
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	// Find the group definition.
+	var grp ResourceGroup
+	found := false
 	for _, g := range m.groups {
 		if g.ID == id {
-			return g, nil
+			grp = ResourceGroup{
+				ID:          g.ID,
+				Name:        g.Name,
+				Description: g.Description,
+				Icon:        g.Icon,
+				Resources:   make(map[string][]ResourceMeta),
+			}
+			found = true
+			break
 		}
 	}
-	return ResourceGroup{}, fmt.Errorf("resource group %q not found", id)
+	if !found {
+		return ResourceGroup{}, fmt.Errorf("resource group %q not found", id)
+	}
+
+	// Build a set of static keys for this group.
+	staticKeys := make(map[string]bool)
+	for _, meta := range staticMetas {
+		if meta.Group == id {
+			staticKeys[meta.Key()] = true
+		}
+	}
+
+	// Collect candidates for this group: static first, then discovered.
+	type candidate struct {
+		meta     ResourceMeta
+		isStatic bool
+	}
+	var candidates []candidate
+	for _, meta := range staticMetas {
+		if meta.Group == id {
+			candidates = append(candidates, candidate{meta: meta, isStatic: true})
+		}
+	}
+	for _, discovered := range m.discovered {
+		for _, meta := range discovered {
+			if meta.Group != id {
+				continue
+			}
+			if staticKeys[meta.Key()] {
+				continue
+			}
+			candidates = append(candidates, candidate{meta: meta, isStatic: false})
+		}
+	}
+
+	// Deduplicate by Kind.
+	best := make(map[string]candidate) // key = Kind
+	for _, c := range candidates {
+		existing, exists := best[c.meta.Kind]
+		if !exists {
+			best[c.meta.Kind] = c
+			continue
+		}
+		if c.isStatic && !existing.isStatic {
+			best[c.meta.Kind] = c
+		} else if c.isStatic == existing.isStatic {
+			if versionStability(c.meta.Version) > versionStability(existing.meta.Version) {
+				best[c.meta.Kind] = c
+			}
+		}
+	}
+
+	for _, c := range best {
+		grp.Resources[c.meta.Version] = append(grp.Resources[c.meta.Version], c.meta)
+	}
+
+	return grp, nil
 }
 
 // GetResourceTypes returns all resource types (static + discovered) for a connection.
@@ -122,6 +281,22 @@ func (m *typeManager[ClientT]) GetResourceCapabilities(ctx context.Context, key 
 		return nil, fmt.Errorf("resource type %q not found", key)
 	}
 	return caps, nil
+}
+
+// DiscoveredKeySet returns the set of resource keys discovered for a connection.
+// Returns nil if no discovery data exists (nil means "watch all" — safe fallback).
+func (m *typeManager[ClientT]) DiscoveredKeySet(connectionID string) map[string]bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	metas, ok := m.discovered[connectionID]
+	if !ok || len(metas) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(metas))
+	for _, meta := range metas {
+		set[meta.Key()] = true
+	}
+	return set
 }
 
 // DiscoverForConnection runs discovery for a connection and caches the results.

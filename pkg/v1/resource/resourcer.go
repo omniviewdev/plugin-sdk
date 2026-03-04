@@ -117,3 +117,36 @@ type ResourceSchemaProvider[ClientT any] interface {
 type ScaleHintProvider interface {
 	ScaleHint() *ScaleHint
 }
+
+// ScopeMode controls how partitions are resolved for a connection.
+type ScopeMode int
+
+const (
+	// ScopeModeAll means no partitioning — watch all partitions (default).
+	ScopeModeAll ScopeMode = iota
+
+	// ScopeModeExplicit means the user has configured a fixed partition list.
+	ScopeModeExplicit
+
+	// ScopeModeAutoDiscover means the plugin discovers accessible partitions dynamically.
+	ScopeModeAutoDiscover
+)
+
+// AllScopeModes lists all scope modes for Wails enum binding.
+//
+//nolint:gochecknoglobals // necessary for enum binding
+var AllScopeModes = []struct {
+	Value  ScopeMode
+	TSName string
+}{
+	{ScopeModeAll, "ALL"},
+	{ScopeModeExplicit, "EXPLICIT"},
+	{ScopeModeAutoDiscover, "AUTO_DISCOVER"},
+}
+
+// ScopeProvider resolves the watch scope for a connection.
+// Optional — type-asserted on ConnectionProvider at connection start.
+// If not implemented or returns ScopeModeAll, watches are unscoped.
+type ScopeProvider[ClientT any] interface {
+	ResolveScope(ctx context.Context, client *ClientT) (ScopeMode, []string, error)
+}

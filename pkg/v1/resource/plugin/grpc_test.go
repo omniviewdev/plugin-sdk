@@ -16,6 +16,8 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/v1/resource"
+	"github.com/omniviewdev/plugin-sdk/settings"
+	"github.com/omniviewdev/plugin-sdk/settings/settingstest"
 
 	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -31,7 +33,7 @@ func setupBufconn(t *testing.T, provider resource.Provider) resource.Provider {
 	lis := bufconn.Listen(bufSize)
 
 	s := grpc.NewServer()
-	resourcepb.RegisterResourcePluginServer(s, NewServer(provider))
+	resourcepb.RegisterResourcePluginServer(s, NewServer(provider, nil))
 
 	go func() {
 		if err := s.Serve(lis); err != nil {
@@ -469,6 +471,10 @@ func TestGR016_WatchStateRoundTrip(t *testing.T) {
 				"apps::v1::Deploy":  resource.WatchStateSyncing,
 				"core::v1::Service": resource.WatchStateError,
 			},
+			ResourceCounts: map[string]int{
+				"core::v1::Pod":    42,
+				"apps::v1::Deploy": 7,
+			},
 		}, nil
 	}
 	c := setupBufconn(t, tp)
@@ -490,6 +496,16 @@ func TestGR016_WatchStateRoundTrip(t *testing.T) {
 	}
 	if summary.Resources["core::v1::Service"] != resource.WatchStateError {
 		t.Fatalf("Service: expected Error, got %v", summary.Resources["core::v1::Service"])
+	}
+	// Verify resource counts round-trip through gRPC.
+	if summary.ResourceCounts["core::v1::Pod"] != 42 {
+		t.Fatalf("Pod count: expected 42, got %d", summary.ResourceCounts["core::v1::Pod"])
+	}
+	if summary.ResourceCounts["apps::v1::Deploy"] != 7 {
+		t.Fatalf("Deploy count: expected 7, got %d", summary.ResourceCounts["apps::v1::Deploy"])
+	}
+	if _, ok := summary.ResourceCounts["core::v1::Service"]; ok {
+		t.Fatal("Service should not have a count entry")
 	}
 }
 
@@ -651,7 +667,7 @@ func TestGR023_ServerShutdownDuringStream(t *testing.T) {
 			return ctx.Err()
 		}),
 	)
-	resourcepb.RegisterResourcePluginServer(s, NewServer(tp))
+	resourcepb.RegisterResourcePluginServer(s, NewServer(tp, nil))
 	go func() { _ = s.Serve(lis) }()
 
 	dialer := func(ctx context.Context, addr string) (net.Conn, error) { return lis.DialContext(ctx) }
@@ -1061,4 +1077,344 @@ func (s *countingSink) OnStateChange(e resource.WatchStateEvent) {
 		s.onStateChange(e)
 	}
 }
+
+// TestGR034_ListenForEvents_StateConnectionRoundTrip verifies that WatchStateEvent
+// Connection field survives the gRPC round-trip: server → proto → client.
+func TestGR034_ListenForEvents_StateConnectionRoundTrip(t *testing.T) {
+	tp := resourcetest.NewTestProvider(t,
+		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink) error {
+			sink.OnStateChange(resource.WatchStateEvent{
+				Connection:    "conn-42",
+				ResourceKey:   "core::v1::Pod",
+				State:         resource.WatchStateSyncing,
+				ResourceCount: 100,
+			})
+			sink.OnStateChange(resource.WatchStateEvent{
+				Connection:    "conn-42",
+				ResourceKey:   "core::v1::Pod",
+				State:         resource.WatchStateSynced,
+				ResourceCount: 150,
+			})
+			sink.OnStateChange(resource.WatchStateEvent{
+				Connection:    "conn-99",
+				ResourceKey:   "apps::v1::Deployment",
+				State:         resource.WatchStateError,
+				Message:       "connection lost",
+			})
+			return nil
+		}),
+	)
+	c := setupBufconn(t, tp)
+
+	var mu sync.Mutex
+	var states []resource.WatchStateEvent
+	sink := &countingSink{
+		onStateChange: func(e resource.WatchStateEvent) {
+			mu.Lock()
+			states = append(states, e)
+			mu.Unlock()
+		},
+	}
+
+	err := c.ListenForEvents(context.Background(), sink)
+	if err != nil {
+		t.Fatalf("ListenForEvents: %v", err)
+	}
+
+	if len(states) != 3 {
+		t.Fatalf("expected 3 state events, got %d", len(states))
+	}
+
+	// Verify Connection survives round-trip for all events.
+	if states[0].Connection != "conn-42" {
+		t.Fatalf("state[0]: expected Connection=conn-42, got %q", states[0].Connection)
+	}
+	if states[0].ResourceKey != "core::v1::Pod" {
+		t.Fatalf("state[0]: expected ResourceKey=core::v1::Pod, got %q", states[0].ResourceKey)
+	}
+	if states[0].State != resource.WatchStateSyncing {
+		t.Fatalf("state[0]: expected Syncing, got %v", states[0].State)
+	}
+	if states[0].ResourceCount != 100 {
+		t.Fatalf("state[0]: expected ResourceCount=100, got %d", states[0].ResourceCount)
+	}
+
+	if states[1].Connection != "conn-42" {
+		t.Fatalf("state[1]: expected Connection=conn-42, got %q", states[1].Connection)
+	}
+	if states[1].State != resource.WatchStateSynced {
+		t.Fatalf("state[1]: expected Synced, got %v", states[1].State)
+	}
+
+	// Different connection ID on the third event.
+	if states[2].Connection != "conn-99" {
+		t.Fatalf("state[2]: expected Connection=conn-99, got %q", states[2].Connection)
+	}
+	if states[2].ResourceKey != "apps::v1::Deployment" {
+		t.Fatalf("state[2]: expected ResourceKey=apps::v1::Deployment, got %q", states[2].ResourceKey)
+	}
+	if states[2].State != resource.WatchStateError {
+		t.Fatalf("state[2]: expected Error, got %v", states[2].State)
+	}
+}
+
+// TestGR035_ListenForEvents_UpdateDataRoundTrip verifies that WatchUpdatePayload
+// uses a single Data field (not oldData/newData) and survives gRPC round-trip.
+func TestGR035_ListenForEvents_UpdateDataRoundTrip(t *testing.T) {
+	expected := json.RawMessage(`{"kind":"Pod","status":"Running"}`)
+	tp := resourcetest.NewTestProvider(t,
+		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink) error {
+			sink.OnUpdate(resource.WatchUpdatePayload{
+				Connection: "conn-1",
+				Key:        "core::v1::Pod",
+				ID:         "nginx",
+				Namespace:  "default",
+				Data:       expected,
+			})
+			return nil
+		}),
+	)
+	c := setupBufconn(t, tp)
+
+	var got resource.WatchUpdatePayload
+	sink := &countingSink{
+		onUpdate: func(p resource.WatchUpdatePayload) { got = p },
+	}
+
+	err := c.ListenForEvents(context.Background(), sink)
+	if err != nil {
+		t.Fatalf("ListenForEvents: %v", err)
+	}
+
+	if got.Connection != "conn-1" {
+		t.Fatalf("expected Connection=conn-1, got %q", got.Connection)
+	}
+	if got.ID != "nginx" {
+		t.Fatalf("expected ID=nginx, got %q", got.ID)
+	}
+	if string(got.Data) != string(expected) {
+		t.Fatalf("expected Data=%s, got %s", expected, got.Data)
+	}
+}
+
+// ============================================================================
+// GR-036..039: Settings injection tests
+// ============================================================================
+
+// setupBufconnWithSettings is like setupBufconn but passes a settings.Provider
+// to NewServer so the gRPC server injects it into session contexts.
+func setupBufconnWithSettings(t *testing.T, provider resource.Provider, sp settings.Provider) resource.Provider {
+	t.Helper()
+	lis := bufconn.Listen(bufSize)
+
+	s := grpc.NewServer()
+	resourcepb.RegisterResourcePluginServer(s, NewServer(provider, sp))
+
+	go func() {
+		if err := s.Serve(lis); err != nil {
+			// Server stopped, expected during cleanup.
+		}
+	}()
+
+	dialer := func(ctx context.Context, addr string) (net.Conn, error) {
+		return lis.DialContext(ctx)
+	}
+	//nolint:staticcheck // grpc.DialContext is needed for grpc v1.61.
+	conn, err := grpc.DialContext(context.Background(), "bufnet",
+		grpc.WithContextDialer(dialer),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("bufconn dial: %v", err)
+	}
+
+	t.Cleanup(func() {
+		conn.Close()
+		s.Stop()
+		lis.Close()
+	})
+
+	return NewClient(resourcepb.NewResourcePluginClient(conn))
+}
+
+// TestGR036_LoadConnectionsReceivesSettings verifies that LoadConnections
+// injects PluginConfig into the session context when settings are provided.
+func TestGR036_LoadConnectionsReceivesSettings(t *testing.T) {
+	sp := &settingstest.StubProvider{
+		StringSlices: map[string][]string{
+			"kubeconfigs": {"/home/user/.kube/config", "/tmp/other.yaml"},
+		},
+	}
+
+	tp := resourcetest.NewTestProvider(t,
+		resourcetest.WithLoadConnectionsFunc(func(ctx context.Context) ([]types.Connection, error) {
+			session := resource.SessionFromContext(ctx)
+			if session == nil {
+				t.Error("LoadConnections: expected session in context, got nil")
+				return nil, errors.New("no session in context")
+			}
+			if session.PluginConfig == nil {
+				t.Error("LoadConnections: expected PluginConfig in session, got nil")
+				return nil, errors.New("no PluginConfig in session")
+			}
+			// Verify we can read settings through the provider.
+			paths, err := session.PluginConfig.GetStringSlice("kubeconfigs")
+			if err != nil {
+				t.Errorf("LoadConnections: GetStringSlice: %v", err)
+				return nil, err
+			}
+			conns := make([]types.Connection, len(paths))
+			for i, p := range paths {
+				conns[i] = types.Connection{ID: fmt.Sprintf("conn-%d", i), Name: p}
+			}
+			return conns, nil
+		}),
+	)
+
+	c := setupBufconnWithSettings(t, tp, sp)
+	conns, err := c.LoadConnections(context.Background())
+	if err != nil {
+		t.Fatalf("LoadConnections: %v", err)
+	}
+	if len(conns) != 2 {
+		t.Fatalf("expected 2 connections, got %d", len(conns))
+	}
+	if conns[0].Name != "/home/user/.kube/config" {
+		t.Fatalf("expected first conn name=/home/user/.kube/config, got %q", conns[0].Name)
+	}
+	if conns[1].Name != "/tmp/other.yaml" {
+		t.Fatalf("expected second conn name=/tmp/other.yaml, got %q", conns[1].Name)
+	}
+}
+
+// TestGR037_LoadConnectionsNilSettings verifies that LoadConnections works
+// correctly when no settings provider is configured (nil-safe).
+func TestGR037_LoadConnectionsNilSettings(t *testing.T) {
+	tp := resourcetest.NewTestProvider(t,
+		resourcetest.WithLoadConnectionsFunc(func(ctx context.Context) ([]types.Connection, error) {
+			session := resource.SessionFromContext(ctx)
+			// With nil settings, injectSettingsSession is a no-op —
+			// session should be nil.
+			if session != nil {
+				t.Error("LoadConnections: expected nil session with nil settings, got non-nil")
+			}
+			return []types.Connection{{ID: "fallback", Name: "Fallback"}}, nil
+		}),
+	)
+
+	// setupBufconn passes nil settings.
+	c := setupBufconn(t, tp)
+	conns, err := c.LoadConnections(context.Background())
+	if err != nil {
+		t.Fatalf("LoadConnections: %v", err)
+	}
+	if len(conns) != 1 || conns[0].ID != "fallback" {
+		t.Fatalf("expected 1 fallback connection, got %v", conns)
+	}
+}
+
+// TestGR038_WatchConnectionsReceivesSettings verifies that WatchConnections
+// injects PluginConfig into the session context passed to the provider.
+func TestGR038_WatchConnectionsReceivesSettings(t *testing.T) {
+	sp := &settingstest.StubProvider{
+		StringSlices: map[string][]string{
+			"kubeconfigs": {"/home/user/.kube/config"},
+		},
+	}
+
+	tp := resourcetest.NewTestProvider(t)
+	tp.WatchConnectionsFunc = func(ctx context.Context, stream chan<- []types.Connection) error {
+		session := resource.SessionFromContext(ctx)
+		if session == nil {
+			t.Error("WatchConnections: expected session in context, got nil")
+			return errors.New("no session in context")
+		}
+		if session.PluginConfig == nil {
+			t.Error("WatchConnections: expected PluginConfig in session, got nil")
+			return errors.New("no PluginConfig in session")
+		}
+		paths, err := session.PluginConfig.GetStringSlice("kubeconfigs")
+		if err != nil {
+			return err
+		}
+		conns := make([]types.Connection, len(paths))
+		for i, p := range paths {
+			conns[i] = types.Connection{ID: fmt.Sprintf("conn-%d", i), Name: p}
+		}
+		stream <- conns
+		close(stream)
+		return nil
+	}
+
+	c := setupBufconnWithSettings(t, tp, sp)
+
+	ch := make(chan []types.Connection, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- c.WatchConnections(context.Background(), ch)
+	}()
+
+	select {
+	case conns := <-ch:
+		if len(conns) != 1 {
+			t.Fatalf("expected 1 connection, got %d", len(conns))
+		}
+		if conns[0].Name != "/home/user/.kube/config" {
+			t.Fatalf("expected conn name=/home/user/.kube/config, got %q", conns[0].Name)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for WatchConnections")
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("WatchConnections: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for WatchConnections to return")
+	}
+}
+
+// TestGR039_CRUDReceivesSettings verifies that CRUD operations (Get)
+// inject PluginConfig into the session via injectSession when settings
+// are configured.
+func TestGR039_CRUDReceivesSettings(t *testing.T) {
+	sp := &settingstest.StubProvider{
+		StringSlices: map[string][]string{
+			"kubeconfigs": {"/home/user/.kube/config"},
+		},
+	}
+
+	tp := resourcetest.NewTestProvider(t,
+		resourcetest.WithGetFunc(func(ctx context.Context, key string, input resource.GetInput) (*resource.GetResult, error) {
+			session := resource.SessionFromContext(ctx)
+			if session == nil {
+				t.Error("Get: expected session in context, got nil")
+				return nil, errors.New("no session")
+			}
+			if session.Connection == nil || session.Connection.ID != "conn-1" {
+				t.Error("Get: expected Connection with ID=conn-1")
+			}
+			if session.PluginConfig == nil {
+				t.Error("Get: expected PluginConfig in session, got nil")
+				return nil, errors.New("no PluginConfig")
+			}
+			return &resource.GetResult{Success: true, Result: json.RawMessage(`{"ok":true}`)}, nil
+		}),
+	)
+
+	c := setupBufconnWithSettings(t, tp, sp)
+	ctx := resource.WithSession(context.Background(), &resource.Session{
+		Connection: &types.Connection{ID: "conn-1"},
+	})
+	result, err := c.Get(ctx, "core::v1::Pod", resource.GetInput{ID: "pod-1", Namespace: "default"})
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !result.Success {
+		t.Fatal("expected Success=true")
+	}
+}
+
 

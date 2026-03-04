@@ -44,6 +44,11 @@ func BuildResourceController[ClientT any](ctx context.Context, cfg ResourcePlugi
 	watchMgr := newWatchManager[ClientT](registry)
 	typeMgr := newTypeManager[ClientT](registry, cfg.Groups, cfg.Discovery)
 
+	// Auto-detect ScopeProvider on ConnectionProvider.
+	if typed, ok := cfg.Connections.(ScopeProvider[ClientT]); ok {
+		watchMgr.scopeProvider = typed
+	}
+
 	// Auto-detect SchemaProvider on ConnectionProvider.
 	var sp SchemaProvider[ClientT]
 	if typed, ok := cfg.Connections.(SchemaProvider[ClientT]); ok {
@@ -378,14 +383,17 @@ func (c *resourceController[ClientT]) StartConnection(ctx context.Context, conne
 		return status, err
 	}
 
-	// Start watches for SyncOnConnect resources.
-	client, _ := c.connMgr.GetClient(connectionID)
-	connCtx, _ := c.connMgr.GetConnectionCtx(connectionID)
-	_ = c.watchMgr.StartConnectionWatch(ctx, connectionID, client, connCtx)
-
-	// Run discovery.
+	// Run discovery FIRST so we know which resource types are available.
 	conn, _ := c.connMgr.GetConnection(connectionID)
 	_ = c.typeMgr.DiscoverForConnection(ctx, &conn)
+
+	// Get the set of discovered types (nil if no discovery provider — watches all).
+	discoveredTypes := c.typeMgr.DiscoveredKeySet(connectionID)
+
+	// Start watches with discovery filter.
+	client, _ := c.connMgr.GetClient(connectionID)
+	connCtx, _ := c.connMgr.GetConnectionCtx(connectionID)
+	_ = c.watchMgr.StartConnectionWatch(ctx, connectionID, client, connCtx, discoveredTypes)
 
 	return status, nil
 }
@@ -425,12 +433,17 @@ func (c *resourceController[ClientT]) UpdateConnection(ctx context.Context, conn
 		return result, err
 	}
 
-	// If the connection was active, the client was restarted — restart watches.
+	// If the connection was active, the client was restarted — re-discover and restart watches.
 	if wasActive && c.connMgr.IsStarted(conn.ID) {
 		_ = c.watchMgr.StopConnectionWatch(ctx, conn.ID)
+
+		updated, _ := c.connMgr.GetConnection(conn.ID)
+		_ = c.typeMgr.DiscoverForConnection(ctx, &updated)
+		discoveredTypes := c.typeMgr.DiscoveredKeySet(conn.ID)
+
 		client, _ := c.connMgr.GetClient(conn.ID)
 		connCtx, _ := c.connMgr.GetConnectionCtx(conn.ID)
-		_ = c.watchMgr.StartConnectionWatch(ctx, conn.ID, client, connCtx)
+		_ = c.watchMgr.StartConnectionWatch(ctx, conn.ID, client, connCtx, discoveredTypes)
 	}
 
 	return result, nil
@@ -484,7 +497,8 @@ func (c *resourceController[ClientT]) StartConnectionWatch(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	return c.watchMgr.StartConnectionWatch(ctx, connectionID, client, connCtx)
+	discoveredTypes := c.typeMgr.DiscoveredKeySet(connectionID)
+	return c.watchMgr.StartConnectionWatch(ctx, connectionID, client, connCtx, discoveredTypes)
 }
 
 func (c *resourceController[ClientT]) StopConnectionWatch(ctx context.Context, connectionID string) error {

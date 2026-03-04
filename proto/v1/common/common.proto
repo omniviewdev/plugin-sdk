@@ -43,6 +43,8 @@ message ResourceMeta {
     string display_name = 6;
     string description = 7;
     repeated string short_names = 8;
+    string icon = 9;
+    string category = 10;
 }
 
 // ResourceGroup is a logical grouping of resource types for UI rendering.
@@ -120,6 +122,25 @@ enum OperationType {
     OPERATION_TYPE_DELETE = 6;
 }
 
+// ResourceErrorCode enumerates structured error codes for resource operations.
+enum ResourceErrorCode {
+    RESOURCE_ERROR_UNSPECIFIED = 0;
+    RESOURCE_ERROR_NOT_FOUND = 1;
+    RESOURCE_ERROR_ALREADY_EXISTS = 2;
+    RESOURCE_ERROR_PERMISSION_DENIED = 3;
+    RESOURCE_ERROR_INVALID_INPUT = 4;
+    RESOURCE_ERROR_CONFLICT = 5;
+    RESOURCE_ERROR_INTERNAL = 6;
+    RESOURCE_ERROR_UNAVAILABLE = 7;
+    RESOURCE_ERROR_TIMEOUT = 8;
+    RESOURCE_ERROR_FILTER_UNKNOWN_FIELD = 9;
+    RESOURCE_ERROR_FILTER_INVALID_OPERATOR = 10;
+    RESOURCE_ERROR_FORBIDDEN = 11;
+    RESOURCE_ERROR_UNAUTHORIZED = 12;
+    RESOURCE_ERROR_CONNECTION_ERROR = 13;
+    RESOURCE_ERROR_CERTIFICATE_ERROR = 14;
+}
+
 // ResourceError is a structured error for resource operations.
 message ResourceError {
     int32 code = 1;
@@ -135,4 +156,20 @@ message EditorSchema {
     repeated string file_match = 2;
     string language = 3;
     bytes schema = 4;
+}
+
+// ActionTarget is a static target for an action.
+message ActionTarget {
+    string label = 1;
+    string icon = 2;
+    string description = 3;
+    map<string, string> selectors = 4;
+}
+
+// ActionTargetBuilder builds a dynamic list of targets for an action.
+message ActionTargetBuilder {
+    string label = 1;
+    string label_selector = 2;
+    repeated string paths = 3;
+    map<string, string> selectors = 4;
 }

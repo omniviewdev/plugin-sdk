@@ -109,18 +109,28 @@ func TestTM_DiscoveryError(t *testing.T) {
 	}
 }
 
-// --- TM-006: GetResourceGroup exists ---
+// --- TM-006: GetResourceGroup exists and has populated resources ---
 func TestTM_GetResourceGroup(t *testing.T) {
 	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
-	groups := []resource.ResourceGroup{{ID: "workloads", Name: "Workloads"}}
+	// Pod has Group: "core" — we'll use "core" as the group ID.
+	reg.Register(resource.ResourceRegistration[string]{Meta: resourcetest.PodMeta, Resourcer: &resourcetest.StubResourcer[string]{}})
+	reg.Register(resource.ResourceRegistration[string]{Meta: resourcetest.ServiceMeta, Resourcer: &resourcetest.StubResourcer[string]{}})
+
+	groups := []resource.ResourceGroup{{ID: "core", Name: "Core"}}
 	mgr := resource.NewTypeManagerForTest(reg, groups, nil)
 
-	g, err := mgr.GetResourceGroup(context.Background(), "workloads")
+	g, err := mgr.GetResourceGroup(context.Background(), "core")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.ID != "workloads" {
-		t.Fatalf("expected workloads, got %s", g.ID)
+	if g.ID != "core" {
+		t.Fatalf("expected core, got %s", g.ID)
+	}
+	if g.Resources == nil {
+		t.Fatal("expected Resources to be populated")
+	}
+	if len(g.Resources["v1"]) != 2 {
+		t.Fatalf("expected 2 resources in core/v1, got %d", len(g.Resources["v1"]))
 	}
 }
 
@@ -215,12 +225,17 @@ func TestTM_GetResourceType(t *testing.T) {
 	}
 }
 
-// --- TM-005: GetResourceGroups returns configured groups ---
+// --- TM-005: GetResourceGroups returns configured groups with populated resources ---
 func TestTM_GetResourceGroups(t *testing.T) {
 	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
+	// Register resources whose Group matches the group IDs.
+	reg.Register(resource.ResourceRegistration[string]{Meta: resourcetest.PodMeta, Resourcer: &resourcetest.StubResourcer[string]{}})         // Group: "core"
+	reg.Register(resource.ResourceRegistration[string]{Meta: resourcetest.DeploymentMeta, Resourcer: &resourcetest.StubResourcer[string]{}})   // Group: "apps"
+	reg.Register(resource.ResourceRegistration[string]{Meta: resourcetest.ServiceMeta, Resourcer: &resourcetest.StubResourcer[string]{}})      // Group: "core"
+
 	groups := []resource.ResourceGroup{
-		{ID: "workloads", Name: "Workloads"},
-		{ID: "networking", Name: "Networking"},
+		{ID: "core", Name: "Core"},
+		{ID: "apps", Name: "Apps"},
 	}
 	mgr := resource.NewTypeManagerForTest(reg, groups, nil)
 
@@ -228,11 +243,85 @@ func TestTM_GetResourceGroups(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("expected 2 groups, got %d", len(got))
 	}
-	if _, ok := got["workloads"]; !ok {
-		t.Fatal("expected workloads group")
+
+	// Core group should have Pod and Service under v1.
+	coreGroup := got["core"]
+	if coreGroup.Resources == nil {
+		t.Fatal("expected core group to have Resources populated")
 	}
-	if _, ok := got["networking"]; !ok {
-		t.Fatal("expected networking group")
+	v1Resources := coreGroup.Resources["v1"]
+	if len(v1Resources) != 2 {
+		t.Fatalf("expected 2 resources in core/v1, got %d", len(v1Resources))
+	}
+
+	// Apps group should have Deployment under v1.
+	appsGroup := got["apps"]
+	if len(appsGroup.Resources["v1"]) != 1 {
+		t.Fatalf("expected 1 resource in apps/v1, got %d", len(appsGroup.Resources["v1"]))
+	}
+	if appsGroup.Resources["v1"][0].Kind != "Deployment" {
+		t.Fatalf("expected Deployment, got %s", appsGroup.Resources["v1"][0].Kind)
+	}
+}
+
+// --- TM-005b: GetResourceGroups creates dynamic groups for unmatched resource groups ---
+func TestTM_GetResourceGroupsDynamicGroup(t *testing.T) {
+	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
+	// Register a resource whose Group does NOT match any static group.
+	reg.Register(resource.ResourceRegistration[string]{Meta: resourcetest.PodMeta, Resourcer: &resourcetest.StubResourcer[string]{}}) // Group: "core"
+
+	groups := []resource.ResourceGroup{
+		{ID: "apps", Name: "Apps"}, // No "core" group defined.
+	}
+	mgr := resource.NewTypeManagerForTest(reg, groups, nil)
+
+	got := mgr.GetResourceGroups(context.Background(), "conn-1")
+	// Should have apps (empty) + core (dynamic).
+	if len(got) != 2 {
+		t.Fatalf("expected 2 groups (apps + dynamic core), got %d", len(got))
+	}
+	coreGroup, ok := got["core"]
+	if !ok {
+		t.Fatal("expected dynamic 'core' group to be created")
+	}
+	if len(coreGroup.Resources["v1"]) != 1 {
+		t.Fatalf("expected 1 resource in dynamic core/v1, got %d", len(coreGroup.Resources["v1"]))
+	}
+}
+
+// --- TM-005c: GetResourceGroups includes discovered resources ---
+func TestTM_GetResourceGroupsWithDiscovered(t *testing.T) {
+	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
+	reg.Register(resource.ResourceRegistration[string]{Meta: resourcetest.PodMeta, Resourcer: &resourcetest.StubResourcer[string]{}})
+
+	dp := &stubDiscoveryProvider{
+		DiscoverFunc: func(_ context.Context, _ *types.Connection) ([]resource.ResourceMeta, error) {
+			return []resource.ResourceMeta{crdMeta}, nil // Group: "custom.io"
+		},
+	}
+	groups := []resource.ResourceGroup{
+		{ID: "core", Name: "Core"},
+	}
+	mgr := resource.NewTypeManagerForTest(reg, groups, dp)
+
+	conn := &types.Connection{ID: "conn-1"}
+	mgr.DiscoverForConnection(context.Background(), conn)
+
+	got := mgr.GetResourceGroups(context.Background(), "conn-1")
+	// Should have core (with Pod) + custom.io (dynamic, with Widget).
+	if len(got) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(got))
+	}
+
+	customGroup, ok := got["custom.io"]
+	if !ok {
+		t.Fatal("expected dynamic 'custom.io' group for discovered CRD")
+	}
+	if len(customGroup.Resources["v1"]) != 1 {
+		t.Fatalf("expected 1 discovered resource, got %d", len(customGroup.Resources["v1"]))
+	}
+	if customGroup.Resources["v1"][0].Kind != "Widget" {
+		t.Fatalf("expected Widget, got %s", customGroup.Resources["v1"][0].Kind)
 	}
 }
 
@@ -374,6 +463,238 @@ func TestTM_OnConnectionRemovedNilDiscovery(t *testing.T) {
 	err := mgr.OnConnectionRemoved(context.Background(), conn)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// --- TM-021: GetResourceGroups deduplicates by Kind across versions ---
+func TestTM_GetResourceGroupsDeduplicatesByKind(t *testing.T) {
+	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
+
+	// Register HPA under three versions in the same group.
+	hpaV1 := resource.ResourceMeta{Group: "autoscaling", Version: "v1", Kind: "HorizontalPodAutoscaler", Label: "HPA"}
+	hpaV2 := resource.ResourceMeta{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler", Label: "HPA"}
+	hpaV2beta2 := resource.ResourceMeta{Group: "autoscaling", Version: "v2beta2", Kind: "HorizontalPodAutoscaler", Label: "HPA"}
+
+	reg.Register(resource.ResourceRegistration[string]{Meta: hpaV1, Resourcer: &resourcetest.StubResourcer[string]{}})
+	reg.Register(resource.ResourceRegistration[string]{Meta: hpaV2, Resourcer: &resourcetest.StubResourcer[string]{}})
+	reg.Register(resource.ResourceRegistration[string]{Meta: hpaV2beta2, Resourcer: &resourcetest.StubResourcer[string]{}})
+
+	groups := []resource.ResourceGroup{{ID: "autoscaling", Name: "Autoscaling"}}
+	mgr := resource.NewTypeManagerForTest(reg, groups, nil)
+
+	got := mgr.GetResourceGroups(context.Background(), "conn-1")
+	asGroup := got["autoscaling"]
+
+	// Count total HPA entries across all versions — should be exactly 1.
+	totalHPA := 0
+	for _, metas := range asGroup.Resources {
+		for _, m := range metas {
+			if m.Kind == "HorizontalPodAutoscaler" {
+				totalHPA++
+			}
+		}
+	}
+	if totalHPA != 1 {
+		t.Fatalf("expected 1 HPA (deduped), got %d", totalHPA)
+	}
+
+	// The winner should be the most stable GA version (v2 > v1 because higher number,
+	// but our heuristic only distinguishes GA vs beta vs alpha — v1 and v2 are both GA).
+	// Either v1 or v2 is acceptable; v2beta2 must NOT be chosen.
+	for ver := range asGroup.Resources {
+		if ver == "v2beta2" {
+			t.Fatal("v2beta2 should not be chosen over GA versions")
+		}
+	}
+}
+
+// --- TM-022: GetResourceGroups prefers static over discovered ---
+func TestTM_GetResourceGroupsStaticWinsOverDiscovered(t *testing.T) {
+	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
+	staticPod := resource.ResourceMeta{Group: "core", Version: "v1", Kind: "Pod", Label: "Pod", Category: "Workloads"}
+	reg.Register(resource.ResourceRegistration[string]{Meta: staticPod, Resourcer: &resourcetest.StubResourcer[string]{}})
+
+	dp := &stubDiscoveryProvider{
+		DiscoverFunc: func(_ context.Context, _ *types.Connection) ([]resource.ResourceMeta, error) {
+			// Discovered Pod with same key — should be deduped against static.
+			return []resource.ResourceMeta{
+				{Group: "core", Version: "v1", Kind: "Pod"},
+			}, nil
+		},
+	}
+	groups := []resource.ResourceGroup{{ID: "core", Name: "Core"}}
+	mgr := resource.NewTypeManagerForTest(reg, groups, dp)
+
+	conn := &types.Connection{ID: "conn-1"}
+	mgr.DiscoverForConnection(context.Background(), conn)
+
+	got := mgr.GetResourceGroups(context.Background(), "conn-1")
+	coreGroup := got["core"]
+
+	totalPod := 0
+	for _, metas := range coreGroup.Resources {
+		for _, m := range metas {
+			if m.Kind == "Pod" {
+				totalPod++
+			}
+		}
+	}
+	if totalPod != 1 {
+		t.Fatalf("expected 1 Pod (static wins), got %d", totalPod)
+	}
+
+	// Verify it kept the static version (which has Label set).
+	for _, metas := range coreGroup.Resources {
+		for _, m := range metas {
+			if m.Kind == "Pod" && m.Label != "Pod" {
+				t.Fatalf("expected static Pod (Label=Pod), got Label=%s", m.Label)
+			}
+		}
+	}
+}
+
+// --- TM-023: GetResourceGroups deduplicates discovered versions for same Kind ---
+func TestTM_GetResourceGroupsDiscoveredMultiVersion(t *testing.T) {
+	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
+
+	dp := &stubDiscoveryProvider{
+		DiscoverFunc: func(_ context.Context, _ *types.Connection) ([]resource.ResourceMeta, error) {
+			return []resource.ResourceMeta{
+				{Group: "autoscaling", Version: "v1", Kind: "HorizontalPodAutoscaler"},
+				{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"},
+				{Group: "autoscaling", Version: "v2beta2", Kind: "HorizontalPodAutoscaler"},
+			}, nil
+		},
+	}
+	groups := []resource.ResourceGroup{{ID: "autoscaling", Name: "Autoscaling"}}
+	mgr := resource.NewTypeManagerForTest(reg, groups, dp)
+
+	conn := &types.Connection{ID: "conn-1"}
+	mgr.DiscoverForConnection(context.Background(), conn)
+
+	got := mgr.GetResourceGroups(context.Background(), "conn-1")
+	asGroup := got["autoscaling"]
+
+	totalHPA := 0
+	for _, metas := range asGroup.Resources {
+		for _, m := range metas {
+			if m.Kind == "HorizontalPodAutoscaler" {
+				totalHPA++
+			}
+		}
+	}
+	if totalHPA != 1 {
+		t.Fatalf("expected 1 HPA (deduped), got %d", totalHPA)
+	}
+}
+
+// --- TM-024: GetResourceGroup applies same dedup ---
+func TestTM_GetResourceGroupDedup(t *testing.T) {
+	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
+	hpaV1 := resource.ResourceMeta{Group: "autoscaling", Version: "v1", Kind: "HPA"}
+	hpaV2beta1 := resource.ResourceMeta{Group: "autoscaling", Version: "v2beta1", Kind: "HPA"}
+	reg.Register(resource.ResourceRegistration[string]{Meta: hpaV1, Resourcer: &resourcetest.StubResourcer[string]{}})
+	reg.Register(resource.ResourceRegistration[string]{Meta: hpaV2beta1, Resourcer: &resourcetest.StubResourcer[string]{}})
+
+	groups := []resource.ResourceGroup{{ID: "autoscaling", Name: "Autoscaling"}}
+	mgr := resource.NewTypeManagerForTest(reg, groups, nil)
+
+	grp, err := mgr.GetResourceGroup(context.Background(), "autoscaling")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	totalHPA := 0
+	for _, metas := range grp.Resources {
+		for _, m := range metas {
+			if m.Kind == "HPA" {
+				totalHPA++
+			}
+		}
+	}
+	if totalHPA != 1 {
+		t.Fatalf("expected 1 HPA (deduped), got %d", totalHPA)
+	}
+
+	// GA v1 should win over v2beta1.
+	if _, ok := grp.Resources["v2beta1"]; ok {
+		t.Fatal("v2beta1 should not be chosen over GA v1")
+	}
+}
+
+// --- TM-025: CRD groups create dynamic groups and are not deduped ---
+func TestTM_GetResourceGroupsDynamicCRDGroup(t *testing.T) {
+	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
+
+	dp := &stubDiscoveryProvider{
+		DiscoverFunc: func(_ context.Context, _ *types.Connection) ([]resource.ResourceMeta, error) {
+			return []resource.ResourceMeta{
+				{Group: "stable.example.com", Version: "v1", Kind: "Widget"},
+				{Group: "stable.example.com", Version: "v1", Kind: "Gadget"},
+			}, nil
+		},
+	}
+	mgr := resource.NewTypeManagerForTest(reg, nil, dp)
+
+	conn := &types.Connection{ID: "conn-1"}
+	mgr.DiscoverForConnection(context.Background(), conn)
+
+	got := mgr.GetResourceGroups(context.Background(), "conn-1")
+	crdGroup, ok := got["stable.example.com"]
+	if !ok {
+		t.Fatal("expected dynamic group for CRD")
+	}
+	if len(crdGroup.Resources["v1"]) != 2 {
+		t.Fatalf("expected 2 CRD resources, got %d", len(crdGroup.Resources["v1"]))
+	}
+}
+
+// --- TM-026: DiscoveredKeySet returns correct keys after discovery ---
+func TestTM_DiscoveredKeySet_AfterDiscovery(t *testing.T) {
+	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
+	reg.Register(resource.ResourceRegistration[string]{Meta: resourcetest.PodMeta, Resourcer: &resourcetest.StubResourcer[string]{}})
+
+	dp := &stubDiscoveryProvider{
+		DiscoverFunc: func(_ context.Context, _ *types.Connection) ([]resource.ResourceMeta, error) {
+			return []resource.ResourceMeta{
+				resourcetest.PodMeta,
+				resourcetest.DeploymentMeta,
+				crdMeta,
+			}, nil
+		},
+	}
+	mgr := resource.NewTypeManagerForTest(reg, nil, dp)
+	conn := &types.Connection{ID: "conn-1"}
+	mgr.DiscoverForConnection(context.Background(), conn)
+
+	keySet := resource.DiscoveredKeySetForTest(mgr, "conn-1")
+	if keySet == nil {
+		t.Fatal("expected non-nil key set after discovery")
+	}
+	if len(keySet) != 3 {
+		t.Fatalf("expected 3 keys, got %d", len(keySet))
+	}
+	if !keySet[resourcetest.PodMeta.Key()] {
+		t.Fatal("expected Pod key in set")
+	}
+	if !keySet[resourcetest.DeploymentMeta.Key()] {
+		t.Fatal("expected Deployment key in set")
+	}
+	if !keySet[crdMeta.Key()] {
+		t.Fatal("expected Widget key in set")
+	}
+}
+
+// --- TM-027: DiscoveredKeySet returns nil when no discovery has been performed ---
+func TestTM_DiscoveredKeySet_NoDiscovery(t *testing.T) {
+	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
+	reg.Register(resource.ResourceRegistration[string]{Meta: resourcetest.PodMeta, Resourcer: &resourcetest.StubResourcer[string]{}})
+
+	mgr := resource.NewTypeManagerForTest(reg, nil, nil)
+
+	keySet := resource.DiscoveredKeySetForTest(mgr, "conn-1")
+	if keySet != nil {
+		t.Fatalf("expected nil key set (no discovery), got %v", keySet)
 	}
 }
 

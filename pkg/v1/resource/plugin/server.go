@@ -3,9 +3,12 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"log"
+	"sync"
 
 	commonpb "github.com/omniviewdev/plugin-sdk/proto/v1/common"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/v1/resource"
+	"github.com/omniviewdev/plugin-sdk/settings"
 
 	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -15,17 +18,31 @@ import (
 type server struct {
 	resourcepb.UnimplementedResourcePluginServer
 	provider resource.Provider
+	settings settings.Provider
 }
 
 // NewServer creates a gRPC server wrapping the given Provider.
-func NewServer(provider resource.Provider) resourcepb.ResourcePluginServer {
-	return &server{provider: provider}
+func NewServer(provider resource.Provider, sp settings.Provider) resourcepb.ResourcePluginServer {
+	return &server{provider: provider, settings: sp}
 }
 
 // injectSession creates a context with session info from a connection ID.
-func injectSession(ctx context.Context, connectionID string) context.Context {
+func (s *server) injectSession(ctx context.Context, connectionID string) context.Context {
 	return resource.WithSession(ctx, &resource.Session{
-		Connection: &types.Connection{ID: connectionID},
+		Connection:   &types.Connection{ID: connectionID},
+		PluginConfig: s.settings,
+	})
+}
+
+// injectSettingsSession creates a session with only PluginConfig — no connection.
+// Used for LoadConnections and WatchConnections which need settings but not a
+// specific connection context.
+func (s *server) injectSettingsSession(ctx context.Context) context.Context {
+	if s.settings == nil {
+		return ctx
+	}
+	return resource.WithSession(ctx, &resource.Session{
+		PluginConfig: s.settings,
 	})
 }
 
@@ -34,6 +51,7 @@ func injectSession(ctx context.Context, connectionID string) context.Context {
 // ============================================================================
 
 func (s *server) LoadConnections(ctx context.Context, _ *resourcepb.LoadConnectionsRequest) (*resourcepb.LoadConnectionsResponse, error) {
+	ctx = s.injectSettingsSession(ctx)
 	conns, err := s.provider.LoadConnections(ctx)
 	if err != nil {
 		return nil, err
@@ -74,7 +92,7 @@ func (s *server) GetConnectionNamespaces(ctx context.Context, req *resourcepb.Co
 // ============================================================================
 
 func (s *server) Get(ctx context.Context, req *resourcepb.GetRequest) (*resourcepb.GetResponse, error) {
-	ctx = injectSession(ctx, req.GetConnectionId())
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := resource.GetInput{
 		ID:        req.GetId(),
 		Namespace: req.GetNamespace(),
@@ -91,7 +109,7 @@ func (s *server) Get(ctx context.Context, req *resourcepb.GetRequest) (*resource
 }
 
 func (s *server) List(ctx context.Context, req *resourcepb.ListRequest) (*resourcepb.ListResponse, error) {
-	ctx = injectSession(ctx, req.GetConnectionId())
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := resource.ListInput{
 		Namespaces: req.GetNamespaces(),
 	}
@@ -117,7 +135,7 @@ func (s *server) List(ctx context.Context, req *resourcepb.ListRequest) (*resour
 }
 
 func (s *server) Find(ctx context.Context, req *resourcepb.FindRequest) (*resourcepb.FindResponse, error) {
-	ctx = injectSession(ctx, req.GetConnectionId())
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := resource.FindInput{
 		TextQuery:  req.GetTextQuery(),
 		Namespaces: req.GetNamespaces(),
@@ -145,7 +163,7 @@ func (s *server) Find(ctx context.Context, req *resourcepb.FindRequest) (*resour
 }
 
 func (s *server) Create(ctx context.Context, req *resourcepb.CreateRequest) (*resourcepb.CreateResponse, error) {
-	ctx = injectSession(ctx, req.GetConnectionId())
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := resource.CreateInput{
 		Input:     json.RawMessage(req.GetData()),
 		Namespace: req.GetNamespace(),
@@ -162,7 +180,7 @@ func (s *server) Create(ctx context.Context, req *resourcepb.CreateRequest) (*re
 }
 
 func (s *server) Update(ctx context.Context, req *resourcepb.UpdateRequest) (*resourcepb.UpdateResponse, error) {
-	ctx = injectSession(ctx, req.GetConnectionId())
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := resource.UpdateInput{
 		Input:     json.RawMessage(req.GetData()),
 		ID:        req.GetId(),
@@ -180,7 +198,7 @@ func (s *server) Update(ctx context.Context, req *resourcepb.UpdateRequest) (*re
 }
 
 func (s *server) Delete(ctx context.Context, req *resourcepb.DeleteRequest) (*resourcepb.DeleteResponse, error) {
-	ctx = injectSession(ctx, req.GetConnectionId())
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := resource.DeleteInput{
 		ID:        req.GetId(),
 		Namespace: req.GetNamespace(),
@@ -267,7 +285,7 @@ func (s *server) GetEditorSchemas(ctx context.Context, req *resourcepb.EditorSch
 // ============================================================================
 
 func (s *server) GetActions(ctx context.Context, req *resourcepb.GetActionsRequest) (*resourcepb.GetActionsResponse, error) {
-	ctx = injectSession(ctx, req.GetConnectionId())
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	actions, err := s.provider.GetActions(ctx, req.GetResourceKey())
 	if err != nil {
 		return nil, err
@@ -280,7 +298,7 @@ func (s *server) GetActions(ctx context.Context, req *resourcepb.GetActionsReque
 }
 
 func (s *server) ExecuteAction(ctx context.Context, req *resourcepb.ExecuteActionRequest) (*resourcepb.ExecuteActionResponse, error) {
-	ctx = injectSession(ctx, req.GetConnectionId())
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := actionInputFromProto(req.GetInput())
 	result, err := s.provider.ExecuteAction(ctx, req.GetResourceKey(), req.GetActionId(), input)
 	if err != nil {
@@ -294,7 +312,7 @@ func (s *server) ExecuteAction(ctx context.Context, req *resourcepb.ExecuteActio
 }
 
 func (s *server) StreamAction(req *resourcepb.ExecuteActionRequest, stream resourcepb.ResourcePlugin_StreamActionServer) error {
-	ctx := injectSession(stream.Context(), req.GetConnectionId())
+	ctx := s.injectSession(stream.Context(), req.GetConnectionId())
 	input := actionInputFromProto(req.GetInput())
 
 	ch := make(chan resource.ActionEvent, 16)
@@ -316,11 +334,17 @@ func (s *server) StreamAction(req *resourcepb.ExecuteActionRequest, stream resou
 // ============================================================================
 
 // grpcWatchSink adapts WatchEventSink to send via the ListenForEvents stream.
+// A mutex serializes Send() calls because gRPC stream.Send() is not safe for
+// concurrent use, and multiple watch goroutines call OnAdd/OnUpdate/OnDelete
+// concurrently via fanOutSink's shared RLock.
 type grpcWatchSink struct {
+	mu     sync.Mutex
 	stream resourcepb.ResourcePlugin_ListenForEventsServer
 }
 
 func (s *grpcWatchSink) OnAdd(payload resource.WatchAddPayload) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	_ = s.stream.Send(&resourcepb.WatchEvent{
 		ConnectionId: payload.Connection,
 		ResourceKey:  payload.Key,
@@ -335,6 +359,8 @@ func (s *grpcWatchSink) OnAdd(payload resource.WatchAddPayload) {
 }
 
 func (s *grpcWatchSink) OnUpdate(payload resource.WatchUpdatePayload) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	_ = s.stream.Send(&resourcepb.WatchEvent{
 		ConnectionId: payload.Connection,
 		ResourceKey:  payload.Key,
@@ -349,6 +375,8 @@ func (s *grpcWatchSink) OnUpdate(payload resource.WatchUpdatePayload) {
 }
 
 func (s *grpcWatchSink) OnDelete(payload resource.WatchDeletePayload) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	_ = s.stream.Send(&resourcepb.WatchEvent{
 		ConnectionId: payload.Connection,
 		ResourceKey:  payload.Key,
@@ -363,17 +391,23 @@ func (s *grpcWatchSink) OnDelete(payload resource.WatchDeletePayload) {
 }
 
 func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
+	log.Printf("[watch-grpc-server] sending state: conn=%s key=%s state=%d protoState=%d count=%d errorCode=%s",
+		event.Connection, event.ResourceKey, event.State, watchStateToProto[event.State], event.ResourceCount, event.ErrorCode)
 	var errMsg string
 	if event.Error != nil {
 		errMsg = event.Error.Error()
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	_ = s.stream.Send(&resourcepb.WatchEvent{
-		ResourceKey: event.ResourceKey,
+		ConnectionId: event.Connection,
+		ResourceKey:  event.ResourceKey,
 		Event: &resourcepb.WatchEvent_State{
 			State: &resourcepb.WatchStateEvent{
 				State:         watchStateToProto[event.State],
 				ResourceCount: int32(event.ResourceCount),
 				ErrorMessage:  errMsg,
+				ErrorCode:     event.ErrorCode,
 			},
 		},
 	})
@@ -401,10 +435,11 @@ func (s *server) StopResourceWatch(ctx context.Context, req *resourcepb.WatchRes
 }
 
 func (s *server) WatchConnections(_ *resourcepb.WatchConnectionsRequest, stream resourcepb.ResourcePlugin_WatchConnectionsServer) error {
+	ctx := s.injectSettingsSession(stream.Context())
 	ch := make(chan []types.Connection, 16)
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- s.provider.WatchConnections(stream.Context(), ch)
+		errCh <- s.provider.WatchConnections(ctx, ch)
 	}()
 
 	for conns := range ch {

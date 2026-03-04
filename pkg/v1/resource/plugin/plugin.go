@@ -8,6 +8,7 @@ import (
 	goplugin "github.com/hashicorp/go-plugin"
 
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/v1/resource"
+	"github.com/omniviewdev/plugin-sdk/settings"
 
 	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 )
@@ -15,12 +16,13 @@ import (
 // GRPCPlugin implements hashicorp/go-plugin.GRPCPlugin for the resource plugin.
 type GRPCPlugin struct {
 	goplugin.Plugin
-	Impl resource.Provider
+	Impl             resource.Provider
+	SettingsProvider settings.Provider
 }
 
 // GRPCServer registers the resource plugin server on the given gRPC server.
 func (p *GRPCPlugin) GRPCServer(_ *goplugin.GRPCBroker, s *grpc.Server) error {
-	resourcepb.RegisterResourcePluginServer(s, NewServer(p.Impl))
+	resourcepb.RegisterResourcePluginServer(s, NewServer(p.Impl, p.SettingsProvider))
 	return nil
 }
 

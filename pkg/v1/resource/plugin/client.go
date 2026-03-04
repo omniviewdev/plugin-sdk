@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/v1/resource"
 
@@ -443,15 +444,21 @@ func dispatchWatchEvent(event *resourcepb.WatchEvent, sink resource.WatchEventSi
 			Data:       e.Delete.GetData(),
 		})
 	case *resourcepb.WatchEvent_State:
+		log.Printf("[watch-grpc-client] received state: conn=%s key=%s protoState=%d goState=%d count=%d errorCode=%s",
+			event.GetConnectionId(), event.GetResourceKey(),
+			e.State.GetState(), watchStateFromProto[e.State.GetState()],
+			e.State.GetResourceCount(), e.State.GetErrorCode())
 		var watchErr error
 		if e.State.GetErrorMessage() != "" {
 			watchErr = fmt.Errorf("%s", e.State.GetErrorMessage())
 		}
 		sink.OnStateChange(resource.WatchStateEvent{
+			Connection:    event.GetConnectionId(),
 			ResourceKey:   event.GetResourceKey(),
 			State:         watchStateFromProto[e.State.GetState()],
 			ResourceCount: int(e.State.GetResourceCount()),
 			Error:         watchErr,
+			ErrorCode:     e.State.GetErrorCode(),
 		})
 	}
 }

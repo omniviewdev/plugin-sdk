@@ -50,6 +50,9 @@ enum WatchState {
     WATCH_STATE_ERROR = 3;
     WATCH_STATE_FAILED = 4;
     WATCH_STATE_STOPPED = 5;
+    WATCH_STATE_IDLE = 6;
+    WATCH_STATE_FORBIDDEN = 7;
+    WATCH_STATE_SKIPPED = 8;
 }
 
 // WatchStateEvent — watch state changed for a resource type.
@@ -57,6 +60,7 @@ message WatchStateEvent {
     WatchState state = 1;
     int32 resource_count = 2;
     string error_message = 3;
+    string error_code = 4;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -97,8 +101,10 @@ message GetWatchStateRequest {
     string connection_id = 1;
 }
 
-// GetWatchStateResponse returns per-resource watch states for a connection.
+// GetWatchStateResponse returns per-resource watch states and counts for a connection.
 message GetWatchStateResponse {
     string connection_id = 1;
     map<string, WatchState> resources = 2;
+    map<string, int32> resource_counts = 3;
+    repeated string scope_partitions = 4;
 }

@@ -3,6 +3,8 @@ package resource
 import (
 	"context"
 	"time"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 )
 
 // export_test.go exposes unexported types for testing via the resource_test package.
@@ -37,7 +39,7 @@ func SetWatchManagerBackoff(wm *watchManager[string], maxRetries int, baseBackof
 }
 
 // SetWatchManagerClock sets an injectable clock for deterministic backoff testing.
-func SetWatchManagerClock(wm *watchManager[string], clock Clock) {
+func SetWatchManagerClock(wm *watchManager[string], clock timeutil.Clock) {
 	wm.clock = clock
 }
 
@@ -54,6 +56,11 @@ func NewTypeManagerForTest(
 }
 
 type TypeManagerForTest = typeManager[string]
+
+// DiscoveredKeySetForTest exposes DiscoveredKeySet for testing.
+func DiscoveredKeySetForTest(tm *typeManager[string], connectionID string) map[string]bool {
+	return tm.DiscoveredKeySet(connectionID)
+}
 
 // --- resourceController ---
 

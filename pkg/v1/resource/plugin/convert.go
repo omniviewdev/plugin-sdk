@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -126,6 +127,8 @@ func resourceMetaToProto(m resource.ResourceMeta) *commonpb.ResourceMeta {
 		Kind:        m.Kind,
 		DisplayName: m.Label,
 		Description: m.Description,
+		Icon:        m.Icon,
+		Category:    m.Category,
 	}
 }
 
@@ -139,6 +142,8 @@ func resourceMetaFromProto(pb *commonpb.ResourceMeta) resource.ResourceMeta {
 		Kind:        pb.GetKind(),
 		Label:       pb.GetDisplayName(),
 		Description: pb.GetDescription(),
+		Icon:        pb.GetIcon(),
+		Category:    pb.GetCategory(),
 	}
 }
 
@@ -184,16 +189,20 @@ func resourceGroupFromProto(pb *commonpb.ResourceGroup) resource.ResourceGroup {
 
 // Error code mapping: Go string codes → proto int32.
 var errorCodeToProto = map[string]int32{
-	"NOT_FOUND":              1,
-	"ALREADY_EXISTS":         2,
-	"PERMISSION_DENIED":      3,
-	"INVALID_INPUT":          4,
-	"CONFLICT":               5,
-	"INTERNAL":               6,
-	"UNAVAILABLE":            7,
-	"TIMEOUT":                8,
-	"FILTER_UNKNOWN_FIELD":   9,
+	"NOT_FOUND":               1,
+	"ALREADY_EXISTS":          2,
+	"PERMISSION_DENIED":       3,
+	"INVALID_INPUT":           4,
+	"CONFLICT":                5,
+	"INTERNAL":                6,
+	"UNAVAILABLE":             7,
+	"TIMEOUT":                 8,
+	"FILTER_UNKNOWN_FIELD":    9,
 	"FILTER_INVALID_OPERATOR": 10,
+	"FORBIDDEN":               11,
+	"UNAUTHORIZED":            12,
+	"CONNECTION_ERROR":        13,
+	"CERTIFICATE_ERROR":       14,
 }
 
 var errorCodeFromProto = map[int32]string{
@@ -207,6 +216,10 @@ var errorCodeFromProto = map[int32]string{
 	8:  "TIMEOUT",
 	9:  "FILTER_UNKNOWN_FIELD",
 	10: "FILTER_INVALID_OPERATOR",
+	11: "FORBIDDEN",
+	12: "UNAUTHORIZED",
+	13: "CONNECTION_ERROR",
+	14: "CERTIFICATE_ERROR",
 }
 
 func resourceErrorToProto(e *resource.ResourceOperationError) *commonpb.ResourceError {
@@ -470,21 +483,26 @@ func paginationFromProto(pb *resourcepb.PaginationParams) resource.PaginationPar
 // ============================================================================
 
 var watchStateToProto = map[resource.WatchState]resourcepb.WatchState{
-	resource.WatchStateIdle:    resourcepb.WatchState_WATCH_STATE_STOPPED,
-	resource.WatchStateSyncing: resourcepb.WatchState_WATCH_STATE_SYNCING,
-	resource.WatchStateSynced:  resourcepb.WatchState_WATCH_STATE_SYNCED,
-	resource.WatchStateError:   resourcepb.WatchState_WATCH_STATE_ERROR,
-	resource.WatchStateStopped: resourcepb.WatchState_WATCH_STATE_STOPPED,
-	resource.WatchStateFailed:  resourcepb.WatchState_WATCH_STATE_FAILED,
+	resource.WatchStateIdle:      resourcepb.WatchState_WATCH_STATE_IDLE,
+	resource.WatchStateSyncing:   resourcepb.WatchState_WATCH_STATE_SYNCING,
+	resource.WatchStateSynced:    resourcepb.WatchState_WATCH_STATE_SYNCED,
+	resource.WatchStateError:     resourcepb.WatchState_WATCH_STATE_ERROR,
+	resource.WatchStateStopped:   resourcepb.WatchState_WATCH_STATE_STOPPED,
+	resource.WatchStateFailed:    resourcepb.WatchState_WATCH_STATE_FAILED,
+	resource.WatchStateForbidden: resourcepb.WatchState_WATCH_STATE_FORBIDDEN,
+	resource.WatchStateSkipped:   resourcepb.WatchState_WATCH_STATE_SKIPPED,
 }
 
 var watchStateFromProto = map[resourcepb.WatchState]resource.WatchState{
 	resourcepb.WatchState_WATCH_STATE_UNSPECIFIED: resource.WatchStateIdle,
+	resourcepb.WatchState_WATCH_STATE_IDLE:        resource.WatchStateIdle,
 	resourcepb.WatchState_WATCH_STATE_SYNCING:     resource.WatchStateSyncing,
 	resourcepb.WatchState_WATCH_STATE_SYNCED:      resource.WatchStateSynced,
 	resourcepb.WatchState_WATCH_STATE_ERROR:       resource.WatchStateError,
 	resourcepb.WatchState_WATCH_STATE_FAILED:      resource.WatchStateFailed,
 	resourcepb.WatchState_WATCH_STATE_STOPPED:     resource.WatchStateStopped,
+	resourcepb.WatchState_WATCH_STATE_FORBIDDEN:   resource.WatchStateForbidden,
+	resourcepb.WatchState_WATCH_STATE_SKIPPED:     resource.WatchStateSkipped,
 }
 
 func watchConnectionSummaryToProto(s *resource.WatchConnectionSummary) *resourcepb.GetWatchStateResponse {
@@ -495,9 +513,19 @@ func watchConnectionSummaryToProto(s *resource.WatchConnectionSummary) *resource
 	for k, v := range s.Resources {
 		resources[k] = watchStateToProto[v]
 	}
+	counts := make(map[string]int32, len(s.ResourceCounts))
+	for k, v := range s.ResourceCounts {
+		counts[k] = int32(v)
+	}
+	var partitions []string
+	if s.Scope != nil {
+		partitions = s.Scope.Partitions
+	}
 	return &resourcepb.GetWatchStateResponse{
-		ConnectionId: s.ConnectionID,
-		Resources:    resources,
+		ConnectionId:    s.ConnectionID,
+		Resources:       resources,
+		ResourceCounts:  counts,
+		ScopePartitions: partitions,
 	}
 }
 
@@ -509,9 +537,19 @@ func watchConnectionSummaryFromProto(pb *resourcepb.GetWatchStateResponse) *reso
 	for k, v := range pb.GetResources() {
 		resources[k] = watchStateFromProto[v]
 	}
+	counts := make(map[string]int, len(pb.GetResourceCounts()))
+	for k, v := range pb.GetResourceCounts() {
+		counts[k] = int(v)
+	}
+	var scope *resource.WatchScope
+	if parts := pb.GetScopePartitions(); len(parts) > 0 {
+		scope = &resource.WatchScope{Partitions: parts}
+	}
 	return &resource.WatchConnectionSummary{
-		ConnectionID: pb.GetConnectionId(),
-		Resources:    resources,
+		ConnectionID:   pb.GetConnectionId(),
+		Resources:      resources,
+		ResourceCounts: counts,
+		Scope:          scope,
 	}
 }
 
@@ -531,6 +569,13 @@ var actionScopeFromProto = map[resourcepb.ActionScope]resource.ActionScope{
 }
 
 func actionDescriptorToProto(d resource.ActionDescriptor) *resourcepb.ActionDescriptor {
+	var paramsSchema, outputSchema []byte
+	if d.ParamsSchema != nil {
+		paramsSchema, _ = json.Marshal(d.ParamsSchema)
+	}
+	if d.OutputSchema != nil {
+		outputSchema, _ = json.Marshal(d.OutputSchema)
+	}
 	return &resourcepb.ActionDescriptor{
 		Id:           d.ID,
 		Label:        d.Label,
@@ -538,8 +583,8 @@ func actionDescriptorToProto(d resource.ActionDescriptor) *resourcepb.ActionDesc
 		Icon:         d.Icon,
 		Scope:        actionScopeToProto[d.Scope],
 		Streaming:    d.Streaming,
-		ParamsSchema: d.ParamsSchema,
-		OutputSchema: d.OutputSchema,
+		ParamsSchema: paramsSchema,
+		OutputSchema: outputSchema,
 		Dangerous:    d.Dangerous,
 	}
 }
@@ -548,17 +593,24 @@ func actionDescriptorFromProto(pb *resourcepb.ActionDescriptor) resource.ActionD
 	if pb == nil {
 		return resource.ActionDescriptor{}
 	}
-	return resource.ActionDescriptor{
-		ID:           pb.GetId(),
-		Label:        pb.GetLabel(),
-		Description:  pb.GetDescription(),
-		Icon:         pb.GetIcon(),
-		Scope:        actionScopeFromProto[pb.GetScope()],
-		Streaming:    pb.GetStreaming(),
-		ParamsSchema: pb.GetParamsSchema(),
-		OutputSchema: pb.GetOutputSchema(),
-		Dangerous:    pb.GetDangerous(),
+	d := resource.ActionDescriptor{
+		ID:          pb.GetId(),
+		Label:       pb.GetLabel(),
+		Description: pb.GetDescription(),
+		Icon:        pb.GetIcon(),
+		Scope:       actionScopeFromProto[pb.GetScope()],
+		Streaming:   pb.GetStreaming(),
+		Dangerous:   pb.GetDangerous(),
 	}
+	if data := pb.GetParamsSchema(); len(data) > 0 {
+		d.ParamsSchema = &resource.Schema{}
+		_ = json.Unmarshal(data, d.ParamsSchema)
+	}
+	if data := pb.GetOutputSchema(); len(data) > 0 {
+		d.OutputSchema = &resource.Schema{}
+		_ = json.Unmarshal(data, d.OutputSchema)
+	}
+	return d
 }
 
 func actionInputToProto(in resource.ActionInput) *resourcepb.ActionInput {

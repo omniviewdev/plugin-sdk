@@ -3,8 +3,11 @@ package resource
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 )
 
 const (
@@ -13,20 +16,11 @@ const (
 	maxBackoff         = 30 * time.Second
 )
 
-// Clock abstracts time operations for testability.
-type Clock interface {
-	After(d time.Duration) <-chan time.Time
-}
-
-// realClock uses real time.
-type realClock struct{}
-
-func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
-
 // resourceWatchState tracks the lifecycle of a single Watch goroutine.
 type resourceWatchState struct {
 	running bool
 	state   WatchState
+	count   int // last known resource count from OnStateChange
 	cancel  context.CancelFunc
 	retries int
 	ready   chan struct{} // closed when goroutine is about to call Watch()
@@ -35,9 +29,10 @@ type resourceWatchState struct {
 
 // connectionWatchState holds all watch state for a single connection.
 type connectionWatchState[ClientT any] struct {
-	client    *ClientT
-	connCtx   context.Context
-	resources map[string]*resourceWatchState // by resource key
+	client     *ClientT
+	connCtx    context.Context
+	resources  map[string]*resourceWatchState // by resource key
+	watchScope *WatchScope                    // resolved scope for this connection (nil = unscoped)
 }
 
 // watchManager manages Watch goroutine lifecycle for all connections and resources.
@@ -47,13 +42,22 @@ type watchManager[ClientT any] struct {
 	registry *resourcerRegistry[ClientT]
 	watches  map[string]*connectionWatchState[ClientT] // by connection ID
 
+	// scopeProvider resolves watch scope for connections (optional).
+	scopeProvider ScopeProvider[ClientT]
+
 	// Listeners for event fan-out.
 	listenersMu sync.RWMutex
 	listeners   []WatchEventSink
 
 	maxRetries  int
 	baseBackoff time.Duration
-	clock       Clock
+	clock timeutil.Clock
+
+	// pendingStateEvents buffers state events emitted before any listener registers.
+	// Data events (Add/Update/Delete) are not buffered — they carry large payloads
+	// and are recoverable via List when the frontend subscribes.
+	pendingMu          sync.Mutex
+	pendingStateEvents []WatchStateEvent
 
 	// wg tracks all goroutines for clean shutdown.
 	wg sync.WaitGroup
@@ -65,31 +69,83 @@ func newWatchManager[ClientT any](registry *resourcerRegistry[ClientT]) *watchMa
 		watches:     make(map[string]*connectionWatchState[ClientT]),
 		maxRetries:  defaultMaxRetries,
 		baseBackoff: defaultBaseBackoff,
-		clock:       realClock{},
+		clock: timeutil.RealClock{},
 	}
 }
 
 // StartConnectionWatch starts watches for all SyncOnConnect-capable resources.
-func (m *watchManager[ClientT]) StartConnectionWatch(ctx context.Context, connectionID string, client *ClientT, connCtx context.Context) error {
+// If discoveredTypes is non-nil, resources not in the set are immediately marked
+// as WatchStateSkipped (no goroutine spawned). Pass nil to watch all resources.
+func (m *watchManager[ClientT]) StartConnectionWatch(ctx context.Context, connectionID string, client *ClientT, connCtx context.Context, discoveredTypes map[string]bool) error {
+	// Collect skipped events to emit after releasing the lock (OnStateChange
+	// acquires m.mu internally, so we must not hold it during fan-out).
+	var skippedEvents []WatchStateEvent
+
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	if _, ok := m.watches[connectionID]; ok {
+		m.mu.Unlock()
 		return nil // already started
 	}
 
+	// Resolve watch scope if a ScopeProvider is configured.
+	var watchScope *WatchScope
+	if m.scopeProvider != nil {
+		mode, partitions, err := m.scopeProvider.ResolveScope(connCtx, client)
+		if err == nil && mode != ScopeModeAll && len(partitions) > 0 {
+			watchScope = &WatchScope{Partitions: partitions}
+		}
+		if err != nil {
+			log.Printf("[watch-manager] scope resolution failed for %s, falling back to unscoped: %v",
+				connectionID, err)
+		}
+	}
+
 	cws := &connectionWatchState[ClientT]{
-		client:    client,
-		connCtx:   connCtx,
-		resources: make(map[string]*resourceWatchState),
+		client:     client,
+		connCtx:    connCtx,
+		resources:  make(map[string]*resourceWatchState),
+		watchScope: watchScope,
 	}
 	m.watches[connectionID] = cws
 
 	// Start watches for SyncOnConnect resources.
 	for _, meta := range m.registry.ListWatchable() {
 		policy := m.registry.GetSyncPolicy(meta.Key())
-		if policy == SyncOnConnect {
-			m.startWatchLocked(connectionID, meta.Key(), cws)
+		if policy != SyncOnConnect {
+			continue
+		}
+
+		// If discovery data is available, skip resources not on this connection.
+		if discoveredTypes != nil && !discoveredTypes[meta.Key()] {
+			rws := &resourceWatchState{
+				running: false,
+				state:   WatchStateSkipped,
+				cancel:  func() {},
+				ready:   make(chan struct{}),
+				done:    make(chan struct{}),
+			}
+			close(rws.ready)
+			close(rws.done)
+			cws.resources[meta.Key()] = rws
+			skippedEvents = append(skippedEvents, WatchStateEvent{
+				ResourceKey: meta.Key(),
+				State:       WatchStateSkipped,
+				Message:     "resource type not available on this connection",
+			})
+			continue
+		}
+
+		m.startWatchLocked(connectionID, meta.Key(), cws)
+	}
+
+	m.mu.Unlock()
+
+	// Emit skipped state events outside the lock.
+	if len(skippedEvents) > 0 {
+		sink := &fanOutSink[ClientT]{mgr: m, connectionID: connectionID}
+		for _, evt := range skippedEvents {
+			sink.OnStateChange(evt)
 		}
 	}
 
@@ -135,12 +191,25 @@ func (m *watchManager[ClientT]) GetWatchState(connectionID string) (*WatchConnec
 		return nil, fmt.Errorf("connection %q not found", connectionID)
 	}
 	summary := &WatchConnectionSummary{
-		ConnectionID: connectionID,
-		Resources:    make(map[string]WatchState, len(cws.resources)),
+		ConnectionID:   connectionID,
+		Resources:      make(map[string]WatchState, len(cws.resources)),
+		ResourceCounts: make(map[string]int, len(cws.resources)),
+		Scope:          cws.watchScope,
 	}
+	var nonIdle int
 	for key, rws := range cws.resources {
 		summary.Resources[key] = rws.state
+		if rws.count > 0 {
+			summary.ResourceCounts[key] = rws.count
+		}
+		if rws.state != WatchStateIdle {
+			nonIdle++
+			log.Printf("[watch-state] GetWatchState(%s): %s state=%d running=%v count=%d",
+				connectionID, key, rws.state, rws.running, rws.count)
+		}
 	}
+	log.Printf("[watch-state] GetWatchState(%s): %d resources, %d non-idle",
+		connectionID, len(cws.resources), nonIdle)
 	return summary, nil
 }
 
@@ -305,10 +374,24 @@ func (m *watchManager[ClientT]) WaitForConnectionReady(ctx context.Context, conn
 }
 
 // AddListener registers a WatchEventSink for event fan-out.
+// Any state events buffered before the first listener registered are replayed.
 func (m *watchManager[ClientT]) AddListener(sink WatchEventSink) {
 	m.listenersMu.Lock()
-	defer m.listenersMu.Unlock()
 	m.listeners = append(m.listeners, sink)
+	m.listenersMu.Unlock()
+
+	// Replay buffered state events so the engine gets the full sync progress.
+	m.pendingMu.Lock()
+	pending := m.pendingStateEvents
+	m.pendingStateEvents = nil
+	m.pendingMu.Unlock()
+
+	log.Printf("[watch-state] AddListener: replaying %d buffered state events", len(pending))
+	for _, evt := range pending {
+		log.Printf("[watch-state]   replay: %s/%s state=%d count=%d",
+			evt.Connection, evt.ResourceKey, evt.State, evt.ResourceCount)
+		sink.OnStateChange(evt)
+	}
 }
 
 // RemoveListener unregisters a WatchEventSink.
@@ -323,12 +406,16 @@ func (m *watchManager[ClientT]) RemoveListener(sink WatchEventSink) {
 	}
 }
 
-// fanOutSink is a WatchEventSink that broadcasts events to all registered listeners.
+// fanOutSink is a WatchEventSink that broadcasts events to all registered
+// listeners. It enriches every event with the connectionID before fan-out,
+// since plugin Watch functions don't know (or need to know) the connection.
 type fanOutSink[ClientT any] struct {
-	mgr *watchManager[ClientT]
+	mgr          *watchManager[ClientT]
+	connectionID string
 }
 
 func (s *fanOutSink[ClientT]) OnAdd(p WatchAddPayload) {
+	p.Connection = s.connectionID
 	s.mgr.listenersMu.RLock()
 	defer s.mgr.listenersMu.RUnlock()
 	for _, l := range s.mgr.listeners {
@@ -337,6 +424,7 @@ func (s *fanOutSink[ClientT]) OnAdd(p WatchAddPayload) {
 }
 
 func (s *fanOutSink[ClientT]) OnUpdate(p WatchUpdatePayload) {
+	p.Connection = s.connectionID
 	s.mgr.listenersMu.RLock()
 	defer s.mgr.listenersMu.RUnlock()
 	for _, l := range s.mgr.listeners {
@@ -345,6 +433,7 @@ func (s *fanOutSink[ClientT]) OnUpdate(p WatchUpdatePayload) {
 }
 
 func (s *fanOutSink[ClientT]) OnDelete(p WatchDeletePayload) {
+	p.Connection = s.connectionID
 	s.mgr.listenersMu.RLock()
 	defer s.mgr.listenersMu.RUnlock()
 	for _, l := range s.mgr.listeners {
@@ -353,11 +442,42 @@ func (s *fanOutSink[ClientT]) OnDelete(p WatchDeletePayload) {
 }
 
 func (s *fanOutSink[ClientT]) OnStateChange(e WatchStateEvent) {
+	e.Connection = s.connectionID
+
+	log.Printf("[watch-state] %s/%s state=%d count=%d",
+		s.connectionID, e.ResourceKey, e.State, e.ResourceCount)
+
+	// Track state and count for GetWatchState snapshots.
+	s.mgr.mu.Lock()
+	if cws, ok := s.mgr.watches[s.connectionID]; ok {
+		if rws, ok := cws.resources[e.ResourceKey]; ok {
+			rws.state = e.State
+			if e.ResourceCount > 0 {
+				rws.count = e.ResourceCount
+			}
+		}
+	}
+	s.mgr.mu.Unlock()
+
 	s.mgr.listenersMu.RLock()
-	defer s.mgr.listenersMu.RUnlock()
+	if len(s.mgr.listeners) == 0 {
+		s.mgr.listenersMu.RUnlock()
+		log.Printf("[watch-state] %s/%s BUFFERED (no listeners)",
+			s.connectionID, e.ResourceKey)
+		// Buffer state events for replay when first listener registers.
+		s.mgr.pendingMu.Lock()
+		if len(s.mgr.pendingStateEvents) < 1000 {
+			s.mgr.pendingStateEvents = append(s.mgr.pendingStateEvents, e)
+		}
+		s.mgr.pendingMu.Unlock()
+		return
+	}
+	log.Printf("[watch-state] %s/%s fan-out to %d listeners",
+		s.connectionID, e.ResourceKey, len(s.mgr.listeners))
 	for _, l := range s.mgr.listeners {
 		l.OnStateChange(e)
 	}
+	s.mgr.listenersMu.RUnlock()
 }
 
 // startWatchLocked starts a Watch goroutine for a resource.
@@ -370,6 +490,9 @@ func (m *watchManager[ClientT]) startWatchLocked(connectionID string, resourceKe
 	meta, _ := m.registry.LookupMeta(resourceKey)
 
 	resourceCtx, cancel := context.WithCancel(cws.connCtx)
+	if cws.watchScope != nil {
+		resourceCtx = WithWatchScope(resourceCtx, cws.watchScope)
+	}
 	rws := &resourceWatchState{
 		running: true,
 		state:   WatchStateIdle,
@@ -380,7 +503,7 @@ func (m *watchManager[ClientT]) startWatchLocked(connectionID string, resourceKe
 	}
 	cws.resources[resourceKey] = rws
 
-	sink := &fanOutSink[ClientT]{mgr: m}
+	sink := &fanOutSink[ClientT]{mgr: m, connectionID: connectionID}
 
 	m.wg.Add(1)
 	go m.runWatch(connectionID, resourceKey, watcher, cws.client, meta, resourceCtx, cancel, rws, sink)
