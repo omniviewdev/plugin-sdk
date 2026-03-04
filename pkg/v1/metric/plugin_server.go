@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 
 	"github.com/hashicorp/go-hclog"
 	"google.golang.org/grpc/codes"
@@ -173,7 +174,9 @@ func streamInputToProto(si StreamInput) *metricpb.MetricStreamInput {
 	}
 	if si.ResourceData != nil {
 		data, err := structpb.NewStruct(si.ResourceData)
-		if err == nil {
+		if err != nil {
+			log.Printf("[metric-stream] failed to convert ResourceData to proto Struct: %v", err)
+		} else {
 			p.ResourceData = data
 		}
 	}

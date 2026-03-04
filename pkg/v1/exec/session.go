@@ -90,6 +90,9 @@ func (s *Session) ToProto() *execpb.Session {
 }
 
 func NewSessionFromProto(s *execpb.Session) *Session {
+	if s == nil {
+		return nil
+	}
 	return &Session{
 		ID:        s.GetId(),
 		Command:   s.GetCommand(),

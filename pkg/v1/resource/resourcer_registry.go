@@ -2,6 +2,7 @@ package resource
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -222,6 +223,9 @@ func (r *resourcerRegistry[ClientT]) ListAll() []ResourceMeta {
 	for _, entry := range r.entries {
 		metas = append(metas, entry.meta)
 	}
+	sort.Slice(metas, func(i, j int) bool {
+		return metas[i].Key() < metas[j].Key()
+	})
 	return metas
 }
 
@@ -236,6 +240,9 @@ func (r *resourcerRegistry[ClientT]) ListWatchable() []ResourceMeta {
 			metas = append(metas, entry.meta)
 		}
 	}
+	sort.Slice(metas, func(i, j int) bool {
+		return metas[i].Key() < metas[j].Key()
+	})
 	return metas
 }
 

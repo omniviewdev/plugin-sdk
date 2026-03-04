@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"fmt"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -179,6 +180,27 @@ const (
 	StreamEventStreamEnded
 	StreamEventSessionReady
 )
+
+func (t LogStreamEventType) String() string {
+	switch t {
+	case StreamEventSourceAdded:
+		return "SourceAdded"
+	case StreamEventSourceRemoved:
+		return "SourceRemoved"
+	case StreamEventStreamError:
+		return "StreamError"
+	case StreamEventReconnecting:
+		return "Reconnecting"
+	case StreamEventReconnected:
+		return "Reconnected"
+	case StreamEventStreamEnded:
+		return "StreamEnded"
+	case StreamEventSessionReady:
+		return "SessionReady"
+	default:
+		return fmt.Sprintf("LogStreamEventType(%d)", int(t))
+	}
+}
 
 func (t LogStreamEventType) ToProto() logspb.LogStreamEventType {
 	switch t {

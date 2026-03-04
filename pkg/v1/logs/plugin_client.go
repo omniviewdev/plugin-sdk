@@ -130,14 +130,24 @@ func (c *PluginClient) Stream(
 
 	// sender
 	go func() {
-		for i := range in {
-			if err := stream.Send(i.ToProto()); err != nil {
-				log.Printf("failed to send log stream input: %v", err)
-				return
+		defer func() {
+			if err := stream.CloseSend(); err != nil {
+				log.Printf("failed to close send log stream: %v", err)
 			}
-		}
-		if err := stream.CloseSend(); err != nil {
-			log.Printf("failed to close send log stream: %v", err)
+		}()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case i, ok := <-in:
+				if !ok {
+					return
+				}
+				if err := stream.Send(i.ToProto()); err != nil {
+					log.Printf("failed to send log stream input: %v", err)
+					return
+				}
+			}
 		}
 	}()
 

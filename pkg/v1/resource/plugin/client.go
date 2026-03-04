@@ -391,7 +391,11 @@ func (c *client) GetActions(ctx context.Context, key string) ([]resource.ActionD
 	}
 	actions := make([]resource.ActionDescriptor, len(resp.GetActions()))
 	for i, a := range resp.GetActions() {
-		actions[i] = actionDescriptorFromProto(a)
+		ad, err := actionDescriptorFromProto(a)
+		if err != nil {
+			return nil, err
+		}
+		actions[i] = ad
 	}
 	return actions, nil
 }
@@ -447,7 +451,11 @@ func (c *client) StreamAction(ctx context.Context, key string, actionID string, 
 		if err != nil {
 			return err
 		}
-		stream <- actionEventFromProto(event)
+		select {
+		case stream <- actionEventFromProto(event):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 

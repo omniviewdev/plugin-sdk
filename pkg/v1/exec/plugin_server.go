@@ -173,6 +173,7 @@ func (s *PluginServer) Stream(stream execpb.ExecPlugin_StreamServer) error {
 	defer cancel()
 
 	multiplexer := make(chan StreamInput)
+	defer close(multiplexer)
 	out, err := s.Impl.Stream(ctx, multiplexer)
 	if err != nil {
 		return err

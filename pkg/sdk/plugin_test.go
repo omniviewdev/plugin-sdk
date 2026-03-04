@@ -5,6 +5,7 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/lifecycle"
@@ -24,11 +25,11 @@ func TestRegisterLifecycle_UseCurrentProtocolVersion(t *testing.T) {
 	p.registerLifecycle()
 
 	lcPlugin, ok := p.pluginMap["lifecycle"]
-	assert.True(t, ok, "lifecycle should be registered")
-	assert.NotNil(t, lcPlugin, "lifecycle plugin should not be nil")
+	require.True(t, ok, "lifecycle should be registered")
+	require.NotNil(t, lcPlugin, "lifecycle plugin should not be nil")
 
 	// Verify the server inside uses CurrentProtocolVersion
 	lc, ok := lcPlugin.(*lifecycle.Plugin)
-	assert.True(t, ok, "lifecycle plugin should be *lifecycle.Plugin")
+	require.True(t, ok, "lifecycle plugin should be *lifecycle.Plugin")
 	assert.Equal(t, int32(CurrentProtocolVersion), lc.Impl.SDKProtocolVersion)
 }

@@ -64,8 +64,9 @@ func (c *FakeClock) After(d time.Duration) <-chan time.Time {
 
 	// Non-positive duration: fire immediately (like time.After)
 	if d <= 0 {
+		now := c.now
 		c.mu.Unlock()
-		ch <- c.now
+		ch <- now
 		return ch
 	}
 

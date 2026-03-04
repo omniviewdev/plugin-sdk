@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
@@ -19,7 +20,7 @@ type resourceController[ClientT any] struct {
 	typeMgr     *typeManager[ClientT]
 	errorClass  ErrorClassifier // global error classifier (optional)
 	schemaProvider SchemaProvider[ClientT] // auto-detected (optional)
-	closed      bool // tracks whether Close() has been called
+	closed      atomic.Bool // tracks whether Close() has been called
 
 	// filterFieldCache caches FilterFields results per "resourceKey::connID".
 	filterFieldCacheMu sync.RWMutex
@@ -68,7 +69,7 @@ func BuildResourceController[ClientT any](ctx context.Context, cfg ResourcePlugi
 
 // Close stops all connections and watches.
 func (c *resourceController[ClientT]) Close() {
-	c.closed = true
+	c.closed.Store(true)
 	for _, id := range c.connMgr.ActiveConnectionIDs() {
 		_ = c.watchMgr.StopConnectionWatch(context.Background(), id)
 		_, _ = c.connMgr.StopConnection(context.Background(), id)
@@ -205,7 +206,7 @@ func (c *resourceController[ClientT]) Delete(ctx context.Context, key string, in
 
 // resolveCRUD resolves the resourcer, client, meta, and session context for a CRUD operation.
 func (c *resourceController[ClientT]) resolveCRUD(ctx context.Context, key string) (Resourcer[ClientT], *ClientT, ResourceMeta, context.Context, error) {
-	if c.closed {
+	if c.closed.Load() {
 		return nil, nil, ResourceMeta{}, ctx, fmt.Errorf("controller is closed")
 	}
 	if ctx.Err() != nil {

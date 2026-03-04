@@ -145,14 +145,16 @@ func (c *PluginClient) Stream(
 
 	// sender
 	go func() {
+		defer func() {
+			if err := stream.CloseSend(); err != nil {
+				log.Printf("failed to close send stream: %v", err)
+			}
+		}()
 		for i := range in {
-			if err = stream.Send(i.ToProto()); err != nil {
+			if err := stream.Send(i.ToProto()); err != nil {
 				log.Printf("failed to send stream input: %v", err)
 				return
 			}
-		}
-		if err = stream.CloseSend(); err != nil {
-			log.Printf("failed to close send stream: %v", err)
 		}
 	}()
 

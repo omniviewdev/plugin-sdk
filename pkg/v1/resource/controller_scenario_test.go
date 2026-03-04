@@ -453,27 +453,31 @@ func TestSC007_CRUDDuringActiveWatch(t *testing.T) {
 	ctrl.StartConnection(ctx, "conn-1")
 
 	// Run concurrent CRUD while watch is actively emitting.
-	var wg sync.WaitGroup
 	testCtx := resourcetest.NewTestContext()
+	errs := make(chan error, 20) // 10 Gets + 10 Lists
+	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		wg.Add(1)
+		wg.Add(2)
 		go func() {
 			defer wg.Done()
 			_, err := ctrl.Get(testCtx, "core::v1::Pod", resource.GetInput{ID: "pod-1"})
 			if err != nil {
-				t.Errorf("concurrent Get failed: %v", err)
+				errs <- fmt.Errorf("concurrent Get failed: %w", err)
 			}
 		}()
-		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			_, err := ctrl.List(testCtx, "core::v1::Pod", resource.ListInput{})
 			if err != nil {
-				t.Errorf("concurrent List failed: %v", err)
+				errs <- fmt.Errorf("concurrent List failed: %w", err)
 			}
 		}()
 	}
 	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
 
 	// Verify watch events still flowing.
 	sink.WaitForAdds(t, 1, 2*time.Second)

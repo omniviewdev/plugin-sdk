@@ -1,6 +1,10 @@
 package logs
 
-import "strings"
+import (
+	"log"
+	"sort"
+	"strings"
+)
 
 // handlerRegistry provides O(1) handler and resolver lookup.
 // Built once at Manager construction from the handlers map.
@@ -30,6 +34,9 @@ func newHandlerRegistry(handlers map[string]Handler, resolvers map[string]Source
 		if parts := strings.SplitN(fullKey, "/", 2); len(parts) == 2 {
 			existing, ok := r.index[parts[1]]
 			if !ok || fullKey < existing {
+				if ok {
+					log.Printf("[handler-registry] resource %q: %q shadows %q", parts[1], fullKey, existing)
+				}
 				r.index[parts[1]] = fullKey
 			}
 		}
@@ -58,20 +65,31 @@ func (r *handlerRegistry) FindResolver(resourceKey string) (SourceResolver, bool
 	return resolver, ok
 }
 
-// AllHandlers returns all registered handlers.
+// AllHandlers returns all registered handlers in deterministic (sorted key) order.
 func (r *handlerRegistry) AllHandlers() []Handler {
-	result := make([]Handler, 0, len(r.handlers))
-	for _, h := range r.handlers {
-		result = append(result, h)
+	keys := make([]string, 0, len(r.handlers))
+	for k := range r.handlers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	result := make([]Handler, 0, len(keys))
+	for _, k := range keys {
+		result = append(result, r.handlers[k])
 	}
 	return result
 }
 
-// AnyHandler returns an arbitrary handler from the registry, or false if empty.
+// AnyHandler returns the handler with the lexicographically smallest key,
+// or false if the registry is empty.
 // Used when a resolver's sources need a handler but no direct mapping exists.
 func (r *handlerRegistry) AnyHandler() (Handler, bool) {
-	for _, h := range r.handlers {
-		return h, true
+	keys := make([]string, 0, len(r.handlers))
+	for k := range r.handlers {
+		keys = append(keys, k)
 	}
-	return Handler{}, false
+	if len(keys) == 0 {
+		return Handler{}, false
+	}
+	sort.Strings(keys)
+	return r.handlers[keys[0]], true
 }

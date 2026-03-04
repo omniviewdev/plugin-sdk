@@ -28,6 +28,21 @@ func (s SessionState) ToProto() networkerpb.PortForwardSession_SessionState {
 	)
 }
 
+func sessionStateFromProto(p networkerpb.PortForwardSession_SessionState) SessionState {
+	switch p {
+	case networkerpb.PortForwardSession_ACTIVE:
+		return SessionStateActive
+	case networkerpb.PortForwardSession_PAUSED:
+		return SessionStatePaused
+	case networkerpb.PortForwardSession_STOPPED:
+		return SessionStateStopped
+	case networkerpb.PortForwardSession_FAILED:
+		return SessionStateFailed
+	default:
+		return SessionStateStopped
+	}
+}
+
 type PortForwardProtocol string
 
 const (
@@ -103,7 +118,11 @@ func (s *PortForwardSession) ToProto() *networkerpb.PortForwardSession {
 	switch c := s.Connection.(type) {
 	case PortForwardResourceConnection:
 		session.Connection = c.ToSessionProto()
+	case *PortForwardResourceConnection:
+		session.Connection = c.ToSessionProto()
 	case PortForwardStaticConnection:
+		session.Connection = c.ToSessionProto()
+	case *PortForwardStaticConnection:
 		session.Connection = c.ToSessionProto()
 	}
 
@@ -144,7 +163,7 @@ func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) *PortForw
 		CreatedAt:      createdAt,
 		UpdatedAt:      updatedAt,
 		Labels:         s.GetLabels(),
-		State:          SessionState(s.GetState().String()),
+		State:          sessionStateFromProto(s.GetState()),
 		Encryption:     PortForwardSessionEncryptionFromProto(s.GetEncryption()),
 		ConnectionType: connectionType,
 		Connection:     connection,
@@ -194,12 +213,19 @@ func (c *PortForwardResourceConnection) ToSessionOptionsProto() *networkerpb.Por
 func PortForwardResourceConnectionFromProto(
 	o *networkerpb.PortForwardResourceConnection,
 ) PortForwardResourceConnection {
+	if o == nil {
+		return PortForwardResourceConnection{}
+	}
+	var resourceData map[string]interface{}
+	if rd := o.GetResourceData(); rd != nil {
+		resourceData = rd.AsMap()
+	}
 	return PortForwardResourceConnection{
 		ConnectionID: o.GetConnectionId(),
 		PluginID:     o.GetPluginId(),
 		ResourceID:   o.GetResourceId(),
 		ResourceKey:  o.GetResourceKey(),
-		ResourceData: o.GetResourceData().AsMap(),
+		ResourceData: resourceData,
 	}
 }
 
@@ -288,6 +314,9 @@ func (o *PortForwardSessionEncryption) ToProto() *networkerpb.PortForwardSession
 func PortForwardSessionEncryptionFromProto(
 	o *networkerpb.PortForwardSessionEncryption,
 ) PortForwardSessionEncryption {
+	if o == nil {
+		return PortForwardSessionEncryption{}
+	}
 	return PortForwardSessionEncryption{
 		Enabled:   o.GetEnabled(),
 		Algorithm: o.GetAlgorithm(),
@@ -368,7 +397,7 @@ func NewPortForwardSessionOptionsFromProto(
 		connection = PortForwardStaticConnectionFromProto(o.GetStaticConnection())
 		connectionType = PortForwardConnectionTypeStatic
 	default:
-		connectionType = PortForwardConnectionTypeResource
+		// Unknown connection type — leave both connection and connectionType as zero values.
 	}
 
 	return &PortForwardSessionOptions{

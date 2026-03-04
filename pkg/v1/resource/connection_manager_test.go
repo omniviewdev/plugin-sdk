@@ -883,7 +883,8 @@ func TestCM_SpecialCharacterConnectionID(t *testing.T) {
 
 // --- CM-043: StopConnection during slow CreateClient ---
 func TestCM_StopDuringSlowCreate(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	creating := make(chan struct{})
 	cp := &resourcetest.StubConnectionProvider[string]{
 		CreateClientFunc: func(ctx context.Context) (*string, error) {

@@ -2,7 +2,6 @@ package logtest
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -252,7 +251,7 @@ func ContextWithCancelFrom(h *Harness) *types.PluginContext {
 func eventTypeNames(events []logs.LogStreamEvent) []string {
 	names := make([]string, len(events))
 	for i, e := range events {
-		names[i] = fmt.Sprintf("%d", e.Type)
+		names[i] = e.Type.String()
 	}
 	return names
 }

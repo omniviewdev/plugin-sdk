@@ -14,6 +14,9 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
+// ErrNoPluginContext is returned when no plugin context is found in the context.
+var ErrNoPluginContext = errors.New("no plugin context in context")
+
 // Individual metadata keys for the new format.
 const (
 	MDKeyRequestID       = "omniview-request-id"
@@ -29,7 +32,7 @@ const (
 func UseClientPluginContext(ctx context.Context) (context.Context, error) {
 	pc := types.PluginContextFromContext(ctx)
 	if pc == nil {
-		return ctx, errors.New("no plugin context in context")
+		return ctx, ErrNoPluginContext
 	}
 
 	pairs := []string{
@@ -66,6 +69,9 @@ func ClientPluginContextInterceptor(
 ) error {
 	ctx, err := UseClientPluginContext(ctx)
 	if err != nil {
+		if !errors.Is(err, ErrNoPluginContext) {
+			return err
+		}
 		// Plugin context may not be present for all calls; proceed with original context.
 		log.Printf("UseClientPluginContext: %v", err)
 	}

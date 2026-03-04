@@ -809,11 +809,12 @@ func (m *Manager) updateEnabledSources(ss *sessionState, enabledStr string) {
 		}
 	}
 
+	var removedEvents []LogStreamEvent
 	ss.sourceMu.Lock()
 	for sourceID, cancel := range ss.sourceCtxs {
 		if !allEnabled && !enabledSet[sourceID] {
 			cancel()
-			m.emitEvent(ss.session.ID, LogStreamEvent{
+			removedEvents = append(removedEvents, LogStreamEvent{
 				Type:      StreamEventSourceRemoved,
 				SourceID:  sourceID,
 				Message:   fmt.Sprintf("Source disabled: %s", sourceID),
@@ -834,6 +835,10 @@ func (m *Manager) updateEnabledSources(ss *sessionState, enabledStr string) {
 		}
 	}
 	ss.sourceMu.Unlock()
+
+	for _, evt := range removedEvents {
+		m.emitEvent(ss.session.ID, evt)
+	}
 
 	// Find a handler for restarting
 	handler, ok := m.registry.FindHandler(ss.opts.ResourceKey)

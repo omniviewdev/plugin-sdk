@@ -606,13 +606,21 @@ var actionScopeFromProto = map[resourcepb.ActionScope]resource.ActionScope{
 	resourcepb.ActionScope_ACTION_SCOPE_GLOBAL:     resource.ActionScopeType,
 }
 
-func actionDescriptorToProto(d resource.ActionDescriptor) *resourcepb.ActionDescriptor {
+func actionDescriptorToProto(d resource.ActionDescriptor) (*resourcepb.ActionDescriptor, error) {
 	var paramsSchema, outputSchema []byte
 	if d.ParamsSchema != nil {
-		paramsSchema, _ = json.Marshal(d.ParamsSchema)
+		var err error
+		paramsSchema, err = json.Marshal(d.ParamsSchema)
+		if err != nil {
+			return nil, fmt.Errorf("marshal ParamsSchema: %w", err)
+		}
 	}
 	if d.OutputSchema != nil {
-		outputSchema, _ = json.Marshal(d.OutputSchema)
+		var err error
+		outputSchema, err = json.Marshal(d.OutputSchema)
+		if err != nil {
+			return nil, fmt.Errorf("marshal OutputSchema: %w", err)
+		}
 	}
 	return &resourcepb.ActionDescriptor{
 		Id:           d.ID,
@@ -624,12 +632,12 @@ func actionDescriptorToProto(d resource.ActionDescriptor) *resourcepb.ActionDesc
 		ParamsSchema: paramsSchema,
 		OutputSchema: outputSchema,
 		Dangerous:    d.Dangerous,
-	}
+	}, nil
 }
 
-func actionDescriptorFromProto(pb *resourcepb.ActionDescriptor) resource.ActionDescriptor {
+func actionDescriptorFromProto(pb *resourcepb.ActionDescriptor) (resource.ActionDescriptor, error) {
 	if pb == nil {
-		return resource.ActionDescriptor{}
+		return resource.ActionDescriptor{}, nil
 	}
 	d := resource.ActionDescriptor{
 		ID:          pb.GetId(),
@@ -642,13 +650,17 @@ func actionDescriptorFromProto(pb *resourcepb.ActionDescriptor) resource.ActionD
 	}
 	if data := pb.GetParamsSchema(); len(data) > 0 {
 		d.ParamsSchema = &resource.Schema{}
-		_ = json.Unmarshal(data, d.ParamsSchema)
+		if err := json.Unmarshal(data, d.ParamsSchema); err != nil {
+			return d, fmt.Errorf("unmarshal ParamsSchema: %w", err)
+		}
 	}
 	if data := pb.GetOutputSchema(); len(data) > 0 {
 		d.OutputSchema = &resource.Schema{}
-		_ = json.Unmarshal(data, d.OutputSchema)
+		if err := json.Unmarshal(data, d.OutputSchema); err != nil {
+			return d, fmt.Errorf("unmarshal OutputSchema: %w", err)
+		}
 	}
-	return d
+	return d, nil
 }
 
 func actionInputToProto(in resource.ActionInput) (*resourcepb.ActionInput, error) {
@@ -783,9 +795,13 @@ func capabilitiesToProto(c *resource.ResourceCapabilities) *resourcepb.ResourceC
 		HasEvents:        c.HasEvents,
 	}
 	if c.Scale != nil {
+		pageSize := c.Scale.DefaultPageSize
+		if pageSize > math.MaxInt32 {
+			pageSize = math.MaxInt32
+		}
 		pb.ScaleHint = &resourcepb.ScaleHint{
-			ExpectedCount:  scaleLevelToProto[c.Scale.Level],
-			DefaultPageSize: int32(c.Scale.DefaultPageSize),
+			ExpectedCount:   scaleLevelToProto[c.Scale.Level],
+			DefaultPageSize: int32(pageSize),
 		}
 	}
 	return pb

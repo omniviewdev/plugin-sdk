@@ -53,7 +53,9 @@ func Mount[ClientT any](t *testing.T, cfg resource.ResourcePluginConfig[ClientT]
 
 	// Start background event listener so watch events flow to the sink.
 	go func() {
-		_ = controller.ListenForEvents(ctx, sink)
+		if err := controller.ListenForEvents(ctx, sink); err != nil && ctx.Err() == nil {
+			t.Errorf("ListenForEvents failed: %v", err)
+		}
 	}()
 
 	h := &Harness[ClientT]{

@@ -206,12 +206,17 @@ func (o *StreamOutput) ToProto() *execpb.StreamOutput {
 }
 
 func NewStreamOutputFromProto(p *execpb.StreamOutput) StreamOutput {
+	if p == nil {
+		return StreamOutput{}
+	}
 	var target StreamTarget
 	switch p.GetTarget() {
 	case execpb.StreamOutput_STDOUT:
 		target = StreamTargetStdOut
 	case execpb.StreamOutput_STDERR:
 		target = StreamTargetStdErr
+	default:
+		target = StreamTargetStdOut // default to stdout for forward compatibility
 	}
 	return StreamOutput{
 		SessionID: p.GetId(),

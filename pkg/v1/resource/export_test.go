@@ -72,7 +72,7 @@ type ResourceControllerForTest = resourceController[string]
 
 // IsControllerClosed returns the closed state for testing.
 func IsControllerClosed(ctrl *resourceController[string]) bool {
-	return ctrl.closed
+	return ctrl.closed.Load()
 }
 
 // --- synchronous listener helpers (avoids go ListenForEvents + sleep) ---

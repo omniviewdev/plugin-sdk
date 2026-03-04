@@ -1546,19 +1546,21 @@ func TestConcurrentSessionOperations(t *testing.T) {
 	}
 
 	// Concurrent reads
-	errs := make(chan error, N*2)
-	for i := 0; i < N; i++ {
+	m := len(ids)
+	errs := make(chan error, m*2)
+	for i := 0; i < m; i++ {
+		id := ids[i]
 		go func(id string) {
 			_, err := mgr.GetSession(pctx, id)
 			errs <- err
-		}(ids[i])
+		}(id)
 		go func() {
 			_, err := mgr.ListSessions(pctx)
 			errs <- err
 		}()
 	}
 
-	for i := 0; i < N*2; i++ {
+	for i := 0; i < m*2; i++ {
 		if err := <-errs; err != nil {
 			t.Error(err)
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -74,11 +75,11 @@ func (s *TestLogSource) ReaderFunc(pctx *types.PluginContext) (io.ReadCloser, er
 // channelReader implements io.ReadCloser by reading lines from a channel.
 // It respects context cancellation to avoid blocking forever.
 type channelReader struct {
-	lines  chan string
-	buf    []byte
-	closed bool
-	done   chan struct{}
-	ctx    context.Context
+	lines     chan string
+	buf       []byte
+	closeOnce sync.Once
+	done      chan struct{}
+	ctx       context.Context
 }
 
 func (r *channelReader) Read(p []byte) (int, error) {
@@ -89,15 +90,17 @@ func (r *channelReader) Read(p []byte) (int, error) {
 		return n, nil
 	}
 
-	if r.closed {
+	// Check if already closed
+	select {
+	case <-r.done:
 		return 0, io.EOF
+	default:
 	}
 
 	// Wait for next line, close signal, or context cancellation
 	select {
 	case line, ok := <-r.lines:
 		if !ok {
-			r.closed = true
 			return 0, io.EOF
 		}
 		if !strings.HasSuffix(line, "\n") {
@@ -109,24 +112,16 @@ func (r *channelReader) Read(p []byte) (int, error) {
 		}
 		return n, nil
 	case <-r.done:
-		r.closed = true
 		return 0, io.EOF
 	case <-r.ctx.Done():
-		r.closed = true
 		return 0, io.EOF
 	}
 }
 
 func (r *channelReader) Close() error {
-	if !r.closed {
-		r.closed = true
-		select {
-		case <-r.done:
-			// already closed
-		default:
-			close(r.done)
-		}
-	}
+	r.closeOnce.Do(func() {
+		close(r.done)
+	})
 	return nil
 }
 
@@ -175,12 +170,11 @@ func WithTimestamp(t time.Time) LineOption {
 	return func(c *lineConfig) { c.timestamp = t }
 }
 
-// WithLevel is a documentation hint (level is set server-side, not in line content).
+// WithLevel is intentionally a no-op — level is set server-side by the handler,
+// not embedded in line content. This option exists for test DSL completeness.
+// TODO: Wire to lineConfig.level when LogLine-level filtering is supported.
 func WithLevel(_ logs.LogLevel) LineOption {
-	return func(_ *lineConfig) {
-		// Level is set on the LogLine struct by the handler, not embedded in content.
-		// This option exists for API completeness in test DSL.
-	}
+	return func(_ *lineConfig) {}
 }
 
 // ContextWithCancel returns a PluginContext wrapping a cancellable context.

@@ -300,7 +300,11 @@ func (s *server) GetActions(ctx context.Context, req *resourcepb.GetActionsReque
 	}
 	pbActions := make([]*resourcepb.ActionDescriptor, len(actions))
 	for i, a := range actions {
-		pbActions[i] = actionDescriptorToProto(a)
+		pb, err := actionDescriptorToProto(a)
+		if err != nil {
+			return nil, err
+		}
+		pbActions[i] = pb
 	}
 	return &resourcepb.GetActionsResponse{Actions: pbActions}, nil
 }
@@ -365,12 +369,16 @@ func (s *server) StreamAction(req *resourcepb.ExecuteActionRequest, stream resou
 type grpcWatchSink struct {
 	mu     sync.Mutex
 	stream resourcepb.ResourcePlugin_ListenForEventsServer
+	err    error // first Send error; once set, all further sends are skipped
 }
 
 func (s *grpcWatchSink) OnAdd(payload resource.WatchAddPayload) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.stream.Send(&resourcepb.WatchEvent{
+	if s.err != nil {
+		return
+	}
+	if err := s.stream.Send(&resourcepb.WatchEvent{
 		ConnectionId: payload.Connection,
 		ResourceKey:  payload.Key,
 		Event: &resourcepb.WatchEvent_Add{
@@ -380,13 +388,19 @@ func (s *grpcWatchSink) OnAdd(payload resource.WatchAddPayload) {
 				Data:      payload.Data,
 			},
 		},
-	})
+	}); err != nil {
+		s.err = err
+		log.Printf("[watch-grpc-server] Send failed: %v", err)
+	}
 }
 
 func (s *grpcWatchSink) OnUpdate(payload resource.WatchUpdatePayload) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.stream.Send(&resourcepb.WatchEvent{
+	if s.err != nil {
+		return
+	}
+	if err := s.stream.Send(&resourcepb.WatchEvent{
 		ConnectionId: payload.Connection,
 		ResourceKey:  payload.Key,
 		Event: &resourcepb.WatchEvent_Update{
@@ -396,13 +410,19 @@ func (s *grpcWatchSink) OnUpdate(payload resource.WatchUpdatePayload) {
 				Data:      payload.Data,
 			},
 		},
-	})
+	}); err != nil {
+		s.err = err
+		log.Printf("[watch-grpc-server] Send failed: %v", err)
+	}
 }
 
 func (s *grpcWatchSink) OnDelete(payload resource.WatchDeletePayload) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.stream.Send(&resourcepb.WatchEvent{
+	if s.err != nil {
+		return
+	}
+	if err := s.stream.Send(&resourcepb.WatchEvent{
 		ConnectionId: payload.Connection,
 		ResourceKey:  payload.Key,
 		Event: &resourcepb.WatchEvent_Delete{
@@ -412,7 +432,10 @@ func (s *grpcWatchSink) OnDelete(payload resource.WatchDeletePayload) {
 				Data:      payload.Data,
 			},
 		},
-	})
+	}); err != nil {
+		s.err = err
+		log.Printf("[watch-grpc-server] Send failed: %v", err)
+	}
 }
 
 func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
@@ -429,7 +452,10 @@ func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_ = s.stream.Send(&resourcepb.WatchEvent{
+	if s.err != nil {
+		return
+	}
+	if err := s.stream.Send(&resourcepb.WatchEvent{
 		ConnectionId: event.Connection,
 		ResourceKey:  event.ResourceKey,
 		Event: &resourcepb.WatchEvent_State{
@@ -440,7 +466,10 @@ func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
 				ErrorCode:     event.ErrorCode,
 			},
 		},
-	})
+	}); err != nil {
+		s.err = err
+		log.Printf("[watch-grpc-server] Send failed: %v", err)
+	}
 }
 
 func (s *server) ListenForEvents(_ *resourcepb.ListenRequest, stream resourcepb.ResourcePlugin_ListenForEventsServer) error {

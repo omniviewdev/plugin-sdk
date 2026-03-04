@@ -202,6 +202,7 @@ func (s *PluginServer) handleOut(
 			}
 
 			if err := stream.Send(msg); err != nil {
+				s.log.Warn("failed to send LogStreamOutput", "session_id", output.SessionID, "error", err)
 				return
 			}
 		}
