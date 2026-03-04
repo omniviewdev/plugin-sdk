@@ -49,8 +49,9 @@ type sessionState struct {
 
 	// Readiness — totalSources set BEFORE goroutines start (no race)
 	totalSources int32        // immutable after set in orchestrateSession
-	readySources atomic.Int32 // number of sources that sent their first line
+	readySources atomic.Int32 // number of unique sources that sent their first line
 	readied      atomic.Bool  // whether SESSION_READY has been emitted
+	readySet     sync.Map     // map[string]struct{} — tracks which source IDs have been counted
 
 	opts      CreateSessionOptions
 	pluginCtx *types.PluginContext
@@ -101,15 +102,9 @@ func (s *sessionState) addSource(src LogSource) {
 // removeSource removes a source from the active list by ID.
 func (s *sessionState) removeSource(sourceID string) {
 	s.mu.Lock()
-	for i, src := range s.session.ActiveSources {
-		if src.ID == sourceID {
-			s.session.ActiveSources = append(
-				s.session.ActiveSources[:i],
-				s.session.ActiveSources[i+1:]...,
-			)
-			break
-		}
-	}
+	s.session.ActiveSources = slices.DeleteFunc(s.session.ActiveSources, func(src LogSource) bool {
+		return src.ID == sourceID
+	})
 	s.mu.Unlock()
 }
 
@@ -675,22 +670,26 @@ func (m *Manager) readStream(
 
 		if firstLine {
 			firstLine = false
-			m.markSourceReady(ss)
+			m.markSourceReady(ss, source.ID)
 		}
 	}
 
 	// If we never received a line, still mark ready so we don't block
 	// the ACTIVE transition (the source simply has no output).
 	if firstLine {
-		m.markSourceReady(ss)
+		m.markSourceReady(ss, source.ID)
 	}
 
 	return scanner.Err()
 }
 
-// markSourceReady increments the ready source counter and, when all initial
-// sources have reported, transitions the session to ACTIVE and emits SESSION_READY.
-func (m *Manager) markSourceReady(ss *sessionState) {
+// markSourceReady increments the ready source counter for unique sources and,
+// when all initial sources have reported, transitions the session to ACTIVE and
+// emits SESSION_READY. Reconnects for the same source ID are deduplicated.
+func (m *Manager) markSourceReady(ss *sessionState, sourceID string) {
+	if _, loaded := ss.readySet.LoadOrStore(sourceID, struct{}{}); loaded {
+		return // already counted for this source
+	}
 	ready := ss.readySources.Add(1)
 	if ready >= ss.totalSources && ss.readied.CompareAndSwap(false, true) {
 		ss.transition(LogSessionStatusInitializing, LogSessionStatusActive)

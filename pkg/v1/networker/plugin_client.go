@@ -164,6 +164,9 @@ func (p *PluginClient) StopAll() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Wrap with an empty PluginContext so gRPC interceptors see consistent metadata.
+	ctx = types.WithPluginContext(ctx, &types.PluginContext{})
+
 	resp, err := p.client.ListPortForwardSessions(ctx, &emptypb.Empty{})
 	if err != nil {
 		log.Warnw(ctx, "StopAll: failed to list sessions", "error", err)

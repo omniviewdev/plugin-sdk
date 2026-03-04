@@ -3,6 +3,7 @@ package log
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -51,7 +52,8 @@ func New(cfg Config) Logger {
 	if nowFn == nil {
 		nowFn = time.Now
 	}
-	return &logger{name: cfg.Name, fields: cfg.Fields, level: level, be: be, now: nowFn}
+	fields := slices.Clone(cfg.Fields)
+	return &logger{name: cfg.Name, fields: fields, level: level, be: be, now: nowFn}
 }
 
 type Config struct {
@@ -66,20 +68,23 @@ func NewNop() Logger {
 	return New(Config{Backend: NewHCLBackend(hclog.NewNullLogger())})
 }
 
+// loggerHolder wraps a Logger so that atomic.Value always sees the same
+// concrete type, regardless of the underlying Logger implementation.
+type loggerHolder struct{ l Logger }
+
 var defaultLogger atomic.Value
 
 func init() {
-	defaultLogger.Store(NewNop())
+	defaultLogger.Store(&loggerHolder{l: NewNop()})
 }
 
-func Default() Logger { return defaultLogger.Load().(Logger) }
+func Default() Logger { return defaultLogger.Load().(*loggerHolder).l }
 
 func SetDefault(l Logger) {
 	if l == nil {
-		defaultLogger.Store(NewNop())
-		return
+		l = NewNop()
 	}
-	defaultLogger.Store(l)
+	defaultLogger.Store(&loggerHolder{l: l})
 }
 
 func (l *logger) Named(name string) Logger {
@@ -100,7 +105,7 @@ func (l *logger) With(fields ...Field) Logger {
 		return l
 	}
 	next := *l
-	next.fields = append(append([]Field{}, l.fields...), fields...)
+	next.fields = append(slices.Clone(l.fields), fields...)
 	return &next
 }
 

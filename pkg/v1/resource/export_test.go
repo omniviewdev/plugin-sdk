@@ -65,7 +65,7 @@ func DiscoveredKeySetForTest(tm *typeManager[string], connectionID string) map[s
 // --- resourceController ---
 
 func BuildResourceControllerForTest(ctx context.Context, cfg ResourcePluginConfig[string]) (*resourceController[string], error) {
-	return BuildResourceController[string](ctx, cfg)
+	return buildResourceController[string](ctx, cfg)
 }
 
 type ResourceControllerForTest = resourceController[string]

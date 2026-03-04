@@ -142,11 +142,15 @@ func (c *PluginClient) StreamMetrics(
 
 			var ts = resp.GetTimestamp().AsTime()
 
-			out <- StreamOutput{
+			select {
+			case out <- StreamOutput{
 				SubscriptionID: resp.GetSubscriptionId(),
 				Results:        results,
 				Timestamp:      ts,
 				Error:          resp.GetError(),
+			}:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()

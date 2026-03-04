@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -36,11 +37,17 @@ type resourceController[ClientT any] struct {
 }
 
 // BuildResourceController creates a fully wired resourceController from config.
+// Returns an error if the config fails validation.
 func BuildResourceController[ClientT any](ctx context.Context, cfg ResourcePluginConfig[ClientT]) (*resourceController[ClientT], error) {
-	if cfg.Connections == nil {
-		return nil, fmt.Errorf("connections provider is required")
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("BuildResourceController: %w", err)
 	}
+	return buildResourceController[ClientT](ctx, cfg)
+}
 
+// buildResourceController is the internal constructor that skips validation.
+// Used by tests that intentionally exercise edge-case configs.
+func buildResourceController[ClientT any](ctx context.Context, cfg ResourcePluginConfig[ClientT]) (*resourceController[ClientT], error) {
 	registry := newResourcerRegistry[ClientT](cfg.DefaultDefinition)
 	for _, reg := range cfg.Resources {
 		registry.Register(reg)
@@ -372,11 +379,9 @@ func (c *resourceController[ClientT]) getFilterFields(ctx context.Context, key, 
 func (c *resourceController[ClientT]) evictFilterFieldCache(connID string) {
 	suffix := "::" + connID
 	c.filterFieldCacheMu.Lock()
-	for k := range c.filterFieldCache {
-		if strings.HasSuffix(k, suffix) {
-			delete(c.filterFieldCache, k)
-		}
-	}
+	maps.DeleteFunc(c.filterFieldCache, func(k string, _ []FilterField) bool {
+		return strings.HasSuffix(k, suffix)
+	})
 	c.filterFieldCacheMu.Unlock()
 }
 

@@ -1,6 +1,10 @@
 package resource
 
-import logging "github.com/omniviewdev/plugin-sdk/log"
+import (
+	"fmt"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
+)
 
 // ResourcePluginConfig holds all configuration for a resource plugin.
 // Passed to RegisterResourcePlugin to register the resource capability.
@@ -45,6 +49,18 @@ type ResourcePluginConfig[ClientT any] struct {
 
 	// Schemas: if ConnectionProvider also implements SchemaProvider[ClientT],
 	// the SDK auto-detects and wires it. No separate field needed.
+}
+
+// Validate checks documented invariants and returns a descriptive error
+// if the config is invalid.
+func (c ResourcePluginConfig[ClientT]) Validate() error {
+	if c.Connections == nil {
+		return fmt.Errorf("ResourcePluginConfig: Connections provider is required")
+	}
+	if len(c.Resources) == 0 && len(c.Patterns) == 0 {
+		return fmt.Errorf("ResourcePluginConfig: at least one of Resources or Patterns must be non-empty")
+	}
+	return nil
 }
 
 // ResourceRegistration binds a resource type to its implementation.

@@ -140,8 +140,14 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 		m.mu.Unlock()
 		return types.ConnectionStatus{}, fmt.Errorf("connection %q was deleted during start", connectionID)
 	}
-	// Use the latest loaded config (may have been updated while unlocked).
-	conn = currentConn
+	// If the loaded config changed while we were unlocked, the client was
+	// built with stale data. Discard the client and let the caller retry.
+	if !connectionEqual(conn, currentConn) {
+		cancel()
+		_ = m.provider.DestroyClient(ctx, client)
+		m.mu.Unlock()
+		return types.ConnectionStatus{}, fmt.Errorf("connection %q config changed during start; retry", connectionID)
+	}
 	m.conns[connectionID] = &connectionState[ClientT]{
 		conn:   conn,
 		client: client,
@@ -227,11 +233,7 @@ func (m *connectionManager[ClientT]) ListConnections(ctx context.Context) ([]typ
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	conns := make([]types.Connection, 0, len(m.loaded))
-	for _, conn := range m.loaded {
-		conns = append(conns, conn)
-	}
-	return conns, nil
+	return slices.Collect(maps.Values(m.loaded)), nil
 }
 
 // GetNamespaces delegates to the ConnectionProvider for the given connection's client.
@@ -273,10 +275,10 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 		return conn, ErrConnectionUnchanged
 	}
 
-	m.loaded[conn.ID] = conn
-
 	state, isActive := m.conns[conn.ID]
 	if !isActive {
+		// Not active — update loaded config immediately.
+		m.loaded[conn.ID] = conn
 		m.mu.Unlock()
 		return conn, nil
 	}
@@ -289,6 +291,8 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 	clientCtx := WithSession(ctx, &Session{Connection: &conn})
 	newClient, err := m.provider.CreateClient(clientCtx)
 	if err != nil {
+		// Don't update m.loaded so a retry with the same data won't be
+		// short-circuited by ErrConnectionUnchanged.
 		return conn, fmt.Errorf("recreate client for %q: %w", conn.ID, err)
 	}
 
@@ -304,6 +308,8 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 		m.mu.Unlock()
 		return conn, fmt.Errorf("connection %q was modified during update", conn.ID)
 	}
+	// Commit the loaded config only after successful client recreation.
+	m.loaded[conn.ID] = conn
 	state.conn = conn
 	state.client = newClient
 	state.ctx = newCtx

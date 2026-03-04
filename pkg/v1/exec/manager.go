@@ -104,11 +104,7 @@ func (m *Manager) Close() {
 }
 
 func (m *Manager) GetSupportedResources(_ *types.PluginContext) []Handler {
-	resources := make([]Handler, 0, len(m.handlers))
-	for _, handler := range m.handlers {
-		resources = append(resources, handler)
-	}
-	return resources
+	return slices.Collect(maps.Values(m.handlers))
 }
 
 // Stream creates a new stream to multiplex sessions.

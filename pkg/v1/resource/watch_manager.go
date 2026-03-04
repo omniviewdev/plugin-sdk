@@ -3,6 +3,7 @@ package resource
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -417,12 +418,9 @@ func (m *watchManager[ClientT]) AddListener(sink WatchEventSink) {
 func (m *watchManager[ClientT]) RemoveListener(sink WatchEventSink) {
 	m.listenersMu.Lock()
 	defer m.listenersMu.Unlock()
-	for i, s := range m.listeners {
-		if s == sink {
-			m.listeners = append(m.listeners[:i], m.listeners[i+1:]...)
-			return
-		}
-	}
+	m.listeners = slices.DeleteFunc(m.listeners, func(s WatchEventSink) bool {
+		return s == sink
+	})
 }
 
 // fanOutSink is a WatchEventSink that broadcasts events to all registered
