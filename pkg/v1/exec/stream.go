@@ -275,8 +275,14 @@ func (r *StreamResize) ToProto() *execpb.ResizeSessionRequest {
 }
 
 func NewStreamResizeFromProto(p *execpb.ResizeSessionRequest) (StreamResize, error) {
+	if p == nil {
+		return StreamResize{}, fmt.Errorf("nil ResizeSessionRequest")
+	}
 	cols := p.GetCols()
 	rows := p.GetRows()
+	if cols == 0 || rows == 0 {
+		return StreamResize{}, fmt.Errorf("resize dimensions must be non-zero: cols=%d rows=%d", cols, rows)
+	}
 	if cols < 0 || cols > math.MaxUint16 || rows < 0 || rows > math.MaxUint16 {
 		return StreamResize{}, fmt.Errorf("resize dimensions out of range: cols=%d rows=%d", cols, rows)
 	}

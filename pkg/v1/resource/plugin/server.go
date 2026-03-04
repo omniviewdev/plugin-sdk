@@ -479,7 +479,7 @@ func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
 		Event: &resourcepb.WatchEvent_State{
 			State: &resourcepb.WatchStateEvent{
 				State:         protoState,
-				ResourceCount: int32(event.ResourceCount),
+				ResourceCount: clampInt32(event.ResourceCount),
 				ErrorMessage:  errMsg,
 				ErrorCode:     event.ErrorCode,
 			},

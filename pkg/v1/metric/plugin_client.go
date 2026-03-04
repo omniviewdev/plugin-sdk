@@ -93,9 +93,13 @@ func (c *PluginClient) StreamMetrics(
 
 	out := make(chan StreamOutput)
 
-	// sender
+	// sender — owns stream.CloseSend(); does NOT close out.
 	go func() {
-		defer close(out)
+		defer func() {
+			if err := stream.CloseSend(); err != nil {
+				log.Printf("failed to close send metric stream: %v", err)
+			}
+		}()
 		for i := range in {
 			msg, err := streamInputToProto(i)
 			if err != nil {
@@ -107,13 +111,11 @@ func (c *PluginClient) StreamMetrics(
 				return
 			}
 		}
-		if err := stream.CloseSend(); err != nil {
-			log.Printf("failed to close send metric stream: %v", err)
-		}
 	}()
 
-	// receiver
+	// receiver — owns close(out).
 	go func() {
+		defer close(out)
 		for {
 			resp, err := stream.Recv()
 			if errors.Is(err, io.EOF) {

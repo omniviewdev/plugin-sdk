@@ -204,12 +204,18 @@ func (c *PortForwardResourceConnection) ToProto() *networkerpb.PortForwardResour
 }
 
 func (c *PortForwardResourceConnection) ToSessionProto() *networkerpb.PortForwardSession_ResourceConnection {
+	if c == nil {
+		return nil
+	}
 	return &networkerpb.PortForwardSession_ResourceConnection{
 		ResourceConnection: c.ToProto(),
 	}
 }
 
 func (c *PortForwardResourceConnection) ToSessionOptionsProto() *networkerpb.PortForwardSessionOptions_ResourceConnection {
+	if c == nil {
+		return nil
+	}
 	return &networkerpb.PortForwardSessionOptions_ResourceConnection{
 		ResourceConnection: c.ToProto(),
 	}

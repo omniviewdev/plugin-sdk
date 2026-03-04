@@ -15,6 +15,11 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
+// failedWatchTimeout is the maximum time to wait for watches to exhaust retries
+// and reach WatchStateFailed. The exponential backoff in watchManager genuinely
+// needs ~20-25s to reach failure; 30s provides headroom for CI variability.
+const failedWatchTimeout = 30 * time.Second
+
 // testDiscoveryProvider is a configurable DiscoveryProvider for scenario tests.
 type testDiscoveryProvider struct {
 	DiscoverFunc func(ctx context.Context, conn *types.Connection) ([]resource.ResourceMeta, error)
@@ -1007,8 +1012,8 @@ func TestSC017_WatchesFailPermanentlyCRUDStillWorks(t *testing.T) {
 	ctrl.StartConnection(ctx, "conn-1")
 
 	// Wait for watches to exhaust retries and reach Failed.
-	sink.WaitForState(t, "core::v1::Pod", resource.WatchStateFailed, 30*time.Second)
-	sink.WaitForState(t, "apps::v1::Deployment", resource.WatchStateFailed, 30*time.Second)
+	sink.WaitForState(t, "core::v1::Pod", resource.WatchStateFailed, failedWatchTimeout)
+	sink.WaitForState(t, "apps::v1::Deployment", resource.WatchStateFailed, failedWatchTimeout)
 
 	// CRUD should still work.
 	testCtx := resourcetest.NewTestContext()
@@ -1322,9 +1327,12 @@ func TestSC022_SlowCreateClientBlocksOnlyThatConnection(t *testing.T) {
 	wg.Add(2)
 	conn2Err := make(chan error, 1)
 
+	conn1Err := make(chan error, 1)
 	go func() {
 		defer wg.Done()
-		ctrl.StartConnection(ctx, "conn-1") // slow
+		if _, err := ctrl.StartConnection(ctx, "conn-1"); err != nil {
+			conn1Err <- fmt.Errorf("start conn-1: %w", err)
+		}
 	}()
 
 	go func() {
@@ -1362,6 +1370,10 @@ func TestSC022_SlowCreateClientBlocksOnlyThatConnection(t *testing.T) {
 	}
 
 	wg.Wait()
+	close(conn1Err)
+	for err := range conn1Err {
+		t.Error(err)
+	}
 	close(conn2Err)
 	for err := range conn2Err {
 		t.Error(err)

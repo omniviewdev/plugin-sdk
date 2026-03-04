@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -237,7 +238,10 @@ func (c *resourceController[ClientT]) resolveCRUD(ctx context.Context, key strin
 		meta = ResourceMetaFromString(key)
 	}
 
-	conn, _ := c.connMgr.GetConnection(connID)
+	conn, err := c.connMgr.GetConnection(connID)
+	if err != nil {
+		return nil, nil, ResourceMeta{}, ctx, fmt.Errorf("get connection %q: %w", connID, err)
+	}
 	existing := SessionFromContext(ctx)
 	sess := &Session{Connection: &conn}
 	if existing != nil {
@@ -355,6 +359,19 @@ func (c *resourceController[ClientT]) getFilterFields(ctx context.Context, key, 
 	return fields, nil
 }
 
+// evictFilterFieldCache removes all cached filter field entries for a given connection ID.
+// Cache keys have the format "resourceKey::connID".
+func (c *resourceController[ClientT]) evictFilterFieldCache(connID string) {
+	suffix := "::" + connID
+	c.filterFieldCacheMu.Lock()
+	for k := range c.filterFieldCache {
+		if strings.HasSuffix(k, suffix) {
+			delete(c.filterFieldCache, k)
+		}
+	}
+	c.filterFieldCacheMu.Unlock()
+}
+
 // validateFilterExpr recursively validates predicates and groups.
 func (c *resourceController[ClientT]) validateFilterExpr(expr *FilterExpression, fieldMap map[string]FilterField) error {
 	for _, pred := range expr.Predicates {
@@ -393,17 +410,27 @@ func (c *resourceController[ClientT]) StartConnection(ctx context.Context, conne
 		return status, err
 	}
 
-	// Post-connect setup: discovery and watches are best-effort.
-	// The connection is operational for CRUD even if these fail;
-	// individual watch failures are reported via WatchState events.
-	conn, _ := c.connMgr.GetConnection(connectionID)
-	_ = c.typeMgr.DiscoverForConnection(ctx, &conn)
+	conn, err := c.connMgr.GetConnection(connectionID)
+	if err != nil {
+		return status, fmt.Errorf("start connection %q: get connection: %w", connectionID, err)
+	}
+	if err := c.typeMgr.DiscoverForConnection(ctx, &conn); err != nil {
+		return status, fmt.Errorf("start connection %q: discovery: %w", connectionID, err)
+	}
 
 	discoveredTypes := c.typeMgr.DiscoveredKeySet(connectionID)
 
-	client, _ := c.connMgr.GetClient(connectionID)
-	connCtx, _ := c.connMgr.GetConnectionCtx(connectionID)
-	_ = c.watchMgr.StartConnectionWatch(ctx, connectionID, client, connCtx, discoveredTypes)
+	client, err := c.connMgr.GetClient(connectionID)
+	if err != nil {
+		return status, fmt.Errorf("start connection %q: get client: %w", connectionID, err)
+	}
+	connCtx, err := c.connMgr.GetConnectionCtx(connectionID)
+	if err != nil {
+		return status, fmt.Errorf("start connection %q: get connection ctx: %w", connectionID, err)
+	}
+	if err := c.watchMgr.StartConnectionWatch(ctx, connectionID, client, connCtx, discoveredTypes); err != nil {
+		return status, fmt.Errorf("start connection %q: start watches: %w", connectionID, err)
+	}
 
 	return status, nil
 }
@@ -443,19 +470,34 @@ func (c *resourceController[ClientT]) UpdateConnection(ctx context.Context, conn
 		return result, err
 	}
 
+	// Evict stale filter field cache entries for this connection.
+	c.evictFilterFieldCache(conn.ID)
+
 	// If the connection was active, the client was restarted — re-discover and
-	// restart watches. These are best-effort; the update itself succeeded and
-	// individual watch failures are reported via WatchState events.
+	// restart watches.
 	if wasActive && c.connMgr.IsStarted(conn.ID) {
 		_ = c.watchMgr.StopConnectionWatch(ctx, conn.ID)
 
-		updated, _ := c.connMgr.GetConnection(conn.ID)
-		_ = c.typeMgr.DiscoverForConnection(ctx, &updated)
+		updated, err := c.connMgr.GetConnection(conn.ID)
+		if err != nil {
+			return result, fmt.Errorf("update connection %q: get connection: %w", conn.ID, err)
+		}
+		if err := c.typeMgr.DiscoverForConnection(ctx, &updated); err != nil {
+			return result, fmt.Errorf("update connection %q: discovery: %w", conn.ID, err)
+		}
 		discoveredTypes := c.typeMgr.DiscoveredKeySet(conn.ID)
 
-		client, _ := c.connMgr.GetClient(conn.ID)
-		connCtx, _ := c.connMgr.GetConnectionCtx(conn.ID)
-		_ = c.watchMgr.StartConnectionWatch(ctx, conn.ID, client, connCtx, discoveredTypes)
+		client, err := c.connMgr.GetClient(conn.ID)
+		if err != nil {
+			return result, fmt.Errorf("update connection %q: get client: %w", conn.ID, err)
+		}
+		connCtx, err := c.connMgr.GetConnectionCtx(conn.ID)
+		if err != nil {
+			return result, fmt.Errorf("update connection %q: get connection ctx: %w", conn.ID, err)
+		}
+		if err := c.watchMgr.StartConnectionWatch(ctx, conn.ID, client, connCtx, discoveredTypes); err != nil {
+			return result, fmt.Errorf("update connection %q: start watches: %w", conn.ID, err)
+		}
 	}
 
 	return result, nil
@@ -466,6 +508,7 @@ func (c *resourceController[ClientT]) DeleteConnection(ctx context.Context, id s
 	if c.watchMgr.HasWatch(id) {
 		_ = c.watchMgr.StopConnectionWatch(ctx, id)
 	}
+	c.evictFilterFieldCache(id)
 	conn, _ := c.connMgr.GetConnection(id)
 	_ = c.typeMgr.OnConnectionRemoved(ctx, &conn)
 	return c.connMgr.DeleteConnection(ctx, id)

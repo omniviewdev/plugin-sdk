@@ -553,6 +553,11 @@ func watchConnectionSummaryToProto(s *resource.WatchConnectionSummary) *resource
 	}
 	counts := make(map[string]int32, len(s.ResourceCounts))
 	for k, v := range s.ResourceCounts {
+		if v > math.MaxInt32 {
+			v = math.MaxInt32
+		} else if v < 0 {
+			v = 0
+		}
 		counts[k] = int32(v)
 	}
 	var partitions []string
@@ -800,7 +805,9 @@ func capabilitiesToProto(c *resource.ResourceCapabilities) *resourcepb.ResourceC
 	}
 	if c.Scale != nil {
 		pageSize := c.Scale.DefaultPageSize
-		if pageSize > math.MaxInt32 {
+		if pageSize < 0 {
+			pageSize = 0
+		} else if pageSize > math.MaxInt32 {
 			pageSize = math.MaxInt32
 		}
 		pb.ScaleHint = &resourcepb.ScaleHint{
