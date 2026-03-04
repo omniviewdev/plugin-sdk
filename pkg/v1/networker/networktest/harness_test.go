@@ -16,6 +16,7 @@ func TestHarness_MountAndStartSession(t *testing.T) {
 
 	sess, err := h.StartSession(networker.PortForwardSessionOptions{
 		ConnectionType: networker.PortForwardConnectionTypeResource,
+		Protocol:       networker.PortForwardProtocolTCP,
 		Connection: networker.PortForwardResourceConnection{
 			ResourceKey: "core::v1::Pod",
 		},
@@ -37,6 +38,7 @@ func TestHarness_CloseSession(t *testing.T) {
 
 	sess, err := h.StartSession(networker.PortForwardSessionOptions{
 		ConnectionType: networker.PortForwardConnectionTypeResource,
+		Protocol:       networker.PortForwardProtocolTCP,
 		Connection: networker.PortForwardResourceConnection{
 			ResourceKey: "core::v1::Pod",
 		},
@@ -86,6 +88,7 @@ func TestStubForwarder_FailWith(t *testing.T) {
 
 	_, err := h.StartSession(networker.PortForwardSessionOptions{
 		ConnectionType: networker.PortForwardConnectionTypeResource,
+		Protocol:       networker.PortForwardProtocolTCP,
 		Connection: networker.PortForwardResourceConnection{
 			ResourceKey: "core::v1::Pod",
 		},

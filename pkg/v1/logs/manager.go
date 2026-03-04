@@ -52,10 +52,11 @@ type sessionState struct {
 	sourceSem chan struct{}
 
 	// Readiness — totalSources set BEFORE goroutines start (no race)
-	totalSources int32        // immutable after set in orchestrateSession
-	readySources atomic.Int32 // number of unique sources that sent their first line
-	readied      atomic.Bool  // whether SESSION_READY has been emitted
-	readySet     sync.Map     // map[string]struct{} — tracks which source IDs have been counted
+	totalSources     int32        // immutable after set in orchestrateSession
+	readySources     atomic.Int32 // number of unique sources that sent their first line
+	readied          atomic.Bool  // whether SESSION_READY has been emitted
+	readySet         sync.Map     // map[string]struct{} — tracks which source IDs have been counted
+	initialSourceIDs map[string]struct{} // snapshot of source IDs at session init; only these gate readiness
 
 	opts      CreateSessionOptions
 	pluginCtx *types.PluginContext
@@ -435,6 +436,13 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 		total = MaxConcurrentStreamsPerSession
 	}
 	ss.totalSources = total
+	// Snapshot the initial source IDs so markSourceReady only counts these
+	// for the INITIALIZING → ACTIVE transition. Dynamic sources added later
+	// via watchSourceEvents won't prematurely satisfy readiness.
+	ss.initialSourceIDs = make(map[string]struct{}, len(result.Sources))
+	for _, src := range result.Sources {
+		ss.initialSourceIDs[src.ID] = struct{}{}
+	}
 	ss.transition(LogSessionStatusConnecting, LogSessionStatusInitializing)
 
 	// If the resolver returned zero sources, transition directly to ACTIVE
@@ -455,7 +463,7 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 		ss.sourceWg.Add(1)
 		go func() {
 			defer ss.sourceWg.Done()
-			m.watchSourceEvents(ss, h, result.Events, opts, logger)
+			m.watchSourceEvents(ss, h, result.Events, logger)
 		}()
 	}
 
@@ -488,6 +496,10 @@ func (m *Manager) streamFromHandler(ss *sessionState, handler Handler, opts Crea
 		total = MaxConcurrentStreamsPerSession
 	}
 	ss.totalSources = total
+	ss.initialSourceIDs = make(map[string]struct{}, len(sources))
+	for _, src := range sources {
+		ss.initialSourceIDs[src.ID] = struct{}{}
+	}
 	ss.transition(LogSessionStatusConnecting, LogSessionStatusInitializing)
 
 	m.fanOutSources(ss, handler, sources, opts, logger)
@@ -555,8 +567,7 @@ func (m *Manager) launchSource(
 		return
 	}
 
-	// streamSource will replace the sourceCtxs entry with its own child context.
-	m.streamSource(ss, handler, source, opts, logger)
+	m.streamSource(sourceCtx, ss, handler, source, opts, logger)
 }
 
 // ---------------------------------------------------------------------------
@@ -564,6 +575,7 @@ func (m *Manager) launchSource(
 // ---------------------------------------------------------------------------
 
 func (m *Manager) streamSource(
+	sourceCtx context.Context,
 	ss *sessionState,
 	handler Handler,
 	source LogSource,
@@ -572,11 +584,10 @@ func (m *Manager) streamSource(
 ) {
 	logger = logger.With(logging.String("source_id", source.ID))
 
-	// Create per-source child context for individual cancellation
-	sourceCtx, sourceCancel := context.WithCancel(ss.ctx)
-	ss.sourceMu.Lock()
-	ss.sourceCtxs[source.ID] = sourceCancel
-	ss.sourceMu.Unlock()
+	// sourceCtx is the cancellable context created by launchSource and
+	// registered in ss.sourceCtxs. We reuse it directly so that a
+	// SourceRemoved cancelling the entry in sourceCtxs also cancels
+	// this streaming goroutine — no independent context needed.
 
 	defer func() {
 		ss.sourceMu.Lock()
@@ -752,9 +763,21 @@ func (m *Manager) readStream(
 // markSourceReady increments the ready source counter for unique sources and,
 // when all initial sources have reported, transitions the session to ACTIVE and
 // emits SESSION_READY. Reconnects for the same source ID are deduplicated.
+//
+// Only sources in the initial snapshot (initialSourceIDs) count toward the
+// readiness threshold while the session hasn't transitioned to ACTIVE yet.
+// Dynamic sources added later are tracked in readySet for deduplication but
+// don't affect the INITIALIZING → ACTIVE gate.
 func (m *Manager) markSourceReady(ss *sessionState, sourceID string) {
 	if _, loaded := ss.readySet.LoadOrStore(sourceID, struct{}{}); loaded {
 		return // already counted for this source
+	}
+	// If the session hasn't reached ACTIVE yet, only count initial sources
+	// toward the readiness threshold. Dynamic sources are ignored for gating.
+	if !ss.readied.Load() {
+		if _, isInitial := ss.initialSourceIDs[sourceID]; !isInitial {
+			return
+		}
 	}
 	ready := ss.readySources.Add(1)
 	if ready >= ss.totalSources && ss.readied.CompareAndSwap(false, true) {
@@ -775,7 +798,6 @@ func (m *Manager) watchSourceEvents(
 	ss *sessionState,
 	handler Handler,
 	events <-chan SourceEvent,
-	opts CreateSessionOptions,
 	logger logging.Logger,
 ) {
 	for {
@@ -796,10 +818,15 @@ func (m *Manager) watchSourceEvents(
 					Message:   fmt.Sprintf("Source added: %s", event.Source.ID),
 					Timestamp: m.clock.Now(),
 				})
+				// Read fresh session options under lock so dynamic sources
+				// pick up any changes from UpdateSessionOptions.
+				ss.mu.RLock()
+				currentOpts := ss.opts
+				ss.mu.RUnlock()
 				ss.sourceWg.Add(1)
 				go func() {
 					defer ss.sourceWg.Done()
-					m.launchSource(ss, handler, event.Source, opts, logger)
+					m.launchSource(ss, handler, event.Source, currentOpts, logger)
 				}()
 
 			case SourceRemoved:

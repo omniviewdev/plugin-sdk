@@ -113,6 +113,14 @@ func (p PortForwardProtocol) String() string {
 	return string(p)
 }
 
+// Valid returns true if the protocol is a known value (TCP or UDP).
+func (p PortForwardProtocol) Valid() bool {
+	return p == PortForwardProtocolTCP || p == PortForwardProtocolUDP
+}
+
+// ToProto converts to the protobuf enum. Unknown values are mapped to TCP
+// (the proto3 zero value) — callers should validate with Valid() before
+// reaching this point.
 func (p PortForwardProtocol) ToProto() networkerpb.PortForwardProtocol {
 	switch p {
 	case PortForwardProtocolTCP:
@@ -120,6 +128,8 @@ func (p PortForwardProtocol) ToProto() networkerpb.PortForwardProtocol {
 	case PortForwardProtocolUDP:
 		return networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_UDP
 	default:
+		// Unknown protocol — fall through to proto3 zero value (TCP).
+		// Input should have been validated upstream via Valid().
 		return networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_TCP
 	}
 }
@@ -131,6 +141,8 @@ const (
 	PortForwardConnectionTypeStatic   PortForwardConnectionType = "STATIC"
 )
 
+// PortForwardProtocolFromProto converts from the protobuf enum. Unknown proto
+// values map to TCP (the proto3 zero value).
 func PortForwardProtocolFromProto(
 	p networkerpb.PortForwardProtocol,
 ) PortForwardProtocol {

@@ -136,10 +136,11 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 	m.mu.Lock()
 	// Double-check after lock reacquisition (concurrent start).
 	if state, ok := m.conns[connectionID]; ok {
-		cancel()
-		_ = m.provider.DestroyClient(ctx, client)
 		connCopy := cloneConnection(state.conn)
 		m.mu.Unlock()
+		// Release lock before calling external provider methods.
+		cancel()
+		_ = m.provider.DestroyClient(ctx, client)
 		return types.ConnectionStatus{
 			Connection: &connCopy,
 			Status:     types.ConnectionStatusConnected,
@@ -149,17 +150,17 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 	// removed from m.loaded while we were unlocked, don't resurrect it.
 	currentConn, stillLoaded := m.loaded[connectionID]
 	if !stillLoaded {
+		m.mu.Unlock()
 		cancel()
 		_ = m.provider.DestroyClient(ctx, client)
-		m.mu.Unlock()
 		return types.ConnectionStatus{}, fmt.Errorf("connection %q was deleted during start", connectionID)
 	}
 	// If the loaded config changed while we were unlocked, the client was
 	// built with stale data. Discard the client and let the caller retry.
 	if !connectionEqual(conn, currentConn) {
+		m.mu.Unlock()
 		cancel()
 		_ = m.provider.DestroyClient(ctx, client)
-		m.mu.Unlock()
 		return types.ConnectionStatus{}, fmt.Errorf("connection %q config changed during start; retry", connectionID)
 	}
 	m.conns[connectionID] = &connectionState[ClientT]{
@@ -331,9 +332,11 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 	currentState, stillActive := m.conns[conn.ID]
 	if !stillActive || currentState != origState || currentState.gen != capturedGen {
 		// Connection was removed, replaced, or updated by another goroutine.
+		// Release the lock before calling external provider methods to avoid
+		// blocking other operations or risking deadlocks.
+		m.mu.Unlock()
 		newCancel()
 		_ = m.provider.DestroyClient(ctx, newClient)
-		m.mu.Unlock()
 		return conn, fmt.Errorf("connection %q was modified during update", conn.ID)
 	}
 	// Commit the loaded config only after successful client recreation.

@@ -51,6 +51,7 @@ func TestManager_StartSession_PortUnavailable(t *testing.T) {
 
 	_, err := h.StartSession(networker.PortForwardSessionOptions{
 		ConnectionType: networker.PortForwardConnectionTypeResource,
+		Protocol:       networker.PortForwardProtocolTCP,
 		Connection: networker.PortForwardResourceConnection{
 			ResourceKey: "core::v1::Pod",
 		},
@@ -67,6 +68,7 @@ func TestManager_StartSession_NoHandler(t *testing.T) {
 
 	_, err := h.StartSession(networker.PortForwardSessionOptions{
 		ConnectionType: networker.PortForwardConnectionTypeResource,
+		Protocol:       networker.PortForwardProtocolTCP,
 		Connection: networker.PortForwardResourceConnection{
 			ResourceKey: "core::v1::Pod",
 		},
@@ -87,6 +89,7 @@ func TestManager_StartSession_ForwarderFails(t *testing.T) {
 
 	_, err := h.StartSession(networker.PortForwardSessionOptions{
 		ConnectionType: networker.PortForwardConnectionTypeResource,
+		Protocol:       networker.PortForwardProtocolTCP,
 		Connection: networker.PortForwardResourceConnection{
 			ResourceKey: "core::v1::Pod",
 		},
@@ -108,6 +111,7 @@ func TestManager_CloseSession_Success(t *testing.T) {
 
 	sess, err := h.StartSession(networker.PortForwardSessionOptions{
 		ConnectionType: networker.PortForwardConnectionTypeResource,
+		Protocol:       networker.PortForwardProtocolTCP,
 		Connection: networker.PortForwardResourceConnection{
 			ResourceKey: "core::v1::Pod",
 		},
@@ -143,6 +147,7 @@ func TestManager_StopAll_CleansUp(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		_, err := h.StartSession(networker.PortForwardSessionOptions{
 			ConnectionType: networker.PortForwardConnectionTypeResource,
+			Protocol:       networker.PortForwardProtocolTCP,
 			Connection: networker.PortForwardResourceConnection{
 				ResourceKey: "core::v1::Pod",
 			},
@@ -193,6 +198,7 @@ func TestManager_FindSessions_ByResourceID(t *testing.T) {
 
 	_, err := h.StartSession(networker.PortForwardSessionOptions{
 		ConnectionType: networker.PortForwardConnectionTypeResource,
+		Protocol:       networker.PortForwardProtocolTCP,
 		Connection: networker.PortForwardResourceConnection{
 			ResourceKey: "core::v1::Pod",
 			ResourceID:  "pod-1",
@@ -205,6 +211,7 @@ func TestManager_FindSessions_ByResourceID(t *testing.T) {
 
 	_, err = h.StartSession(networker.PortForwardSessionOptions{
 		ConnectionType: networker.PortForwardConnectionTypeResource,
+		Protocol:       networker.PortForwardProtocolTCP,
 		Connection: networker.PortForwardResourceConnection{
 			ResourceKey: "core::v1::Pod",
 			ResourceID:  "pod-2",
@@ -243,6 +250,7 @@ func TestManager_ConcurrentStartClose(t *testing.T) {
 			defer wg.Done()
 			sess, err := h.StartSession(networker.PortForwardSessionOptions{
 				ConnectionType: networker.PortForwardConnectionTypeResource,
+				Protocol:       networker.PortForwardProtocolTCP,
 				Connection: networker.PortForwardResourceConnection{
 					ResourceKey: "core::v1::Pod",
 				},
@@ -271,6 +279,7 @@ func TestManager_InvalidConnectionType(t *testing.T) {
 	h := networktest.Mount(t)
 	_, err := h.StartSession(networker.PortForwardSessionOptions{
 		ConnectionType: "INVALID",
+		Protocol:       networker.PortForwardProtocolTCP,
 		Connection: networker.PortForwardResourceConnection{
 			ResourceKey: "core::v1::Pod",
 		},

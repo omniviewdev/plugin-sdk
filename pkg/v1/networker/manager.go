@@ -167,6 +167,12 @@ func (m *Manager) StartPortForwardSession(
 
 	logger := m.log.With(logging.String("connection_type", string(opts.ConnectionType)))
 
+	// Validate protocol early — reject unknown values instead of silently
+	// coercing them to TCP in the proto conversion layer.
+	if !opts.Protocol.Valid() {
+		return nil, fmt.Errorf("invalid port forward protocol: %q", opts.Protocol)
+	}
+
 	// Resolve port
 	var err error
 	if opts.LocalPort == 0 {
