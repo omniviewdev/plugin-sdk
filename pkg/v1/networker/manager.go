@@ -32,6 +32,7 @@ type Manager struct {
 	mu       sync.RWMutex
 	sessions map[string]*sessionEntry
 	wg       sync.WaitGroup // tracks monitor goroutines
+	stopped  bool           // set by StopAll to reject new sessions
 }
 
 var _ Provider = (*Manager)(nil)
@@ -289,21 +290,25 @@ func (m *Manager) StartPortForwardSession(
 	}
 
 	m.mu.Lock()
+	if m.stopped {
+		m.mu.Unlock()
+		cancel()
+		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("manager is shutting down"))
+	}
 	if _, exists := m.sessions[sessionID]; exists {
 		m.mu.Unlock()
 		cancel()
 		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("duplicate session ID %q", sessionID))
 	}
 	m.sessions[sessionID] = entry
-	m.mu.Unlock()
-
-	logger.Debug("port forward session started", "session_id", sessionID)
-
-	// Monitor for post-start failures.
+	// Start monitor inside the lock to prevent races with StopAll's wg.Wait().
 	if result.ErrCh != nil {
 		m.wg.Add(1)
 		go m.monitorSession(entry, result.ErrCh)
 	}
+	m.mu.Unlock()
+
+	logger.Debug("port forward session started", "session_id", sessionID)
 
 	snap := entry.snapshot()
 	return &snap, nil
@@ -319,9 +324,10 @@ func (m *Manager) handleResourceForward(
 	case PortForwardResourceConnection:
 		resource = c
 	case *PortForwardResourceConnection:
-		if c != nil {
-			resource = *c
+		if c == nil {
+			return nil, NewInvalidConnectionTypeError("resource connection is nil")
 		}
+		resource = *c
 	default:
 		return nil, NewInvalidConnectionTypeError("connection is not a resource")
 	}
@@ -349,9 +355,10 @@ func (m *Manager) handleStaticForward(
 	case PortForwardStaticConnection:
 		static = c
 	case *PortForwardStaticConnection:
-		if c != nil {
-			static = *c
+		if c == nil {
+			return nil, NewInvalidConnectionTypeError("static connection is nil")
 		}
+		static = *c
 	default:
 		return nil, NewInvalidConnectionTypeError("connection is not static")
 	}
@@ -413,6 +420,7 @@ func (m *Manager) ClosePortForwardSession(
 // to complete within the configured timeout.
 func (m *Manager) StopAll() {
 	m.mu.Lock()
+	m.stopped = true
 	for id, entry := range m.sessions {
 		entry.cancel()
 		_ = entry.transition(SessionStateStopped)

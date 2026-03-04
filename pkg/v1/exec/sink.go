@@ -14,7 +14,7 @@ type OutputSink interface {
 // blocking forever on a full channel.
 type ChannelSink struct {
 	ctx context.Context
-	out chan StreamOutput
+	out chan<- StreamOutput
 }
 
 // NewChannelSink creates a ChannelSink wrapping the given output channel.

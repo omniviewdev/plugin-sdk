@@ -131,7 +131,13 @@ func (m *Manager) handleStreamInput(ctx context.Context, in chan StreamInput) {
 	for {
 		select {
 		case <-ctx.Done():
-			m.Close()
+			// Stream ended — cancel all sessions (they can no longer deliver output)
+			// but don't wait for cleanup (that's the caller's job via m.Close()).
+			m.mu.RLock()
+			for _, ss := range m.sessions {
+				ss.cancel()
+			}
+			m.mu.RUnlock()
 			return
 
 		case input, ok := <-in:
@@ -213,8 +219,8 @@ func (m *Manager) CreateSession(
 ) (*Session, error) {
 	logger := m.log.With(
 		"resource", opts.ResourceKey,
-		"params", opts.Params,
-		"labels", opts.Labels,
+		"param_keys", sanitizeMapKeys(opts.Params),
+		"label_keys", sanitizeMapKeys(opts.Labels),
 	)
 
 	// Look up handler
@@ -519,6 +525,19 @@ func (m *Manager) ResizeSession(
 	case <-m.clock.After(ResizeTimeout):
 		return fmt.Errorf("timeout sending resize for session %s", sessionID)
 	}
+}
+
+// sanitizeMapKeys returns only the keys of a map, stripping values
+// that may contain sensitive data (credentials, tokens, PII).
+func sanitizeMapKeys(m map[string]string) []string {
+	if m == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // emitOutput sends output through the sink if available.
