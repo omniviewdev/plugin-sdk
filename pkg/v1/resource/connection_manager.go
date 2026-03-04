@@ -94,9 +94,10 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 	m.mu.Lock()
 	// Already started?
 	if state, ok := m.conns[connectionID]; ok {
+		connCopy := state.conn
 		m.mu.Unlock()
 		return types.ConnectionStatus{
-			Connection: &state.conn,
+			Connection: &connCopy,
 			Status:     types.ConnectionStatusConnected,
 		}, nil
 	}
@@ -122,13 +123,21 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 	// Double-check after lock reacquisition (concurrent start).
 	if state, ok := m.conns[connectionID]; ok {
 		cancel()
-		// Destroy the just-created client since someone else beat us.
 		_ = m.provider.DestroyClient(ctx, client)
+		connCopy := state.conn
 		m.mu.Unlock()
 		return types.ConnectionStatus{
-			Connection: &state.conn,
+			Connection: &connCopy,
 			Status:     types.ConnectionStatusConnected,
 		}, nil
+	}
+	// Guard against deletion during CreateClient: if the connection was
+	// removed from m.loaded while we were unlocked, don't resurrect it.
+	if _, stillLoaded := m.loaded[connectionID]; !stillLoaded {
+		cancel()
+		_ = m.provider.DestroyClient(ctx, client)
+		m.mu.Unlock()
+		return types.ConnectionStatus{}, fmt.Errorf("connection %q was deleted during start", connectionID)
 	}
 	m.conns[connectionID] = &connectionState[ClientT]{
 		conn:   conn,
@@ -226,22 +235,27 @@ func (m *connectionManager[ClientT]) ListConnections(ctx context.Context) ([]typ
 func (m *connectionManager[ClientT]) GetNamespaces(ctx context.Context, connectionID string) ([]string, error) {
 	m.mu.RLock()
 	state, ok := m.conns[connectionID]
-	m.mu.RUnlock()
 	if !ok {
+		m.mu.RUnlock()
 		return nil, fmt.Errorf("connection %q not started", connectionID)
 	}
-	return m.provider.GetNamespaces(ctx, state.client)
+	client := state.client
+	m.mu.RUnlock()
+	return m.provider.GetNamespaces(ctx, client)
 }
 
 // CheckConnection delegates to the ConnectionProvider.
 func (m *connectionManager[ClientT]) CheckConnection(ctx context.Context, connectionID string) (types.ConnectionStatus, error) {
 	m.mu.RLock()
 	state, ok := m.conns[connectionID]
-	m.mu.RUnlock()
 	if !ok {
+		m.mu.RUnlock()
 		return types.ConnectionStatus{}, fmt.Errorf("connection %q not started", connectionID)
 	}
-	return m.provider.CheckConnection(ctx, &state.conn, state.client)
+	client := state.client
+	conn := state.conn
+	m.mu.RUnlock()
+	return m.provider.CheckConnection(ctx, &conn, client)
 }
 
 // UpdateConnection updates the stored connection data.
@@ -275,19 +289,27 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 		return conn, fmt.Errorf("recreate client for %q: %w", conn.ID, err)
 	}
 
-	// Cancel old context and destroy old client.
-	oldCancel()
-	_ = m.provider.DestroyClient(ctx, oldClient)
-
-	// Create new context and update state.
 	newCtx, newCancel := context.WithCancel(m.rootCtx)
 
 	m.mu.Lock()
+	// Re-verify the connection wasn't stopped/deleted while we were unlocked.
+	currentState, stillActive := m.conns[conn.ID]
+	if !stillActive || currentState != state {
+		// Connection was removed or replaced — discard the new client.
+		newCancel()
+		_ = m.provider.DestroyClient(ctx, newClient)
+		m.mu.Unlock()
+		return conn, fmt.Errorf("connection %q was modified during update", conn.ID)
+	}
 	state.conn = conn
 	state.client = newClient
 	state.ctx = newCtx
 	state.cancel = newCancel
 	m.mu.Unlock()
+
+	// Clean up old resources after successful swap.
+	oldCancel()
+	_ = m.provider.DestroyClient(ctx, oldClient)
 
 	return conn, nil
 }
@@ -303,12 +325,14 @@ func (m *connectionManager[ClientT]) RefreshClient(ctx context.Context, connecti
 
 	m.mu.RLock()
 	state, started := m.conns[connectionID]
-	m.mu.RUnlock()
 	if !started {
+		m.mu.RUnlock()
 		return fmt.Errorf("connection %q not started", connectionID)
 	}
+	client := state.client
+	m.mu.RUnlock()
 
-	return refresher.RefreshClient(ctx, state.client)
+	return refresher.RefreshClient(ctx, client)
 }
 
 // DeleteConnection stops the connection if running and removes it.

@@ -37,7 +37,7 @@ type resourceController[ClientT any] struct {
 // BuildResourceController creates a fully wired resourceController from config.
 func BuildResourceController[ClientT any](ctx context.Context, cfg ResourcePluginConfig[ClientT]) (*resourceController[ClientT], error) {
 	if cfg.Connections == nil {
-		return nil, fmt.Errorf("Connections provider is required")
+		return nil, fmt.Errorf("connections provider is required")
 	}
 
 	registry := newResourcerRegistry[ClientT](cfg.DefaultDefinition)
@@ -470,7 +470,7 @@ func (c *resourceController[ClientT]) UpdateConnection(ctx context.Context, conn
 	// If the connection was active, the client was restarted — re-discover and
 	// restart watches.
 	if wasActive && c.connMgr.IsStarted(conn.ID) {
-		_ = c.watchMgr.StopConnectionWatch(ctx, conn.ID)
+		_ = c.watchMgr.StopConnectionWatch(ctx, conn.ID) // best-effort: clean up before restart
 
 		updated, err := c.connMgr.GetConnection(conn.ID)
 		if err != nil {

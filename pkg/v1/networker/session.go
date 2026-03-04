@@ -197,6 +197,9 @@ type PortForwardSession struct {
 }
 
 func (s *PortForwardSession) ToProto() *networkerpb.PortForwardSession {
+	if s == nil {
+		return nil
+	}
 	session := &networkerpb.PortForwardSession{
 		CreatedAt:  timestamppb.New(s.CreatedAt),
 		UpdatedAt:  timestamppb.New(s.UpdatedAt),
@@ -482,6 +485,9 @@ type StaticPortForwardHandlerOpts struct {
 }
 
 func (o *PortForwardSessionOptions) ToProto() *networkerpb.PortForwardSessionOptions {
+	if o == nil {
+		return nil
+	}
 	opts := &networkerpb.PortForwardSessionOptions{
 		LocalPort:  o.LocalPort,
 		RemotePort: o.RemotePort,
