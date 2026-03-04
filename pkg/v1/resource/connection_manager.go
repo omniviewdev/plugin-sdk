@@ -123,8 +123,9 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 	}
 	m.mu.Unlock()
 
-	// Attach session to ctx for CreateClient.
-	clientCtx := WithSession(ctx, &Session{Connection: &conn})
+	// Clone before passing to provider — prevents mutation of manager-owned maps.
+	connForProvider := cloneConnection(conn)
+	clientCtx := WithSession(ctx, &Session{Connection: &connForProvider})
 	client, err := m.provider.CreateClient(clientCtx)
 	if err != nil {
 		return types.ConnectionStatus{}, fmt.Errorf("create client for %q: %w", connectionID, err)
@@ -190,8 +191,9 @@ func (m *connectionManager[ClientT]) StopConnection(ctx context.Context, connect
 	// Cancel context first (stops all watches).
 	state.cancel()
 
-	// Best-effort client cleanup.
-	destroyCtx := WithSession(ctx, &Session{Connection: &state.conn})
+	// Best-effort client cleanup. Clone to prevent provider from mutating manager state.
+	connForDestroy := cloneConnection(state.conn)
+	destroyCtx := WithSession(ctx, &Session{Connection: &connForDestroy})
 	err := m.provider.DestroyClient(destroyCtx, state.client)
 	return cloneConnection(state.conn), err
 }
@@ -309,7 +311,9 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 	m.mu.Unlock()
 
 	// Create a new client with the updated connection data.
-	clientCtx := WithSession(ctx, &Session{Connection: &conn})
+	// Clone to prevent provider from mutating manager-owned maps.
+	connForProvider := cloneConnection(conn)
+	clientCtx := WithSession(ctx, &Session{Connection: &connForProvider})
 	newClient, err := m.provider.CreateClient(clientCtx)
 	if err != nil {
 		// Don't update m.loaded so a retry with the same data won't be

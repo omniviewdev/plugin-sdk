@@ -304,6 +304,7 @@ func (m *Manager) UpdateSessionOptions(
 
 	ss.mu.Lock()
 	ss.session.Options = opts
+	ss.opts.Options = opts
 	ss.mu.Unlock()
 
 	if enabledStr, hasEnabled := opts.Params["enabled_sources"]; hasEnabled {
@@ -417,7 +418,14 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 
 	// Set sources and totalSources BEFORE starting goroutines (fixes bug #1, #2)
 	ss.setSources(result.Sources)
-	ss.totalSources = int32(len(result.Sources))
+	total := int32(len(result.Sources))
+	// For Follow sessions, only MaxConcurrentStreamsPerSession sources can
+	// stream concurrently. Cap totalSources so markSourceReady can reach
+	// it; otherwise the session hangs in INITIALIZING forever.
+	if opts.Options.Follow && total > MaxConcurrentStreamsPerSession {
+		total = MaxConcurrentStreamsPerSession
+	}
+	ss.totalSources = total
 	ss.transition(LogSessionStatusConnecting, LogSessionStatusInitializing)
 
 	// If the resolver returned zero sources, transition directly to ACTIVE
@@ -466,7 +474,11 @@ func (m *Manager) streamFromHandler(ss *sessionState, handler Handler, opts Crea
 
 	// Set sources and totalSources BEFORE starting goroutines (fixes bug #1, #2)
 	ss.setSources(sources)
-	ss.totalSources = int32(len(sources))
+	total := int32(len(sources))
+	if opts.Options.Follow && total > MaxConcurrentStreamsPerSession {
+		total = MaxConcurrentStreamsPerSession
+	}
+	ss.totalSources = total
 	ss.transition(LogSessionStatusConnecting, LogSessionStatusInitializing)
 
 	m.fanOutSources(ss, handler, sources, opts, logger)
@@ -490,10 +502,13 @@ func (m *Manager) fanOutSources(
 	wg.Wait()
 }
 
-// launchSource acquires the session-level concurrency semaphore, runs
-// streamSource, and releases the semaphore on return. All source launches
-// (initial fan-out, dynamic events, re-enabled sources) go through this
-// method to enforce MaxConcurrentStreamsPerSession uniformly.
+// launchSource registers a cancellable context for the source, acquires the
+// session-level concurrency semaphore, then runs streamSource. All source
+// launches (initial fan-out, dynamic events, re-enabled sources) go through
+// this method to enforce MaxConcurrentStreamsPerSession uniformly.
+//
+// Registering in sourceCtxs BEFORE acquiring the semaphore ensures that a
+// SourceRemoved event can cancel a queued source that hasn't started streaming.
 func (m *Manager) launchSource(
 	ss *sessionState,
 	handler Handler,
@@ -501,14 +516,33 @@ func (m *Manager) launchSource(
 	opts CreateSessionOptions,
 	logger logging.Logger,
 ) {
-	// Acquire semaphore with context check to avoid blocking on shutdown.
+	// Register a cancellable context so SourceRemoved can cancel queued sources.
+	sourceCtx, sourceCancel := context.WithCancel(ss.ctx)
+	ss.sourceMu.Lock()
+	ss.sourceCtxs[source.ID] = sourceCancel
+	ss.sourceMu.Unlock()
+
+	// Acquire semaphore with context check to avoid blocking on shutdown
+	// or if this specific source was cancelled while queued.
 	select {
 	case ss.sourceSem <- struct{}{}:
-	case <-ss.ctx.Done():
+	case <-sourceCtx.Done():
+		ss.sourceMu.Lock()
+		delete(ss.sourceCtxs, source.ID)
+		ss.sourceMu.Unlock()
 		return
 	}
 	defer func() { <-ss.sourceSem }()
 
+	// If cancelled while waiting, bail out.
+	if sourceCtx.Err() != nil {
+		ss.sourceMu.Lock()
+		delete(ss.sourceCtxs, source.ID)
+		ss.sourceMu.Unlock()
+		return
+	}
+
+	// streamSource will replace the sourceCtxs entry with its own child context.
 	m.streamSource(ss, handler, source, opts, logger)
 }
 
