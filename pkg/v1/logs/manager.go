@@ -47,6 +47,10 @@ type sessionState struct {
 	// goroutines so orchestrateSession can wait for them before closing done.
 	sourceWg sync.WaitGroup
 
+	// sourceSem limits concurrent streaming goroutines per session.
+	// Initialized once in orchestrateSession before any sources launch.
+	sourceSem chan struct{}
+
 	// Readiness — totalSources set BEFORE goroutines start (no race)
 	totalSources int32        // immutable after set in orchestrateSession
 	readySources atomic.Int32 // number of unique sources that sent their first line
@@ -352,6 +356,11 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 		close(ss.done)
 	}()
 
+	// Initialize the session-level concurrency semaphore once, before any
+	// source goroutines are launched (applies to fanOutSources, dynamic
+	// source events, and re-enabled sources alike).
+	ss.sourceSem = make(chan struct{}, MaxConcurrentStreamsPerSession)
+
 	logger := m.log.With(logging.String("session_id", ss.session.ID))
 	opts := ss.opts
 
@@ -470,28 +479,37 @@ func (m *Manager) fanOutSources(
 	opts CreateSessionOptions,
 	logger logging.Logger,
 ) {
-	sem := make(chan struct{}, MaxConcurrentStreamsPerSession)
 	var wg sync.WaitGroup
-
 	for _, source := range sources {
 		wg.Add(1)
-
-		// Acquire semaphore with context check to avoid blocking on shutdown.
-		select {
-		case sem <- struct{}{}:
-		case <-ss.ctx.Done():
-			wg.Done()
-			continue
-		}
-
 		go func(src LogSource) {
 			defer wg.Done()
-			defer func() { <-sem }()
-			m.streamSource(ss, handler, src, opts, logger)
+			m.launchSource(ss, handler, src, opts, logger)
 		}(source)
 	}
-
 	wg.Wait()
+}
+
+// launchSource acquires the session-level concurrency semaphore, runs
+// streamSource, and releases the semaphore on return. All source launches
+// (initial fan-out, dynamic events, re-enabled sources) go through this
+// method to enforce MaxConcurrentStreamsPerSession uniformly.
+func (m *Manager) launchSource(
+	ss *sessionState,
+	handler Handler,
+	source LogSource,
+	opts CreateSessionOptions,
+	logger logging.Logger,
+) {
+	// Acquire semaphore with context check to avoid blocking on shutdown.
+	select {
+	case ss.sourceSem <- struct{}{}:
+	case <-ss.ctx.Done():
+		return
+	}
+	defer func() { <-ss.sourceSem }()
+
+	m.streamSource(ss, handler, source, opts, logger)
 }
 
 // ---------------------------------------------------------------------------
@@ -733,7 +751,7 @@ func (m *Manager) watchSourceEvents(
 				ss.sourceWg.Add(1)
 				go func() {
 					defer ss.sourceWg.Done()
-					m.streamSource(ss, handler, event.Source, opts, logger)
+					m.launchSource(ss, handler, event.Source, opts, logger)
 				}()
 
 			case SourceRemoved:
@@ -874,7 +892,7 @@ func (m *Manager) updateEnabledSources(ss *sessionState, enabledStr string) {
 		ss.sourceWg.Add(1)
 		go func() {
 			defer ss.sourceWg.Done()
-			m.streamSource(ss, handler, src, ss.opts, logger)
+			m.launchSource(ss, handler, src, ss.opts, logger)
 		}()
 		m.emitEvent(ss.session.ID, LogStreamEvent{
 			Type:      StreamEventSourceAdded,

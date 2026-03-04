@@ -225,6 +225,9 @@ func (m *Manager) CreateSession(
 		available := slices.Collect(maps.Keys(m.handlers))
 		return nil, NewHandlerNotFoundError(handlerKey, available)
 	}
+	if handler.TTYHandler == nil {
+		return nil, NewHandlerNotFoundError(handlerKey, slices.Collect(maps.Keys(m.handlers)))
+	}
 
 	opts.ID = ensureSessionID(opts.ID)
 
@@ -257,6 +260,10 @@ func (m *Manager) CreateSession(
 	if err != nil {
 		cancel()
 		return nil, NewTerminalError(opts.ID, err)
+	}
+	if terminal == nil {
+		cancel()
+		return nil, NewTerminalError(opts.ID, fmt.Errorf("terminal factory returned nil"))
 	}
 
 	resizeChan := make(chan SessionResizeInput)

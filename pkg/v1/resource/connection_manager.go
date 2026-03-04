@@ -17,6 +17,18 @@ import (
 // errors.Is(err, ErrConnectionUnchanged) to detect the no-op case.
 var ErrConnectionUnchanged = errors.New("connection unchanged")
 
+// cloneConnection returns a copy of c with fresh map allocations for Data,
+// Labels, and sensitiveData so that the caller and the connection manager
+// cannot mutate each other's state through shared map headers.
+// maps.Clone produces a shallow copy, which is sufficient because connection
+// map values are typically primitives or JSON-serializable types.
+func cloneConnection(c types.Connection) types.Connection {
+	c.Data = maps.Clone(c.Data)
+	c.Labels = maps.Clone(c.Labels)
+	c.SetSensitiveData(maps.Clone(c.GetSensitiveData()))
+	return c
+}
+
 // connectionEqual reports whether two connections are semantically equal
 // for client-affecting fields. It skips LastRefresh, Client, and UID.
 func connectionEqual(a, b types.Connection) bool {
@@ -41,6 +53,7 @@ type connectionState[ClientT any] struct {
 	client *ClientT
 	ctx    context.Context
 	cancel context.CancelFunc
+	gen    int64 // incremented on each UpdateConnection swap
 }
 
 // connectionManager manages connections and their typed clients.
@@ -71,7 +84,7 @@ func (m *connectionManager[ClientT]) LoadConnections(ctx context.Context) ([]typ
 	}
 	fresh := make(map[string]types.Connection, len(conns))
 	for _, c := range conns {
-		fresh[c.ID] = c
+		fresh[c.ID] = cloneConnection(c)
 	}
 	m.mu.Lock()
 	// Remove stale entries not present in the fresh set.
@@ -94,7 +107,7 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 	m.mu.Lock()
 	// Already started?
 	if state, ok := m.conns[connectionID]; ok {
-		connCopy := state.conn
+		connCopy := cloneConnection(state.conn)
 		m.mu.Unlock()
 		return types.ConnectionStatus{
 			Connection: &connCopy,
@@ -124,7 +137,7 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 	if state, ok := m.conns[connectionID]; ok {
 		cancel()
 		_ = m.provider.DestroyClient(ctx, client)
-		connCopy := state.conn
+		connCopy := cloneConnection(state.conn)
 		m.mu.Unlock()
 		return types.ConnectionStatus{
 			Connection: &connCopy,
@@ -156,8 +169,9 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 	}
 	m.mu.Unlock()
 
+	connOut := cloneConnection(conn)
 	return types.ConnectionStatus{
-		Connection: &conn,
+		Connection: &connOut,
 		Status:     types.ConnectionStatusConnected,
 	}, nil
 }
@@ -179,7 +193,7 @@ func (m *connectionManager[ClientT]) StopConnection(ctx context.Context, connect
 	// Best-effort client cleanup.
 	destroyCtx := WithSession(ctx, &Session{Connection: &state.conn})
 	err := m.provider.DestroyClient(destroyCtx, state.client)
-	return state.conn, err
+	return cloneConnection(state.conn), err
 }
 
 // GetClient returns the active client for a connection.
@@ -211,11 +225,11 @@ func (m *connectionManager[ClientT]) GetConnection(connectionID string) (types.C
 
 	// Check active connections first.
 	if state, ok := m.conns[connectionID]; ok {
-		return state.conn, nil
+		return cloneConnection(state.conn), nil
 	}
 	// Check loaded connections.
 	if conn, ok := m.loaded[connectionID]; ok {
-		return conn, nil
+		return cloneConnection(conn), nil
 	}
 	return types.Connection{}, fmt.Errorf("connection %q not found", connectionID)
 }
@@ -233,7 +247,11 @@ func (m *connectionManager[ClientT]) ListConnections(ctx context.Context) ([]typ
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	return slices.Collect(maps.Values(m.loaded)), nil
+	conns := make([]types.Connection, 0, len(m.loaded))
+	for _, conn := range m.loaded {
+		conns = append(conns, cloneConnection(conn))
+	}
+	return conns, nil
 }
 
 // GetNamespaces delegates to the ConnectionProvider for the given connection's client.
@@ -258,7 +276,7 @@ func (m *connectionManager[ClientT]) CheckConnection(ctx context.Context, connec
 		return types.ConnectionStatus{}, fmt.Errorf("connection %q not started", connectionID)
 	}
 	client := state.client
-	conn := state.conn
+	conn := cloneConnection(state.conn)
 	m.mu.RUnlock()
 	return m.provider.CheckConnection(ctx, &conn, client)
 }
@@ -275,16 +293,19 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 		return conn, ErrConnectionUnchanged
 	}
 
+	stored := cloneConnection(conn)
+
 	state, isActive := m.conns[conn.ID]
 	if !isActive {
 		// Not active — update loaded config immediately.
-		m.loaded[conn.ID] = conn
+		m.loaded[conn.ID] = stored
 		m.mu.Unlock()
 		return conn, nil
 	}
 
 	oldClient := state.client
 	oldCancel := state.cancel
+	capturedGen := state.gen
 	m.mu.Unlock()
 
 	// Create a new client with the updated connection data.
@@ -299,21 +320,24 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 	newCtx, newCancel := context.WithCancel(m.rootCtx)
 
 	m.mu.Lock()
-	// Re-verify the connection wasn't stopped/deleted while we were unlocked.
+	// Re-verify the connection wasn't stopped/deleted or concurrently updated
+	// while we were unlocked. Generation comparison catches in-place mutations
+	// that pointer equality would miss.
 	currentState, stillActive := m.conns[conn.ID]
-	if !stillActive || currentState != state {
-		// Connection was removed or replaced — discard the new client.
+	if !stillActive || currentState.gen != capturedGen {
+		// Connection was removed, replaced, or updated by another goroutine.
 		newCancel()
 		_ = m.provider.DestroyClient(ctx, newClient)
 		m.mu.Unlock()
 		return conn, fmt.Errorf("connection %q was modified during update", conn.ID)
 	}
 	// Commit the loaded config only after successful client recreation.
-	m.loaded[conn.ID] = conn
-	state.conn = conn
+	m.loaded[conn.ID] = stored
+	state.conn = stored
 	state.client = newClient
 	state.ctx = newCtx
 	state.cancel = newCancel
+	state.gen++
 	m.mu.Unlock()
 
 	// Clean up old resources after successful swap.

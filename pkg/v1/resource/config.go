@@ -2,6 +2,7 @@ package resource
 
 import (
 	"fmt"
+	"reflect"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
 )
@@ -52,15 +53,40 @@ type ResourcePluginConfig[ClientT any] struct {
 }
 
 // Validate checks documented invariants and returns a descriptive error
-// if the config is invalid.
+// if the config is invalid. Uses reflect-based checks to catch typed-nil
+// interfaces (e.g., (*T)(nil)) that pass simple == nil comparisons.
 func (c ResourcePluginConfig[ClientT]) Validate() error {
-	if c.Connections == nil {
+	if isNilInterface(c.Connections) {
 		return fmt.Errorf("ResourcePluginConfig: Connections provider is required")
 	}
 	if len(c.Resources) == 0 && len(c.Patterns) == 0 {
 		return fmt.Errorf("ResourcePluginConfig: at least one of Resources or Patterns must be non-empty")
 	}
+	for i, reg := range c.Resources {
+		if isNilInterface(reg.Resourcer) {
+			return fmt.Errorf("ResourcePluginConfig: Resources[%d] (%s) has nil Resourcer", i, reg.Meta.Key())
+		}
+	}
+	for pattern, res := range c.Patterns {
+		if isNilInterface(res) {
+			return fmt.Errorf("ResourcePluginConfig: Patterns[%q] has nil Resourcer", pattern)
+		}
+	}
 	return nil
+}
+
+// isNilInterface returns true if v is nil or a typed-nil (non-nil interface
+// wrapping a nil pointer/map/slice/chan/func).
+func isNilInterface(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Interface, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func:
+		return rv.IsNil()
+	}
+	return false
 }
 
 // ResourceRegistration binds a resource type to its implementation.
