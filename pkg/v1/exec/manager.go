@@ -480,7 +480,7 @@ func (m *Manager) CloseSession(_ *types.PluginContext, sessionID string) error {
 	// Wait for session goroutines to complete with a safety timeout.
 	select {
 	case <-ss.waitDone():
-	case <-time.After(10 * time.Second):
+	case <-m.clock.After(10 * time.Second):
 		m.log.Warn("CloseSession timed out waiting for goroutines", "session_id", sessionID)
 	}
 	return nil

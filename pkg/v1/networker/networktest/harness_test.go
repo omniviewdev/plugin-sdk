@@ -76,8 +76,9 @@ func TestFakePortChecker_BlockPort(t *testing.T) {
 }
 
 func TestStubForwarder_FailWith(t *testing.T) {
+	rootCause := errors.New("test error")
 	forwarder := &networktest.StubResourceForwarder{
-		FailWith: errors.New("test error"),
+		FailWith: rootCause,
 	}
 	h := networktest.Mount(t,
 		networktest.WithResourceForwarder("core::v1::Pod", forwarder),
@@ -95,5 +96,8 @@ func TestStubForwarder_FailWith(t *testing.T) {
 	}
 	if !errors.Is(err, networker.ErrNetForwarderFailed) {
 		t.Fatalf("expected ForwarderFailed, got: %v", err)
+	}
+	if !errors.Is(err, rootCause) {
+		t.Fatalf("expected root cause to be preserved, got: %v", err)
 	}
 }

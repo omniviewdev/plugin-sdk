@@ -3,13 +3,25 @@ package exec
 import "github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 
 // ManagerSink returns the Manager's OutputSink for test inspection.
-func ManagerSink(m *Manager) OutputSink { return m.sink }
+func ManagerSink(m *Manager) OutputSink {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.sink
+}
 
 // SetSink replaces the Manager's OutputSink for testing.
-func SetSink(m *Manager, s OutputSink) { m.sink = s }
+func SetSink(m *Manager, s OutputSink) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sink = s
+}
 
 // SetClock replaces the Manager's Clock for testing.
-func SetClock(m *Manager, c timeutil.Clock) { m.clock = c }
+func SetClock(m *Manager, c timeutil.Clock) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.clock = c
+}
 
 // WaitDone blocks until all session goroutines have completed.
 func WaitDone(m *Manager) { m.wg.Wait() }

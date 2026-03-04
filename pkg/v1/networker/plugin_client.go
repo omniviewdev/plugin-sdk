@@ -18,20 +18,28 @@ type PluginClient struct {
 
 var _ Provider = (*PluginClient)(nil)
 
-// ensurePluginCtx returns a non-nil PluginContext to avoid nil dereference in
-// types.WithPluginContext.
-func ensurePluginCtx(ctx *types.PluginContext) *types.PluginContext {
+// rpcContext extracts the caller's context for gRPC and returns a shallow copy
+// of the PluginContext with its Context field cleared (to avoid redundant storage).
+// This preserves the caller's cancellation/deadline on the gRPC call.
+func rpcContext(ctx *types.PluginContext) (context.Context, *types.PluginContext) {
 	if ctx == nil {
-		return &types.PluginContext{}
+		return context.Background(), &types.PluginContext{}
 	}
-	return ctx
+	grpcCtx := ctx.Context
+	if grpcCtx == nil {
+		grpcCtx = context.Background()
+	}
+	cp := *ctx
+	cp.Context = nil
+	return grpcCtx, &cp
 }
 
 // GetSupportedPortForwardTargets returns the list of targets that are supported
 // by this plugin for port forwarding.
 func (p *PluginClient) GetSupportedPortForwardTargets(ctx *types.PluginContext) ([]string, error) {
+	grpcCtx, pctx := rpcContext(ctx)
 	resp, err := p.client.GetSupportedPortForwardTargets(
-		types.WithPluginContext(context.Background(), ensurePluginCtx(ctx)),
+		types.WithPluginContext(grpcCtx, pctx),
 		&emptypb.Empty{},
 	)
 	if err != nil {
@@ -46,8 +54,9 @@ func (p *PluginClient) GetPortForwardSession(
 	ctx *types.PluginContext,
 	sessionID string,
 ) (*PortForwardSession, error) {
+	grpcCtx, pctx := rpcContext(ctx)
 	resp, err := p.client.GetPortForwardSession(
-		types.WithPluginContext(context.Background(), ensurePluginCtx(ctx)),
+		types.WithPluginContext(grpcCtx, pctx),
 		&networkerpb.PortForwardSessionByIdRequest{Id: sessionID},
 	)
 	if err != nil {
@@ -61,8 +70,9 @@ func (p *PluginClient) GetPortForwardSession(
 func (p *PluginClient) ListPortForwardSessions(
 	ctx *types.PluginContext,
 ) ([]*PortForwardSession, error) {
+	grpcCtx, pctx := rpcContext(ctx)
 	resp, err := p.client.ListPortForwardSessions(
-		types.WithPluginContext(context.Background(), ensurePluginCtx(ctx)),
+		types.WithPluginContext(grpcCtx, pctx),
 		&emptypb.Empty{},
 	)
 	if err != nil {
@@ -83,8 +93,9 @@ func (p *PluginClient) FindPortForwardSessions(
 	ctx *types.PluginContext,
 	req FindPortForwardSessionRequest,
 ) ([]*PortForwardSession, error) {
+	grpcCtx, pctx := rpcContext(ctx)
 	resp, err := p.client.FindPortForwardSessions(
-		types.WithPluginContext(context.Background(), ensurePluginCtx(ctx)),
+		types.WithPluginContext(grpcCtx, pctx),
 		req.ToProto(),
 	)
 	if err != nil {
@@ -103,8 +114,9 @@ func (p *PluginClient) StartPortForwardSession(
 	ctx *types.PluginContext,
 	opts PortForwardSessionOptions,
 ) (*PortForwardSession, error) {
+	grpcCtx, pctx := rpcContext(ctx)
 	resp, err := p.client.StartPortForwardSession(
-		types.WithPluginContext(context.Background(), ensurePluginCtx(ctx)),
+		types.WithPluginContext(grpcCtx, pctx),
 		opts.ToProto(),
 	)
 	if err != nil {
@@ -118,8 +130,9 @@ func (p *PluginClient) ClosePortForwardSession(
 	ctx *types.PluginContext,
 	sessionID string,
 ) (*PortForwardSession, error) {
+	grpcCtx, pctx := rpcContext(ctx)
 	resp, err := p.client.ClosePortForwardSession(
-		types.WithPluginContext(context.Background(), ensurePluginCtx(ctx)),
+		types.WithPluginContext(grpcCtx, pctx),
 		&networkerpb.PortForwardSessionByIdRequest{Id: sessionID},
 	)
 	if err != nil {

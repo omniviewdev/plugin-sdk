@@ -75,6 +75,9 @@ func (s *PluginServer) GetPortForwardSession(
 	if err != nil {
 		return nil, status.Errorf(grpcCodeForNetworkerError(err), "%v", err)
 	}
+	if resp == nil {
+		return &networkerpb.PortForwardSessionByIdResponse{Session: nil}, nil
+	}
 
 	return &networkerpb.PortForwardSessionByIdResponse{
 		Session: resp.ToProto(),
@@ -132,6 +135,9 @@ func (s *PluginServer) StartPortForwardSession(
 	if err != nil {
 		return nil, status.Errorf(grpcCodeForNetworkerError(err), "%v", err)
 	}
+	if resp == nil {
+		return &networkerpb.PortForwardSessionByIdResponse{Session: nil}, nil
+	}
 
 	return &networkerpb.PortForwardSessionByIdResponse{
 		Session: resp.ToProto(),
@@ -148,6 +154,9 @@ func (s *PluginServer) ClosePortForwardSession(
 	)
 	if err != nil {
 		return nil, status.Errorf(grpcCodeForNetworkerError(err), "%v", err)
+	}
+	if resp == nil {
+		return &networkerpb.PortForwardSessionByIdResponse{Session: nil}, nil
 	}
 
 	return &networkerpb.PortForwardSessionByIdResponse{

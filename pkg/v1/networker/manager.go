@@ -2,6 +2,7 @@ package networker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -133,7 +134,16 @@ func (m *Manager) FindPortForwardSessions(
 		passesResourceCheck := req.ResourceID == ""
 		passesConnectionCheck := req.ConnectionID == ""
 
-		if resource, ok := snap.Connection.(PortForwardResourceConnection); ok {
+		var resource PortForwardResourceConnection
+		switch c := snap.Connection.(type) {
+		case PortForwardResourceConnection:
+			resource = c
+		case *PortForwardResourceConnection:
+			if c != nil {
+				resource = *c
+			}
+		}
+		if resource.ResourceKey != "" || resource.ResourceID != "" || resource.ConnectionID != "" {
 			if req.ResourceID != "" {
 				passesResourceCheck = resource.ResourceID == req.ResourceID
 			}
@@ -198,6 +208,11 @@ func (m *Manager) StartPortForwardSession(
 
 	if err != nil {
 		cancel()
+		// Preserve already-typed NetworkerErrors; wrap others.
+		var nerr *NetworkerError
+		if errors.As(err, &nerr) {
+			return nil, err
+		}
 		return nil, NewForwarderFailedError(sessionID, err)
 	}
 
@@ -231,7 +246,7 @@ func (m *Manager) StartPortForwardSession(
 				return nil, NewForwarderFailedError(sessionID, err)
 			case <-ctx.Done():
 				cancel()
-				return nil, NewForwarderFailedError(sessionID, fmt.Errorf("context cancelled while waiting for tunnel"))
+				return nil, NewForwarderFailedError(sessionID, ctx.Err())
 			case <-m.clock.After(readyTimeout):
 				cancel()
 				return nil, NewForwarderFailedError(sessionID, fmt.Errorf("timed out waiting for tunnel to be ready"))
@@ -285,8 +300,15 @@ func (m *Manager) handleResourceForward(
 	pctx *types.PluginContext,
 	opts PortForwardSessionOptions,
 ) (*ForwarderResult, error) {
-	resource, ok := opts.Connection.(PortForwardResourceConnection)
-	if !ok {
+	var resource PortForwardResourceConnection
+	switch c := opts.Connection.(type) {
+	case PortForwardResourceConnection:
+		resource = c
+	case *PortForwardResourceConnection:
+		if c != nil {
+			resource = *c
+		}
+	default:
 		return nil, NewInvalidConnectionTypeError("connection is not a resource")
 	}
 
@@ -308,8 +330,15 @@ func (m *Manager) handleStaticForward(
 	pctx *types.PluginContext,
 	opts PortForwardSessionOptions,
 ) (*ForwarderResult, error) {
-	static, ok := opts.Connection.(PortForwardStaticConnection)
-	if !ok {
+	var static PortForwardStaticConnection
+	switch c := opts.Connection.(type) {
+	case PortForwardStaticConnection:
+		static = c
+	case *PortForwardStaticConnection:
+		if c != nil {
+			static = *c
+		}
+	default:
 		return nil, NewInvalidConnectionTypeError("connection is not static")
 	}
 

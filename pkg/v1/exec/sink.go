@@ -38,5 +38,7 @@ func (s *ChannelSink) OnOutput(output StreamOutput) {
 	select {
 	case s.out <- output:
 	case <-s.ctx.Done():
+	default:
+		// Drop output when channel is full to avoid blocking.
 	}
 }
