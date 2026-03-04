@@ -114,6 +114,15 @@ func TestLogLineToProtoPreservesFields(t *testing.T) {
 	if back.Level != LogLevelInfo {
 		t.Errorf("round-trip Level = %d", back.Level)
 	}
+	if len(back.Labels) != len(line.Labels) || back.Labels["pod"] != "pod-1" || back.Labels["container"] != "a" {
+		t.Errorf("round-trip Labels = %v, want %v", back.Labels, line.Labels)
+	}
+	if !back.Timestamp.Equal(ts) {
+		t.Errorf("round-trip Timestamp = %v, want %v", back.Timestamp, ts)
+	}
+	if back.Origin != LogLineOriginPrevious {
+		t.Errorf("round-trip Origin = %d, want LogLineOriginPrevious", back.Origin)
+	}
 }
 
 // LV-006: StreamEventSessionReady round-trips

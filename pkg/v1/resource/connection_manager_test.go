@@ -578,11 +578,23 @@ func TestCM_StartConnectionCancelledContext(t *testing.T) {
 	mgr := resource.NewConnectionManagerForTest(context.Background(), cp)
 	mgr.LoadConnections(context.Background())
 
-	// CreateClient receives the cancelled context, but the implementation still
-	// delegates to the provider. The provider decides what to do.
-	_, err := mgr.StartConnection(ctx, "conn-1")
-	// May or may not error depending on provider behavior — just no panic.
-	_ = err
+	// CreateClient receives the cancelled context. The stub provider may or
+	// may not propagate the cancellation, but we should at least verify
+	// the outcome rather than silently discarding it.
+	status, err := mgr.StartConnection(ctx, "conn-1")
+	if err != nil {
+		// Cancelled context propagated — the provider respected the context.
+		// Verify it's a context error.
+		if !errors.Is(err, context.Canceled) {
+			t.Logf("StartConnection returned non-context error (acceptable): %v", err)
+		}
+	} else {
+		// The stub provider succeeded despite the cancelled context. That's
+		// valid provider behavior — verify we got a connected status.
+		if status.Status != types.ConnectionStatusConnected {
+			t.Fatalf("expected %s status when no error, got %q", types.ConnectionStatusConnected, status.Status)
+		}
+	}
 }
 
 // --- CM-033: Multiple connections started in rapid succession ---
@@ -904,29 +916,67 @@ func TestCM_WatchConnectionsDetected(t *testing.T) {
 		},
 	}
 
-	// The connectionManager stores the provider as ConnectionProvider[ClientT].
-	// Verify the stored provider can be type-asserted to ConnectionWatcher.
-	mgr := resource.NewConnectionManagerForTest(ctx, wp)
-	_ = mgr // manager created without error
+	// Build a full controller so WatchConnections exercises the actual
+	// c.connMgr.provider.(ConnectionWatcher) type-assertion path.
+	cfg := resource.ResourcePluginConfig[string]{
+		Connections: wp,
+		Resources:   []resource.ResourceRegistration[string]{},
+	}
+	ctrl, err := resource.BuildResourceControllerForTest(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ctrl.Close()
 
-	// The controller's WatchConnections does: watcher, ok := c.connMgr.provider.(ConnectionWatcher)
-	// Verify the assertion succeeds on the WatchingConnectionProvider.
-	var iface interface{} = wp
-	_, ok := iface.(resource.ConnectionWatcher)
-	if !ok {
-		t.Fatal("WatchingConnectionProvider should implement ConnectionWatcher")
+	// WatchConnections blocks until ctx is cancelled — cancel quickly.
+	watchCtx, watchCancel := context.WithCancel(ctx)
+	stream := make(chan []types.Connection, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- ctrl.WatchConnections(watchCtx, stream)
+	}()
+	watchCancel()
+	if err := <-done; err != nil {
+		t.Fatalf("WatchConnections should return nil on cancel, got: %v", err)
 	}
 }
 
 // --- CM-024: WatchConnections not detected on plain ConnectionProvider ---
 func TestCM_WatchConnectionsNotDetected(t *testing.T) {
+	ctx := context.Background()
 	cp := &resourcetest.StubConnectionProvider[string]{}
 
-	// Plain StubConnectionProvider does NOT implement ConnectionWatcher.
-	var iface interface{} = cp
-	_, ok := iface.(resource.ConnectionWatcher)
-	if ok {
-		t.Fatal("StubConnectionProvider should NOT implement ConnectionWatcher")
+	// Build a full controller so WatchConnections exercises the actual
+	// c.connMgr.provider.(ConnectionWatcher) type-assertion path.
+	// A plain StubConnectionProvider does NOT implement ConnectionWatcher,
+	// so WatchConnections should block until context is cancelled without
+	// forwarding any events.
+	cfg := resource.ResourcePluginConfig[string]{
+		Connections: cp,
+		Resources:   []resource.ResourceRegistration[string]{},
+	}
+	ctrl, err := resource.BuildResourceControllerForTest(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ctrl.Close()
+
+	watchCtx, watchCancel := context.WithCancel(ctx)
+	stream := make(chan []types.Connection, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- ctrl.WatchConnections(watchCtx, stream)
+	}()
+	watchCancel()
+	if err := <-done; err != nil {
+		t.Fatalf("WatchConnections on plain provider should return nil on cancel, got: %v", err)
+	}
+	// Stream should have received nothing — the provider doesn't support watching.
+	select {
+	case conns := <-stream:
+		t.Fatalf("expected no events on stream, got %v", conns)
+	default:
+		// good — no events
 	}
 }
 

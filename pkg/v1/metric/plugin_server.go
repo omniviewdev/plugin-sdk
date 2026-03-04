@@ -3,8 +3,8 @@ package metric
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
-	"log"
 
 	"github.com/hashicorp/go-hclog"
 	"google.golang.org/grpc/codes"
@@ -48,11 +48,16 @@ func (s *PluginServer) Query(
 		return nil, status.Errorf(codes.InvalidArgument, "request is nil")
 	}
 
+	var resourceData map[string]interface{}
+	if rd := in.GetResourceData(); rd != nil {
+		resourceData = rd.AsMap()
+	}
+
 	req := QueryRequest{
 		ResourceKey:       in.GetResourceKey(),
 		ResourceID:        in.GetResourceId(),
 		ResourceNamespace: in.GetResourceNamespace(),
-		ResourceData:      in.GetResourceData().AsMap(),
+		ResourceData:      resourceData,
 		MetricIDs:         in.GetMetricIds(),
 		Shape:             MetricShapeFromProto(in.GetShape()),
 		Params:            in.GetParams(),
@@ -96,10 +101,13 @@ func (s *PluginServer) StreamMetrics(stream metricpb.MetricPlugin_StreamMetricsS
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
-			log.Printf("failed to receive metric stream: %v", err)
-			continue
+			return fmt.Errorf("failed to receive metric stream: %w", err)
 		}
-		multiplexer <- streamInputFromProto(in)
+		select {
+		case multiplexer <- streamInputFromProto(in):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 
@@ -112,7 +120,10 @@ func (s *PluginServer) handleOut(
 		select {
 		case <-ctx.Done():
 			return
-		case output := <-out:
+		case output, ok := <-out:
+			if !ok {
+				return
+			}
 			results := make([]*metricpb.MetricResult, 0, len(output.Results))
 			for i := range output.Results {
 				results = append(results, output.Results[i].ToProto())
@@ -126,9 +137,7 @@ func (s *PluginServer) handleOut(
 			}
 
 			if err := stream.Send(msg); err != nil {
-				if ctx.Err() == context.Canceled {
-					return
-				}
+				return
 			}
 		}
 	}

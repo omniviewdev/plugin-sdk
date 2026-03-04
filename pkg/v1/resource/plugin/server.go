@@ -58,7 +58,11 @@ func (s *server) LoadConnections(ctx context.Context, _ *resourcepb.LoadConnecti
 	}
 	pbConns := make([]*commonpb.Connection, 0, len(conns))
 	for _, c := range conns {
-		pbConns = append(pbConns, connectionToProto(c))
+		pb, err := connectionToProto(c)
+		if err != nil {
+			return nil, err
+		}
+		pbConns = append(pbConns, pb)
 	}
 	return &resourcepb.LoadConnectionsResponse{Connections: pbConns}, nil
 }
@@ -76,7 +80,11 @@ func (s *server) StopConnection(ctx context.Context, req *resourcepb.ConnectionR
 	if err != nil {
 		return nil, err
 	}
-	return &resourcepb.ConnectionResponse{Connection: connectionToProto(conn)}, nil
+	pbConn, err := connectionToProto(conn)
+	if err != nil {
+		return nil, err
+	}
+	return &resourcepb.ConnectionResponse{Connection: pbConn}, nil
 }
 
 func (s *server) GetConnectionNamespaces(ctx context.Context, req *resourcepb.ConnectionRequest) (*resourcepb.NamespacesResponse, error) {
@@ -308,7 +316,17 @@ func (s *server) ExecuteAction(ctx context.Context, req *resourcepb.ExecuteActio
 			},
 		}, nil
 	}
-	return &resourcepb.ExecuteActionResponse{Result: actionResultToProto(result)}, nil
+	pbResult, err := actionResultToProto(result)
+	if err != nil {
+		return nil, err
+	}
+	return &resourcepb.ExecuteActionResponse{Result: pbResult}, nil
+}
+
+// safeClose closes a channel, recovering from the panic if it was already closed.
+func safeClose[T any](ch chan T) {
+	defer func() { recover() }()
+	close(ch)
 }
 
 func (s *server) StreamAction(req *resourcepb.ExecuteActionRequest, stream resourcepb.ResourcePlugin_StreamActionServer) error {
@@ -318,11 +336,18 @@ func (s *server) StreamAction(req *resourcepb.ExecuteActionRequest, stream resou
 	ch := make(chan resource.ActionEvent, 16)
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- s.provider.StreamAction(ctx, req.GetResourceKey(), req.GetActionId(), input, ch)
+		err := s.provider.StreamAction(ctx, req.GetResourceKey(), req.GetActionId(), input, ch)
+		// Provider may have already closed ch; safe-close to ensure range terminates.
+		safeClose(ch)
+		errCh <- err
 	}()
 
 	for event := range ch {
-		if err := stream.Send(actionEventToProto(event)); err != nil {
+		pbEvent, err := actionEventToProto(event)
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(pbEvent); err != nil {
 			return err
 		}
 	}
@@ -391,8 +416,13 @@ func (s *grpcWatchSink) OnDelete(payload resource.WatchDeletePayload) {
 }
 
 func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
+	protoState, ok := watchStateToProto[event.State]
+	if !ok {
+		protoState = resourcepb.WatchState_WATCH_STATE_UNSPECIFIED
+		log.Printf("[watch-grpc-server] unknown watch state %d, falling back to UNSPECIFIED", event.State)
+	}
 	log.Printf("[watch-grpc-server] sending state: conn=%s key=%s state=%d protoState=%d count=%d errorCode=%s",
-		event.Connection, event.ResourceKey, event.State, watchStateToProto[event.State], event.ResourceCount, event.ErrorCode)
+		event.Connection, event.ResourceKey, event.State, protoState, event.ResourceCount, event.ErrorCode)
 	var errMsg string
 	if event.Error != nil {
 		errMsg = event.Error.Error()
@@ -404,7 +434,7 @@ func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
 		ResourceKey:  event.ResourceKey,
 		Event: &resourcepb.WatchEvent_State{
 			State: &resourcepb.WatchStateEvent{
-				State:         watchStateToProto[event.State],
+				State:         protoState,
 				ResourceCount: int32(event.ResourceCount),
 				ErrorMessage:  errMsg,
 				ErrorCode:     event.ErrorCode,
@@ -435,19 +465,29 @@ func (s *server) StopResourceWatch(ctx context.Context, req *resourcepb.WatchRes
 }
 
 func (s *server) WatchConnections(_ *resourcepb.WatchConnectionsRequest, stream resourcepb.ResourcePlugin_WatchConnectionsServer) error {
-	ctx := s.injectSettingsSession(stream.Context())
+	ctx, cancel := context.WithCancel(s.injectSettingsSession(stream.Context()))
+	defer cancel()
+
 	ch := make(chan []types.Connection, 16)
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- s.provider.WatchConnections(ctx, ch)
+		err := s.provider.WatchConnections(ctx, ch)
+		safeClose(ch)
+		errCh <- err
 	}()
 
 	for conns := range ch {
 		pbConns := make([]*commonpb.Connection, len(conns))
 		for i, c := range conns {
-			pbConns[i] = connectionToProto(c)
+			pb, err := connectionToProto(c)
+			if err != nil {
+				cancel()
+				return err
+			}
+			pbConns[i] = pb
 		}
 		if err := stream.Send(&resourcepb.WatchConnectionsResponse{Connections: pbConns}); err != nil {
+			cancel()
 			return err
 		}
 	}

@@ -1,7 +1,6 @@
 package networker
 
 import (
-	"log"
 	"time"
 
 	"google.golang.org/protobuf/types/known/structpb"
@@ -132,10 +131,18 @@ func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) *PortForw
 		connectionType = string(PortForwardConnectionTypeStatic)
 	}
 
+	var createdAt, updatedAt time.Time
+	if s.GetCreatedAt() != nil {
+		createdAt = s.GetCreatedAt().AsTime()
+	}
+	if s.GetUpdatedAt() != nil {
+		updatedAt = s.GetUpdatedAt().AsTime()
+	}
+
 	return &PortForwardSession{
 		ID:             s.GetId(),
-		CreatedAt:      s.GetCreatedAt().AsTime(),
-		UpdatedAt:      s.GetUpdatedAt().AsTime(),
+		CreatedAt:      createdAt,
+		UpdatedAt:      updatedAt,
 		Labels:         s.GetLabels(),
 		State:          SessionState(s.GetState().String()),
 		Encryption:     PortForwardSessionEncryptionFromProto(s.GetEncryption()),
@@ -250,6 +257,16 @@ func PortForwardStaticConnectionFromProto(
 	}
 }
 
+func PortForwardStaticConnectionFromJson(o map[string]any) *PortForwardStaticConnection {
+	conn := PortForwardStaticConnection{}
+
+	if v, ok := o["address"].(string); ok {
+		conn.Address = v
+	}
+
+	return &conn
+}
+
 // ============================== PortForwardSessionEncryption ============================== //
 
 // PortForwardSessionEncryption represents the options for a session encryption
@@ -304,9 +321,6 @@ type StaticPortForwardHandlerOpts struct {
 }
 
 func (o *PortForwardSessionOptions) ToProto() *networkerpb.PortForwardSessionOptions {
-	log.Printf("got options: %v\n", o)
-	log.Printf("%T\n", o.Connection)
-
 	opts := &networkerpb.PortForwardSessionOptions{
 		LocalPort:  o.LocalPort,
 		RemotePort: o.RemotePort,
@@ -317,13 +331,23 @@ func (o *PortForwardSessionOptions) ToProto() *networkerpb.PortForwardSessionOpt
 	}
 
 	switch o.ConnectionType {
-	// case PortForwardResourceConnection:
-	// 	opts.Connection = c.ToSessionOptionsProto()
-	// case PortForwardStaticConnection:
-	// 	opts.Connection = c.ToSessionOptionsProto()
 	case PortForwardConnectionTypeResource:
-		if v, ok := o.Connection.(map[string]any); ok {
-			opts.Connection = PortForwardResourceConnectionFromJson(v).ToSessionOptionsProto()
+		switch c := o.Connection.(type) {
+		case PortForwardResourceConnection:
+			opts.Connection = c.ToSessionOptionsProto()
+		case *PortForwardResourceConnection:
+			opts.Connection = c.ToSessionOptionsProto()
+		case map[string]any:
+			opts.Connection = PortForwardResourceConnectionFromJson(c).ToSessionOptionsProto()
+		}
+	case PortForwardConnectionTypeStatic:
+		switch c := o.Connection.(type) {
+		case PortForwardStaticConnection:
+			opts.Connection = c.ToSessionOptionsProto()
+		case *PortForwardStaticConnection:
+			opts.Connection = c.ToSessionOptionsProto()
+		case map[string]any:
+			opts.Connection = PortForwardStaticConnectionFromJson(c).ToSessionOptionsProto()
 		}
 	}
 

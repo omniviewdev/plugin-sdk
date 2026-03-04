@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
@@ -135,6 +136,10 @@ type SessionOptions struct {
 }
 
 func NewSessionOptionsFromProto(opts *execpb.SessionOptions) *SessionOptions {
+	var resourceData map[string]interface{}
+	if rd := opts.GetResourceData(); rd != nil {
+		resourceData = rd.AsMap()
+	}
 	return &SessionOptions{
 		ID:             opts.GetId(),
 		Command:        opts.GetCommand(),
@@ -143,14 +148,14 @@ func NewSessionOptionsFromProto(opts *execpb.SessionOptions) *SessionOptions {
 		Labels:         opts.GetLabels(),
 		ResourcePlugin: opts.GetResourcePlugin(),
 		ResourceKey:    opts.GetResourceKey(),
-		ResourceData:   opts.GetResourceData().AsMap(),
+		ResourceData:   resourceData,
 	}
 }
 
-func (o *SessionOptions) ToProto() *execpb.SessionOptions {
+func (o *SessionOptions) ToProto() (*execpb.SessionOptions, error) {
 	data, err := structpb.NewStruct(o.ResourceData)
 	if err != nil {
-		// ignore
+		return nil, fmt.Errorf("failed to convert resource data: %w", err)
 	}
 
 	return &execpb.SessionOptions{
@@ -162,7 +167,7 @@ func (o *SessionOptions) ToProto() *execpb.SessionOptions {
 		ResourcePlugin: o.ResourcePlugin,
 		ResourceKey:    o.ResourceKey,
 		ResourceData:   data,
-	}
+	}, nil
 }
 
 type SessionResizeInput struct {

@@ -62,6 +62,9 @@ func Mount(t *testing.T, opts ...HarnessOption) *Harness {
 	// Build handlers map from sources
 	handlers := make(map[string]logs.Handler)
 	for sourceID, src := range cfg.sources {
+		if src == nil {
+			continue
+		}
 		handlers["test/"+sourceID] = logs.Handler{
 			Plugin:        "test",
 			Resource:      sourceID,

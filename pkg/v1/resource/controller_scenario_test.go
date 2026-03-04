@@ -213,7 +213,6 @@ func TestSC003_LazyWatchSyncOnFirstQuery(t *testing.T) {
 
 	// List Secret triggers lazy watch start (maybeEnsureWatch runs in goroutine).
 	ctrl.List(testCtx, "core::v1::Secret", resource.ListInput{})
-	time.Sleep(time.Millisecond) // yield so goroutine registers the rws
 	waitCtx, waitCancel := context.WithTimeout(ctx, 2*time.Second)
 	defer waitCancel()
 	resource.WaitForWatchReadyForTest(waitCtx, ctrl, "conn-1", "core::v1::Secret")

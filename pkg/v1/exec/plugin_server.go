@@ -3,8 +3,8 @@ package exec
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
-	"log"
 
 	"github.com/hashicorp/go-hclog"
 	"google.golang.org/grpc/codes"
@@ -189,9 +189,7 @@ func (s *PluginServer) Stream(stream execpb.ExecPlugin_StreamServer) error {
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
-			// log it somewhere
-			log.Printf("failed to receive stream: %v", err)
-			continue
+			return fmt.Errorf("failed to receive stream: %w", err)
 		}
 		multiplexer <- NewStreamInputFromProto(in)
 	}
@@ -206,12 +204,12 @@ func (s *PluginServer) handleOut(
 		select {
 		case <-ctx.Done():
 			return
-		case out := <-out:
-			// write to the output
-			if err := stream.Send(out.ToProto()); err != nil {
-				if ctx.Err() == context.Canceled {
-					return
-				}
+		case msg, ok := <-out:
+			if !ok {
+				return
+			}
+			if err := stream.Send(msg.ToProto()); err != nil {
+				return
 			}
 		}
 	}

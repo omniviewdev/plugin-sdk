@@ -70,9 +70,13 @@ func (c *PluginClient) CreateSession(
 	ctx *types.PluginContext,
 	opts SessionOptions,
 ) (*Session, error) {
+	proto, err := opts.ToProto()
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert session options: %w", err)
+	}
 	resp, err := c.client.CreateSession(
 		types.WithPluginContext(context.Background(), ctx),
-		opts.ToProto(),
+		proto,
 	)
 	if err != nil {
 		return nil, err
@@ -137,16 +141,13 @@ func (c *PluginClient) Stream(
 		return nil, err
 	}
 
-	log.Println("STREAMING")
-
 	out := make(chan StreamOutput)
 
 	// sender
 	go func() {
-		defer close(out)
 		for i := range in {
 			if err = stream.Send(i.ToProto()); err != nil {
-				log.Println(fmt.Printf("failed to send stream input: %v", err))
+				log.Printf("failed to send stream input: %v", err)
 				return
 			}
 		}
@@ -155,13 +156,14 @@ func (c *PluginClient) Stream(
 		}
 	}()
 
-	// receiver
+	// receiver — owns close(out) so sender never writes to a closed channel
 	go func() {
+		defer close(out)
 		for {
 			var resp *execpb.StreamOutput
 			resp, err = stream.Recv()
 			if errors.Is(err, io.EOF) {
-				return // End of stream
+				return
 			}
 			if err != nil {
 				log.Printf("failed to receive stream output: %v", err)

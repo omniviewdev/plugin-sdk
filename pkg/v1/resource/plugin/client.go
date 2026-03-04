@@ -100,7 +100,11 @@ func (c *client) WatchConnections(ctx context.Context, stream chan<- []types.Con
 		for i, pb := range resp.GetConnections() {
 			conns[i] = connectionFromProto(pb)
 		}
-		stream <- conns
+		select {
+		case stream <- conns:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 
@@ -109,8 +113,12 @@ func (c *client) WatchConnections(ctx context.Context, stream chan<- []types.Con
 // ============================================================================
 
 func (c *client) Get(ctx context.Context, key string, input resource.GetInput) (*resource.GetResult, error) {
+	connID, err := connectionIDFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.stub.Get(ctx, &resourcepb.GetRequest{
-		ConnectionId: connectionIDFromCtx(ctx),
+		ConnectionId: connID,
 		ResourceKey:  key,
 		Id:           input.ID,
 		Namespace:    input.Namespace,
@@ -128,8 +136,12 @@ func (c *client) Get(ctx context.Context, key string, input resource.GetInput) (
 }
 
 func (c *client) List(ctx context.Context, key string, input resource.ListInput) (*resource.ListResult, error) {
+	connID, err := connectionIDFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	req := &resourcepb.ListRequest{
-		ConnectionId: connectionIDFromCtx(ctx),
+		ConnectionId: connID,
 		ResourceKey:  key,
 		Namespaces:   input.Namespaces,
 	}
@@ -159,12 +171,20 @@ func (c *client) List(ctx context.Context, key string, input resource.ListInput)
 }
 
 func (c *client) Find(ctx context.Context, key string, input resource.FindInput) (*resource.FindResult, error) {
+	connID, err := connectionIDFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	filters, err := filterExpressionToProto(input.Filters)
+	if err != nil {
+		return nil, err
+	}
 	req := &resourcepb.FindRequest{
-		ConnectionId: connectionIDFromCtx(ctx),
+		ConnectionId: connID,
 		ResourceKey:  key,
 		TextQuery:    input.TextQuery,
 		Namespaces:   input.Namespaces,
-		Filters:      filterExpressionToProto(input.Filters),
+		Filters:      filters,
 	}
 	for _, o := range input.Order {
 		req.Order = append(req.Order, orderFieldToProto(o))
@@ -192,8 +212,12 @@ func (c *client) Find(ctx context.Context, key string, input resource.FindInput)
 }
 
 func (c *client) Create(ctx context.Context, key string, input resource.CreateInput) (*resource.CreateResult, error) {
+	connID, err := connectionIDFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.stub.Create(ctx, &resourcepb.CreateRequest{
-		ConnectionId: connectionIDFromCtx(ctx),
+		ConnectionId: connID,
 		ResourceKey:  key,
 		Data:         input.Input,
 		Namespace:    input.Namespace,
@@ -211,8 +235,12 @@ func (c *client) Create(ctx context.Context, key string, input resource.CreateIn
 }
 
 func (c *client) Update(ctx context.Context, key string, input resource.UpdateInput) (*resource.UpdateResult, error) {
+	connID, err := connectionIDFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.stub.Update(ctx, &resourcepb.UpdateRequest{
-		ConnectionId: connectionIDFromCtx(ctx),
+		ConnectionId: connID,
 		ResourceKey:  key,
 		Data:         input.Input,
 		Id:           input.ID,
@@ -231,8 +259,12 @@ func (c *client) Update(ctx context.Context, key string, input resource.UpdateIn
 }
 
 func (c *client) Delete(ctx context.Context, key string, input resource.DeleteInput) (*resource.DeleteResult, error) {
+	connID, err := connectionIDFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	req := &resourcepb.DeleteRequest{
-		ConnectionId: connectionIDFromCtx(ctx),
+		ConnectionId: connID,
 		ResourceKey:  key,
 		Id:           input.ID,
 		Namespace:    input.Namespace,
@@ -260,7 +292,8 @@ func (c *client) Delete(ctx context.Context, key string, input resource.DeleteIn
 func (c *client) GetResourceGroups(ctx context.Context, connectionID string) map[string]resource.ResourceGroup {
 	resp, err := c.stub.GetResourceGroups(ctx, &resourcepb.ResourceGroupsRequest{ConnectionId: connectionID})
 	if err != nil {
-		return nil
+		log.Printf("[resource-grpc-client] GetResourceGroups RPC failed: %v", err)
+		return map[string]resource.ResourceGroup{}
 	}
 	groups := make(map[string]resource.ResourceGroup, len(resp.GetGroups()))
 	for k, g := range resp.GetGroups() {
@@ -272,7 +305,8 @@ func (c *client) GetResourceGroups(ctx context.Context, connectionID string) map
 func (c *client) GetResourceTypes(ctx context.Context, connectionID string) map[string]resource.ResourceMeta {
 	resp, err := c.stub.GetResourceTypes(ctx, &resourcepb.ResourceTypesRequest{ConnectionId: connectionID})
 	if err != nil {
-		return nil
+		log.Printf("[resource-grpc-client] GetResourceTypes RPC failed: %v", err)
+		return map[string]resource.ResourceMeta{}
 	}
 	types := make(map[string]resource.ResourceMeta, len(resp.GetTypes()))
 	for k, m := range resp.GetTypes() {
@@ -329,6 +363,8 @@ func (c *client) GetResourceType(_ context.Context, _ string) (*resource.Resourc
 	return nil, errNotAvailable
 }
 
+// HasResourceType always returns false — the v1 resource proto does not define
+// a HasResourceType RPC, so there is no server-side implementation to call.
 func (c *client) HasResourceType(_ context.Context, _ string) bool {
 	return false
 }
@@ -342,8 +378,12 @@ func (c *client) GetResourceDefinition(_ context.Context, _ string) (resource.Re
 // ============================================================================
 
 func (c *client) GetActions(ctx context.Context, key string) ([]resource.ActionDescriptor, error) {
+	connID, err := connectionIDFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.stub.GetActions(ctx, &resourcepb.GetActionsRequest{
-		ConnectionId: connectionIDFromCtx(ctx),
+		ConnectionId: connID,
 		ResourceKey:  key,
 	})
 	if err != nil {
@@ -357,11 +397,19 @@ func (c *client) GetActions(ctx context.Context, key string) ([]resource.ActionD
 }
 
 func (c *client) ExecuteAction(ctx context.Context, key string, actionID string, input resource.ActionInput) (*resource.ActionResult, error) {
+	connID, err := connectionIDFromCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pbInput, err := actionInputToProto(input)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := c.stub.ExecuteAction(ctx, &resourcepb.ExecuteActionRequest{
-		ConnectionId: connectionIDFromCtx(ctx),
+		ConnectionId: connID,
 		ResourceKey:  key,
 		ActionId:     actionID,
-		Input:        actionInputToProto(input),
+		Input:        pbInput,
 	})
 	if err != nil {
 		return nil, err
@@ -373,11 +421,19 @@ func (c *client) ExecuteAction(ctx context.Context, key string, actionID string,
 }
 
 func (c *client) StreamAction(ctx context.Context, key string, actionID string, input resource.ActionInput, stream chan<- resource.ActionEvent) error {
+	connID, err := connectionIDFromCtx(ctx)
+	if err != nil {
+		return err
+	}
+	pbInput, err := actionInputToProto(input)
+	if err != nil {
+		return err
+	}
 	s, err := c.stub.StreamAction(ctx, &resourcepb.ExecuteActionRequest{
-		ConnectionId: connectionIDFromCtx(ctx),
+		ConnectionId: connID,
 		ResourceKey:  key,
 		ActionId:     actionID,
-		Input:        actionInputToProto(input),
+		Input:        pbInput,
 	})
 	if err != nil {
 		return err
@@ -444,9 +500,14 @@ func dispatchWatchEvent(event *resourcepb.WatchEvent, sink resource.WatchEventSi
 			Data:       e.Delete.GetData(),
 		})
 	case *resourcepb.WatchEvent_State:
+		goState, ok := watchStateFromProto[e.State.GetState()]
+		if !ok {
+			goState = resource.WatchStateIdle
+			log.Printf("[watch-grpc-client] unknown proto watch state %d, falling back to Idle", e.State.GetState())
+		}
 		log.Printf("[watch-grpc-client] received state: conn=%s key=%s protoState=%d goState=%d count=%d errorCode=%s",
 			event.GetConnectionId(), event.GetResourceKey(),
-			e.State.GetState(), watchStateFromProto[e.State.GetState()],
+			e.State.GetState(), goState,
 			e.State.GetResourceCount(), e.State.GetErrorCode())
 		var watchErr error
 		if e.State.GetErrorMessage() != "" {
@@ -455,7 +516,7 @@ func dispatchWatchEvent(event *resourcepb.WatchEvent, sink resource.WatchEventSi
 		sink.OnStateChange(resource.WatchStateEvent{
 			Connection:    event.GetConnectionId(),
 			ResourceKey:   event.GetResourceKey(),
-			State:         watchStateFromProto[e.State.GetState()],
+			State:         goState,
 			ResourceCount: int(e.State.GetResourceCount()),
 			Error:         watchErr,
 			ErrorCode:     e.State.GetErrorCode(),
@@ -516,7 +577,7 @@ func (c *client) RestartResourceWatch(_ context.Context, _ string, _ string) err
 }
 
 func (c *client) IsResourceWatchRunning(_ context.Context, _ string, _ string) (bool, error) {
-	return false, nil
+	return false, errNotAvailable
 }
 
 // ============================================================================
@@ -591,12 +652,12 @@ func (c *client) GetResourceEvents(ctx context.Context, connectionID string, key
 // ============================================================================
 
 // connectionIDFromCtx extracts the connection ID from the session in context.
-func connectionIDFromCtx(ctx context.Context) string {
+func connectionIDFromCtx(ctx context.Context) (string, error) {
 	sess := resource.SessionFromContext(ctx)
 	if sess == nil || sess.Connection == nil {
-		return ""
+		return "", nil
 	}
-	return sess.Connection.ID
+	return sess.Connection.ID, nil
 }
 
 // Compile-time check that client satisfies Provider.

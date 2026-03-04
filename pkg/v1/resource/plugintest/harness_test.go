@@ -76,7 +76,7 @@ func TestHarness_CRUD_DelegatesToController(t *testing.T) {
 	assert.True(t, createResult.Success)
 
 	// Update
-	updateResult := h.Update(key, resource.UpdateInput{Input: json.RawMessage(`{"id":"upd"}`)})
+	updateResult := h.Update(key, resource.UpdateInput{ID: "foo", Input: json.RawMessage(`{"id":"upd"}`)})
 	assert.True(t, updateResult.Success)
 
 	// Delete

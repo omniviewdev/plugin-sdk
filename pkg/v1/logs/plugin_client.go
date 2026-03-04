@@ -130,7 +130,6 @@ func (c *PluginClient) Stream(
 
 	// sender
 	go func() {
-		defer close(out)
 		for i := range in {
 			if err := stream.Send(i.ToProto()); err != nil {
 				log.Printf("failed to send log stream input: %v", err)
@@ -144,6 +143,7 @@ func (c *PluginClient) Stream(
 
 	// receiver
 	go func() {
+		defer close(out)
 		for {
 			resp, err := stream.Recv()
 			if errors.Is(err, io.EOF) {

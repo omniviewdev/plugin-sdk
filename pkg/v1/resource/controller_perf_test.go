@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -527,6 +526,9 @@ func TestPI007_EventsNotBuffered(t *testing.T) {
 
 // --- PI-008: Memory doesn't grow unboundedly with many events ---
 func TestPI008_MemoryBounded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping memory-bounded test in short mode")
+	}
 	// Pod watcher emits 5000 events. ListenForEvents consumes them.
 	// Assert memory doesn't grow unboundedly.
 	ctx := context.Background()
@@ -672,7 +674,6 @@ func TestPI010_AggregateThroughput(t *testing.T) {
 	const eventsPerResource = 200
 	totalExpected := len(metas) * eventsPerResource
 
-	var wg sync.WaitGroup
 	ready := make(chan struct{})
 
 	var registrations []resource.ResourceRegistration[string]
@@ -682,8 +683,6 @@ func TestPI010_AggregateThroughput(t *testing.T) {
 			Meta: m,
 			Resourcer: &resourcetest.WatchableResourcer[string]{
 				WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, sink resource.WatchEventSink) error {
-					wg.Add(1)
-					defer wg.Done()
 					// Wait for all watchers to be ready.
 					select {
 					case <-ready:

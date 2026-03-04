@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	commonpb "github.com/omniviewdev/plugin-sdk/proto/v1/common"
@@ -20,15 +21,18 @@ import (
 // Connection converters
 // ============================================================================
 
-func connectionToProto(c types.Connection) *commonpb.Connection {
+func connectionToProto(c types.Connection) (*commonpb.Connection, error) {
 	labels := make(map[string]string, len(c.Labels))
 	for k, v := range c.Labels {
 		labels[k] = fmt.Sprintf("%v", v)
 	}
 	var data *structpb.Struct
 	if c.Data != nil {
-		// Convert map[string]any -> Struct (best-effort).
-		data, _ = structpb.NewStruct(c.Data)
+		var err error
+		data, err = structpb.NewStruct(c.Data)
+		if err != nil {
+			return nil, fmt.Errorf("connectionToProto: structpb.NewStruct: %w", err)
+		}
 	}
 	return &commonpb.Connection{
 		Id:          c.ID,
@@ -37,7 +41,7 @@ func connectionToProto(c types.Connection) *commonpb.Connection {
 		Avatar:      c.Avatar,
 		Labels:      labels,
 		Data:        data,
-	}
+	}, nil
 }
 
 func connectionFromProto(pb *commonpb.Connection) types.Connection {
@@ -74,13 +78,16 @@ var connectionStatusCodeFromProto = map[commonpb.ConnectionState]types.Connectio
 	commonpb.ConnectionState_CONNECTION_STATE_CONNECTED:    types.ConnectionStatusConnected,
 	commonpb.ConnectionState_CONNECTION_STATE_DISCONNECTED: types.ConnectionStatusDisconnected,
 	commonpb.ConnectionState_CONNECTION_STATE_ERROR:        types.ConnectionStatusError,
-	commonpb.ConnectionState_CONNECTION_STATE_RECONNECTING: types.ConnectionStatusConnected, // closest mapping
+	commonpb.ConnectionState_CONNECTION_STATE_RECONNECTING: types.ConnectionStatusDisconnected, // no Reconnecting status; Disconnected is safest
 }
 
 func connectionStatusToProto(cs types.ConnectionStatus) *commonpb.ConnectionStatus {
 	var conn *commonpb.Connection
 	if cs.Connection != nil {
-		c := connectionToProto(*cs.Connection)
+		c, err := connectionToProto(*cs.Connection)
+		if err != nil {
+			return nil
+		}
 		conn = c
 	}
 	state, ok := connectionStatusCodeToProto[cs.Status]
@@ -377,16 +384,20 @@ func filterFieldFromProto(pb *resourcepb.FilterField) resource.FilterField {
 	}
 }
 
-func filterPredicateToProto(p resource.FilterPredicate) *resourcepb.FilterPredicate {
+func filterPredicateToProto(p resource.FilterPredicate) (*resourcepb.FilterPredicate, error) {
 	var val *structpb.Value
 	if p.Value != nil {
-		val, _ = structpb.NewValue(p.Value)
+		var err error
+		val, err = structpb.NewValue(p.Value)
+		if err != nil {
+			return nil, fmt.Errorf("filterPredicateToProto: structpb.NewValue: %w", err)
+		}
 	}
 	return &resourcepb.FilterPredicate{
 		Field:    p.Field,
 		Operator: filterOpToProto[p.Operator],
 		Value:    val,
-	}
+	}, nil
 }
 
 func filterPredicateFromProto(pb *resourcepb.FilterPredicate) resource.FilterPredicate {
@@ -404,23 +415,31 @@ func filterPredicateFromProto(pb *resourcepb.FilterPredicate) resource.FilterPre
 	}
 }
 
-func filterExpressionToProto(e *resource.FilterExpression) *resourcepb.FilterExpression {
+func filterExpressionToProto(e *resource.FilterExpression) (*resourcepb.FilterExpression, error) {
 	if e == nil {
-		return nil
+		return nil, nil
 	}
 	preds := make([]*resourcepb.FilterPredicate, len(e.Predicates))
 	for i, p := range e.Predicates {
-		preds[i] = filterPredicateToProto(p)
+		pb, err := filterPredicateToProto(p)
+		if err != nil {
+			return nil, err
+		}
+		preds[i] = pb
 	}
 	groups := make([]*resourcepb.FilterExpression, len(e.Groups))
 	for i, g := range e.Groups {
-		groups[i] = filterExpressionToProto(&g)
+		pb, err := filterExpressionToProto(&g)
+		if err != nil {
+			return nil, err
+		}
+		groups[i] = pb
 	}
 	return &resourcepb.FilterExpression{
 		Logic:      filterLogicToProto[e.Logic],
 		Predicates: preds,
 		Groups:     groups,
-	}
+	}, nil
 }
 
 func filterExpressionFromProto(pb *resourcepb.FilterExpression) *resource.FilterExpression {
@@ -433,7 +452,10 @@ func filterExpressionFromProto(pb *resourcepb.FilterExpression) *resource.Filter
 	}
 	groups := make([]resource.FilterExpression, len(pb.GetGroups()))
 	for i, g := range pb.GetGroups() {
-		groups[i] = *filterExpressionFromProto(g)
+		fe := filterExpressionFromProto(g)
+		if fe != nil {
+			groups[i] = *fe
+		}
 	}
 	return &resource.FilterExpression{
 		Logic:      filterLogicFromProto[pb.GetLogic()],
@@ -460,9 +482,17 @@ func orderFieldFromProto(pb *resourcepb.OrderField) resource.OrderField {
 }
 
 func paginationToProto(p resource.PaginationParams) *resourcepb.PaginationParams {
+	page := p.Page
+	if page > math.MaxInt32 {
+		page = math.MaxInt32
+	}
+	pageSize := p.PageSize
+	if pageSize > math.MaxInt32 {
+		pageSize = math.MaxInt32
+	}
 	return &resourcepb.PaginationParams{
-		Page:     int32(p.Page),
-		PageSize: int32(p.PageSize),
+		Page:     int32(page),
+		PageSize: int32(pageSize),
 		Cursor:   p.Cursor,
 	}
 }
@@ -511,7 +541,11 @@ func watchConnectionSummaryToProto(s *resource.WatchConnectionSummary) *resource
 	}
 	resources := make(map[string]resourcepb.WatchState, len(s.Resources))
 	for k, v := range s.Resources {
-		resources[k] = watchStateToProto[v]
+		ws, ok := watchStateToProto[v]
+		if !ok {
+			ws = resourcepb.WatchState_WATCH_STATE_UNSPECIFIED
+		}
+		resources[k] = ws
 	}
 	counts := make(map[string]int32, len(s.ResourceCounts))
 	for k, v := range s.ResourceCounts {
@@ -535,7 +569,11 @@ func watchConnectionSummaryFromProto(pb *resourcepb.GetWatchStateResponse) *reso
 	}
 	resources := make(map[string]resource.WatchState, len(pb.GetResources()))
 	for k, v := range pb.GetResources() {
-		resources[k] = watchStateFromProto[v]
+		ws, ok := watchStateFromProto[v]
+		if !ok {
+			ws = resource.WatchStateIdle
+		}
+		resources[k] = ws
 	}
 	counts := make(map[string]int, len(pb.GetResourceCounts()))
 	for k, v := range pb.GetResourceCounts() {
@@ -613,16 +651,20 @@ func actionDescriptorFromProto(pb *resourcepb.ActionDescriptor) resource.ActionD
 	return d
 }
 
-func actionInputToProto(in resource.ActionInput) *resourcepb.ActionInput {
+func actionInputToProto(in resource.ActionInput) (*resourcepb.ActionInput, error) {
 	var params *structpb.Struct
 	if in.Params != nil {
-		params, _ = structpb.NewStruct(in.Params)
+		var err error
+		params, err = structpb.NewStruct(in.Params)
+		if err != nil {
+			return nil, fmt.Errorf("actionInputToProto: structpb.NewStruct: %w", err)
+		}
 	}
 	return &resourcepb.ActionInput{
 		ResourceId: in.ID,
 		Namespace:  in.Namespace,
 		Params:     params,
-	}
+	}, nil
 }
 
 func actionInputFromProto(pb *resourcepb.ActionInput) resource.ActionInput {
@@ -640,19 +682,23 @@ func actionInputFromProto(pb *resourcepb.ActionInput) resource.ActionInput {
 	}
 }
 
-func actionResultToProto(r *resource.ActionResult) *resourcepb.ActionResult {
+func actionResultToProto(r *resource.ActionResult) (*resourcepb.ActionResult, error) {
 	if r == nil {
-		return nil
+		return nil, nil
 	}
 	var data *structpb.Struct
 	if r.Data != nil {
-		data, _ = structpb.NewStruct(r.Data)
+		var err error
+		data, err = structpb.NewStruct(r.Data)
+		if err != nil {
+			return nil, fmt.Errorf("actionResultToProto: structpb.NewStruct: %w", err)
+		}
 	}
 	return &resourcepb.ActionResult{
 		Success: r.Success,
 		Message: r.Message,
 		Data:    data,
-	}
+	}, nil
 }
 
 func actionResultFromProto(pb *resourcepb.ActionResult) *resource.ActionResult {
@@ -670,15 +716,19 @@ func actionResultFromProto(pb *resourcepb.ActionResult) *resource.ActionResult {
 	}
 }
 
-func actionEventToProto(e resource.ActionEvent) *resourcepb.StreamActionEvent {
+func actionEventToProto(e resource.ActionEvent) (*resourcepb.StreamActionEvent, error) {
 	var data *structpb.Struct
 	if e.Data != nil {
-		data, _ = structpb.NewStruct(e.Data)
+		var err error
+		data, err = structpb.NewStruct(e.Data)
+		if err != nil {
+			return nil, fmt.Errorf("actionEventToProto: structpb.NewStruct: %w", err)
+		}
 	}
 	return &resourcepb.StreamActionEvent{
 		Type: e.Type,
 		Data: data,
-	}
+	}, nil
 }
 
 func actionEventFromProto(pb *resourcepb.StreamActionEvent) resource.ActionEvent {
@@ -1051,8 +1101,12 @@ func resourceEventFromProto(pb *resourcepb.ResourceEvent) resource.ResourceEvent
 	if pb.GetLastSeen() != nil {
 		lastSeen = pb.GetLastSeen().AsTime()
 	}
+	severity, ok := eventSeverityFromProto[pb.GetType()]
+	if !ok {
+		severity = resource.SeverityNormal
+	}
 	return resource.ResourceEvent{
-		Type:      eventSeverityFromProto[pb.GetType()],
+		Type:      severity,
 		Reason:    pb.GetReason(),
 		Message:   pb.GetMessage(),
 		Source:    pb.GetSource(),

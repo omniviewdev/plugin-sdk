@@ -442,11 +442,19 @@ func TestRegistryZeroValueMeta(t *testing.T) {
 		Meta:      resource.ResourceMeta{},
 		Resourcer: &resourcetest.StubResourcer[string]{},
 	})
-	// Zero-value meta has key "::::" — lookup should find it by that key.
+	// Zero-value meta has key "::::" (Group::Version::Kind with empty strings).
+	// A mismatched key (":::::" — 5 colons) should return not-found.
 	_, err := reg.Lookup(":::::")
-	// We don't crash; it returns not-found since keys differ.
 	if err == nil {
-		// It's okay either way — just testing no panic.
+		t.Fatal("expected error for mismatched key ':::::', but got nil")
+	}
+	// The correct zero-value key should succeed.
+	res, err := reg.Lookup("::::")
+	if err != nil {
+		t.Fatalf("expected lookup of '::::' to succeed, got: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil resourcer for zero-value meta key")
 	}
 }
 
@@ -656,14 +664,18 @@ func TestRegistryDeriveCapabilities(t *testing.T) {
 func TestRR_NilResourcerRegistration(t *testing.T) {
 	reg := resource.NewResourcerRegistryForTest(resource.ResourceDefinition{})
 	// Registering a nil Resourcer — should not panic during Register.
-	// Lookup should fail gracefully.
+	// Lookup should return the nil resourcer or an error, but must not panic.
 	reg.Register(resource.ResourceRegistration[string]{
 		Meta:      resourcetest.PodMeta,
 		Resourcer: nil,
 	})
-	_, err := reg.Lookup("core::v1::Pod")
-	// Even though registered, a nil resourcer should be returned.
-	// The caller must handle nil — or we error. Either is acceptable.
-	// We just want no panic.
-	_ = err
+	res, err := reg.Lookup("core::v1::Pod")
+	if err != nil {
+		// Registry rejected the nil resourcer at lookup time — acceptable.
+		return
+	}
+	// Registry returned a nil resourcer — verify that's what we stored.
+	if res != nil {
+		t.Fatal("expected nil resourcer from lookup, got non-nil")
+	}
 }

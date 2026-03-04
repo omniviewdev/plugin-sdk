@@ -134,6 +134,9 @@ func TestReconnectionFlowRegression(t *testing.T) {
 
 	events := h.Output().Events()
 	t.Logf("received %d events after source close", len(events))
+	if len(events) == 0 {
+		t.Fatal("expected at least one event after source close (e.g. RECONNECTING), got 0")
+	}
 }
 
 // SM-007: Rapid CreateSession + CloseSession x10 → no goroutine leak
@@ -283,8 +286,18 @@ func TestCloseSessionWaitsForGoroutines(t *testing.T) {
 	// (the cancel will interrupt the sleep, so it won't be the full 200ms)
 	t.Logf("CloseSession took %v", elapsed)
 
-	// The session should be CLOSED
-	// (GetSession will fail since it's been removed, so we check status was set)
+	// CloseSession should complete within a reasonable time (the context cancel
+	// interrupts the connect delay, so it should be well under 10s safety timeout)
+	if elapsed > 5*time.Second {
+		t.Errorf("CloseSession took too long (%v), expected < 5s", elapsed)
+	}
+
+	// The session should be removed — GetSession should return error
+	pctx := logtest.ContextWithCancelFrom(h)
+	_, err := h.Manager().GetSession(pctx, session.ID)
+	if err == nil {
+		t.Error("expected error from GetSession after CloseSession, session should be removed")
+	}
 }
 
 // SM-011: Pause command → PAUSED, lines skipped; Resume → ACTIVE
@@ -303,21 +316,43 @@ func TestPauseResumeCommands(t *testing.T) {
 		t.Fatal("expected SESSION_READY")
 	}
 
-	// Pause via direct manager method (since harness no longer has Stream channel)
+	// Pause via UpdateSessionOptions with Follow=false
 	pctx := logtest.ContextWithCancelFrom(h)
 	_, err := h.Manager().UpdateSessionOptions(pctx, session.ID, logs.LogSessionOptions{
+		Follow:              false,
+		IncludeSourceEvents: true,
+		Params:              map[string]string{},
+	})
+	if err != nil {
+		t.Fatalf("UpdateSessionOptions (pause) failed: %v", err)
+	}
+
+	// Verify session status is still ACTIVE (UpdateSessionOptions doesn't change status,
+	// Follow=false just affects streaming behavior)
+	got := h.GetSession(session.ID)
+	if got.Status != logs.LogSessionStatusActive {
+		t.Errorf("after pause update: status = %d, want ACTIVE (%d)", got.Status, logs.LogSessionStatusActive)
+	}
+	if got.Options.Follow != false {
+		t.Errorf("after pause update: Follow = %v, want false", got.Options.Follow)
+	}
+
+	// Resume via UpdateSessionOptions with Follow=true
+	_, err = h.Manager().UpdateSessionOptions(pctx, session.ID, logs.LogSessionOptions{
 		Follow:              true,
 		IncludeSourceEvents: true,
 		Params:              map[string]string{},
 	})
 	if err != nil {
-		t.Fatalf("UpdateSessionOptions failed: %v", err)
+		t.Fatalf("UpdateSessionOptions (resume) failed: %v", err)
 	}
 
-	// Verify session is still functional
-	got := h.GetSession(session.ID)
+	got = h.GetSession(session.ID)
 	if got.Status != logs.LogSessionStatusActive {
-		t.Logf("status after update = %d", got.Status)
+		t.Errorf("after resume update: status = %d, want ACTIVE (%d)", got.Status, logs.LogSessionStatusActive)
+	}
+	if got.Options.Follow != true {
+		t.Errorf("after resume update: Follow = %v, want true", got.Options.Follow)
 	}
 }
 
@@ -1476,8 +1511,12 @@ func TestConcurrentSessionOperations(t *testing.T) {
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
 
 	const N = 20
-	errs := make(chan error, N*3)
-	sessionIDs := make(chan string, N)
+
+	type createResult struct {
+		sessionID string
+		err       error
+	}
+	results := make(chan createResult, N)
 
 	// Concurrent creates
 	for i := 0; i < N; i++ {
@@ -1488,24 +1527,26 @@ func TestConcurrentSessionOperations(t *testing.T) {
 				Options:     logs.LogSessionOptions{Follow: true},
 			})
 			if err != nil {
-				errs <- fmt.Errorf("create[%d]: %w", i, err)
+				results <- createResult{err: fmt.Errorf("create[%d]: %w", i, err)}
 				return
 			}
-			sessionIDs <- session.ID
-			errs <- nil
+			results <- createResult{sessionID: session.ID}
 		}(i)
 	}
 
 	// Wait for all creates
 	ids := make([]string, 0, N)
 	for i := 0; i < N; i++ {
-		if err := <-errs; err != nil {
-			t.Error(err)
+		r := <-results
+		if r.err != nil {
+			t.Error(r.err)
+		} else {
+			ids = append(ids, r.sessionID)
 		}
-		ids = append(ids, <-sessionIDs)
 	}
 
 	// Concurrent reads
+	errs := make(chan error, N*2)
 	for i := 0; i < N; i++ {
 		go func(id string) {
 			_, err := mgr.GetSession(pctx, id)

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/grpc"
 
@@ -22,6 +23,9 @@ type GRPCPlugin struct {
 
 // GRPCServer registers the resource plugin server on the given gRPC server.
 func (p *GRPCPlugin) GRPCServer(_ *goplugin.GRPCBroker, s *grpc.Server) error {
+	if p.Impl == nil {
+		return errors.New("resource plugin implementation is nil")
+	}
 	resourcepb.RegisterResourcePluginServer(s, NewServer(p.Impl, p.SettingsProvider))
 	return nil
 }

@@ -62,6 +62,13 @@ func (c *FakeClock) After(d time.Duration) <-chan time.Time {
 		return ch
 	}
 
+	// Non-positive duration: fire immediately (like time.After)
+	if d <= 0 {
+		c.mu.Unlock()
+		ch <- c.now
+		return ch
+	}
+
 	c.timers = append(c.timers, &fakeTimer{deadline: d, ch: ch})
 	old := c.changed
 	c.changed = make(chan struct{})

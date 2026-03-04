@@ -93,7 +93,7 @@ func (r *channelReader) Read(p []byte) (int, error) {
 		return 0, io.EOF
 	}
 
-	// Wait for next line or context cancellation
+	// Wait for next line, close signal, or context cancellation
 	select {
 	case line, ok := <-r.lines:
 		if !ok {
@@ -108,6 +108,9 @@ func (r *channelReader) Read(p []byte) (int, error) {
 			r.buf = []byte(line[n:])
 		}
 		return n, nil
+	case <-r.done:
+		r.closed = true
+		return 0, io.EOF
 	case <-r.ctx.Done():
 		r.closed = true
 		return 0, io.EOF
@@ -115,7 +118,15 @@ func (r *channelReader) Read(p []byte) (int, error) {
 }
 
 func (r *channelReader) Close() error {
-	r.closed = true
+	if !r.closed {
+		r.closed = true
+		select {
+		case <-r.done:
+			// already closed
+		default:
+			close(r.done)
+		}
+	}
 	return nil
 }
 

@@ -1,7 +1,9 @@
 package exec
 
 import (
+	"fmt"
 	"io"
+	"math"
 	"os"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -70,7 +72,7 @@ func (s StreamSignal) String() string {
 	return "NONE"
 }
 
-// pointer receiver to allow nil signal (when none is actually sent).
+// ToProto converts a StreamSignal value to its proto representation.
 func (s StreamSignal) ToProto() execpb.StreamSignal {
 	switch s {
 	case StreamSignalNone:
@@ -255,12 +257,17 @@ func (r *StreamResize) ToProto() *execpb.ResizeSessionRequest {
 	}
 }
 
-func NewStreamResizeFromProto(p *execpb.ResizeSessionRequest) StreamResize {
+func NewStreamResizeFromProto(p *execpb.ResizeSessionRequest) (StreamResize, error) {
+	cols := p.GetCols()
+	rows := p.GetRows()
+	if cols < 0 || cols > math.MaxUint16 || rows < 0 || rows > math.MaxUint16 {
+		return StreamResize{}, fmt.Errorf("resize dimensions out of range: cols=%d rows=%d", cols, rows)
+	}
 	return StreamResize{
 		SessionID: p.GetId(),
-		Cols:      uint16(p.GetCols()),
-		Rows:      uint16(p.GetRows()),
-	}
+		Cols:      uint16(cols),
+		Rows:      uint16(rows),
+	}, nil
 }
 
 // SessionHandler is the expected signature for a function that creates a new session.

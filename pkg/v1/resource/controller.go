@@ -128,7 +128,7 @@ func (c *resourceController[ClientT]) Find(ctx context.Context, key string, inpu
 	// Validate filters if the Resourcer implements FilterableProvider.
 	connID, _ := c.resolveConnectionID(ctx)
 	if input.Filters != nil {
-		if err := c.validateFilters(key, connID, input.Filters); err != nil {
+		if err := c.validateFilters(ctx, key, connID, input.Filters); err != nil {
 			return nil, err
 		}
 	}
@@ -233,7 +233,12 @@ func (c *resourceController[ClientT]) resolveCRUD(ctx context.Context, key strin
 	}
 
 	conn, _ := c.connMgr.GetConnection(connID)
-	ctx = WithSession(ctx, &Session{Connection: &conn})
+	existing := SessionFromContext(ctx)
+	sess := &Session{Connection: &conn}
+	if existing != nil {
+		sess.PluginConfig = existing.PluginConfig
+	}
+	ctx = WithSession(ctx, sess)
 
 	return res, client, meta, ctx, nil
 }
@@ -293,7 +298,7 @@ func (c *resourceController[ClientT]) classifyError(key string, err error) (clas
 
 // validateFilters checks filter predicates against the FilterableProvider's declared fields.
 // If the Resourcer does not implement FilterableProvider, validation is skipped.
-func (c *resourceController[ClientT]) validateFilters(key, connID string, expr *FilterExpression) error {
+func (c *resourceController[ClientT]) validateFilters(ctx context.Context, key, connID string, expr *FilterExpression) error {
 	if expr == nil {
 		return nil
 	}
@@ -303,7 +308,7 @@ func (c *resourceController[ClientT]) validateFilters(key, connID string, expr *
 		return nil
 	}
 
-	fields, err := c.getFilterFields(key, connID)
+	fields, err := c.getFilterFields(ctx, key, connID)
 	if err != nil {
 		return err
 	}
@@ -318,7 +323,7 @@ func (c *resourceController[ClientT]) validateFilters(key, connID string, expr *
 }
 
 // getFilterFields returns cached filter fields or fetches and caches them.
-func (c *resourceController[ClientT]) getFilterFields(key, connID string) ([]FilterField, error) {
+func (c *resourceController[ClientT]) getFilterFields(ctx context.Context, key, connID string) ([]FilterField, error) {
 	cacheKey := key + "::" + connID
 
 	c.filterFieldCacheMu.RLock()
@@ -333,7 +338,7 @@ func (c *resourceController[ClientT]) getFilterFields(key, connID string) ([]Fil
 		return nil, nil
 	}
 
-	fields, err := fp.FilterFields(context.Background(), connID)
+	fields, err := fp.FilterFields(ctx, connID)
 	if err != nil {
 		return nil, err
 	}

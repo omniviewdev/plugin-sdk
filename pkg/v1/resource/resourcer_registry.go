@@ -342,7 +342,7 @@ func (r *resourcerRegistry[ClientT]) GetEventRetriever(key string) (EventRetriev
 }
 
 // lookupResourcer returns the raw Resourcer for a key (including pattern fallback).
-// Must be called with r.mu held.
+// Must be called with r.mu read-locked (RLock).
 func (r *resourcerRegistry[ClientT]) lookupResourcer(key string) Resourcer[ClientT] {
 	if entry, ok := r.entries[key]; ok {
 		return entry.resourcer
@@ -351,7 +351,7 @@ func (r *resourcerRegistry[ClientT]) lookupResourcer(key string) Resourcer[Clien
 }
 
 // matchPattern finds the most specific pattern match for a key.
-// Must be called with r.mu held.
+// Must be called with r.mu read-locked (RLock).
 func (r *resourcerRegistry[ClientT]) matchPattern(key string) Resourcer[ClientT] {
 	var (
 		bestRes   Resourcer[ClientT]

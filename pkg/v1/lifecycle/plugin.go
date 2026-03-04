@@ -28,5 +28,5 @@ func (p *Plugin) GRPCClient(
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
 ) (interface{}, error) {
-	return &Client{client: lifecyclepb.NewPluginLifecycleClient(c)}, nil
+	return NewClient(lifecyclepb.NewPluginLifecycleClient(c)), nil
 }

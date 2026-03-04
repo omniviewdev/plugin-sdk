@@ -224,7 +224,11 @@ func (h *Harness[ClientT]) Provider() resource.Provider {
 
 // --- Cleanup ---
 
-// Close cancels the harness context and stops all watches/connections.
+// Close cancels the harness context and shuts down the controller if it
+// implements io.Closer (the concrete resourceController does).
 func (h *Harness[ClientT]) Close() {
 	h.cancel()
+	if closer, ok := h.controller.(interface{ Close() }); ok {
+		closer.Close()
+	}
 }

@@ -55,12 +55,18 @@ func TestHarnessCloseSource(t *testing.T) {
 	h.WaitForLines(1, 2*time.Second)
 
 	h.CloseSource("container-1")
-	// Wait a bit for the stream to process the close
-	time.Sleep(200 * time.Millisecond)
-
-	// The source should have triggered readiness (stream ended = mark ready)
-	events := h.Output().Events()
-	t.Logf("received %d events after close", len(events))
+	// Wait for stream-ended event (deterministic)
+	evt := h.WaitForEvent(logs.StreamEventStreamEnded, 2*time.Second)
+	if evt == nil {
+		// Source closing may also trigger source-ready; check events recorded
+		events := h.Output().Events()
+		if len(events) == 0 {
+			t.Fatal("expected at least one event after closing source, got none")
+		}
+		t.Logf("received %d events after close (no StreamEnded, but events present)", len(events))
+	} else {
+		t.Logf("received StreamEnded event after close")
+	}
 }
 
 // TH-005: RecordingOutput WaitForEvent works

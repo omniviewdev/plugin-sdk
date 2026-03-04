@@ -63,6 +63,9 @@ func (h Handler) ToProto() *execpb.ExecHandler {
 }
 
 func HandlerFromProto(p *execpb.ExecHandler) Handler {
+	if p == nil {
+		return Handler{}
+	}
 	return Handler{
 		Plugin:         p.GetPlugin(),
 		Resource:       p.GetResource(),

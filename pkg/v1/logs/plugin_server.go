@@ -3,8 +3,8 @@ package logs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
-	"log"
 
 	"github.com/hashicorp/go-hclog"
 	"google.golang.org/grpc/codes"
@@ -42,10 +42,15 @@ func (s *PluginServer) CreateSession(
 		return nil, status.Errorf(codes.InvalidArgument, "request is nil")
 	}
 
+	var resourceData map[string]interface{}
+	if rd := in.GetResourceData(); rd != nil {
+		resourceData = rd.AsMap()
+	}
+
 	opts := CreateSessionOptions{
 		ResourceKey:  in.GetResourceKey(),
 		ResourceID:   in.GetResourceId(),
-		ResourceData: in.GetResourceData().AsMap(),
+		ResourceData: resourceData,
 		Options:      LogSessionOptionsFromProto(in.GetOptions()),
 	}
 
@@ -160,10 +165,13 @@ func (s *PluginServer) Stream(stream logspb.LogPlugin_StreamServer) error {
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
-			log.Printf("failed to receive log stream: %v", err)
-			continue
+			return fmt.Errorf("failed to receive log stream: %w", err)
 		}
-		multiplexer <- StreamInputFromProto(in)
+		select {
+		case multiplexer <- StreamInputFromProto(in):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 
@@ -176,7 +184,10 @@ func (s *PluginServer) handleOut(
 		select {
 		case <-ctx.Done():
 			return
-		case output := <-out:
+		case output, ok := <-out:
+			if !ok {
+				return
+			}
 			msg := &logspb.LogStreamOutput{
 				SessionId: output.SessionID,
 			}
@@ -191,9 +202,7 @@ func (s *PluginServer) handleOut(
 			}
 
 			if err := stream.Send(msg); err != nil {
-				if ctx.Err() == context.Canceled {
-					return
-				}
+				return
 			}
 		}
 	}

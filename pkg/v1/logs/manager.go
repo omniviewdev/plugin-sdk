@@ -41,6 +41,10 @@ type sessionState struct {
 	sourceMu   sync.Mutex
 	sourceCtxs map[string]context.CancelFunc
 
+	// sourceWg tracks watchSourceEvents and dynamically spawned streamSource
+	// goroutines so orchestrateSession can wait for them before closing done.
+	sourceWg sync.WaitGroup
+
 	// Readiness — totalSources set BEFORE goroutines start (no race)
 	totalSources int32        // immutable after set in orchestrateSession
 	readySources atomic.Int32 // number of sources that sent their first line
@@ -339,7 +343,10 @@ func (m *Manager) Close() {
 
 func (m *Manager) orchestrateSession(ss *sessionState) {
 	defer m.wg.Done()
-	defer close(ss.done)
+	defer func() {
+		ss.sourceWg.Wait()
+		close(ss.done)
+	}()
 
 	logger := m.log.With("session_id", ss.session.ID)
 	opts := ss.opts
@@ -404,7 +411,11 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	// because fanOutSources blocks until all source goroutines complete (which
 	// for Follow=true sessions, only happens when the context is cancelled).
 	if result.Events != nil {
-		go m.watchSourceEvents(ss, h, result.Events, opts, logger)
+		ss.sourceWg.Add(1)
+		go func() {
+			defer ss.sourceWg.Done()
+			m.watchSourceEvents(ss, h, result.Events, opts, logger)
+		}()
 	}
 
 	m.fanOutSources(ss, h, result.Sources, opts, logger)
@@ -633,14 +644,16 @@ func (m *Manager) readStream(
 		line := scanner.Bytes()
 		ts, content := extractTimestamp(line)
 
-		m.sink.OnLine(LogLine{
-			SessionID: ss.session.ID,
-			SourceID:  source.ID,
-			Labels:    source.Labels,
-			Timestamp: ts,
-			Content:   content,
-			Origin:    LogLineOriginCurrent,
-		})
+		if m.sink != nil {
+			m.sink.OnLine(LogLine{
+				SessionID: ss.session.ID,
+				SourceID:  source.ID,
+				Labels:    source.Labels,
+				Timestamp: ts,
+				Content:   content,
+				Origin:    LogLineOriginCurrent,
+			})
+		}
 
 		if firstLine {
 			firstLine = false
@@ -700,7 +713,11 @@ func (m *Manager) watchSourceEvents(
 					Message:   fmt.Sprintf("Source added: %s", event.Source.ID),
 					Timestamp: m.clock.Now(),
 				})
-				go m.streamSource(ss, handler, event.Source, opts, logger)
+				ss.sourceWg.Add(1)
+				go func() {
+					defer ss.sourceWg.Done()
+					m.streamSource(ss, handler, event.Source, opts, logger)
+				}()
 
 			case SourceRemoved:
 				// Cancel the source's streaming goroutine so it stops retrying
@@ -761,6 +778,9 @@ func (m *Manager) handleCommands(ctx context.Context, in <-chan StreamInput) {
 }
 
 func (m *Manager) emitEvent(sessionID string, event LogStreamEvent) {
+	if m.sink == nil {
+		return
+	}
 	m.sink.OnEvent(sessionID, event)
 }
 
@@ -826,7 +846,11 @@ func (m *Manager) updateEnabledSources(ss *sessionState, enabledStr string) {
 
 	logger := m.log.With("session_id", ss.session.ID)
 	for _, src := range toRestart {
-		go m.streamSource(ss, handler, src, ss.opts, logger)
+		ss.sourceWg.Add(1)
+		go func() {
+			defer ss.sourceWg.Done()
+			m.streamSource(ss, handler, src, ss.opts, logger)
+		}()
 		m.emitEvent(ss.session.ID, LogStreamEvent{
 			Type:      StreamEventSourceAdded,
 			SourceID:  src.ID,

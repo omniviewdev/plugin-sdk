@@ -24,9 +24,14 @@ func newHandlerRegistry(handlers map[string]Handler, resolvers map[string]Source
 
 	for fullKey, h := range handlers {
 		r.handlers[fullKey] = h
-		// Extract resource key from "plugin/resource" format
+		// Extract resource key from "plugin/resource" format.
+		// When multiple plugins register the same resource suffix,
+		// choose the lexicographically smallest fullKey for determinism.
 		if parts := strings.SplitN(fullKey, "/", 2); len(parts) == 2 {
-			r.index[parts[1]] = fullKey
+			existing, ok := r.index[parts[1]]
+			if !ok || fullKey < existing {
+				r.index[parts[1]] = fullKey
+			}
 		}
 	}
 
