@@ -358,16 +358,22 @@ func (r *resourcerRegistry[ClientT]) lookupResourcer(key string) Resourcer[Clien
 }
 
 // matchPattern finds the most specific pattern match for a key.
+// When two patterns have the same specificity score, the lexicographically
+// smaller pattern wins to ensure deterministic results regardless of map
+// iteration order.
 // Must be called with r.mu read-locked (RLock).
 func (r *resourcerRegistry[ClientT]) matchPattern(key string) Resourcer[ClientT] {
 	var (
-		bestRes   Resourcer[ClientT]
-		bestScore = -1
+		bestRes     Resourcer[ClientT]
+		bestPattern string
+		bestScore   = -1
 	)
 	for pattern, res := range r.patterns {
-		if score := patternMatchScore(pattern, key); score > bestScore {
+		score := patternMatchScore(pattern, key)
+		if score > bestScore || (score == bestScore && score >= 0 && pattern < bestPattern) {
 			bestScore = score
 			bestRes = res
+			bestPattern = pattern
 		}
 	}
 	return bestRes

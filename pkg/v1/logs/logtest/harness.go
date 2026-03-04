@@ -62,7 +62,7 @@ func Mount(t *testing.T, opts ...HarnessOption) *Harness {
 	handlers := make(map[string]logs.Handler)
 	for sourceID, src := range cfg.sources {
 		if src == nil {
-			continue
+			t.Fatalf("nil source registered for %q — test setup bug", sourceID)
 		}
 		handlers["test/"+sourceID] = logs.Handler{
 			Plugin:        "test",

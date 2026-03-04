@@ -97,7 +97,12 @@ func (c *PluginClient) StreamMetrics(
 	go func() {
 		defer close(out)
 		for i := range in {
-			if err := stream.Send(streamInputToProto(i)); err != nil {
+			msg, err := streamInputToProto(i)
+			if err != nil {
+				log.Printf("failed to convert metric stream input to proto: %v", err)
+				return
+			}
+			if err := stream.Send(msg); err != nil {
 				log.Printf("failed to send metric stream input: %v", err)
 				return
 			}

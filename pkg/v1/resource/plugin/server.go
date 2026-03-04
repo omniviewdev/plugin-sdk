@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math"
 	"sync"
 
 	commonpb "github.com/omniviewdev/plugin-sdk/proto/v1/common"
@@ -24,6 +25,17 @@ type server struct {
 // NewServer creates a gRPC server wrapping the given Provider.
 func NewServer(provider resource.Provider, sp settings.Provider) resourcepb.ResourcePluginServer {
 	return &server{provider: provider, settings: sp}
+}
+
+// clampInt32 safely converts an int to int32, clamping to math.MaxInt32 on overflow.
+func clampInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < 0 {
+		return 0
+	}
+	return int32(v)
 }
 
 // injectSession creates a context with session info from a connection ID.
@@ -72,7 +84,11 @@ func (s *server) StartConnection(ctx context.Context, req *resourcepb.Connection
 	if err != nil {
 		return nil, err
 	}
-	return &resourcepb.ConnectionStatusResponse{Status: connectionStatusToProto(status)}, nil
+	pbStatus, err := connectionStatusToProto(status)
+	if err != nil {
+		return nil, err
+	}
+	return &resourcepb.ConnectionStatusResponse{Status: pbStatus}, nil
 }
 
 func (s *server) StopConnection(ctx context.Context, req *resourcepb.ConnectionRequest) (*resourcepb.ConnectionResponse, error) {
@@ -136,7 +152,7 @@ func (s *server) List(ctx context.Context, req *resourcepb.ListRequest) (*resour
 		for _, item := range result.Result {
 			resp.Items = append(resp.Items, []byte(item))
 		}
-		resp.Total = int32(result.TotalCount)
+		resp.Total = clampInt32(result.TotalCount)
 		resp.NextCursor = result.NextCursor
 	}
 	return resp, nil
@@ -164,7 +180,7 @@ func (s *server) Find(ctx context.Context, req *resourcepb.FindRequest) (*resour
 		for _, item := range result.Result {
 			resp.Items = append(resp.Items, []byte(item))
 		}
-		resp.Total = int32(result.TotalCount)
+		resp.Total = clampInt32(result.TotalCount)
 		resp.NextCursor = result.NextCursor
 	}
 	return resp, nil
@@ -334,7 +350,9 @@ func safeClose[T any](ch chan T) {
 }
 
 func (s *server) StreamAction(req *resourcepb.ExecuteActionRequest, stream resourcepb.ResourcePlugin_StreamActionServer) error {
-	ctx := s.injectSession(stream.Context(), req.GetConnectionId())
+	ctx, cancel := context.WithCancel(s.injectSession(stream.Context(), req.GetConnectionId()))
+	defer cancel()
+
 	input := actionInputFromProto(req.GetInput())
 
 	ch := make(chan resource.ActionEvent, 16)

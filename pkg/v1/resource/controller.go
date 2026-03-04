@@ -23,6 +23,10 @@ type resourceController[ClientT any] struct {
 	closed      atomic.Bool // tracks whether Close() has been called
 
 	// filterFieldCache caches FilterFields results per "resourceKey::connID".
+	// Cardinality is bounded by (registered resource types) x (active connections),
+	// which is small in practice (typically tens to low hundreds of entries).
+	// Entries are never evicted because filter fields are static per resource type
+	// and connection; the cache is released when the controller is garbage-collected.
 	filterFieldCacheMu sync.RWMutex
 	filterFieldCache   map[string][]FilterField
 }
@@ -389,14 +393,14 @@ func (c *resourceController[ClientT]) StartConnection(ctx context.Context, conne
 		return status, err
 	}
 
-	// Run discovery FIRST so we know which resource types are available.
+	// Post-connect setup: discovery and watches are best-effort.
+	// The connection is operational for CRUD even if these fail;
+	// individual watch failures are reported via WatchState events.
 	conn, _ := c.connMgr.GetConnection(connectionID)
 	_ = c.typeMgr.DiscoverForConnection(ctx, &conn)
 
-	// Get the set of discovered types (nil if no discovery provider — watches all).
 	discoveredTypes := c.typeMgr.DiscoveredKeySet(connectionID)
 
-	// Start watches with discovery filter.
 	client, _ := c.connMgr.GetClient(connectionID)
 	connCtx, _ := c.connMgr.GetConnectionCtx(connectionID)
 	_ = c.watchMgr.StartConnectionWatch(ctx, connectionID, client, connCtx, discoveredTypes)
@@ -439,7 +443,9 @@ func (c *resourceController[ClientT]) UpdateConnection(ctx context.Context, conn
 		return result, err
 	}
 
-	// If the connection was active, the client was restarted — re-discover and restart watches.
+	// If the connection was active, the client was restarted — re-discover and
+	// restart watches. These are best-effort; the update itself succeeded and
+	// individual watch failures are reported via WatchState events.
 	if wasActive && c.connMgr.IsStarted(conn.ID) {
 		_ = c.watchMgr.StopConnectionWatch(ctx, conn.ID)
 

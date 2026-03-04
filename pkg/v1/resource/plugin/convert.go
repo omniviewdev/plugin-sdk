@@ -81,12 +81,12 @@ var connectionStatusCodeFromProto = map[commonpb.ConnectionState]types.Connectio
 	commonpb.ConnectionState_CONNECTION_STATE_RECONNECTING: types.ConnectionStatusDisconnected, // no Reconnecting status; Disconnected is safest
 }
 
-func connectionStatusToProto(cs types.ConnectionStatus) *commonpb.ConnectionStatus {
+func connectionStatusToProto(cs types.ConnectionStatus) (*commonpb.ConnectionStatus, error) {
 	var conn *commonpb.Connection
 	if cs.Connection != nil {
 		c, err := connectionToProto(*cs.Connection)
 		if err != nil {
-			return nil
+			return nil, fmt.Errorf("connectionStatusToProto: %w", err)
 		}
 		conn = c
 	}
@@ -99,7 +99,7 @@ func connectionStatusToProto(cs types.ConnectionStatus) *commonpb.ConnectionStat
 		State:      state,
 		Message:    cs.Details,
 		Error:      cs.Error,
-	}
+	}, nil
 }
 
 func connectionStatusFromProto(pb *commonpb.ConnectionStatus) types.ConnectionStatus {
@@ -483,11 +483,15 @@ func orderFieldFromProto(pb *resourcepb.OrderField) resource.OrderField {
 
 func paginationToProto(p resource.PaginationParams) *resourcepb.PaginationParams {
 	page := p.Page
-	if page > math.MaxInt32 {
+	if page < 0 {
+		page = 0
+	} else if page > math.MaxInt32 {
 		page = math.MaxInt32
 	}
 	pageSize := p.PageSize
-	if pageSize > math.MaxInt32 {
+	if pageSize < 0 {
+		pageSize = 0
+	} else if pageSize > math.MaxInt32 {
 		pageSize = math.MaxInt32
 	}
 	return &resourcepb.PaginationParams{

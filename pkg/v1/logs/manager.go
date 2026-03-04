@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -259,6 +260,12 @@ func (m *Manager) ListSessions(_ *types.PluginContext) ([]*LogSession, error) {
 		snap := ss.snapshot()
 		sessions = append(sessions, &snap)
 	}
+
+	// Sort by ID for deterministic output (map iteration order is random).
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].ID < sessions[j].ID
+	})
+
 	return sessions, nil
 }
 

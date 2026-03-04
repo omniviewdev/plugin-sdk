@@ -177,7 +177,11 @@ func (c *PluginClient) Stream(
 				output.Event = &event
 			}
 
-			out <- output
+			select {
+			case out <- output:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 

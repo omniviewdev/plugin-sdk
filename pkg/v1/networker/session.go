@@ -138,6 +138,10 @@ func (s *PortForwardSession) ToProto() *networkerpb.PortForwardSession {
 
 // NewPortForwardSessionFromProto creates a PortForwardSession from a protobuf.
 func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) *PortForwardSession {
+	if s == nil {
+		return &PortForwardSession{}
+	}
+
 	// switch on the connection type
 	var connection interface{}
 	var connectionType string
@@ -163,6 +167,7 @@ func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) *PortForw
 		CreatedAt:      createdAt,
 		UpdatedAt:      updatedAt,
 		Labels:         s.GetLabels(),
+		Protocol:       PortForwardProtocolFromProto(s.GetProtocol()),
 		State:          sessionStateFromProto(s.GetState()),
 		Encryption:     PortForwardSessionEncryptionFromProto(s.GetEncryption()),
 		ConnectionType: connectionType,
@@ -278,6 +283,9 @@ func (c *PortForwardStaticConnection) ToSessionOptionsProto() *networkerpb.PortF
 func PortForwardStaticConnectionFromProto(
 	o *networkerpb.PortForwardStaticConnection,
 ) PortForwardStaticConnection {
+	if o == nil {
+		return PortForwardStaticConnection{}
+	}
 	return PortForwardStaticConnection{
 		Address: o.GetAddress(),
 	}
@@ -386,6 +394,10 @@ func (o *PortForwardSessionOptions) ToProto() *networkerpb.PortForwardSessionOpt
 func NewPortForwardSessionOptionsFromProto(
 	o *networkerpb.PortForwardSessionOptions,
 ) *PortForwardSessionOptions {
+	if o == nil {
+		return &PortForwardSessionOptions{}
+	}
+
 	// switch on the connection type
 	var connection interface{}
 	var connectionType PortForwardConnectionType
@@ -429,6 +441,9 @@ func (p FindPortForwardSessionRequest) ToProto() *networkerpb.FindPortForwardSes
 func NewFindPortForwardSessionRequestFromProto(
 	p *networkerpb.FindPortForwardSessionRequest,
 ) FindPortForwardSessionRequest {
+	if p == nil {
+		return FindPortForwardSessionRequest{}
+	}
 	return FindPortForwardSessionRequest{
 		ResourceID:   p.GetResourceId(),
 		ConnectionID: p.GetConnectionId(),

@@ -1350,10 +1350,13 @@ func TestListSessionsWithActiveSessions(t *testing.T) {
 		t.Errorf("expected 3 sessions, got %d", len(sessions))
 	}
 
-	// Verify all session IDs are present
+	// Verify all session IDs are present and CreatedAt is set
 	idSet := make(map[string]bool)
 	for _, s := range sessions {
 		idSet[s.ID] = true
+		if s.CreatedAt.IsZero() {
+			t.Errorf("session %s has zero CreatedAt", s.ID)
+		}
 	}
 	for _, id := range ids {
 		if !idSet[id] {
@@ -2417,6 +2420,15 @@ func TestUpdateEnabledSourcesReEnable(t *testing.T) {
 	src.Lines <- "init-a"
 	src.Lines <- "init-b"
 	output.WaitForEvent(logs.StreamEventSessionReady, 2*time.Second)
+
+	// Verify initial events start with SOURCE_ADDED
+	initialEvents := output.Events()
+	if len(initialEvents) == 0 {
+		t.Fatal("expected at least one event after session ready")
+	}
+	if initialEvents[0].Type != logs.StreamEventSourceAdded {
+		t.Errorf("first event should be SOURCE_ADDED, got %v", initialEvents[0].Type)
+	}
 
 	// Disable src-b
 	_, err = mgr.UpdateSessionOptions(pctx, session.ID, logs.LogSessionOptions{

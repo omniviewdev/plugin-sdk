@@ -1059,6 +1059,7 @@ func TestSC018_ConcurrentCRUDAndWatchRestart(t *testing.T) {
 
 	testCtx := resourcetest.NewTestContext()
 
+	errs := make(chan error, 21) // 10 Gets + 10 Lists + 1 RestartResourceWatch
 	var wg sync.WaitGroup
 
 	// 10 concurrent Get calls.
@@ -1068,7 +1069,7 @@ func TestSC018_ConcurrentCRUDAndWatchRestart(t *testing.T) {
 			defer wg.Done()
 			_, err := ctrl.Get(testCtx, "core::v1::Pod", resource.GetInput{ID: "pod-1"})
 			if err != nil {
-				t.Errorf("concurrent Get: %v", err)
+				errs <- fmt.Errorf("concurrent Get: %w", err)
 			}
 		}()
 	}
@@ -1080,7 +1081,7 @@ func TestSC018_ConcurrentCRUDAndWatchRestart(t *testing.T) {
 			defer wg.Done()
 			_, err := ctrl.List(testCtx, "core::v1::Pod", resource.ListInput{})
 			if err != nil {
-				t.Errorf("concurrent List: %v", err)
+				errs <- fmt.Errorf("concurrent List: %w", err)
 			}
 		}()
 	}
@@ -1091,11 +1092,15 @@ func TestSC018_ConcurrentCRUDAndWatchRestart(t *testing.T) {
 		defer wg.Done()
 		err := ctrl.RestartResourceWatch(ctx, "conn-1", "core::v1::Pod")
 		if err != nil {
-			t.Errorf("RestartResourceWatch: %v", err)
+			errs <- fmt.Errorf("RestartResourceWatch: %w", err)
 		}
 	}()
 
 	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
 }
 
 // --- SC-019: ListenForEvents — listener disconnects and reconnects ---
@@ -1315,6 +1320,7 @@ func TestSC022_SlowCreateClientBlocksOnlyThatConnection(t *testing.T) {
 	// Start both connections concurrently.
 	var wg sync.WaitGroup
 	wg.Add(2)
+	conn2Err := make(chan error, 1)
 
 	go func() {
 		defer wg.Done()
@@ -1325,7 +1331,7 @@ func TestSC022_SlowCreateClientBlocksOnlyThatConnection(t *testing.T) {
 		defer wg.Done()
 		_, err := ctrl.StartConnection(ctx, "conn-2") // fast
 		if err != nil {
-			t.Errorf("start conn-2: %v", err)
+			conn2Err <- fmt.Errorf("start conn-2: %w", err)
 			return
 		}
 		conn2Ready.Store(true)
@@ -1356,4 +1362,8 @@ func TestSC022_SlowCreateClientBlocksOnlyThatConnection(t *testing.T) {
 	}
 
 	wg.Wait()
+	close(conn2Err)
+	for err := range conn2Err {
+		t.Error(err)
+	}
 }

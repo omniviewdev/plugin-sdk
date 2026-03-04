@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/hashicorp/go-hclog"
 	"google.golang.org/grpc/codes"
@@ -94,20 +93,44 @@ func (s *PluginServer) StreamMetrics(stream metricpb.MetricPlugin_StreamMetricsS
 	// handle the output
 	go s.handleOut(ctx, out, stream)
 
-	// handle the input
-	for {
-		var in *metricpb.MetricStreamInput
-		in, err = stream.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
+	// handle the input — run Recv in a goroutine so we can also
+	// react to ctx cancellation if the stream hangs.
+	type recvResult struct {
+		msg *metricpb.MetricStreamInput
+		err error
+	}
+	recvCh := make(chan recvResult, 1)
+
+	go func() {
+		for {
+			msg, recvErr := stream.Recv()
+			select {
+			case recvCh <- recvResult{msg: msg, err: recvErr}:
+			case <-ctx.Done():
+				return
 			}
-			return fmt.Errorf("failed to receive metric stream: %w", err)
+			if recvErr != nil {
+				return
+			}
 		}
+	}()
+
+	for {
 		select {
-		case multiplexer <- streamInputFromProto(in):
 		case <-ctx.Done():
 			return ctx.Err()
+		case r := <-recvCh:
+			if r.err != nil {
+				if errors.Is(r.err, io.EOF) {
+					return nil
+				}
+				return status.Errorf(codes.Internal, "recv error: %v", r.err)
+			}
+			select {
+			case multiplexer <- streamInputFromProto(r.msg):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 	}
 }
@@ -162,7 +185,7 @@ func streamInputFromProto(p *metricpb.MetricStreamInput) StreamInput {
 	return si
 }
 
-func streamInputToProto(si StreamInput) *metricpb.MetricStreamInput {
+func streamInputToProto(si StreamInput) (*metricpb.MetricStreamInput, error) {
 	p := &metricpb.MetricStreamInput{
 		SubscriptionId:    si.SubscriptionID,
 		Command:           si.Command.ToProto(),
@@ -175,10 +198,9 @@ func streamInputToProto(si StreamInput) *metricpb.MetricStreamInput {
 	if si.ResourceData != nil {
 		data, err := structpb.NewStruct(si.ResourceData)
 		if err != nil {
-			log.Printf("[metric-stream] failed to convert ResourceData to proto Struct: %v", err)
-		} else {
-			p.ResourceData = data
+			return nil, fmt.Errorf("failed to convert ResourceData to proto Struct: %w", err)
 		}
+		p.ResourceData = data
 	}
-	return p
+	return p, nil
 }

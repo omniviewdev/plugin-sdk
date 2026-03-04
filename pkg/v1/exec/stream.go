@@ -187,6 +187,9 @@ func NewStreamErrorFromProto(p *execpb.StreamError) *StreamError {
 }
 
 func (o *StreamOutput) ToProto() *execpb.StreamOutput {
+	if o == nil {
+		return &execpb.StreamOutput{}
+	}
 	var target execpb.StreamOutput_Target
 	switch o.Target {
 	case StreamTargetStdOut:
@@ -194,7 +197,7 @@ func (o *StreamOutput) ToProto() *execpb.StreamOutput {
 	case StreamTargetStdErr:
 		target = execpb.StreamOutput_STDERR
 	default:
-		return nil
+		target = execpb.StreamOutput_STDOUT
 	}
 	return &execpb.StreamOutput{
 		Id:     o.SessionID,
@@ -235,6 +238,9 @@ type StreamInput struct {
 }
 
 func (i *StreamInput) ToProto() *execpb.StreamInput {
+	if i == nil {
+		return &execpb.StreamInput{}
+	}
 	return &execpb.StreamInput{
 		Id:   i.SessionID,
 		Data: i.Data,
@@ -242,6 +248,9 @@ func (i *StreamInput) ToProto() *execpb.StreamInput {
 }
 
 func NewStreamInputFromProto(p *execpb.StreamInput) StreamInput {
+	if p == nil {
+		return StreamInput{}
+	}
 	return StreamInput{
 		SessionID: p.GetId(),
 		Data:      p.GetData(),
@@ -255,6 +264,9 @@ type StreamResize struct {
 }
 
 func (r *StreamResize) ToProto() *execpb.ResizeSessionRequest {
+	if r == nil {
+		return &execpb.ResizeSessionRequest{}
+	}
 	return &execpb.ResizeSessionRequest{
 		Id:   r.SessionID,
 		Cols: int32(r.Cols),
