@@ -53,9 +53,7 @@ func (s *StubResourceForwarder) ForwardResource(
 			close(errCh)
 		}()
 	} else {
-		go func() {
-			close(errCh) // clean exit
-		}()
+		close(errCh) // clean exit
 	}
 
 	return &networker.ForwarderResult{
@@ -79,8 +77,14 @@ func (s *StubResourceForwarder) RecordedOpts() []networker.ResourcePortForwardHa
 
 // StubStaticForwarder implements networker.StaticForwarder with configurable behavior.
 type StubStaticForwarder struct {
+	// FailWith causes ForwardStatic to return this error immediately.
 	FailWith error
-	calls    atomic.Int32
+
+	// FailAfter causes the ErrCh to emit this error after Ready closes.
+	// Simulates a tunnel that starts successfully but dies later.
+	FailAfter error
+
+	calls atomic.Int32
 }
 
 var _ networker.StaticForwarder = (*StubStaticForwarder)(nil)
@@ -99,8 +103,17 @@ func (s *StubStaticForwarder) ForwardStatic(
 	sessionID := uuid.NewString()
 	ready := make(chan struct{})
 	errCh := make(chan error, 1)
-	close(ready)
-	go func() { close(errCh) }()
+
+	close(ready) // immediately ready
+
+	if s.FailAfter != nil {
+		go func() {
+			errCh <- s.FailAfter
+			close(errCh)
+		}()
+	} else {
+		close(errCh) // clean exit
+	}
 
 	return &networker.ForwarderResult{
 		SessionID: sessionID,

@@ -62,15 +62,27 @@ func newConnectionManager[ClientT any](rootCtx context.Context, provider Connect
 	}
 }
 
-// LoadConnections delegates to the ConnectionProvider and caches the results.
+// LoadConnections delegates to the ConnectionProvider and reconciles the cache,
+// removing stale entries that are no longer returned by the provider.
 func (m *connectionManager[ClientT]) LoadConnections(ctx context.Context) ([]types.Connection, error) {
 	conns, err := m.provider.LoadConnections(ctx)
 	if err != nil {
 		return nil, err
 	}
-	m.mu.Lock()
+	fresh := make(map[string]types.Connection, len(conns))
 	for _, c := range conns {
-		m.loaded[c.ID] = c
+		fresh[c.ID] = c
+	}
+	m.mu.Lock()
+	// Remove stale entries not present in the fresh set.
+	for id := range m.loaded {
+		if _, ok := fresh[id]; !ok {
+			delete(m.loaded, id)
+		}
+	}
+	// Upsert fresh entries.
+	for id, c := range fresh {
+		m.loaded[id] = c
 	}
 	m.mu.Unlock()
 	return conns, nil

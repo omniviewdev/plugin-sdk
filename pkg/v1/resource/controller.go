@@ -27,8 +27,9 @@ type resourceController[ClientT any] struct {
 	// filterFieldCache caches FilterFields results per "resourceKey::connID".
 	// Cardinality is bounded by (registered resource types) x (active connections),
 	// which is small in practice (typically tens to low hundreds of entries).
-	// Entries are never evicted because filter fields are static per resource type
-	// and connection; the cache is released when the controller is garbage-collected.
+	// Entries are evicted when the underlying connection is updated or deleted
+	// (driven by UpdateConnection/DeleteConnection handlers); otherwise they
+	// remain until controller GC.
 	filterFieldCacheMu sync.RWMutex
 	filterFieldCache   map[string][]FilterField
 }
@@ -103,12 +104,11 @@ func (c *resourceController[ClientT]) Get(ctx context.Context, key string, input
 }
 
 func (c *resourceController[ClientT]) List(ctx context.Context, key string, input ListInput) (result *ListResult, retErr error) {
-	c.maybeEnsureWatch(ctx, key)
-
 	res, client, meta, ctx, err := c.resolveCRUD(ctx, key)
 	if err != nil {
 		return nil, err
 	}
+	c.maybeEnsureWatch(ctx, key)
 	defer func() {
 		if r := recover(); r != nil {
 			retErr = c.classifyError(key, fmt.Errorf("resourcer panic in List: %v", r))
@@ -502,10 +502,22 @@ func (c *resourceController[ClientT]) DeleteConnection(ctx context.Context, id s
 	if c.watchMgr.HasWatch(id) {
 		_ = c.watchMgr.StopConnectionWatch(ctx, id)
 	}
+
+	// Retrieve connection data before deletion for OnConnectionRemoved.
+	conn, connErr := c.connMgr.GetConnection(id)
+
+	if err := c.connMgr.DeleteConnection(ctx, id); err != nil {
+		return err
+	}
+
+	// Post-deletion cleanup: evict caches and notify type manager.
 	c.evictFilterFieldCache(id)
-	conn, _ := c.connMgr.GetConnection(id)
-	_ = c.typeMgr.OnConnectionRemoved(ctx, &conn)
-	return c.connMgr.DeleteConnection(ctx, id)
+	if connErr == nil {
+		// Best-effort: deletion succeeded, so we don't fail the call if
+		// type manager cleanup encounters an error.
+		_ = c.typeMgr.OnConnectionRemoved(ctx, &conn)
+	}
+	return nil
 }
 
 func (c *resourceController[ClientT]) WatchConnections(ctx context.Context, stream chan<- []types.Connection) error {

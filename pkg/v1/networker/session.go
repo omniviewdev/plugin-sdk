@@ -431,6 +431,9 @@ type PortForwardSessionEncryption struct {
 }
 
 func (o *PortForwardSessionEncryption) ToProto() *networkerpb.PortForwardSessionEncryption {
+	if o == nil {
+		return nil
+	}
 	return &networkerpb.PortForwardSessionEncryption{
 		Enabled:   o.Enabled,
 		Algorithm: o.Algorithm,

@@ -282,7 +282,7 @@ func (m *Manager) CloseSession(_ *types.PluginContext, sessionID string) error {
 	// to prevent blocking forever if a goroutine is stuck.
 	select {
 	case <-ss.done:
-	case <-time.After(10 * time.Second):
+	case <-m.clock.After(10 * time.Second):
 		m.log.Warn("CloseSession timed out waiting for goroutines", "session_id", sessionID)
 	}
 	return nil
@@ -313,14 +313,17 @@ func (m *Manager) UpdateSessionOptions(
 }
 
 func (m *Manager) Stream(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
+	m.mu.Lock()
 	if m.sink == nil {
 		m.out = make(chan StreamOutput, 256)
 		m.sink = NewChannelSink(ctx, m.out)
 	}
+	out := m.out
+	m.mu.Unlock()
 
 	go m.handleCommands(ctx, in)
 
-	return m.out, nil
+	return out, nil
 }
 
 // Wait blocks until all session goroutines finish.
@@ -647,8 +650,11 @@ func (m *Manager) readStream(
 		line := scanner.Bytes()
 		ts, content := extractTimestamp(line)
 
-		if m.sink != nil {
-			m.sink.OnLine(LogLine{
+		m.mu.RLock()
+		sink := m.sink
+		m.mu.RUnlock()
+		if sink != nil {
+			sink.OnLine(LogLine{
 				SessionID: ss.session.ID,
 				SourceID:  source.ID,
 				Labels:    source.Labels,
@@ -781,10 +787,13 @@ func (m *Manager) handleCommands(ctx context.Context, in <-chan StreamInput) {
 }
 
 func (m *Manager) emitEvent(sessionID string, event LogStreamEvent) {
-	if m.sink == nil {
+	m.mu.RLock()
+	sink := m.sink
+	m.mu.RUnlock()
+	if sink == nil {
 		return
 	}
-	m.sink.OnEvent(sessionID, event)
+	sink.OnEvent(sessionID, event)
 }
 
 func (m *Manager) closeAll() {
