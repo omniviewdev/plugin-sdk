@@ -272,7 +272,7 @@ func (m *Manager) StartPortForwardSession(
 		CreatedAt:      now,
 		UpdatedAt:      now,
 		Labels:         labels,
-		Connection:     opts.Connection,
+		Connection:     cloneConnection(opts.Connection),
 		ID:             sessionID,
 		Protocol:       opts.Protocol,
 		State:          SessionStateActive,

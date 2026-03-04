@@ -367,7 +367,12 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	ss.sourceSem = make(chan struct{}, MaxConcurrentStreamsPerSession)
 
 	logger := m.log.With(logging.String("session_id", ss.session.ID))
+
+	// Copy opts under the session lock — UpdateSessionOptions writes
+	// ss.opts.Options under ss.mu, so reads must be synchronized.
+	ss.mu.RLock()
 	opts := ss.opts
+	ss.mu.RUnlock()
 
 	// Try direct handler first
 	handler, hasHandler := m.registry.FindHandler(opts.ResourceKey)
@@ -534,6 +539,9 @@ func (m *Manager) launchSource(
 		ss.sourceMu.Lock()
 		delete(ss.sourceCtxs, source.ID)
 		ss.sourceMu.Unlock()
+		// Count as "ready" so the session doesn't get stuck in INITIALIZING
+		// waiting for a source that will never stream.
+		m.markSourceReady(ss, source.ID)
 		return
 	}
 	defer func() { <-ss.sourceSem }()
@@ -543,6 +551,7 @@ func (m *Manager) launchSource(
 		ss.sourceMu.Lock()
 		delete(ss.sourceCtxs, source.ID)
 		ss.sourceMu.Unlock()
+		m.markSourceReady(ss, source.ID)
 		return
 	}
 
@@ -917,8 +926,13 @@ func (m *Manager) updateEnabledSources(ss *sessionState, enabledStr string) {
 		m.emitEvent(ss.session.ID, evt)
 	}
 
+	// Copy opts under the session lock for the same reason as orchestrateSession.
+	ss.mu.RLock()
+	opts := ss.opts
+	ss.mu.RUnlock()
+
 	// Find a handler for restarting
-	handler, ok := m.registry.FindHandler(ss.opts.ResourceKey)
+	handler, ok := m.registry.FindHandler(opts.ResourceKey)
 	if !ok {
 		handler, ok = m.registry.AnyHandler()
 	}
@@ -929,10 +943,10 @@ func (m *Manager) updateEnabledSources(ss *sessionState, enabledStr string) {
 	logger := m.log.With(logging.String("session_id", ss.session.ID))
 	for _, src := range toRestart {
 		ss.sourceWg.Add(1)
-		go func() {
+		go func(s LogSource) {
 			defer ss.sourceWg.Done()
-			m.launchSource(ss, handler, src, ss.opts, logger)
-		}()
+			m.launchSource(ss, handler, s, opts, logger)
+		}(src)
 		m.emitEvent(ss.session.ID, LogStreamEvent{
 			Type:      StreamEventSourceAdded,
 			SourceID:  src.ID,

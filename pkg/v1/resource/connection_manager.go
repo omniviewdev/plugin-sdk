@@ -305,6 +305,7 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 		return conn, nil
 	}
 
+	origState := state
 	oldClient := state.client
 	oldCancel := state.cancel
 	capturedGen := state.gen
@@ -325,10 +326,10 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 
 	m.mu.Lock()
 	// Re-verify the connection wasn't stopped/deleted or concurrently updated
-	// while we were unlocked. Generation comparison catches in-place mutations
-	// that pointer equality would miss.
+	// while we were unlocked. Pointer equality catches delete+recreate with
+	// the same gen; generation comparison catches in-place mutations.
 	currentState, stillActive := m.conns[conn.ID]
-	if !stillActive || currentState.gen != capturedGen {
+	if !stillActive || currentState != origState || currentState.gen != capturedGen {
 		// Connection was removed, replaced, or updated by another goroutine.
 		newCancel()
 		_ = m.provider.DestroyClient(ctx, newClient)
@@ -382,7 +383,11 @@ func (m *connectionManager[ClientT]) DeleteConnection(ctx context.Context, conne
 
 	if isActive {
 		state.cancel()
-		_ = m.provider.DestroyClient(ctx, state.client)
+		connForDestroy := cloneConnection(state.conn)
+		destroyCtx := WithSession(ctx, &Session{Connection: &connForDestroy})
+		if err := m.provider.DestroyClient(destroyCtx, state.client); err != nil {
+			return fmt.Errorf("destroy client for %q: %w", connectionID, err)
+		}
 	}
 	return nil
 }

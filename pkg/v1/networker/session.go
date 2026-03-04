@@ -173,8 +173,37 @@ func (e *sessionEntry) snapshot() PortForwardSession {
 	e.mu.RLock()
 	cp := e.session
 	cp.Labels = maps.Clone(e.session.Labels)
+	cp.Connection = cloneConnection(e.session.Connection)
 	e.mu.RUnlock()
 	return cp
+}
+
+// cloneConnection returns a deep copy of a Connection interface value.
+// Value types are already copied by the interface assignment; pointer types
+// and map fields need explicit cloning.
+func cloneConnection(c Connection) Connection {
+	switch v := c.(type) {
+	case PortForwardResourceConnection:
+		v.ResourceData = maps.Clone(v.ResourceData)
+		return v
+	case *PortForwardResourceConnection:
+		if v == nil {
+			return nil
+		}
+		cp := *v
+		cp.ResourceData = maps.Clone(v.ResourceData)
+		return cp
+	case PortForwardStaticConnection:
+		return v
+	case *PortForwardStaticConnection:
+		if v == nil {
+			return nil
+		}
+		cp := *v
+		return cp
+	default:
+		return c
+	}
 }
 
 // ---------------------------------------------------------------------------

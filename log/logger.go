@@ -133,6 +133,9 @@ func (l *logger) Log(ctx context.Context, level Level, msg string, fields ...Fie
 	if !l.Enabled(ctx, level) {
 		return
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	all := make([]Field, 0, len(l.fields)+len(fields)+8)
 	all = append(all, l.fields...)
 	all = append(all, enrichFromContext(ctx)...)
