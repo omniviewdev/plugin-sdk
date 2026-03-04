@@ -2,80 +2,26 @@ package exec
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
+	"sync"
 	"time"
 
-	"github.com/google/uuid" // UUID package for generating unique identifiers.
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
 
-// Session represents an individual terminal session (shell session with a tty).
+// Session is a snapshot value type — safe for concurrent reads, returned by
+// the public API. It carries no mutable internal state.
 type Session struct {
-	CreatedAt time.Time               `json:"created_at"`
-	ctx       context.Context         `json:"-"`
-	pty       *os.File                `json:"-"`
-	tty       *os.File                `json:"-"`
-	resize    chan SessionResizeInput `json:"-"`
-	ttyResize bool                    `json:"-"`
-	cancel    context.CancelFunc      `json:"-"`
-	stopChan  chan error              `json:"-"`
-	buffer    *OutputBuffer           `json:"-"`
-	Labels    map[string]string       `json:"labels"`
-	Params    map[string]string       `json:"params"`
-	ID        string                  `json:"id"`
-	Command   []string                `json:"command"`
-	Attached  bool                    `json:"attached"`
-}
-
-func (s *Session) Close() {
-	s.cancel()
-	s.pty.Close()
-}
-
-func (s *Session) Write(data []byte) (int, error) {
-	if s.pty == nil {
-		return 0, errors.New("pty is nil")
-	}
-	return s.pty.Write(data)
-}
-
-func (s *Session) GetBufferData() []byte {
-	if s.buffer == nil {
-		return []byte{}
-	}
-	return s.buffer.GetAll()
-}
-
-func (s *Session) SetPty(pty *os.File) {
-	s.pty = pty
-}
-
-func (s *Session) SetTty(tty *os.File) {
-	s.tty = tty
-}
-
-func (s *Session) GetPty() *os.File {
-	return s.pty
-}
-
-func (s *Session) GetTty() *os.File {
-	return s.tty
-}
-
-func (s *Session) GetCanceller() context.CancelFunc {
-	return s.cancel
-}
-
-func (s *Session) RecordToBuffer(data []byte) {
-	if s.buffer == nil {
-		return
-	}
-	s.buffer.Append(data)
+	CreatedAt time.Time         `json:"created_at"`
+	Labels    map[string]string `json:"labels"`
+	Params    map[string]string `json:"params"`
+	ID        string            `json:"id"`
+	Command   []string          `json:"command"`
+	Attached  bool              `json:"attached"`
 }
 
 func (s *Session) ToProto() *execpb.Session {
@@ -103,28 +49,75 @@ func NewSessionFromProto(s *execpb.Session) *Session {
 	}
 }
 
-func NewSessionFromOpts(
-	ctx context.Context,
-	canceller context.CancelFunc,
-	opts SessionOptions,
-) *Session {
-	// Generate a unique ID for the session.
-	if opts.ID == "" {
-		opts.ID = uuid.NewString()
-	}
+// ---------------------------------------------------------------------------
+// sessionState — internal mutable state per session (not exported)
+// ---------------------------------------------------------------------------
 
-	return &Session{
-		CreatedAt: time.Now(),
-		ctx:       ctx,
-		cancel:    canceller,
-		buffer:    NewDefaultOutputBuffer(),
-		Labels:    opts.Labels,
-		Params:    opts.Params,
-		ID:        opts.ID,
-		Command:   opts.Command,
-		Attached:  false,
-	}
+// sessionState holds the mutable state for a running session. Access is
+// protected by mu. The manager goroutines (handleStream, handleSignals)
+// interact with this via methods, never directly touching fields.
+type sessionState struct {
+	mu       sync.RWMutex
+	session  Session // snapshot fields
+	terminal Terminal
+	buffer   *OutputBuffer
+
+	ctx      context.Context
+	cancel   context.CancelFunc
+	stopChan chan error
+	resize   chan SessionResizeInput
+	done     chan struct{}   // closed when wg reaches zero
+	wg       sync.WaitGroup // tracks handleStream + handleSignals
+
+	ttyResize bool // if true, manager calls terminal.Resize(); else sends to resize chan
 }
+
+// snapshot returns a deep copy of the session for safe external reads.
+func (ss *sessionState) snapshot() Session {
+	ss.mu.RLock()
+	cp := ss.session
+	// Deep-copy maps
+	if ss.session.Labels != nil {
+		cp.Labels = make(map[string]string, len(ss.session.Labels))
+		for k, v := range ss.session.Labels {
+			cp.Labels[k] = v
+		}
+	}
+	if ss.session.Params != nil {
+		cp.Params = make(map[string]string, len(ss.session.Params))
+		for k, v := range ss.session.Params {
+			cp.Params[k] = v
+		}
+	}
+	if ss.session.Command != nil {
+		cp.Command = make([]string, len(ss.session.Command))
+		copy(cp.Command, ss.session.Command)
+	}
+	ss.mu.RUnlock()
+	return cp
+}
+
+func (ss *sessionState) setAttached(v bool) {
+	ss.mu.Lock()
+	ss.session.Attached = v
+	ss.mu.Unlock()
+}
+
+func (ss *sessionState) getBufferData() []byte {
+	if ss.buffer == nil {
+		return nil
+	}
+	return ss.buffer.GetAll()
+}
+
+// waitDone blocks until all goroutines for this session have finished.
+func (ss *sessionState) waitDone() <-chan struct{} {
+	return ss.done
+}
+
+// ---------------------------------------------------------------------------
+// SessionOptions
+// ---------------------------------------------------------------------------
 
 // SessionOptions contains options for creating a new terminal session.
 type SessionOptions struct {
@@ -173,7 +166,16 @@ func (o *SessionOptions) ToProto() (*execpb.SessionOptions, error) {
 	}, nil
 }
 
+// SessionResizeInput carries resize dimensions for a session.
 type SessionResizeInput struct {
 	Rows int32 `json:"rows"`
 	Cols int32 `json:"cols"`
+}
+
+// ensureSessionID returns the ID or generates a new UUID.
+func ensureSessionID(id string) string {
+	if id == "" {
+		return uuid.NewString()
+	}
+	return id
 }

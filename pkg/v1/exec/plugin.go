@@ -34,6 +34,8 @@ type Provider interface {
 	ResizeSession(ctx *types.PluginContext, sessionID string, cols, rows int32) error
 	// Stream starts a new stream to multiplex sessions
 	Stream(context.Context, chan StreamInput) (chan StreamOutput, error)
+	// Close shuts down the provider, releasing all resources.
+	Close()
 }
 
 type Plugin struct {
@@ -70,11 +72,11 @@ func RegisterPlugin(
 		handlers[handler.Plugin+"/"+handler.Resource] = handler
 	}
 
-	impl := NewManager(
-		p.HCLLogger,
-		p.SettingsProvider,
-		handlers,
-	)
+	impl := NewManager(ManagerConfig{
+		Logger:   p.HCLLogger,
+		Settings: p.SettingsProvider,
+		Handlers: handlers,
+	})
 
 	p.RegisterCapability("exec", &Plugin{Impl: impl})
 	return nil

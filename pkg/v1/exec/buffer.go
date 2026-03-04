@@ -2,11 +2,11 @@ package exec
 
 import "sync"
 
-// OutputBuffer stores terminal output lines, providing a fixed-size cyclic buffer.
+// OutputBuffer stores terminal output bytes, providing a fixed-size cyclic buffer.
 type OutputBuffer struct {
-	buf      []byte     // The buffer.
-	capacity int        // maximum number of bytes to store.
-	lock     sync.Mutex // Protect concurrent access to lines.
+	buf      []byte
+	capacity int
+	lock     sync.Mutex
 }
 
 // NewOutputBuffer initializes an OutputBuffer with a specified capacity.
@@ -17,28 +17,34 @@ func NewOutputBuffer(capacity int) *OutputBuffer {
 	}
 }
 
+// NewDefaultOutputBuffer creates an OutputBuffer with DefaultOutputBufferSize.
 func NewDefaultOutputBuffer() *OutputBuffer {
-	return &OutputBuffer{
-		buf:      make([]byte, 0, DefaultOutputBufferSize),
-		capacity: DefaultOutputBufferSize,
-	}
+	return NewOutputBuffer(DefaultOutputBufferSize)
 }
 
-// Append adds a line to the buffer, managing overflow by removing the oldest line.
+// Append adds data to the buffer, evicting the oldest bytes when capacity is exceeded.
 func (b *OutputBuffer) Append(data []byte) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
-	//
-	// // If the new data will exceed the buffer's capacity, remove the oldest data to make room.
-	// if len(b.buf)+len(data) > b.capacity {
-	// 	b.buf = b.buf[len(data):]
-	// }
+
 	b.buf = append(b.buf, data...)
+
+	// Cyclic eviction: if we've exceeded capacity, trim from the front.
+	if len(b.buf) > b.capacity {
+		b.buf = b.buf[len(b.buf)-b.capacity:]
+	}
 }
 
-// GetAll retrieves a copy of all stored lines in the buffer.
+// GetAll retrieves a copy of all stored bytes in the buffer.
 func (b *OutputBuffer) GetAll() []byte {
 	b.lock.Lock()
 	defer b.lock.Unlock()
-	return append([]byte(nil), b.buf...) // Return a copy to avoid external modifications.
+	return append([]byte(nil), b.buf...)
+}
+
+// Len returns the current number of bytes in the buffer.
+func (b *OutputBuffer) Len() int {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+	return len(b.buf)
 }

@@ -21,6 +21,26 @@ type PluginServer struct {
 	Impl Provider
 }
 
+// grpcCodeForError maps ExecSessionError codes to gRPC status codes.
+func grpcCodeForError(err error) codes.Code {
+	var sessionErr *ExecSessionError
+	if errors.As(err, &sessionErr) {
+		switch sessionErr.Code {
+		case ErrCodeSessionNotFound:
+			return codes.NotFound
+		case ErrCodeHandlerNotFound:
+			return codes.NotFound
+		case ErrCodeSessionClosed:
+			return codes.FailedPrecondition
+		case ErrCodeTerminalError:
+			return codes.Internal
+		case ErrCodeSessionExists:
+			return codes.AlreadyExists
+		}
+	}
+	return codes.Internal
+}
+
 func (s *PluginServer) GetSupportedResources(
 	ctx context.Context,
 	_ *emptypb.Empty,
@@ -44,7 +64,7 @@ func (s *PluginServer) GetSession(
 	}
 	resp, err := s.Impl.GetSession(types.PluginContextFromContext(ctx), in.GetId())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get session: %v", err)
+		return nil, status.Errorf(grpcCodeForError(err), "%v", err)
 	}
 
 	return &execpb.GetSessionResponse{
@@ -62,7 +82,7 @@ func (s *PluginServer) ListSessions(
 	}
 	resp, err := s.Impl.ListSessions(types.PluginContextFromContext(ctx))
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to list sessions: %v", err)
+		return nil, status.Errorf(grpcCodeForError(err), "%v", err)
 	}
 
 	sessions := make([]*execpb.Session, 0, len(resp))
@@ -88,7 +108,7 @@ func (s *PluginServer) CreateSession(
 		*NewSessionOptionsFromProto(in),
 	)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create session: %v", err)
+		return nil, status.Errorf(grpcCodeForError(err), "%v", err)
 	}
 
 	return &execpb.CreateSessionResponse{
@@ -106,7 +126,7 @@ func (s *PluginServer) AttachSession(
 	}
 	resp, buffer, err := s.Impl.AttachSession(types.PluginContextFromContext(ctx), in.GetId())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to attach session: %v", err)
+		return nil, status.Errorf(grpcCodeForError(err), "%v", err)
 	}
 
 	return &execpb.AttachSessionResponse{
@@ -124,7 +144,7 @@ func (s *PluginServer) DetachSession(
 	}
 	resp, err := s.Impl.DetachSession(types.PluginContextFromContext(ctx), in.GetId())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to detach session: %v", err)
+		return nil, status.Errorf(grpcCodeForError(err), "%v", err)
 	}
 
 	return &execpb.AttachSessionResponse{
@@ -140,7 +160,7 @@ func (s *PluginServer) CloseSession(
 		return nil, status.Errorf(codes.InvalidArgument, "request is nil")
 	}
 	if err := s.Impl.CloseSession(types.PluginContextFromContext(ctx), in.GetId()); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to close session: %v", err)
+		return nil, status.Errorf(grpcCodeForError(err), "%v", err)
 	}
 	return &execpb.CloseSessionResponse{
 		Success: true,
@@ -160,7 +180,7 @@ func (s *PluginServer) ResizeSession(
 		in.GetCols(),
 		in.GetRows(),
 	); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to resize session: %v", err)
+		return nil, status.Errorf(grpcCodeForError(err), "%v", err)
 	}
 
 	return &execpb.ResizeSessionResponse{

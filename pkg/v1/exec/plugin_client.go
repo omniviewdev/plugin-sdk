@@ -132,6 +132,9 @@ func (c *PluginClient) ResizeSession(
 	return err
 }
 
+// Close is a no-op on the client side — the server manages session lifecycle.
+func (c *PluginClient) Close() {}
+
 func (c *PluginClient) Stream(
 	ctx context.Context,
 	in chan StreamInput,

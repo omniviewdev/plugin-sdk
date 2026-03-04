@@ -2,11 +2,8 @@ package exec
 
 import (
 	"fmt"
-	"io"
 	"math"
-	"os"
 
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
 
@@ -292,27 +289,3 @@ func NewStreamResizeFromProto(p *execpb.ResizeSessionRequest) (StreamResize, err
 		Rows:      uint16(rows),
 	}, nil
 }
-
-// SessionHandler is the expected signature for a function that creates a new session.
-//
-// The session handler should start a new session against the given resource and return
-// the standard input, output, and error streams which will be multiplexed to the client.
-type SessionHandler func(ctx *types.PluginContext, opts SessionOptions) (
-	stdin io.Writer,
-	stdout io.Reader,
-	stderr io.Reader,
-	err error,
-)
-
-// TTYHandler is the expected signature for a function that creates a new session with a TTY.
-// It is passed the TTY file descriptor for the session, and a resize channel that will receive
-// resize events for the TTY, of which.
-type TTYHandler func(ctx *types.PluginContext, opts SessionOptions, tty *os.File, stopCh chan error, resize <-chan SessionResizeInput) error
-
-// CommandHandler is the expected signature for the non-tty handler. It should immediately return it's
-// standard output and error.
-type CommandHandler func(ctx *types.PluginContext, opts SessionOptions) (
-	stdout io.Reader,
-	stderr io.Reader,
-	err error,
-)

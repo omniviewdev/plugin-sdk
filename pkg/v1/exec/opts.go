@@ -1,6 +1,10 @@
 package exec
 
 import (
+	"io"
+	"os"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	commonpb "github.com/omniviewdev/plugin-sdk/proto/v1/common"
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
@@ -41,15 +45,16 @@ func ActionTargetBuilderFromProto(p *commonpb.ActionTargetBuilder) ActionTargetB
 	}
 }
 
-// Handler handles performs running commands and creating sessions for a resource.
+// Handler handles running commands and creating sessions for a resource.
 type Handler struct {
 	Plugin         string              `json:"plugin"`
 	Resource       string              `json:"resource"`
 	TargetBuilder  ActionTargetBuilder `json:"target_builder"`
 	DefaultCommand []string            `json:"default_command"`
-	TTYHandler     TTYHandler          `json:"-"`
+	TTYHandler     TTYHandlerFunc      `json:"-"`
 	CommandHandler CommandHandler      `json:"-"`
-	// if the handler supports resizing, it will be sent through the channel instead of the pty file
+	// HandlesResize: if true, resize events are sent through the channel
+	// instead of via terminal.Resize().
 	HandlesResize bool `json:"-"`
 }
 
@@ -81,3 +86,35 @@ func (h Handler) ID() string {
 func (h Handler) String() string {
 	return h.ID()
 }
+
+// ---------------------------------------------------------------------------
+// Handler function types
+// ---------------------------------------------------------------------------
+
+// TTYHandlerFunc is the expected signature for a function that creates a new
+// session with a TTY. It is passed the TTY file descriptor, a stop channel
+// for signalling errors, and a receive-only resize channel.
+//
+// Renamed from TTYHandler to avoid confusion with the Handler struct.
+type TTYHandlerFunc func(
+	ctx *types.PluginContext,
+	opts SessionOptions,
+	tty *os.File,
+	stopCh chan error,
+	resize <-chan SessionResizeInput,
+) error
+
+// CommandHandler is the expected signature for a non-TTY handler. It should
+// immediately return its standard output and error readers.
+type CommandHandler func(
+	ctx *types.PluginContext,
+	opts SessionOptions,
+) (stdout io.Reader, stderr io.Reader, err error)
+
+// SessionHandler is the expected signature for a function that creates a new
+// session, returning the standard input, output, and error streams which will
+// be multiplexed to the client.
+type SessionHandler func(
+	ctx *types.PluginContext,
+	opts SessionOptions,
+) (stdin io.Writer, stdout io.Reader, stderr io.Reader, err error)
