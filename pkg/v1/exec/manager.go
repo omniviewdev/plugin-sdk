@@ -362,11 +362,13 @@ func (m *Manager) handleStream(ss *sessionState) {
 		}
 
 		if read > 0 {
-			m.emitOutput(StreamOutput{
-				SessionID: ss.session.ID,
-				Target:    StreamTargetStdOut,
-				Data:      buf[:read],
-			})
+			if ss.isAttached() {
+				m.emitOutput(StreamOutput{
+					SessionID: ss.session.ID,
+					Target:    StreamTargetStdOut,
+					Data:      buf[:read],
+				})
+			}
 			ss.buffer.Append(buf[:read])
 		}
 	}
@@ -492,10 +494,11 @@ func (m *Manager) CloseSession(_ *types.PluginContext, sessionID string) error {
 	// Wait for session goroutines to complete with a safety timeout.
 	select {
 	case <-ss.waitDone():
+		return nil
 	case <-m.clock.After(10 * time.Second):
 		m.log.Warn("CloseSession timed out waiting for goroutines", "session_id", sessionID)
+		return fmt.Errorf("CloseSession timed out waiting for session %s goroutines", sessionID)
 	}
-	return nil
 }
 
 // ResizeSession resizes a session.

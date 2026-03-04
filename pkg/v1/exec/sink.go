@@ -10,7 +10,7 @@ type OutputSink interface {
 
 // ChannelSink writes StreamOutput to a channel with context-aware sends.
 // This is the production implementation used by Stream(). If the context
-// is cancelled (e.g., gRPC stream closed), sends are dropped instead of
+// is cancelled (e.g., gRPC stream closed), sends may be dropped instead of
 // blocking forever on a full channel.
 type ChannelSink struct {
 	ctx context.Context
@@ -18,10 +18,10 @@ type ChannelSink struct {
 }
 
 // NewChannelSink creates a ChannelSink wrapping the given output channel.
-// The context controls the lifetime — sends are dropped after cancellation.
+// The context controls the lifetime — sends may be dropped after cancellation.
 // If ctx is nil, context.Background() is used. If out is nil, a buffered
 // drop channel is created (output is silently discarded).
-func NewChannelSink(ctx context.Context, out chan StreamOutput) *ChannelSink {
+func NewChannelSink(ctx context.Context, out chan<- StreamOutput) *ChannelSink {
 	if ctx == nil {
 		ctx = context.Background()
 	}

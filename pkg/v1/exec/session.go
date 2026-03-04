@@ -106,6 +106,12 @@ func (ss *sessionState) setAttached(v bool) {
 	ss.mu.Unlock()
 }
 
+func (ss *sessionState) isAttached() bool {
+	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return ss.session.Attached
+}
+
 func (ss *sessionState) getBufferData() []byte {
 	if ss.buffer == nil {
 		return nil

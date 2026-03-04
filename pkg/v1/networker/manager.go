@@ -197,6 +197,16 @@ func (m *Manager) StartPortForwardSession(
 
 	sessionID := uuid.NewString()
 
+	// Reject new sessions if the manager is shutting down, before starting
+	// any external forwarder work that may have side effects.
+	m.mu.RLock()
+	shuttingDown := m.stopped
+	m.mu.RUnlock()
+	if shuttingDown {
+		cancel()
+		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("manager is shutting down"))
+	}
+
 	var result *ForwarderResult
 
 	switch opts.ConnectionType {
@@ -381,8 +391,8 @@ func (m *Manager) monitorSession(entry *sessionEntry, errCh <-chan error) {
 	defer m.wg.Done()
 
 	err, ok := <-errCh
-	if !ok {
-		// Channel closed cleanly — transition to STOPPED.
+	if !ok || err == nil {
+		// Channel closed or nil error — clean stop.
 		if transErr := entry.transition(SessionStateStopped); transErr != nil {
 			m.log.Debug("monitor: transition to STOPPED failed", "session_id", entry.session.ID, "error", transErr)
 		}
