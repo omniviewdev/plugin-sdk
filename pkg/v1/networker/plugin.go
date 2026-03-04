@@ -18,7 +18,7 @@ const (
 )
 
 type PortForwardProvider interface {
-	GetSupportedPortForwardTargets(*types.PluginContext) []string
+	GetSupportedPortForwardTargets(*types.PluginContext) ([]string, error)
 	GetPortForwardSession(*types.PluginContext, string) (*PortForwardSession, error)
 	ListPortForwardSessions(*types.PluginContext) ([]*PortForwardSession, error)
 	FindPortForwardSessions(
@@ -30,6 +30,7 @@ type PortForwardProvider interface {
 		PortForwardSessionOptions,
 	) (*PortForwardSession, error)
 	ClosePortForwardSession(*types.PluginContext, string) (*PortForwardSession, error)
+	StopAll()
 }
 
 // Provider is the interface satisfied by the plugin server and client
@@ -64,10 +65,10 @@ func RegisterPlugin(
 		return errors.New("plugin is nil")
 	}
 
-	impl := NewManager(
-		p.SettingsProvider,
-		opts,
-	)
+	impl := NewManager(ManagerConfig{
+		Logger:   p.HCLLogger,
+		Settings: p.SettingsProvider,
+	}, opts)
 
 	p.RegisterCapability(PluginID, &Plugin{Impl: impl})
 	return nil

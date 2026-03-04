@@ -2,8 +2,11 @@ package networker
 
 import (
 	"context"
+	"errors"
 
 	"github.com/hashicorp/go-hclog"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -11,17 +14,41 @@ import (
 )
 
 type PluginServer struct {
+	networkerpb.UnimplementedNetworkerPluginServer
 	log  hclog.Logger
 	Impl Provider
 }
 
-// ============================== PORT FORWARDING ============================== //
+// grpcCodeForError maps NetworkerError codes to gRPC status codes.
+func grpcCodeForNetworkerError(err error) codes.Code {
+	var nerr *NetworkerError
+	if errors.As(err, &nerr) {
+		switch nerr.Code {
+		case ErrCodeSessionNotFound:
+			return codes.NotFound
+		case ErrCodeNoHandlerFound:
+			return codes.NotFound
+		case ErrCodePortUnavailable:
+			return codes.FailedPrecondition
+		case ErrCodeForwarderFailed:
+			return codes.Internal
+		case ErrCodeInvalidStateTransition:
+			return codes.FailedPrecondition
+		case ErrCodeInvalidConnectionType:
+			return codes.InvalidArgument
+		}
+	}
+	return codes.Internal
+}
 
 func (s *PluginServer) GetSupportedPortForwardTargets(
 	ctx context.Context,
 	_ *emptypb.Empty,
 ) (*networkerpb.GetSupportedPortForwardTargetsResponse, error) {
-	resp := s.Impl.GetSupportedPortForwardTargets(types.PluginContextFromContext(ctx))
+	resp, err := s.Impl.GetSupportedPortForwardTargets(types.PluginContextFromContext(ctx))
+	if err != nil {
+		return nil, status.Errorf(grpcCodeForNetworkerError(err), "%v", err)
+	}
 
 	return &networkerpb.GetSupportedPortForwardTargetsResponse{
 		Resources: resp,
@@ -34,7 +61,7 @@ func (s *PluginServer) GetPortForwardSession(
 ) (*networkerpb.PortForwardSessionByIdResponse, error) {
 	resp, err := s.Impl.GetPortForwardSession(types.PluginContextFromContext(ctx), in.GetId())
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(grpcCodeForNetworkerError(err), "%v", err)
 	}
 
 	return &networkerpb.PortForwardSessionByIdResponse{
@@ -48,7 +75,7 @@ func (s *PluginServer) ListPortForwardSessions(
 ) (*networkerpb.PortForwardSessionListResponse, error) {
 	resp, err := s.Impl.ListPortForwardSessions(types.PluginContextFromContext(ctx))
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(grpcCodeForNetworkerError(err), "%v", err)
 	}
 	sessions := make([]*networkerpb.PortForwardSession, 0, len(resp))
 	for _, session := range resp {
@@ -69,7 +96,7 @@ func (s *PluginServer) FindPortForwardSessions(
 		NewFindPortForwardSessionRequestFromProto(in),
 	)
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(grpcCodeForNetworkerError(err), "%v", err)
 	}
 
 	sessions := make([]*networkerpb.PortForwardSession, 0, len(resp))
@@ -91,7 +118,7 @@ func (s *PluginServer) StartPortForwardSession(
 		*NewPortForwardSessionOptionsFromProto(in),
 	)
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(grpcCodeForNetworkerError(err), "%v", err)
 	}
 
 	return &networkerpb.PortForwardSessionByIdResponse{
@@ -108,7 +135,7 @@ func (s *PluginServer) ClosePortForwardSession(
 		in.GetId(),
 	)
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(grpcCodeForNetworkerError(err), "%v", err)
 	}
 
 	return &networkerpb.PortForwardSessionByIdResponse{

@@ -15,20 +15,18 @@ type PluginClient struct {
 
 var _ Provider = (*PluginClient)(nil)
 
-// ============================== PORT FORWARDING ============================== //
-
 // GetSupportedPortForwardTargets returns the list of targets that are supported
 // by this plugin for port forwarding.
-func (p *PluginClient) GetSupportedPortForwardTargets(ctx *types.PluginContext) []string {
+func (p *PluginClient) GetSupportedPortForwardTargets(ctx *types.PluginContext) ([]string, error) {
 	resp, err := p.client.GetSupportedPortForwardTargets(
 		types.WithPluginContext(context.Background(), ctx),
 		&emptypb.Empty{},
 	)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
-	return resp.GetResources()
+	return resp.GetResources(), nil
 }
 
 // GetPortForwardSession returns a port forward session by ID.
@@ -118,3 +116,6 @@ func (p *PluginClient) ClosePortForwardSession(
 
 	return NewPortForwardSessionFromProto(resp.GetSession()), nil
 }
+
+// StopAll is a no-op on the client side — the server manages session lifecycle.
+func (p *PluginClient) StopAll() {}

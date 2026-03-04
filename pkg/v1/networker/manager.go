@@ -2,97 +2,118 @@ package networker
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hashicorp/go-hclog"
-	"github.com/omniviewdev/plugin-sdk/settings"
-
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
+	"github.com/omniviewdev/plugin-sdk/settings"
 )
 
-type targetType int
+const defaultCloseTimeout = 10 * time.Second
+const readyTimeout = 30 * time.Second
 
-const (
-	targetTypeResource targetType = iota
-	targetTypeStatic
-)
-
-type sessionStoreEntry struct {
-	session    *PortForwardSession
-	cancel     func()
-	targetType targetType
-}
-
-// Manager manages the lifecycle of networker actions, such as port forwarding
-// sessions.
+// Manager manages the lifecycle of networker actions, such as port forwarding sessions.
 type Manager struct {
-	log                    hclog.Logger
-	settingsProvider       settings.Provider
-	resourcePortForwarders map[string]ResourcePortForwarder
-	staticPortForwarders   map[string]StaticPortForwarder
-	sessions               map[string]sessionStoreEntry
-	sync.RWMutex
-}
+	log              hclog.Logger
+	settingsProvider settings.Provider
+	portChecker      PortChecker
+	clock            timeutil.Clock
+	closeTimeout     time.Duration
 
-func NewManager(
-	settingsProvider settings.Provider,
-	opts PluginOpts,
-) *Manager {
-	m := &Manager{
-		log:                    hclog.Default().With("service", "NetworkerManager"),
-		settingsProvider:       settingsProvider,
-		resourcePortForwarders: make(map[string]ResourcePortForwarder),
-		staticPortForwarders:   make(map[string]StaticPortForwarder),
-		sessions:               make(map[string]sessionStoreEntry),
-	}
+	resourceForwarders map[string]ResourceForwarder
+	staticForwarders   map[string]StaticForwarder
 
-	if opts.ResourcePortForwarders != nil {
-		m.resourcePortForwarders = opts.ResourcePortForwarders
-	}
-	if opts.StaticPortForwarders != nil {
-		m.staticPortForwarders = opts.StaticPortForwarders
-	}
 
-	return m
+	mu       sync.RWMutex
+	sessions map[string]*sessionEntry
+	wg       sync.WaitGroup // tracks monitor goroutines
 }
 
 var _ Provider = (*Manager)(nil)
 
-func (m *Manager) GetSupportedPortForwardTargets(_ *types.PluginContext) []string {
-	resources := make([]string, 0, len(m.resourcePortForwarders))
-	for rt := range m.resourcePortForwarders {
-		resources = append(resources, rt)
+// NewManager creates a new Manager with the given config and plugin opts.
+func NewManager(cfg ManagerConfig, opts PluginOpts) *Manager {
+	logger := cfg.Logger
+	if logger == nil {
+		logger = hclog.NewNullLogger()
 	}
 
-	return resources
+	clk := cfg.Clock
+	if clk == nil {
+		clk = timeutil.RealClock{}
+	}
+
+	pc := cfg.PortChecker
+	if pc == nil {
+		pc = RealPortChecker{}
+	}
+
+	closeTimeout := cfg.CloseTimeout
+	if closeTimeout == 0 {
+		closeTimeout = defaultCloseTimeout
+	}
+
+	rf := opts.ResourceForwarders
+	if rf == nil {
+		rf = make(map[string]ResourceForwarder)
+	}
+	sf := opts.StaticForwarders
+	if sf == nil {
+		sf = make(map[string]StaticForwarder)
+	}
+
+	return &Manager{
+		log:                logger.Named("NetworkerManager"),
+		settingsProvider:   cfg.Settings,
+		portChecker:        pc,
+		clock:              clk,
+		closeTimeout:       closeTimeout,
+		resourceForwarders: rf,
+		staticForwarders:   sf,
+		sessions:           make(map[string]*sessionEntry),
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Provider implementation
+// ---------------------------------------------------------------------------
+
+func (m *Manager) GetSupportedPortForwardTargets(_ *types.PluginContext) ([]string, error) {
+	resources := make([]string, 0, len(m.resourceForwarders))
+	for rt := range m.resourceForwarders {
+		resources = append(resources, rt)
+	}
+	return resources, nil
 }
 
 func (m *Manager) GetPortForwardSession(
 	_ *types.PluginContext,
 	sessionID string,
 ) (*PortForwardSession, error) {
-	m.RLock()
-	defer m.RUnlock()
+	m.mu.RLock()
+	entry, ok := m.sessions[sessionID]
+	m.mu.RUnlock()
 
-	session, ok := m.sessions[sessionID]
 	if !ok {
-		return nil, errors.New("session not found")
+		return nil, NewSessionNotFoundError(sessionID)
 	}
 
-	return session.session, nil
+	snap := entry.snapshot()
+	return &snap, nil
 }
 
 func (m *Manager) ListPortForwardSessions(_ *types.PluginContext) ([]*PortForwardSession, error) {
-	m.RLock()
-	defer m.RUnlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
 	sessions := make([]*PortForwardSession, 0, len(m.sessions))
 	for _, entry := range m.sessions {
-		sessions = append(sessions, entry.session)
+		snap := entry.snapshot()
+		sessions = append(sessions, &snap)
 	}
 	return sessions, nil
 }
@@ -101,118 +122,70 @@ func (m *Manager) FindPortForwardSessions(
 	_ *types.PluginContext,
 	req FindPortForwardSessionRequest,
 ) ([]*PortForwardSession, error) {
-	log.Printf(
-		"finding port forward requests for resource %s and connection %s\n",
-		req.ResourceID,
-		req.ConnectionID,
-	)
-
-	m.RLock()
-	defer m.RUnlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
 	sessions := make([]*PortForwardSession, 0)
 	for _, entry := range m.sessions {
+		snap := entry.snapshot()
+
 		passesResourceCheck := req.ResourceID == ""
 		passesConnectionCheck := req.ConnectionID == ""
 
-		// need to type assert connection since it could be a static session
-		if entry.session == nil {
-			continue
-		}
-
-		resource, ok := entry.session.Connection.(PortForwardResourceConnection)
-		if ok {
-			passesResourceCheck = resource.ResourceID == req.ResourceID
-			passesConnectionCheck = resource.ConnectionID == req.ConnectionID
+		if resource, ok := snap.Connection.(PortForwardResourceConnection); ok {
+			if req.ResourceID != "" {
+				passesResourceCheck = resource.ResourceID == req.ResourceID
+			}
+			if req.ConnectionID != "" {
+				passesConnectionCheck = resource.ConnectionID == req.ConnectionID
+			}
 		}
 
 		if passesResourceCheck && passesConnectionCheck {
-			sessions = append(sessions, entry.session)
+			sessions = append(sessions, &snap)
 		}
 	}
-
-	log.Printf(
-		"found %d port forward requests for resource %s and connection %s\n",
-		len(sessions),
-		req.ResourceID,
-		req.ConnectionID,
-	)
 
 	return sessions, nil
 }
 
-func (m *Manager) handleResourcePortForward(
-	ctx *types.PluginContext,
-	opts PortForwardSessionOptions,
-) (string, error) {
-	resource, ok := opts.Connection.(PortForwardResourceConnection)
-	if !ok {
-		return "", errors.New("connection is not a resource port forward connection")
-	}
-
-	specificOpts := ResourcePortForwardHandlerOpts{
-		Options:  opts,
-		Resource: resource,
-	}
-
-	log.Printf("looking for resource port forwarder for key: %s\n", resource.ResourceKey)
-
-	handler, ok := m.resourcePortForwarders[resource.ResourceKey]
-	if !ok {
-		return "", errors.New("no handler found for resource port forward")
-	}
-
-	return handler(ctx, specificOpts)
-}
-
-func (m *Manager) handleStaticPortForward(
-	_ *types.PluginContext,
-	_ PortForwardSessionOptions,
-) (string, error) {
-	// TODO: implement static port forwarding once we determine best approach and use cases.
-	return "", errors.New("static port forwarding is not yet supported")
-}
-
 func (m *Manager) StartPortForwardSession(
-	ctx *types.PluginContext,
+	pluginctx *types.PluginContext,
 	opts PortForwardSessionOptions,
 ) (*PortForwardSession, error) {
-	m.Lock()
-	defer m.Unlock()
+	logger := m.log.With("connection_type", opts.ConnectionType)
 
-	log.Printf("starting session with opts: %v\n", opts)
-	log.Printf("connection type: %s", string(opts.ConnectionType))
-
-	var target targetType
-	var resultID string
+	// Resolve port
 	var err error
-
-	// handler will rely on context cancellation for cleanup
-	cancellable, cancel := context.WithCancel(ctx.Context)
-	ctx.Context = cancellable
-
-	// make sure our port is available to listen on, assigning a random one if not specified
 	if opts.LocalPort == 0 {
-		opts.LocalPort, err = FindFreeTCPPort()
+		opts.LocalPort, err = m.portChecker.FindFreePort()
 		if err != nil {
-			cancel()
 			return nil, err
 		}
-	} else if IsPortUnavailable(opts.LocalPort) {
-		cancel()
-		return nil, errors.New("source port is unavailable to listen on")
+	} else if m.portChecker.IsPortUnavailable(opts.LocalPort) {
+		return nil, NewPortUnavailableError(opts.LocalPort)
 	}
+
+	// Shallow-copy PluginContext
+	pctxCopy := *pluginctx
+	ctx, cancel := context.WithCancel(pluginctx.Context)
+	pctxCopy.Context = ctx
+	if m.settingsProvider != nil {
+		pctxCopy.SetSettingsProvider(m.settingsProvider)
+	}
+
+	sessionID := uuid.NewString()
+
+	var result *ForwarderResult
 
 	switch opts.ConnectionType {
 	case PortForwardConnectionTypeResource:
-		target = targetTypeResource
-		resultID, err = m.handleResourcePortForward(ctx, opts)
+		result, err = m.handleResourceForward(ctx, &pctxCopy, opts)
 	case PortForwardConnectionTypeStatic:
-		target = targetTypeStatic
-		resultID, err = m.handleStaticPortForward(ctx, opts)
+		result, err = m.handleStaticForward(ctx, &pctxCopy, opts)
 	default:
 		cancel()
-		return nil, fmt.Errorf("unsupported connection type %s", string(opts.ConnectionType))
+		return nil, NewInvalidConnectionTypeError(string(opts.ConnectionType))
 	}
 
 	if err != nil {
@@ -220,45 +193,167 @@ func (m *Manager) StartPortForwardSession(
 		return nil, err
 	}
 
-	log.Printf("created port forward session")
-	log.Printf("connection type for port forward session: %T", opts.Connection)
+	// Use session ID from the forwarder if it provided one, otherwise use ours.
+	if result.SessionID != "" {
+		sessionID = result.SessionID
+	}
 
-	newSession := &PortForwardSession{
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+	// Wait for the forwarder to report ready (or fail).
+	if result.Ready != nil {
+		select {
+		case <-result.Ready:
+			// tunnel established
+		case err := <-result.ErrCh:
+			cancel()
+			return nil, NewForwarderFailedError(sessionID, err)
+		case <-m.clock.After(readyTimeout):
+			cancel()
+			return nil, NewForwarderFailedError(sessionID, fmt.Errorf("timed out waiting for tunnel to be ready"))
+		}
+	}
+
+	now := m.clock.Now()
+	newSession := PortForwardSession{
+		CreatedAt:      now,
+		UpdatedAt:      now,
 		Labels:         opts.Labels,
 		Connection:     opts.Connection,
-		ID:             resultID,
+		ID:             sessionID,
 		Protocol:       opts.Protocol,
 		State:          SessionStateActive,
-		ConnectionType: string(opts.ConnectionType),
+		ConnectionType: opts.ConnectionType,
 		Encryption:     opts.Encryption,
 		LocalPort:      opts.LocalPort,
 		RemotePort:     opts.RemotePort,
 	}
 
-	m.sessions[resultID] = sessionStoreEntry{
-		targetType: target,
-		session:    newSession,
-		cancel:     cancel,
+	entry := &sessionEntry{
+		session: newSession,
+		cancel:  cancel,
 	}
 
-	return newSession, nil
+	m.mu.Lock()
+	m.sessions[sessionID] = entry
+	m.mu.Unlock()
+
+	logger.Debug("port forward session started", "session_id", sessionID)
+
+	// Monitor for post-start failures.
+	if result.ErrCh != nil {
+		m.wg.Add(1)
+		go m.monitorSession(entry, result.ErrCh)
+	}
+
+	snap := entry.snapshot()
+	return &snap, nil
+}
+
+func (m *Manager) handleResourceForward(
+	ctx context.Context,
+	pctx *types.PluginContext,
+	opts PortForwardSessionOptions,
+) (*ForwarderResult, error) {
+	resource, ok := opts.Connection.(PortForwardResourceConnection)
+	if !ok {
+		return nil, NewInvalidConnectionTypeError("connection is not a resource")
+	}
+
+	forwarder, ok := m.resourceForwarders[resource.ResourceKey]
+	if !ok {
+		return nil, NewNoHandlerFoundError(resource.ResourceKey)
+	}
+
+	handlerOpts := ResourcePortForwardHandlerOpts{
+		Options:  opts,
+		Resource: resource,
+	}
+
+	return forwarder.ForwardResource(ctx, pctx, handlerOpts)
+}
+
+func (m *Manager) handleStaticForward(
+	ctx context.Context,
+	pctx *types.PluginContext,
+	opts PortForwardSessionOptions,
+) (*ForwarderResult, error) {
+	static, ok := opts.Connection.(PortForwardStaticConnection)
+	if !ok {
+		return nil, NewInvalidConnectionTypeError("connection is not static")
+	}
+
+	forwarder, ok := m.staticForwarders[static.Address]
+	if !ok {
+		return nil, NewNoHandlerFoundError(static.Address)
+	}
+
+	handlerOpts := StaticPortForwardHandlerOpts{
+		Options: opts,
+		Static:  static,
+	}
+
+	return forwarder.ForwardStatic(ctx, pctx, handlerOpts)
+}
+
+// monitorSession watches for post-start failures from a forwarder's ErrCh.
+func (m *Manager) monitorSession(entry *sessionEntry, errCh <-chan error) {
+	defer m.wg.Done()
+
+	err, ok := <-errCh
+	if !ok {
+		// Channel closed cleanly — transition to STOPPED.
+		if transErr := entry.transition(SessionStateStopped); transErr != nil {
+			m.log.Debug("monitor: transition to STOPPED failed", "session_id", entry.session.ID, "error", transErr)
+		}
+		return
+	}
+
+	// Fatal error — transition to FAILED.
+	m.log.Error("port forward session failed", "session_id", entry.session.ID, "error", err)
+	if transErr := entry.transition(SessionStateFailed); transErr != nil {
+		m.log.Debug("monitor: transition to FAILED failed", "session_id", entry.session.ID, "error", transErr)
+	}
 }
 
 func (m *Manager) ClosePortForwardSession(
 	_ *types.PluginContext,
 	sessionID string,
 ) (*PortForwardSession, error) {
-	m.Lock()
-	defer m.Unlock()
-
+	m.mu.Lock()
 	entry, ok := m.sessions[sessionID]
 	if !ok {
-		return nil, errors.New("session not found")
+		m.mu.Unlock()
+		return nil, NewSessionNotFoundError(sessionID)
 	}
+	delete(m.sessions, sessionID)
+	m.mu.Unlock()
 
 	entry.cancel()
-	delete(m.sessions, sessionID)
-	return entry.session, nil
+	_ = entry.transition(SessionStateStopped)
+
+	snap := entry.snapshot()
+	return &snap, nil
+}
+
+// StopAll cancels all active sessions and waits for monitor goroutines
+// to complete within the configured timeout.
+func (m *Manager) StopAll() {
+	m.mu.Lock()
+	for id, entry := range m.sessions {
+		entry.cancel()
+		_ = entry.transition(SessionStateStopped)
+		delete(m.sessions, id)
+	}
+	m.mu.Unlock()
+
+	done := make(chan struct{})
+	go func() {
+		m.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(m.closeTimeout):
+		m.log.Warn("StopAll timed out waiting for monitor goroutines")
+	}
 }

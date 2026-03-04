@@ -1,6 +1,7 @@
 package networker
 
 import (
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/types/known/structpb"
@@ -8,6 +9,10 @@ import (
 
 	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
 )
+
+// ---------------------------------------------------------------------------
+// SessionState
+// ---------------------------------------------------------------------------
 
 type SessionState string
 
@@ -42,6 +47,48 @@ func sessionStateFromProto(p networkerpb.PortForwardSession_SessionState) Sessio
 		return SessionStateStopped
 	}
 }
+
+// validTransitions defines the allowed state machine transitions.
+var validTransitions = map[SessionState]map[SessionState]bool{
+	SessionStateActive: {
+		SessionStatePaused:  true,
+		SessionStateStopped: true,
+		SessionStateFailed:  true,
+	},
+	SessionStatePaused: {
+		SessionStateActive:  true,
+		SessionStateStopped: true,
+	},
+	// STOPPED and FAILED are terminal states.
+}
+
+// CanTransition returns true if transitioning from → to is valid.
+func CanTransition(from, to SessionState) bool {
+	targets, ok := validTransitions[from]
+	if !ok {
+		return false
+	}
+	return targets[to]
+}
+
+// ---------------------------------------------------------------------------
+// Connection interface — sealed via unexported method
+// ---------------------------------------------------------------------------
+
+// Connection is implemented by PortForwardResourceConnection and
+// PortForwardStaticConnection. The unexported method seals the interface.
+type Connection interface {
+	connectionType() PortForwardConnectionType
+}
+
+var (
+	_ Connection = PortForwardResourceConnection{}
+	_ Connection = PortForwardStaticConnection{}
+)
+
+// ---------------------------------------------------------------------------
+// Protocols and Connection Types
+// ---------------------------------------------------------------------------
 
 type PortForwardProtocol string
 
@@ -85,19 +132,57 @@ func PortForwardProtocolFromProto(
 	}
 }
 
-// ============================== PortForwardSession ============================== //
+// ---------------------------------------------------------------------------
+// sessionEntry — internal mutable state per session
+// ---------------------------------------------------------------------------
 
-// PortForwardSession represents a session between a forwarding target and the host
-// that initiated the session.
+type sessionEntry struct {
+	mu      sync.RWMutex
+	session PortForwardSession
+	cancel  func()
+}
+
+// transition performs a validated state transition. Returns an error if
+// the transition is not allowed by the state machine.
+func (e *sessionEntry) transition(to SessionState) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	from := e.session.State
+	if !CanTransition(from, to) {
+		return NewInvalidStateTransitionError(e.session.ID, from, to)
+	}
+	e.session.State = to
+	return nil
+}
+
+// snapshot returns a deep copy of the session for safe reads.
+func (e *sessionEntry) snapshot() PortForwardSession {
+	e.mu.RLock()
+	cp := e.session
+	if e.session.Labels != nil {
+		cp.Labels = make(map[string]string, len(e.session.Labels))
+		for k, v := range e.session.Labels {
+			cp.Labels[k] = v
+		}
+	}
+	e.mu.RUnlock()
+	return cp
+}
+
+// ---------------------------------------------------------------------------
+// PortForwardSession
+// ---------------------------------------------------------------------------
+
+// PortForwardSession represents a session between a forwarding target and the host.
 type PortForwardSession struct {
 	CreatedAt      time.Time                    `json:"created_at"`
 	UpdatedAt      time.Time                    `json:"updated_at"`
-	Connection     any                          `json:"connection"`
+	Connection     Connection                   `json:"connection"`
 	Labels         map[string]string            `json:"labels"`
 	ID             string                       `json:"id"`
 	Protocol       PortForwardProtocol          `json:"protocol"`
 	State          SessionState                 `json:"state"`
-	ConnectionType string                       `json:"connection_type"`
+	ConnectionType PortForwardConnectionType    `json:"connection_type"`
 	Encryption     PortForwardSessionEncryption `json:"encryption"`
 	LocalPort      int32                        `json:"local_port"`
 	RemotePort     int32                        `json:"remote_port"`
@@ -142,16 +227,15 @@ func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) *PortForw
 		return &PortForwardSession{}
 	}
 
-	// switch on the connection type
-	var connection interface{}
-	var connectionType string
+	var connection Connection
+	var connectionType PortForwardConnectionType
 	switch s.GetConnection().(type) {
 	case *networkerpb.PortForwardSession_ResourceConnection:
 		connection = PortForwardResourceConnectionFromProto(s.GetResourceConnection())
-		connectionType = string(PortForwardConnectionTypeResource)
+		connectionType = PortForwardConnectionTypeResource
 	case *networkerpb.PortForwardSession_StaticConnection:
 		connection = PortForwardStaticConnectionFromProto(s.GetStaticConnection())
-		connectionType = string(PortForwardConnectionTypeStatic)
+		connectionType = PortForwardConnectionTypeStatic
 	}
 
 	var createdAt, updatedAt time.Time
@@ -177,15 +261,20 @@ func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) *PortForw
 	}
 }
 
-// ============================== PortForwardResourceConnection ============================== //
+// ---------------------------------------------------------------------------
+// PortForwardResourceConnection
+// ---------------------------------------------------------------------------
 
-// PortForwardSessionConnectionOptions represents the options for a session connection.
 type PortForwardResourceConnection struct {
 	ResourceData map[string]interface{} `json:"resource_data"`
 	ConnectionID string                 `json:"connection_id"`
 	PluginID     string                 `json:"plugin_id"`
 	ResourceID   string                 `json:"resource_id"`
 	ResourceKey  string                 `json:"resource_key"`
+}
+
+func (PortForwardResourceConnection) connectionType() PortForwardConnectionType {
+	return PortForwardConnectionTypeResource
 }
 
 func (c *PortForwardResourceConnection) ToProto() *networkerpb.PortForwardResourceConnection {
@@ -262,10 +351,16 @@ func PortForwardResourceConnectionFromJson(o map[string]any) *PortForwardResourc
 	return &conn
 }
 
-// ============================== PortForwardStaticConnection ============================== //
+// ---------------------------------------------------------------------------
+// PortForwardStaticConnection
+// ---------------------------------------------------------------------------
 
 type PortForwardStaticConnection struct {
 	Address string `json:"address"`
+}
+
+func (PortForwardStaticConnection) connectionType() PortForwardConnectionType {
+	return PortForwardConnectionTypeStatic
 }
 
 func (c *PortForwardStaticConnection) ToProto() *networkerpb.PortForwardStaticConnection {
@@ -307,10 +402,10 @@ func PortForwardStaticConnectionFromJson(o map[string]any) *PortForwardStaticCon
 	return &conn
 }
 
-// ============================== PortForwardSessionEncryption ============================== //
+// ---------------------------------------------------------------------------
+// PortForwardSessionEncryption
+// ---------------------------------------------------------------------------
 
-// PortForwardSessionEncryption represents the options for a session encryption
-// configuration.
 type PortForwardSessionEncryption struct {
 	Algorithm string `json:"algorithm"`
 	Key       string `json:"key"`
@@ -338,12 +433,12 @@ func PortForwardSessionEncryptionFromProto(
 	}
 }
 
-// ============================== PortForwardSessionOptions ============================== //
+// ---------------------------------------------------------------------------
+// PortForwardSessionOptions
+// ---------------------------------------------------------------------------
 
-// PortForwardSessionOptions represents the options for creating a new forwarding
-// session.
 type PortForwardSessionOptions struct {
-	Connection     interface{}                  `json:"connection"`
+	Connection     Connection                   `json:"connection"`
 	Labels         map[string]string            `json:"labels"`
 	Params         map[string]string            `json:"params"`
 	Protocol       PortForwardProtocol          `json:"protocol"`
@@ -373,25 +468,15 @@ func (o *PortForwardSessionOptions) ToProto() *networkerpb.PortForwardSessionOpt
 		Encryption: o.Encryption.ToProto(),
 	}
 
-	switch o.ConnectionType {
-	case PortForwardConnectionTypeResource:
-		switch c := o.Connection.(type) {
-		case PortForwardResourceConnection:
-			opts.Connection = c.ToSessionOptionsProto()
-		case *PortForwardResourceConnection:
-			opts.Connection = c.ToSessionOptionsProto()
-		case map[string]any:
-			opts.Connection = PortForwardResourceConnectionFromJson(c).ToSessionOptionsProto()
-		}
-	case PortForwardConnectionTypeStatic:
-		switch c := o.Connection.(type) {
-		case PortForwardStaticConnection:
-			opts.Connection = c.ToSessionOptionsProto()
-		case *PortForwardStaticConnection:
-			opts.Connection = c.ToSessionOptionsProto()
-		case map[string]any:
-			opts.Connection = PortForwardStaticConnectionFromJson(c).ToSessionOptionsProto()
-		}
+	switch c := o.Connection.(type) {
+	case PortForwardResourceConnection:
+		opts.Connection = c.ToSessionOptionsProto()
+	case *PortForwardResourceConnection:
+		opts.Connection = c.ToSessionOptionsProto()
+	case PortForwardStaticConnection:
+		opts.Connection = c.ToSessionOptionsProto()
+	case *PortForwardStaticConnection:
+		opts.Connection = c.ToSessionOptionsProto()
 	}
 
 	return opts
@@ -404,8 +489,7 @@ func NewPortForwardSessionOptionsFromProto(
 		return &PortForwardSessionOptions{}
 	}
 
-	// switch on the connection type
-	var connection interface{}
+	var connection Connection
 	var connectionType PortForwardConnectionType
 	switch o.GetConnection().(type) {
 	case *networkerpb.PortForwardSessionOptions_ResourceConnection:
@@ -415,7 +499,7 @@ func NewPortForwardSessionOptionsFromProto(
 		connection = PortForwardStaticConnectionFromProto(o.GetStaticConnection())
 		connectionType = PortForwardConnectionTypeStatic
 	default:
-		// Unknown connection type — leave both connection and connectionType as zero values.
+		// Unknown connection type — leave both as zero values.
 	}
 
 	return &PortForwardSessionOptions{
@@ -430,7 +514,9 @@ func NewPortForwardSessionOptionsFromProto(
 	}
 }
 
-// ============================== FindPortForwardSessionRequest ============================== //
+// ---------------------------------------------------------------------------
+// FindPortForwardSessionRequest
+// ---------------------------------------------------------------------------
 
 type FindPortForwardSessionRequest struct {
 	ResourceID   string `json:"resource_id"`

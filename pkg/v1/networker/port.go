@@ -6,7 +6,28 @@ import (
 	"strconv"
 )
 
-// FindFreePort finds an available port by letting the OS pick a free port.
+// PortChecker abstracts port availability operations so tests can inject fakes.
+type PortChecker interface {
+	// FindFreePort returns a free TCP port.
+	FindFreePort() (int32, error)
+	// IsPortUnavailable returns true if the port is already in use.
+	IsPortUnavailable(port int32) bool
+}
+
+// RealPortChecker performs actual network checks.
+type RealPortChecker struct{}
+
+var _ PortChecker = RealPortChecker{}
+
+func (RealPortChecker) FindFreePort() (int32, error) {
+	return FindFreeTCPPort()
+}
+
+func (RealPortChecker) IsPortUnavailable(port int32) bool {
+	return IsPortUnavailable(port)
+}
+
+// FindFreeTCPPort finds an available port by letting the OS pick a free port.
 func FindFreeTCPPort() (int32, error) {
 	lis, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
