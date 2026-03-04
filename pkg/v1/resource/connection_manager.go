@@ -133,12 +133,15 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 	}
 	// Guard against deletion during CreateClient: if the connection was
 	// removed from m.loaded while we were unlocked, don't resurrect it.
-	if _, stillLoaded := m.loaded[connectionID]; !stillLoaded {
+	currentConn, stillLoaded := m.loaded[connectionID]
+	if !stillLoaded {
 		cancel()
 		_ = m.provider.DestroyClient(ctx, client)
 		m.mu.Unlock()
 		return types.ConnectionStatus{}, fmt.Errorf("connection %q was deleted during start", connectionID)
 	}
+	// Use the latest loaded config (may have been updated while unlocked).
+	conn = currentConn
 	m.conns[connectionID] = &connectionState[ClientT]{
 		conn:   conn,
 		client: client,

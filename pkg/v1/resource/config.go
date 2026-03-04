@@ -1,8 +1,14 @@
 package resource
 
+import logging "github.com/omniviewdev/plugin-sdk/log"
+
 // ResourcePluginConfig holds all configuration for a resource plugin.
 // Passed to RegisterResourcePlugin to register the resource capability.
 type ResourcePluginConfig[ClientT any] struct {
+	// Logger is an optional logger for the resource controller subsystem.
+	// nil → logging.NewNop().
+	Logger logging.Logger
+
 	// Connections is the required connection provider.
 	// All plugins must supply this.
 	Connections ConnectionProvider[ClientT]

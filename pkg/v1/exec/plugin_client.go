@@ -124,7 +124,7 @@ func (c *PluginClient) CloseSession(ctx *types.PluginContext, sessionID string) 
 func (c *PluginClient) ResizeSession(
 	ctx *types.PluginContext,
 	sessionID string,
-	cols, rows int32,
+	rows, cols int32,
 ) error {
 	_, err := c.client.ResizeSession(
 		types.WithPluginContext(context.Background(), ctx),

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
@@ -48,8 +49,14 @@ func BuildResourceController[ClientT any](ctx context.Context, cfg ResourcePlugi
 		registry.RegisterPattern(pattern, res)
 	}
 
+	log := cfg.Logger
+	if log == nil {
+		log = logging.NewNop()
+	}
+	log = log.Named("resource")
+
 	connMgr := newConnectionManager[ClientT](ctx, cfg.Connections)
-	watchMgr := newWatchManager[ClientT](registry)
+	watchMgr := newWatchManager[ClientT](log, registry)
 	typeMgr := newTypeManager[ClientT](registry, cfg.Groups, cfg.Discovery)
 
 	// Auto-detect ScopeProvider on ConnectionProvider.

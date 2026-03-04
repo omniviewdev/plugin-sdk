@@ -3,6 +3,7 @@ package log
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -65,16 +66,20 @@ func NewNop() Logger {
 	return New(Config{Backend: NewHCLBackend(hclog.NewNullLogger())})
 }
 
-var defaultLogger = NewNop()
+var defaultLogger atomic.Value
 
-func Default() Logger { return defaultLogger }
+func init() {
+	defaultLogger.Store(NewNop())
+}
+
+func Default() Logger { return defaultLogger.Load().(Logger) }
 
 func SetDefault(l Logger) {
 	if l == nil {
-		defaultLogger = NewNop()
+		defaultLogger.Store(NewNop())
 		return
 	}
-	defaultLogger = l
+	defaultLogger.Store(l)
 }
 
 func (l *logger) Named(name string) Logger {

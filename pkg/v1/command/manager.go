@@ -34,7 +34,7 @@ func NewManager(
 		log = logging.NewNop()
 	}
 	return &Manager{
-		log:              log.Named("command.manager"),
+		log:              log.Named("manager"),
 		settingsProvider: sp,
 		handlers:         handlers,
 	}

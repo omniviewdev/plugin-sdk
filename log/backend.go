@@ -74,6 +74,7 @@ func (b *HCLBackend) Write(_ context.Context, record Record) error {
 	case LevelError:
 		logger.Error(record.Message, args...)
 	case LevelFatal:
+		// Intentionally mapped to Error to avoid os.Exit semantics in backend logging.
 		logger.Error(record.Message, args...)
 	default:
 		return fmt.Errorf("unsupported log level: %v", record.Level)

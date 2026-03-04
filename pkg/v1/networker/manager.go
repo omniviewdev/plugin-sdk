@@ -376,19 +376,27 @@ func (m *Manager) handleStaticForward(
 func (m *Manager) monitorSession(entry *sessionEntry, errCh <-chan error) {
 	defer m.wg.Done()
 
-	err, ok := <-errCh
-	if !ok || err == nil {
-		// Channel closed or nil error — clean stop.
+	select {
+	case <-entry.ctx.Done():
+		// Session context cancelled (e.g. via ClosePortForwardSession or StopAll).
 		if transErr := entry.transition(SessionStateStopped); transErr != nil {
 			m.log.Debugw(entry.ctx, "monitor: transition to STOPPED failed", "session_id", entry.session.ID, "error", transErr)
 		}
 		return
-	}
+	case err, ok := <-errCh:
+		if !ok || err == nil {
+			// Channel closed or nil error — clean stop.
+			if transErr := entry.transition(SessionStateStopped); transErr != nil {
+				m.log.Debugw(entry.ctx, "monitor: transition to STOPPED failed", "session_id", entry.session.ID, "error", transErr)
+			}
+			return
+		}
 
-	// Fatal error — transition to FAILED.
-	m.log.Errorw(entry.ctx, "port forward session failed", "session_id", entry.session.ID, "error", err)
-	if transErr := entry.transition(SessionStateFailed); transErr != nil {
-		m.log.Debugw(entry.ctx, "monitor: transition to FAILED failed", "session_id", entry.session.ID, "error", transErr)
+		// Fatal error — transition to FAILED.
+		m.log.Errorw(entry.ctx, "port forward session failed", "session_id", entry.session.ID, "error", err)
+		if transErr := entry.transition(SessionStateFailed); transErr != nil {
+			m.log.Debugw(entry.ctx, "monitor: transition to FAILED failed", "session_id", entry.session.ID, "error", transErr)
+		}
 	}
 }
 

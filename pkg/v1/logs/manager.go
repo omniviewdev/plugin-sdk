@@ -170,7 +170,7 @@ func NewManager(cfg ManagerConfig) *Manager {
 	return &Manager{
 		log:      logger.Named("logs.manager"),
 		settings: cfg.Settings,
-		registry: newHandlerRegistry(cfg.Handlers, cfg.Resolvers),
+		registry: newHandlerRegistry(logger, cfg.Handlers, cfg.Resolvers),
 		sink:     cfg.Sink,
 		clock:    clk,
 		sessions: make(map[string]*sessionState),
@@ -415,6 +415,17 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	ss.setSources(result.Sources)
 	ss.totalSources = int32(len(result.Sources))
 	ss.transition(LogSessionStatusConnecting, LogSessionStatusInitializing)
+
+	// If the resolver returned zero sources, transition directly to ACTIVE
+	// because markSourceReady will never be called.
+	if len(result.Sources) == 0 {
+		ss.transition(LogSessionStatusInitializing, LogSessionStatusActive)
+		m.emitEvent(ss.session.ID, LogStreamEvent{
+			Type:      StreamEventSessionReady,
+			Message:   "No sources to stream (resolved 0 sources)",
+			Timestamp: m.clock.Now(),
+		})
+	}
 
 	// Watch for dynamic source changes BEFORE the blocking fanOutSources call,
 	// because fanOutSources blocks until all source goroutines complete (which

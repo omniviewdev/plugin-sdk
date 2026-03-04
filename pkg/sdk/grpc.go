@@ -74,7 +74,7 @@ func ClientPluginContextInterceptor(log logging.Logger) grpc.UnaryClientIntercep
 		ctx, err := UseClientPluginContext(ctx)
 		if err != nil {
 			if !errors.Is(err, ErrNoPluginContext) {
-				return err
+				return fmt.Errorf("%s: %w", method, err)
 			}
 			// Plugin context may not be present for all calls; proceed with original context.
 			log.Debug(ctx, "UseClientPluginContext: no plugin context available")

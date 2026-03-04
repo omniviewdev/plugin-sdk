@@ -2,6 +2,7 @@ package networker
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
@@ -63,7 +64,7 @@ func (p *PluginClient) GetPortForwardSession(
 		return nil, err
 	}
 	if resp.GetSession() == nil {
-		return &PortForwardSession{}, nil
+		return nil, fmt.Errorf("server returned nil session for %q", sessionID)
 	}
 
 	return NewPortForwardSessionFromProto(resp.GetSession()), nil
@@ -126,7 +127,7 @@ func (p *PluginClient) StartPortForwardSession(
 		return nil, err
 	}
 	if resp.GetSession() == nil {
-		return &PortForwardSession{}, nil
+		return nil, fmt.Errorf("server returned nil session after start")
 	}
 
 	return NewPortForwardSessionFromProto(resp.GetSession()), nil
@@ -145,7 +146,7 @@ func (p *PluginClient) ClosePortForwardSession(
 		return nil, err
 	}
 	if resp.GetSession() == nil {
-		return &PortForwardSession{}, nil
+		return nil, fmt.Errorf("server returned nil session after close for %q", sessionID)
 	}
 
 	return NewPortForwardSessionFromProto(resp.GetSession()), nil

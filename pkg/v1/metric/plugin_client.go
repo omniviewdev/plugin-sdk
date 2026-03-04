@@ -101,15 +101,23 @@ func (c *PluginClient) StreamMetrics(
 				c.log.Error(ctx, "failed to close send metric stream", logging.Error(err))
 			}
 		}()
-		for i := range in {
-			msg, err := streamInputToProto(i)
-			if err != nil {
-				c.log.Error(ctx, "failed to convert metric stream input to proto", logging.Error(err))
+		for {
+			select {
+			case <-ctx.Done():
 				return
-			}
-			if err := stream.Send(msg); err != nil {
-				c.log.Error(ctx, "failed to send metric stream input", logging.Error(err))
-				return
+			case i, ok := <-in:
+				if !ok {
+					return
+				}
+				msg, err := streamInputToProto(i)
+				if err != nil {
+					c.log.Error(ctx, "failed to convert metric stream input to proto", logging.Error(err))
+					return
+				}
+				if err := stream.Send(msg); err != nil {
+					c.log.Error(ctx, "failed to send metric stream input", logging.Error(err))
+					return
+				}
 			}
 		}
 	}()

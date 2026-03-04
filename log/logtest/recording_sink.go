@@ -14,6 +14,8 @@ type RecordingSink struct {
 }
 
 func (s *RecordingSink) Write(_ context.Context, record logging.Record) error {
+	// Deep-copy Fields to prevent the caller from mutating our snapshot.
+	record.Fields = append([]logging.Field(nil), record.Fields...)
 	s.mu.Lock()
 	s.records = append(s.records, record)
 	s.mu.Unlock()

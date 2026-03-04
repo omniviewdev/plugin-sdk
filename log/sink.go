@@ -1,6 +1,9 @@
 package log
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 // Sink receives normalized log records.
 type Sink interface {
@@ -23,10 +26,11 @@ func NewMultiSink(sinks ...Sink) *MultiSink {
 }
 
 func (m *MultiSink) Write(ctx context.Context, record Record) error {
+	var errs []error
 	for _, sink := range m.sinks {
 		if err := sink.Write(ctx, record); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }

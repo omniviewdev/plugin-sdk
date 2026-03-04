@@ -23,12 +23,15 @@ type handlerRegistry struct {
 	log       logging.Logger
 }
 
-func newHandlerRegistry(handlers map[string]Handler, resolvers map[string]SourceResolver) *handlerRegistry {
+func newHandlerRegistry(log logging.Logger, handlers map[string]Handler, resolvers map[string]SourceResolver) *handlerRegistry {
+	if log == nil {
+		log = logging.NewNop()
+	}
 	r := &handlerRegistry{
 		handlers:  make(map[string]Handler, len(handlers)),
 		index:     make(map[string]string, len(handlers)),
 		resolvers: make(map[string]SourceResolver, len(resolvers)),
-		log:       logging.Default().Named("logs.handler_registry"),
+		log:       log.Named("handler_registry"),
 	}
 
 	for fullKey, h := range handlers {
@@ -38,14 +41,19 @@ func newHandlerRegistry(handlers map[string]Handler, resolvers map[string]Source
 		// choose the lexicographically smallest fullKey for determinism.
 		if parts := strings.SplitN(fullKey, "/", 2); len(parts) == 2 {
 			existing, ok := r.index[parts[1]]
-			if !ok || fullKey < existing {
-				if ok {
-					r.log.Warnw(context.Background(), "resource handler key shadowed",
-						"resource", parts[1],
-						"winner", fullKey,
-						"shadowed", existing,
-					)
+			if ok {
+				// Always log collisions regardless of which key wins.
+				winner, loser := fullKey, existing
+				if existing < fullKey {
+					winner, loser = existing, fullKey
 				}
+				r.log.Warnw(context.Background(), "resource handler key collision",
+					"resource", parts[1],
+					"winner", winner,
+					"shadowed", loser,
+				)
+			}
+			if !ok || fullKey < existing {
 				r.index[parts[1]] = fullKey
 			}
 		}

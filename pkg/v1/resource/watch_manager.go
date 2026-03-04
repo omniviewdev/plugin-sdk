@@ -64,11 +64,14 @@ type watchManager[ClientT any] struct {
 	wg sync.WaitGroup
 }
 
-func newWatchManager[ClientT any](registry *resourcerRegistry[ClientT]) *watchManager[ClientT] {
+func newWatchManager[ClientT any](log logging.Logger, registry *resourcerRegistry[ClientT]) *watchManager[ClientT] {
+	if log == nil {
+		log = logging.NewNop()
+	}
 	return &watchManager[ClientT]{
 		registry:    registry,
 		watches:     make(map[string]*connectionWatchState[ClientT]),
-		log:         logging.Default().Named("resource.watch_manager"),
+		log:         log.Named("watch_manager"),
 		maxRetries:  defaultMaxRetries,
 		baseBackoff: defaultBaseBackoff,
 		clock:       timeutil.RealClock{},

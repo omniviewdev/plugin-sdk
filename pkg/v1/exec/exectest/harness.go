@@ -185,6 +185,7 @@ func FailingTTYHandler(err error) exec.TTYHandlerFunc {
 // StopChTTYHandler returns a TTYHandlerFunc that sends the given error on
 // the stopCh after a delay, simulating a handler that fails after starting.
 // The send is non-blocking so the goroutine never leaks if the session ends early.
+// A deferred recover guards against sends on a closed channel.
 func StopChTTYHandler(stopErr error, delay time.Duration) exec.TTYHandlerFunc {
 	return func(
 		_ *types.PluginContext,
@@ -194,6 +195,7 @@ func StopChTTYHandler(stopErr error, delay time.Duration) exec.TTYHandlerFunc {
 		_ <-chan exec.SessionResizeInput,
 	) error {
 		go func() {
+			defer func() { recover() }() //nolint:errcheck // guard closed channel
 			time.Sleep(delay)
 			select {
 			case stopCh <- stopErr:

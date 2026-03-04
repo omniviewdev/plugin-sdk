@@ -29,7 +29,7 @@ type ConnectionManagerForTest = connectionManager[string]
 // --- watchManager ---
 
 func NewWatchManagerForTest(registry *resourcerRegistry[string]) *watchManager[string] {
-	return newWatchManager[string](registry)
+	return newWatchManager[string](nil, registry)
 }
 
 // SetWatchManagerBackoff sets backoff params for testing (faster retries).

@@ -148,22 +148,34 @@ func (h *Harness) CloseSession(sessionID string) {
 }
 
 // FeedLine sends a line to the named source.
+// It is safe to call after CloseSource — the send-on-closed-channel panic is recovered.
 func (h *Harness) FeedLine(sourceID string, line string) {
 	h.t.Helper()
 	src, ok := h.sources[sourceID]
 	if !ok {
 		h.t.Fatalf("source %q not found in harness", sourceID)
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			h.t.Logf("FeedLine(%q): channel already closed", sourceID)
+		}
+	}()
 	src.Lines <- line
 }
 
 // CloseSource closes the Lines channel for the named source, ending its stream.
+// It is safe to call multiple times — the close-of-closed-channel panic is recovered.
 func (h *Harness) CloseSource(sourceID string) {
 	h.t.Helper()
 	src, ok := h.sources[sourceID]
 	if !ok {
 		h.t.Fatalf("source %q not found in harness", sourceID)
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			h.t.Logf("CloseSource(%q): channel already closed", sourceID)
+		}
+	}()
 	close(src.Lines)
 }
 

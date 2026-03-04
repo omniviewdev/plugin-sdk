@@ -187,6 +187,15 @@ func GRPCDialOptionsWithLogger(log logging.Logger) []grpc.DialOption {
 	return withClientOpts(nil, log)
 }
 
+// effectiveProtocolVersion returns the SDK protocol version to use.
+// It prefers meta.SDKProtocolVersion when set, falling back to CurrentProtocolVersion.
+func (p *Plugin) effectiveProtocolVersion() int {
+	if p.meta.SDKProtocolVersion > 0 {
+		return p.meta.SDKProtocolVersion
+	}
+	return CurrentProtocolVersion
+}
+
 func (p *Plugin) SetLogLevel(level logging.Level) {
 	if p == nil || p.LogLevel == nil {
 		return
@@ -218,6 +227,8 @@ func (p *Plugin) Serve() {
 		return
 	}
 
+	protoVersion := p.effectiveProtocolVersion()
+
 	// Register cleanup handler for graceful shutdown.
 	go func() {
 		sigCh := make(chan os.Signal, 1)
@@ -244,7 +255,7 @@ func (p *Plugin) Serve() {
 		plugin.Serve(&plugin.ServeConfig{
 			HandshakeConfig: p.meta.GenerateHandshakeConfig(),
 			VersionedPlugins: map[int]plugin.PluginSet{
-				CurrentProtocolVersion: p.pluginMap,
+				protoVersion: p.pluginMap,
 			},
 			GRPCServer: func(opts []grpc.ServerOption) *grpc.Server {
 				return GRPCServerFactoryWithLogger(p.Log, opts)
@@ -292,7 +303,7 @@ func (p *Plugin) serveNormal() {
 	plugin.Serve(&plugin.ServeConfig{
 		HandshakeConfig: p.meta.GenerateHandshakeConfig(),
 		VersionedPlugins: map[int]plugin.PluginSet{
-			CurrentProtocolVersion: p.pluginMap,
+			p.effectiveProtocolVersion(): p.pluginMap,
 		},
 		GRPCServer: func(opts []grpc.ServerOption) *grpc.Server {
 			return GRPCServerFactoryWithLogger(p.Log, opts)
@@ -312,16 +323,11 @@ func (p *Plugin) startupContext() context.Context {
 func (p *Plugin) registerLifecycle() {
 	caps := slices.Sorted(maps.Keys(p.pluginMap))
 
-	sdkProtoVersion := int32(CurrentProtocolVersion)
-	if p.meta.SDKProtocolVersion > 0 {
-		sdkProtoVersion = int32(p.meta.SDKProtocolVersion)
-	}
-
 	p.pluginMap["lifecycle"] = &lifecycle.Plugin{
 		Impl: &lifecycle.Server{
 			PluginID:           p.meta.ID,
 			Version:            p.meta.Version,
-			SDKProtocolVersion: sdkProtoVersion,
+			SDKProtocolVersion: int32(p.effectiveProtocolVersion()),
 			Capabilities:       caps,
 		},
 	}

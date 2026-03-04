@@ -66,8 +66,13 @@ func RegisterPlugin(
 		resolvers[key] = resolver
 	}
 
+	loggerForManager := p.Log
+	if loggerForManager == nil {
+		loggerForManager = logging.NewNop()
+	}
+
 	impl := NewManager(ManagerConfig{
-		Logger:    p.Log.Named("logs"),
+		Logger:    loggerForManager.Named("logs"),
 		Settings:  p.SettingsProvider,
 		Handlers:  handlers,
 		Resolvers: resolvers,

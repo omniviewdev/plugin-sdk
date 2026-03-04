@@ -23,7 +23,11 @@ func (s *PluginServer) Call(
 	ctx context.Context,
 	req *commandpb.CallCommandRequest,
 ) (*commandpb.CallCommandResponse, error) {
-	resp, err := s.Impl.Call(types.PluginContextFromContext(ctx), req.GetPath(), req.GetBody())
+	pctx := types.PluginContextFromContext(ctx)
+	if pctx == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "missing plugin context")
+	}
+	resp, err := s.Impl.Call(pctx, req.GetPath(), req.GetBody())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to call command: %v", err)
 	}
