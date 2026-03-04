@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
@@ -46,7 +46,7 @@ type Plugin struct {
 
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
 	execpb.RegisterExecPluginServer(s, &PluginServer{
-		log:  hclog.Default(),
+		log:  logging.Default().Named("exec.plugin.server"),
 		Impl: p.Impl,
 	})
 	return nil
@@ -57,7 +57,10 @@ func (p *Plugin) GRPCClient(
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
 ) (interface{}, error) {
-	return &PluginClient{client: execpb.NewExecPluginClient(c)}, nil
+	return &PluginClient{
+		client: execpb.NewExecPluginClient(c),
+		log:    logging.Default().Named("exec.plugin.client"),
+	}, nil
 }
 
 func RegisterPlugin(
@@ -78,7 +81,7 @@ func RegisterPlugin(
 	}
 
 	impl := NewManager(ManagerConfig{
-		Logger:   p.HCLLogger,
+		Logger:   p.Log.Named("exec"),
 		Settings: p.SettingsProvider,
 		Handlers: handlers,
 	})

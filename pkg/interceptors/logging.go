@@ -2,15 +2,18 @@ package interceptors
 
 import (
 	"context"
-	"log"
 	"time"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 )
 
 // UnaryLogging returns a unary interceptor that logs each RPC call with method, duration, and error.
-func UnaryLogging() grpc.UnaryServerInterceptor {
+func UnaryLogging(log logging.Logger) grpc.UnaryServerInterceptor {
+	if log == nil {
+		log = logging.Default()
+	}
 	return func(
 		ctx context.Context,
 		req interface{},
@@ -22,16 +25,27 @@ func UnaryLogging() grpc.UnaryServerInterceptor {
 		duration := time.Since(start)
 		if err != nil {
 			st, _ := status.FromError(err)
-			log.Printf("[RPC] %s duration=%s error=%q code=%s", info.FullMethod, duration, err, st.Code())
+			log.Errorw(ctx, "rpc call completed with error",
+				"method", info.FullMethod,
+				"duration", duration.String(),
+				"grpc_code", st.Code().String(),
+				"error", err,
+			)
 		} else {
-			log.Printf("[RPC] %s duration=%s", info.FullMethod, duration)
+			log.Debugw(ctx, "rpc call completed",
+				"method", info.FullMethod,
+				"duration", duration.String(),
+			)
 		}
 		return resp, err
 	}
 }
 
 // StreamLogging returns a stream interceptor that logs stream open/close with method and duration.
-func StreamLogging() grpc.StreamServerInterceptor {
+func StreamLogging(log logging.Logger) grpc.StreamServerInterceptor {
+	if log == nil {
+		log = logging.Default()
+	}
 	return func(
 		srv interface{},
 		ss grpc.ServerStream,
@@ -39,14 +53,22 @@ func StreamLogging() grpc.StreamServerInterceptor {
 		handler grpc.StreamHandler,
 	) error {
 		start := time.Now()
-		log.Printf("[STREAM] %s opened", info.FullMethod)
+		log.Debugw(ss.Context(), "stream opened", "method", info.FullMethod)
 		err := handler(srv, ss)
 		duration := time.Since(start)
 		if err != nil {
 			st, _ := status.FromError(err)
-			log.Printf("[STREAM] %s closed duration=%s error=%q code=%s", info.FullMethod, duration, err, st.Code())
+			log.Errorw(ss.Context(), "stream closed with error",
+				"method", info.FullMethod,
+				"duration", duration.String(),
+				"grpc_code", st.Code().String(),
+				"error", err,
+			)
 		} else {
-			log.Printf("[STREAM] %s closed duration=%s", info.FullMethod, duration)
+			log.Debugw(ss.Context(), "stream closed",
+				"method", info.FullMethod,
+				"duration", duration.String(),
+			)
 		}
 		return err
 	}

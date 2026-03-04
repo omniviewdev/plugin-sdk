@@ -5,22 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/v1/resource"
 
-	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 )
 
 // client implements resource.Provider by delegating to a gRPC stub.
 type client struct {
 	stub resourcepb.ResourcePluginClient
+	log  logging.Logger
 }
 
 // NewClient creates a Provider backed by a gRPC connection.
 func NewClient(stub resourcepb.ResourcePluginClient) resource.Provider {
-	return &client{stub: stub}
+	return &client{stub: stub, log: logging.Default().Named("resource.plugin.client")}
 }
 
 // errNotAvailable is returned for Provider methods that have no gRPC RPC.
@@ -292,7 +293,7 @@ func (c *client) Delete(ctx context.Context, key string, input resource.DeleteIn
 func (c *client) GetResourceGroups(ctx context.Context, connectionID string) map[string]resource.ResourceGroup {
 	resp, err := c.stub.GetResourceGroups(ctx, &resourcepb.ResourceGroupsRequest{ConnectionId: connectionID})
 	if err != nil {
-		log.Printf("[resource-grpc-client] GetResourceGroups RPC failed: %v", err)
+		c.log.Error(ctx, "GetResourceGroups RPC failed", logging.Error(err))
 		return map[string]resource.ResourceGroup{}
 	}
 	groups := make(map[string]resource.ResourceGroup, len(resp.GetGroups()))
@@ -305,7 +306,7 @@ func (c *client) GetResourceGroups(ctx context.Context, connectionID string) map
 func (c *client) GetResourceTypes(ctx context.Context, connectionID string) map[string]resource.ResourceMeta {
 	resp, err := c.stub.GetResourceTypes(ctx, &resourcepb.ResourceTypesRequest{ConnectionId: connectionID})
 	if err != nil {
-		log.Printf("[resource-grpc-client] GetResourceTypes RPC failed: %v", err)
+		c.log.Error(ctx, "GetResourceTypes RPC failed", logging.Error(err))
 		return map[string]resource.ResourceMeta{}
 	}
 	types := make(map[string]resource.ResourceMeta, len(resp.GetTypes()))
@@ -476,12 +477,12 @@ func (c *client) ListenForEvents(ctx context.Context, sink resource.WatchEventSi
 		if err != nil {
 			return err
 		}
-		dispatchWatchEvent(event, sink)
+		dispatchWatchEvent(event, sink, c.log)
 	}
 }
 
 // dispatchWatchEvent routes a proto WatchEvent to the appropriate sink method.
-func dispatchWatchEvent(event *resourcepb.WatchEvent, sink resource.WatchEventSink) {
+func dispatchWatchEvent(event *resourcepb.WatchEvent, sink resource.WatchEventSink, log logging.Logger) {
 	switch e := event.GetEvent().(type) {
 	case *resourcepb.WatchEvent_Add:
 		sink.OnAdd(resource.WatchAddPayload{
@@ -511,12 +512,17 @@ func dispatchWatchEvent(event *resourcepb.WatchEvent, sink resource.WatchEventSi
 		goState, ok := watchStateFromProto[e.State.GetState()]
 		if !ok {
 			goState = resource.WatchStateIdle
-			log.Printf("[watch-grpc-client] unknown proto watch state %d, falling back to Idle", e.State.GetState())
+			log.Warnw(context.Background(), "unknown proto watch state, falling back to idle",
+				"proto_state", e.State.GetState())
 		}
-		log.Printf("[watch-grpc-client] received state: conn=%s key=%s protoState=%d goState=%d count=%d errorCode=%s",
-			event.GetConnectionId(), event.GetResourceKey(),
-			e.State.GetState(), goState,
-			e.State.GetResourceCount(), e.State.GetErrorCode())
+		log.Debugw(context.Background(), "received watch state",
+			"connection_id", event.GetConnectionId(),
+			"resource_key", event.GetResourceKey(),
+			"proto_state", e.State.GetState(),
+			"go_state", goState,
+			"count", e.State.GetResourceCount(),
+			"error_code", e.State.GetErrorCode(),
+		)
 		var watchErr error
 		if e.State.GetErrorMessage() != "" {
 			watchErr = fmt.Errorf("%s", e.State.GetErrorMessage())

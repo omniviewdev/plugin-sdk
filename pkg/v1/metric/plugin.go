@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
@@ -28,7 +28,7 @@ type Plugin struct {
 }
 
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
-	metricpb.RegisterMetricPluginServer(s, &PluginServer{log: hclog.Default(), Impl: p.Impl})
+	metricpb.RegisterMetricPluginServer(s, &PluginServer{Impl: p.Impl})
 	return nil
 }
 
@@ -37,7 +37,10 @@ func (p *Plugin) GRPCClient(
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
 ) (interface{}, error) {
-	return &PluginClient{client: metricpb.NewMetricPluginClient(c)}, nil
+	return &PluginClient{
+		client: metricpb.NewMetricPluginClient(c),
+		log:    logging.Default().Named("metric.plugin.client"),
+	}, nil
 }
 
 // RegisterPlugin registers the metric capability with the plugin system.
@@ -55,7 +58,7 @@ func RegisterPlugin(
 	}
 
 	impl := NewManager(
-		p.HCLLogger,
+		p.Log.Named("metric"),
 		p.SettingsProvider,
 		opts.ProviderInfo,
 		handlers,

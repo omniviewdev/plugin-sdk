@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hashicorp/go-hclog"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/settings"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -14,7 +14,7 @@ import (
 
 // Manager manages metric queries and streams within a plugin process.
 type Manager struct {
-	log              hclog.Logger
+	log              logging.Logger
 	settingsProvider settings.Provider
 	providerInfo     ProviderInfo
 	handlers         map[string]Handler
@@ -26,29 +26,32 @@ type Manager struct {
 }
 
 type managedSubscription struct {
-	id             string
-	resourceKey    string
-	resourceID     string
-	resourceNS     string
-	resourceData   map[string]interface{}
-	metricIDs      []string
-	interval       time.Duration
-	ctx            context.Context
-	cancel         context.CancelFunc
+	id           string
+	resourceKey  string
+	resourceID   string
+	resourceNS   string
+	resourceData map[string]interface{}
+	metricIDs    []string
+	interval     time.Duration
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 var _ Provider = (*Manager)(nil)
 
 func NewManager(
-	log hclog.Logger,
+	log logging.Logger,
 	sp settings.Provider,
 	providerInfo ProviderInfo,
 	handlers map[string]Handler,
 	queryFunc QueryFunc,
 	streamFunc StreamFunc,
 ) *Manager {
+	if log == nil {
+		log = logging.NewNop()
+	}
 	return &Manager{
-		log:              log.Named("MetricManager"),
+		log:              log.Named("metric.manager"),
 		settingsProvider: sp,
 		providerInfo:     providerInfo,
 		handlers:         handlers,

@@ -3,8 +3,8 @@ package plugin
 import (
 	"context"
 	"errors"
-	"log"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -21,6 +21,7 @@ var ErrNoConnection = errors.New("no connection provided")
 // ResourcePluginClient is the real client implementation for ResourcePlugin.
 type ResourcePluginClient struct {
 	client proto.ResourcePluginClient
+	log    logging.Logger
 }
 
 var _ types.ResourceProvider = (*ResourcePluginClient)(nil)
@@ -141,7 +142,7 @@ func (r *ResourcePluginClient) GetResourceGroups(connID string) map[string]types
 		ConnectionId: connID,
 	})
 	if err != nil {
-		log.Print("err", err)
+		r.log.Error(context.Background(), "GetResourceGroups RPC failed", logging.Error(err))
 		return nil
 	}
 	result := make(map[string]types.ResourceGroup)
@@ -181,7 +182,7 @@ func (r *ResourcePluginClient) GetResourceTypes(connID string) map[string]types.
 		ConnectionId: connID,
 	})
 	if err != nil {
-		log.Print("err", err)
+		r.log.Error(context.Background(), "GetResourceTypes RPC failed", logging.Error(err))
 		return nil
 	}
 	result := make(map[string]types.ResourceMeta)

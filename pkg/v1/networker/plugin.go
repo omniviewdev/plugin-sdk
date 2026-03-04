@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
@@ -45,7 +45,7 @@ type Plugin struct {
 }
 
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
-	networkerpb.RegisterNetworkerPluginServer(s, &PluginServer{log: hclog.Default(), Impl: p.Impl})
+	networkerpb.RegisterNetworkerPluginServer(s, &PluginServer{Impl: p.Impl})
 	return nil
 }
 
@@ -56,7 +56,7 @@ func (p *Plugin) GRPCClient(
 ) (interface{}, error) {
 	return &PluginClient{
 		client: networkerpb.NewNetworkerPluginClient(c),
-		log:    hclog.Default().Named("NetworkerPluginClient"),
+		log:    logging.Default().Named("networker.plugin.client"),
 	}, nil
 }
 
@@ -69,7 +69,7 @@ func RegisterPlugin(
 	}
 
 	impl := NewManager(ManagerConfig{
-		Logger:   p.HCLLogger,
+		Logger:   p.Log.Named("networker"),
 		Settings: p.SettingsProvider,
 	}, opts)
 

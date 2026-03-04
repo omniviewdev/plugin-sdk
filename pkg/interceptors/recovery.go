@@ -2,9 +2,9 @@ package interceptors
 
 import (
 	"context"
-	"log"
 	"runtime/debug"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -12,7 +12,10 @@ import (
 
 // UnaryPanicRecovery returns a unary server interceptor that recovers from panics,
 // logs the stack trace, and returns a codes.Internal gRPC error.
-func UnaryPanicRecovery() grpc.UnaryServerInterceptor {
+func UnaryPanicRecovery(log logging.Logger) grpc.UnaryServerInterceptor {
+	if log == nil {
+		log = logging.Default()
+	}
 	return func(
 		ctx context.Context,
 		req interface{},
@@ -22,7 +25,11 @@ func UnaryPanicRecovery() grpc.UnaryServerInterceptor {
 		defer func() {
 			if r := recover(); r != nil {
 				stack := debug.Stack()
-				log.Printf("[PANIC] %s: %v\n%s", info.FullMethod, r, stack)
+				log.Errorw(ctx, "panic recovered in unary rpc",
+					"method", info.FullMethod,
+					"panic", r,
+					"stack", string(stack),
+				)
 				err = status.Errorf(codes.Internal, "panic in %s: %v", info.FullMethod, r)
 			}
 		}()
@@ -32,7 +39,10 @@ func UnaryPanicRecovery() grpc.UnaryServerInterceptor {
 
 // StreamPanicRecovery returns a stream server interceptor that recovers from panics,
 // logs the stack trace, and returns a codes.Internal gRPC error.
-func StreamPanicRecovery() grpc.StreamServerInterceptor {
+func StreamPanicRecovery(log logging.Logger) grpc.StreamServerInterceptor {
+	if log == nil {
+		log = logging.Default()
+	}
 	return func(
 		srv interface{},
 		ss grpc.ServerStream,
@@ -42,7 +52,11 @@ func StreamPanicRecovery() grpc.StreamServerInterceptor {
 		defer func() {
 			if r := recover(); r != nil {
 				stack := debug.Stack()
-				log.Printf("[PANIC] %s: %v\n%s", info.FullMethod, r, stack)
+				log.Errorw(ss.Context(), "panic recovered in stream rpc",
+					"method", info.FullMethod,
+					"panic", r,
+					"stack", string(stack),
+				)
 				err = status.Errorf(codes.Internal, "panic in %s: %v", info.FullMethod, r)
 			}
 		}()

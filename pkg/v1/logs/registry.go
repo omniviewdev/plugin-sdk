@@ -1,10 +1,12 @@
 package logs
 
 import (
-	"log"
+	"context"
 	"maps"
 	"slices"
 	"strings"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
 )
 
 // handlerRegistry provides O(1) handler and resolver lookup.
@@ -18,6 +20,7 @@ type handlerRegistry struct {
 
 	// resolvers maps resource key → SourceResolver
 	resolvers map[string]SourceResolver
+	log       logging.Logger
 }
 
 func newHandlerRegistry(handlers map[string]Handler, resolvers map[string]SourceResolver) *handlerRegistry {
@@ -25,6 +28,7 @@ func newHandlerRegistry(handlers map[string]Handler, resolvers map[string]Source
 		handlers:  make(map[string]Handler, len(handlers)),
 		index:     make(map[string]string, len(handlers)),
 		resolvers: make(map[string]SourceResolver, len(resolvers)),
+		log:       logging.Default().Named("logs.handler_registry"),
 	}
 
 	for fullKey, h := range handlers {
@@ -36,7 +40,11 @@ func newHandlerRegistry(handlers map[string]Handler, resolvers map[string]Source
 			existing, ok := r.index[parts[1]]
 			if !ok || fullKey < existing {
 				if ok {
-					log.Printf("[handler-registry] resource %q: %q shadows %q", parts[1], fullKey, existing)
+					r.log.Warnw(context.Background(), "resource handler key shadowed",
+						"resource", parts[1],
+						"winner", fullKey,
+						"shadowed", existing,
+					)
 				}
 				r.index[parts[1]] = fullKey
 			}

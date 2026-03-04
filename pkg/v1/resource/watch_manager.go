@@ -3,10 +3,10 @@ package resource
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 )
 
@@ -41,6 +41,7 @@ type watchManager[ClientT any] struct {
 	mu       sync.RWMutex
 	registry *resourcerRegistry[ClientT]
 	watches  map[string]*connectionWatchState[ClientT] // by connection ID
+	log      logging.Logger
 
 	// scopeProvider resolves watch scope for connections (optional).
 	scopeProvider ScopeProvider[ClientT]
@@ -51,7 +52,7 @@ type watchManager[ClientT any] struct {
 
 	maxRetries  int
 	baseBackoff time.Duration
-	clock timeutil.Clock
+	clock       timeutil.Clock
 
 	// pendingStateEvents buffers state events emitted before any listener registers.
 	// Data events (Add/Update/Delete) are not buffered — they carry large payloads
@@ -67,9 +68,10 @@ func newWatchManager[ClientT any](registry *resourcerRegistry[ClientT]) *watchMa
 	return &watchManager[ClientT]{
 		registry:    registry,
 		watches:     make(map[string]*connectionWatchState[ClientT]),
+		log:         logging.Default().Named("resource.watch_manager"),
 		maxRetries:  defaultMaxRetries,
 		baseBackoff: defaultBaseBackoff,
-		clock: timeutil.RealClock{},
+		clock:       timeutil.RealClock{},
 	}
 }
 
@@ -96,8 +98,10 @@ func (m *watchManager[ClientT]) StartConnectionWatch(ctx context.Context, connec
 			watchScope = &WatchScope{Partitions: partitions}
 		}
 		if err != nil {
-			log.Printf("[watch-manager] scope resolution failed for %s, falling back to unscoped: %v",
-				connectionID, err)
+			m.log.Warnw(connCtx, "scope resolution failed, falling back to unscoped",
+				"connection_id", connectionID,
+				"error", err,
+			)
 		}
 	}
 
@@ -204,12 +208,20 @@ func (m *watchManager[ClientT]) GetWatchState(connectionID string) (*WatchConnec
 		}
 		if rws.state != WatchStateIdle {
 			nonIdle++
-			log.Printf("[watch-state] GetWatchState(%s): %s state=%d running=%v count=%d",
-				connectionID, key, rws.state, rws.running, rws.count)
+			m.log.Debugw(context.Background(), "watch state entry",
+				"connection_id", connectionID,
+				"resource_key", key,
+				"state", rws.state,
+				"running", rws.running,
+				"count", rws.count,
+			)
 		}
 	}
-	log.Printf("[watch-state] GetWatchState(%s): %d resources, %d non-idle",
-		connectionID, len(cws.resources), nonIdle)
+	m.log.Debugw(context.Background(), "watch state summary",
+		"connection_id", connectionID,
+		"resource_count", len(cws.resources),
+		"non_idle_count", nonIdle,
+	)
 	return summary, nil
 }
 
@@ -386,10 +398,14 @@ func (m *watchManager[ClientT]) AddListener(sink WatchEventSink) {
 	m.pendingStateEvents = nil
 	m.pendingMu.Unlock()
 
-	log.Printf("[watch-state] AddListener: replaying %d buffered state events", len(pending))
+	m.log.Debugw(context.Background(), "replaying buffered watch state events", "count", len(pending))
 	for _, evt := range pending {
-		log.Printf("[watch-state]   replay: %s/%s state=%d count=%d",
-			evt.Connection, evt.ResourceKey, evt.State, evt.ResourceCount)
+		m.log.Debugw(context.Background(), "replay watch state event",
+			"connection_id", evt.Connection,
+			"resource_key", evt.ResourceKey,
+			"state", evt.State,
+			"count", evt.ResourceCount,
+		)
 		sink.OnStateChange(evt)
 	}
 }
@@ -444,8 +460,12 @@ func (s *fanOutSink[ClientT]) OnDelete(p WatchDeletePayload) {
 func (s *fanOutSink[ClientT]) OnStateChange(e WatchStateEvent) {
 	e.Connection = s.connectionID
 
-	log.Printf("[watch-state] %s/%s state=%d count=%d",
-		s.connectionID, e.ResourceKey, e.State, e.ResourceCount)
+	s.mgr.log.Debugw(context.Background(), "watch state event",
+		"connection_id", s.connectionID,
+		"resource_key", e.ResourceKey,
+		"state", e.State,
+		"count", e.ResourceCount,
+	)
 
 	// Track state and count for GetWatchState snapshots.
 	s.mgr.mu.Lock()
@@ -462,8 +482,10 @@ func (s *fanOutSink[ClientT]) OnStateChange(e WatchStateEvent) {
 	s.mgr.listenersMu.RLock()
 	if len(s.mgr.listeners) == 0 {
 		s.mgr.listenersMu.RUnlock()
-		log.Printf("[watch-state] %s/%s BUFFERED (no listeners)",
-			s.connectionID, e.ResourceKey)
+		s.mgr.log.Debugw(context.Background(), "watch state buffered (no listeners)",
+			"connection_id", s.connectionID,
+			"resource_key", e.ResourceKey,
+		)
 		// Buffer state events for replay when first listener registers.
 		s.mgr.pendingMu.Lock()
 		if len(s.mgr.pendingStateEvents) < 1000 {
@@ -472,8 +494,11 @@ func (s *fanOutSink[ClientT]) OnStateChange(e WatchStateEvent) {
 		s.mgr.pendingMu.Unlock()
 		return
 	}
-	log.Printf("[watch-state] %s/%s fan-out to %d listeners",
-		s.connectionID, e.ResourceKey, len(s.mgr.listeners))
+	s.mgr.log.Debugw(context.Background(), "watch state fan-out",
+		"connection_id", s.connectionID,
+		"resource_key", e.ResourceKey,
+		"listener_count", len(s.mgr.listeners),
+	)
 	for _, l := range s.mgr.listeners {
 		l.OnStateChange(e)
 	}
@@ -529,10 +554,10 @@ func (m *watchManager[ClientT]) runWatch(
 	readyOnce := sync.Once{}
 
 	for {
-		// Signal that the goroutine is ready and about to call Watch.
-		readyOnce.Do(func() { close(rws.ready) })
-
-		err := m.safeWatch(watcher, resourceCtx, client, meta, sink)
+		err := m.safeWatch(watcher, resourceCtx, client, meta, sink, func() {
+			// Signal readiness at call-entry time for Watch().
+			readyOnce.Do(func() { close(rws.ready) })
+		})
 
 		// Check if context was cancelled (clean shutdown).
 		if resourceCtx.Err() != nil {
@@ -602,12 +627,16 @@ func (m *watchManager[ClientT]) safeWatch(
 	client *ClientT,
 	meta ResourceMeta,
 	sink WatchEventSink,
+	onStart func(),
 ) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("watch panic: %v", r)
 		}
 	}()
+	if onStart != nil {
+		onStart()
+	}
 	return watcher.Watch(ctx, client, meta, sink)
 }
 

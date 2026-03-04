@@ -3,11 +3,12 @@ package interceptors
 import (
 	"testing"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestDefaultUnaryInterceptors_ReturnsThree(t *testing.T) {
-	interceptors := DefaultUnaryInterceptors()
+	interceptors := DefaultUnaryInterceptors(logging.NewNop())
 	assert.Len(t, interceptors, 3, "should return exactly 3 unary interceptors")
 
 	// Each element should be non-nil (a valid interceptor function).
@@ -17,7 +18,7 @@ func TestDefaultUnaryInterceptors_ReturnsThree(t *testing.T) {
 }
 
 func TestDefaultStreamInterceptors_ReturnsThree(t *testing.T) {
-	interceptors := DefaultStreamInterceptors()
+	interceptors := DefaultStreamInterceptors(logging.NewNop())
 	assert.Len(t, interceptors, 3, "should return exactly 3 stream interceptors")
 
 	for i, ic := range interceptors {

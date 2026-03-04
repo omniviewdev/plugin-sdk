@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/metadata"
 	"google.golang.org/grpc"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
@@ -68,7 +68,7 @@ func UnaryPluginContext() grpc.UnaryServerInterceptor {
 	) (interface{}, error) {
 		ctx, err := useServerPluginContext(ctx)
 		if err != nil {
-			log.Println("error:", err)
+			logging.Default().Error(ctx, "failed to extract plugin context", logging.Error(err))
 		}
 		return handler(ctx, req)
 	}
@@ -85,7 +85,7 @@ func StreamPluginContext() grpc.StreamServerInterceptor {
 	) error {
 		ctx, err := useServerPluginContext(ss.Context())
 		if err != nil {
-			log.Println("error:", err)
+			logging.Default().Error(ss.Context(), "failed to extract plugin context", logging.Error(err))
 		}
 		wrapped := &wrappedServerStream{ServerStream: ss, ctx: ctx}
 		return handler(srv, wrapped)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -17,7 +18,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestUnaryPanicRecovery_PanicIsRecovered(t *testing.T) {
-	interceptor := UnaryPanicRecovery()
+	interceptor := UnaryPanicRecovery(logging.NewNop())
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/PanicMethod"}
 
 	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
@@ -37,7 +38,7 @@ func TestUnaryPanicRecovery_PanicIsRecovered(t *testing.T) {
 }
 
 func TestUnaryPanicRecovery_SuccessPassthrough(t *testing.T) {
-	interceptor := UnaryPanicRecovery()
+	interceptor := UnaryPanicRecovery(logging.NewNop())
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/OK"}
 
 	expected := "hello"
@@ -52,7 +53,7 @@ func TestUnaryPanicRecovery_SuccessPassthrough(t *testing.T) {
 }
 
 func TestUnaryPanicRecovery_ErrorPassthrough(t *testing.T) {
-	interceptor := UnaryPanicRecovery()
+	interceptor := UnaryPanicRecovery(logging.NewNop())
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Fail"}
 
 	handlerErr := status.Error(codes.NotFound, "not found")
@@ -75,7 +76,7 @@ func TestUnaryPanicRecovery_ErrorPassthrough(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestStreamPanicRecovery_PanicIsRecovered(t *testing.T) {
-	interceptor := StreamPanicRecovery()
+	interceptor := StreamPanicRecovery(logging.NewNop())
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamPanic"}
 
 	handler := func(_ interface{}, _ grpc.ServerStream) error {
@@ -93,7 +94,7 @@ func TestStreamPanicRecovery_PanicIsRecovered(t *testing.T) {
 }
 
 func TestStreamPanicRecovery_SuccessPassthrough(t *testing.T) {
-	interceptor := StreamPanicRecovery()
+	interceptor := StreamPanicRecovery(logging.NewNop())
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamOK"}
 
 	handler := func(_ interface{}, _ grpc.ServerStream) error {
@@ -105,7 +106,7 @@ func TestStreamPanicRecovery_SuccessPassthrough(t *testing.T) {
 }
 
 func TestStreamPanicRecovery_ErrorPassthrough(t *testing.T) {
-	interceptor := StreamPanicRecovery()
+	interceptor := StreamPanicRecovery(logging.NewNop())
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamFail"}
 
 	handlerErr := errors.New("stream handler error")

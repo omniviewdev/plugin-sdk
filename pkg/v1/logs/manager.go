@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hashicorp/go-hclog"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 	"github.com/omniviewdev/plugin-sdk/settings"
@@ -21,11 +21,11 @@ import (
 
 const (
 	MaxConcurrentStreamsPerSession = 20
-	MaxScannerBuffer              = 1024 * 1024 // 1MB max line length
-	scannerInitBuf                = 4096        // 4KB initial; grows to MaxScannerBuffer on demand
-	ReconnectMaxAttempts          = 5
-	ReconnectInitialDelay         = 1 * time.Second
-	ReconnectMaxDelay             = 30 * time.Second
+	MaxScannerBuffer               = 1024 * 1024 // 1MB max line length
+	scannerInitBuf                 = 4096        // 4KB initial; grows to MaxScannerBuffer on demand
+	ReconnectMaxAttempts           = 5
+	ReconnectInitialDelay          = 1 * time.Second
+	ReconnectMaxDelay              = 30 * time.Second
 )
 
 // ---------------------------------------------------------------------------
@@ -127,12 +127,12 @@ func (s *sessionState) status() LogSessionStatus {
 
 // ManagerConfig configures the Manager.
 type ManagerConfig struct {
-	Logger    hclog.Logger
+	Logger    logging.Logger
 	Settings  settings.Provider
 	Handlers  map[string]Handler
 	Resolvers map[string]SourceResolver
-	Sink  OutputSink      // optional: nil → ChannelSink created by Stream()
-	Clock timeutil.Clock // optional: nil → timeutil.RealClock
+	Sink      OutputSink     // optional: nil → ChannelSink created by Stream()
+	Clock     timeutil.Clock // optional: nil → timeutil.RealClock
 }
 
 // ---------------------------------------------------------------------------
@@ -141,11 +141,11 @@ type ManagerConfig struct {
 
 // Manager manages the lifecycle of log sessions within a plugin process.
 type Manager struct {
-	log      hclog.Logger
+	log      logging.Logger
 	settings settings.Provider
 	registry *handlerRegistry
-	sink  OutputSink
-	clock timeutil.Clock
+	sink     OutputSink
+	clock    timeutil.Clock
 
 	mu       sync.RWMutex
 	sessions map[string]*sessionState
@@ -159,7 +159,7 @@ var _ Provider = (*Manager)(nil)
 func NewManager(cfg ManagerConfig) *Manager {
 	logger := cfg.Logger
 	if logger == nil {
-		logger = hclog.NewNullLogger()
+		logger = logging.NewNop()
 	}
 
 	clk := cfg.Clock
@@ -168,7 +168,7 @@ func NewManager(cfg ManagerConfig) *Manager {
 	}
 
 	return &Manager{
-		log:      logger.Named("LogManager"),
+		log:      logger.Named("logs.manager"),
 		settings: cfg.Settings,
 		registry: newHandlerRegistry(cfg.Handlers, cfg.Resolvers),
 		sink:     cfg.Sink,
@@ -193,7 +193,10 @@ func (m *Manager) CreateSession(
 		return nil, fmt.Errorf("plugin context is nil")
 	}
 
-	logger := m.log.With("resource_key", opts.ResourceKey, "resource_id", opts.ResourceID)
+	logger := m.log.With(
+		logging.String("resource_key", opts.ResourceKey),
+		logging.String("resource_id", opts.ResourceID),
+	)
 
 	sessionID := uuid.NewString()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -231,7 +234,7 @@ func (m *Manager) CreateSession(
 	m.wg.Add(1)
 	go m.orchestrateSession(ss)
 
-	logger.Debug("log session created", "session_id", sessionID)
+	logger.Debugw(ctx, "log session created", "session_id", sessionID)
 	snap := ss.snapshot()
 	return &snap, nil
 }
@@ -283,7 +286,7 @@ func (m *Manager) CloseSession(_ *types.PluginContext, sessionID string) error {
 	select {
 	case <-ss.done:
 	case <-m.clock.After(10 * time.Second):
-		m.log.Warn("CloseSession timed out waiting for goroutines", "session_id", sessionID)
+		m.log.Warnw(ss.ctx, "CloseSession timed out waiting for goroutines", "session_id", sessionID)
 	}
 	return nil
 }
@@ -354,7 +357,7 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 		close(ss.done)
 	}()
 
-	logger := m.log.With("session_id", ss.session.ID)
+	logger := m.log.With(logging.String("session_id", ss.session.ID))
 	opts := ss.opts
 
 	// Try direct handler first
@@ -368,7 +371,7 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	// Try source resolver
 	resolver, hasResolver := m.registry.FindResolver(opts.ResourceKey)
 	if !hasResolver {
-		logger.Error("no handler or resolver found for resource", "key", opts.ResourceKey)
+		logger.Errorw(ss.ctx, "no handler or resolver found for resource", "key", opts.ResourceKey)
 		ss.setStatus(LogSessionStatusError)
 		m.emitEvent(ss.session.ID, LogStreamEvent{
 			Type:      StreamEventStreamError,
@@ -385,7 +388,7 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 		Params: opts.Options.Params,
 	})
 	if err != nil {
-		logger.Error("failed to resolve sources", "error", err)
+		logger.Errorw(ss.ctx, "failed to resolve sources", "error", err)
 		ss.setStatus(LogSessionStatusError)
 		m.emitEvent(ss.session.ID, LogStreamEvent{
 			Type:      StreamEventStreamError,
@@ -398,7 +401,7 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	// Find a handler for the resolved sources
 	h, ok := m.registry.AnyHandler()
 	if !ok {
-		logger.Error("no handler available for resolved sources")
+		logger.Error(ss.ctx, "no handler available for resolved sources")
 		ss.setStatus(LogSessionStatusError)
 		m.emitEvent(ss.session.ID, LogStreamEvent{
 			Type:      StreamEventStreamError,
@@ -427,12 +430,7 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	m.fanOutSources(ss, h, result.Sources, opts, logger)
 }
 
-func (m *Manager) streamFromHandler(
-	ss *sessionState,
-	handler Handler,
-	opts CreateSessionOptions,
-	logger hclog.Logger,
-) {
+func (m *Manager) streamFromHandler(ss *sessionState, handler Handler, opts CreateSessionOptions, logger logging.Logger) {
 	var sources []LogSource
 	if handler.SourceBuilder != nil {
 		sources = handler.SourceBuilder(opts.ResourceID, opts.ResourceData, opts.Options)
@@ -441,7 +439,7 @@ func (m *Manager) streamFromHandler(
 	}
 
 	if len(sources) == 0 {
-		logger.Warn("source builder returned no sources", "resource_key", opts.ResourceKey)
+		logger.Warnw(ss.ctx, "source builder returned no sources", "resource_key", opts.ResourceKey)
 		ss.setStatus(LogSessionStatusError)
 		m.emitEvent(ss.session.ID, LogStreamEvent{
 			Type:      StreamEventStreamError,
@@ -464,7 +462,7 @@ func (m *Manager) fanOutSources(
 	handler Handler,
 	sources []LogSource,
 	opts CreateSessionOptions,
-	logger hclog.Logger,
+	logger logging.Logger,
 ) {
 	sem := make(chan struct{}, MaxConcurrentStreamsPerSession)
 	var wg sync.WaitGroup
@@ -499,9 +497,9 @@ func (m *Manager) streamSource(
 	handler Handler,
 	source LogSource,
 	opts CreateSessionOptions,
-	logger hclog.Logger,
+	logger logging.Logger,
 ) {
-	logger = logger.With("source_id", source.ID)
+	logger = logger.With(logging.String("source_id", source.ID))
 
 	// Create per-source child context for individual cancellation
 	sourceCtx, sourceCancel := context.WithCancel(ss.ctx)
@@ -548,7 +546,7 @@ func (m *Manager) streamWithReconnect(
 	handler Handler,
 	source LogSource,
 	req LogStreamRequest,
-	logger hclog.Logger,
+	logger logging.Logger,
 ) {
 	delay := ReconnectInitialDelay
 
@@ -586,11 +584,11 @@ func (m *Manager) streamWithReconnect(
 			if ctx.Err() != nil {
 				return // context cancelled, stop reconnecting
 			}
-			logger.Error("failed to open log stream", "error", err, "attempt", attempt)
+			logger.Errorw(ctx, "failed to open log stream", "error", err, "attempt", attempt)
 			continue
 		}
 		if reader == nil {
-			logger.Error("handler returned nil reader without error", "source", source.ID, "attempt", attempt)
+			logger.Errorw(ctx, "handler returned nil reader without error", "source", source.ID, "attempt", attempt)
 			continue
 		}
 
@@ -616,7 +614,7 @@ func (m *Manager) streamWithReconnect(
 			}
 		}
 
-		logger.Warn("log stream interrupted", "error", err, "source", source.ID)
+		logger.Warnw(ctx, "log stream interrupted", "error", err, "source", source.ID)
 	}
 
 	m.emitEvent(ss.session.ID, LogStreamEvent{
@@ -702,7 +700,7 @@ func (m *Manager) watchSourceEvents(
 	handler Handler,
 	events <-chan SourceEvent,
 	opts CreateSessionOptions,
-	logger hclog.Logger,
+	logger logging.Logger,
 ) {
 	for {
 		select {
@@ -770,7 +768,7 @@ func (m *Manager) handleCommands(ctx context.Context, in <-chan StreamInput) {
 			m.mu.RUnlock()
 
 			if !found {
-				m.log.Error("session not found for stream command", "session_id", input.SessionID)
+				m.log.Errorw(ctx, "session not found for stream command", "session_id", input.SessionID)
 				continue
 			}
 
@@ -861,7 +859,7 @@ func (m *Manager) updateEnabledSources(ss *sessionState, enabledStr string) {
 		return
 	}
 
-	logger := m.log.With("session_id", ss.session.ID)
+	logger := m.log.With(logging.String("session_id", ss.session.ID))
 	for _, src := range toRestart {
 		ss.sourceWg.Add(1)
 		go func() {

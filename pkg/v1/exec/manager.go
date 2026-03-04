@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/go-hclog"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
@@ -31,7 +31,7 @@ const (
 
 // ManagerConfig configures the Manager.
 type ManagerConfig struct {
-	Logger          hclog.Logger
+	Logger          logging.Logger
 	Settings        settings.Provider
 	Handlers        map[string]Handler
 	Sink            OutputSink      // nil → ChannelSink created by Stream()
@@ -45,7 +45,7 @@ type ManagerConfig struct {
 
 // Manager manages the lifecycle of terminal sessions within a plugin process.
 type Manager struct {
-	log              hclog.Logger
+	log              logging.Logger
 	settingsProvider settings.Provider
 	handlers         map[string]Handler
 	sink             OutputSink
@@ -65,7 +65,7 @@ var _ Provider = (*Manager)(nil)
 func NewManager(cfg ManagerConfig) *Manager {
 	logger := cfg.Logger
 	if logger == nil {
-		logger = hclog.NewNullLogger()
+		logger = logging.NewNop()
 	}
 
 	clk := cfg.Clock
@@ -82,7 +82,7 @@ func NewManager(cfg ManagerConfig) *Manager {
 	handlers := maps.Clone(cfg.Handlers)
 
 	return &Manager{
-		log:              logger.Named("ExecManager"),
+		log:              logger.Named("exec.manager"),
 		settingsProvider: cfg.Settings,
 		handlers:         handlers,
 		sink:             cfg.Sink,
@@ -143,42 +143,42 @@ func (m *Manager) handleStreamInput(ctx context.Context, in chan StreamInput) {
 			if !ok {
 				return
 			}
-			logger := m.log.With("session", input.SessionID)
-			logger.Debug("received stream input")
+			logger := m.log.With(logging.String("session", input.SessionID))
+			logger.Debug(ctx, "received stream input")
 
 			m.mu.RLock()
 			ss, exists := m.sessions[input.SessionID]
 			m.mu.RUnlock()
 			if !exists {
-				logger.Error("session not found")
+				logger.Error(ctx, "session not found")
 				continue
 			}
 
 			if err := m.writeToSession(ss, input.Data); err != nil {
-				logger.Error("error writing to session", "error", err)
+				logger.Errorw(ctx, "error writing to session", "error", err)
 			}
 
 		case resize := <-m.resize:
-			logger := m.log.With("session", resize.SessionID)
-			logger.Debug("received stream resize")
+			logger := m.log.With(logging.String("session", resize.SessionID))
+			logger.Debug(ctx, "received stream resize")
 
 			m.mu.RLock()
 			ss, exists := m.sessions[resize.SessionID]
 			m.mu.RUnlock()
 			if !exists {
-				logger.Error("session not found")
+				logger.Error(ctx, "session not found")
 				continue
 			}
 
 			if ss.ttyResize {
 				if err := ss.terminal.Resize(resize.Rows, resize.Cols); err != nil {
-					logger.Error("failed to resize terminal", "error", err)
+					logger.Errorw(ctx, "failed to resize terminal", "error", err)
 				}
 			} else {
 				select {
 				case ss.resize <- SessionResizeInput{Cols: int32(resize.Cols), Rows: int32(resize.Rows)}:
 				case <-m.clock.After(ResizeTimeout):
-					logger.Error("timeout resizing session")
+					logger.Error(ctx, "timeout resizing session")
 				}
 			}
 		}
@@ -217,9 +217,9 @@ func (m *Manager) CreateSession(
 	opts SessionOptions,
 ) (*Session, error) {
 	logger := m.log.With(
-		"resource", opts.ResourceKey,
-		"param_keys", sanitizeMapKeys(opts.Params),
-		"label_keys", sanitizeMapKeys(opts.Labels),
+		logging.String("resource", opts.ResourceKey),
+		logging.Any("param_keys", sanitizeMapKeys(opts.Params)),
+		logging.Any("label_keys", sanitizeMapKeys(opts.Labels)),
 	)
 
 	// Look up handler
@@ -302,7 +302,7 @@ func (m *Manager) CreateSession(
 	m.sessions[opts.ID] = ss
 	m.mu.Unlock()
 
-	logger.Debug("session created", "session", opts.ID)
+	logger.Debugw(ctx, "session created", "session", opts.ID)
 
 	// Start goroutines tracked by the sessionState's WaitGroup.
 	ss.wg.Add(2)
@@ -324,15 +324,15 @@ func (m *Manager) CreateSession(
 func (m *Manager) handleSignals(ss *sessionState) {
 	defer ss.wg.Done()
 
-	logger := m.log.With("session", ss.session.ID)
+	logger := m.log.With(logging.String("session", ss.session.ID))
 
 	select {
 	case err := <-ss.stopChan:
-		logger.Debug("stop channel received, stopping read stream handling")
+		logger.Debug(ss.ctx, "stop channel received, stopping read stream handling")
 		m.cleanupSession(ss, err)
 
 	case <-ss.ctx.Done():
-		logger.Debug("context cancelled, stopping read stream handling")
+		logger.Debug(ss.ctx, "context cancelled, stopping read stream handling")
 		m.cleanupSession(ss, nil)
 	}
 }
@@ -340,7 +340,7 @@ func (m *Manager) handleSignals(ss *sessionState) {
 func (m *Manager) handleStream(ss *sessionState) {
 	defer ss.wg.Done()
 
-	logger := m.log.With("session", ss.session.ID)
+	logger := m.log.With(logging.String("session", ss.session.ID))
 	masterFd := ss.terminal.MasterFd()
 
 	for {
@@ -348,9 +348,9 @@ func (m *Manager) handleStream(ss *sessionState) {
 		read, err := masterFd.Read(buf)
 		if err != nil {
 			if err != io.EOF {
-				logger.Error("error reading from terminal", "error", err)
+				logger.Errorw(ss.ctx, "error reading from terminal", "error", err)
 			} else {
-				logger.Debug("EOF reached on terminal")
+				logger.Debug(ss.ctx, "EOF reached on terminal")
 			}
 			// On read error or EOF, cancel so handleSignals fires cleanup.
 			ss.cancel()
@@ -439,7 +439,7 @@ func (m *Manager) writeToSession(ss *sessionState, data []byte) error {
 
 // AttachSession marks a session as attached and returns its current output buffer.
 func (m *Manager) AttachSession(
-	_ *types.PluginContext,
+	pluginctx *types.PluginContext,
 	sessionID string,
 ) (*Session, []byte, error) {
 	m.mu.RLock()
@@ -451,14 +451,14 @@ func (m *Manager) AttachSession(
 	}
 
 	ss.setAttached(true)
-	m.log.Debug("session attached", "session", sessionID)
+	m.log.Debugw(pluginContextOr(ss.ctx, pluginctx), "session attached", "session", sessionID)
 
 	snap := ss.snapshot()
 	return &snap, ss.getBufferData(), nil
 }
 
 // DetachSession marks a session as not attached, stopping output broadcast.
-func (m *Manager) DetachSession(_ *types.PluginContext, sessionID string) (*Session, error) {
+func (m *Manager) DetachSession(pluginctx *types.PluginContext, sessionID string) (*Session, error) {
 	m.mu.RLock()
 	ss, exists := m.sessions[sessionID]
 	m.mu.RUnlock()
@@ -468,14 +468,14 @@ func (m *Manager) DetachSession(_ *types.PluginContext, sessionID string) (*Sess
 	}
 
 	ss.setAttached(false)
-	m.log.Debug("session detached", "session", sessionID)
+	m.log.Debugw(pluginContextOr(ss.ctx, pluginctx), "session detached", "session", sessionID)
 
 	snap := ss.snapshot()
 	return &snap, nil
 }
 
 // CloseSession cancels the session's context, triggering cleanup.
-func (m *Manager) CloseSession(_ *types.PluginContext, sessionID string) error {
+func (m *Manager) CloseSession(pluginctx *types.PluginContext, sessionID string) error {
 	m.mu.RLock()
 	ss, exists := m.sessions[sessionID]
 	m.mu.RUnlock()
@@ -485,16 +485,27 @@ func (m *Manager) CloseSession(_ *types.PluginContext, sessionID string) error {
 	}
 
 	ss.cancel()
-	m.log.Debug("session terminated", "session", sessionID)
+	ctx := pluginContextOr(ss.ctx, pluginctx)
+	m.log.Debugw(ctx, "session terminated", "session", sessionID)
 
 	// Wait for session goroutines to complete with a safety timeout.
 	select {
 	case <-ss.waitDone():
 		return nil
 	case <-m.clock.After(10 * time.Second):
-		m.log.Warn("CloseSession timed out waiting for goroutines", "session_id", sessionID)
+		m.log.Warnw(ctx, "CloseSession timed out waiting for goroutines", "session_id", sessionID)
 		return fmt.Errorf("CloseSession timed out waiting for session %s goroutines", sessionID)
 	}
+}
+
+func pluginContextOr(fallback context.Context, pluginctx *types.PluginContext) context.Context {
+	if pluginctx != nil && pluginctx.Context != nil {
+		return pluginctx.Context
+	}
+	if fallback != nil {
+		return fallback
+	}
+	return context.TODO()
 }
 
 // ResizeSession resizes a session.

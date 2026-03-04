@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/hashicorp/go-hclog"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 	"github.com/omniviewdev/plugin-sdk/settings"
@@ -21,7 +21,7 @@ const readyTimeout = 30 * time.Second
 
 // Manager manages the lifecycle of networker actions, such as port forwarding sessions.
 type Manager struct {
-	log              hclog.Logger
+	log              logging.Logger
 	settingsProvider settings.Provider
 	portChecker      PortChecker
 	clock            timeutil.Clock
@@ -29,7 +29,6 @@ type Manager struct {
 
 	resourceForwarders map[string]ResourceForwarder
 	staticForwarders   map[string]StaticForwarder
-
 
 	mu       sync.RWMutex
 	sessions map[string]*sessionEntry
@@ -43,7 +42,7 @@ var _ Provider = (*Manager)(nil)
 func NewManager(cfg ManagerConfig, opts PluginOpts) *Manager {
 	logger := cfg.Logger
 	if logger == nil {
-		logger = hclog.NewNullLogger()
+		logger = logging.NewNop()
 	}
 
 	clk := cfg.Clock
@@ -66,7 +65,7 @@ func NewManager(cfg ManagerConfig, opts PluginOpts) *Manager {
 	sf := maps.Clone(opts.StaticForwarders)
 
 	return &Manager{
-		log:                logger.Named("NetworkerManager"),
+		log:                logger.Named("networker.manager"),
 		settingsProvider:   cfg.Settings,
 		portChecker:        pc,
 		clock:              clk,
@@ -166,7 +165,7 @@ func (m *Manager) StartPortForwardSession(
 		baseCtx = context.Background()
 	}
 
-	logger := m.log.With("connection_type", opts.ConnectionType)
+	logger := m.log.With(logging.String("connection_type", string(opts.ConnectionType)))
 
 	// Resolve port
 	var err error
@@ -282,6 +281,7 @@ func (m *Manager) StartPortForwardSession(
 
 	entry := &sessionEntry{
 		session: newSession,
+		ctx:     ctx,
 		cancel:  cancel,
 	}
 
@@ -304,7 +304,7 @@ func (m *Manager) StartPortForwardSession(
 	}
 	m.mu.Unlock()
 
-	logger.Debug("port forward session started", "session_id", sessionID)
+	logger.Debugw(ctx, "port forward session started", "session_id", sessionID)
 
 	snap := entry.snapshot()
 	return &snap, nil
@@ -380,15 +380,15 @@ func (m *Manager) monitorSession(entry *sessionEntry, errCh <-chan error) {
 	if !ok || err == nil {
 		// Channel closed or nil error — clean stop.
 		if transErr := entry.transition(SessionStateStopped); transErr != nil {
-			m.log.Debug("monitor: transition to STOPPED failed", "session_id", entry.session.ID, "error", transErr)
+			m.log.Debugw(entry.ctx, "monitor: transition to STOPPED failed", "session_id", entry.session.ID, "error", transErr)
 		}
 		return
 	}
 
 	// Fatal error — transition to FAILED.
-	m.log.Error("port forward session failed", "session_id", entry.session.ID, "error", err)
+	m.log.Errorw(entry.ctx, "port forward session failed", "session_id", entry.session.ID, "error", err)
 	if transErr := entry.transition(SessionStateFailed); transErr != nil {
-		m.log.Debug("monitor: transition to FAILED failed", "session_id", entry.session.ID, "error", transErr)
+		m.log.Debugw(entry.ctx, "monitor: transition to FAILED failed", "session_id", entry.session.ID, "error", transErr)
 	}
 }
 
@@ -433,6 +433,6 @@ func (m *Manager) StopAll() {
 	select {
 	case <-done:
 	case <-m.clock.After(m.closeTimeout):
-		m.log.Warn("StopAll timed out waiting for monitor goroutines")
+		m.log.Warn(context.TODO(), "StopAll timed out waiting for monitor goroutines")
 	}
 }

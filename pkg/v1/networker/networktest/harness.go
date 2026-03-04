@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hashicorp/go-hclog"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/networker"
@@ -26,7 +26,7 @@ type harnessConfig struct {
 	staticForwarders   map[string]networker.StaticForwarder
 	portChecker        networker.PortChecker
 	clock              timeutil.Clock
-	logger             hclog.Logger
+	logger             logging.Logger
 }
 
 // WithResourceForwarder registers a resource forwarder.
@@ -58,7 +58,7 @@ func WithClock(clk timeutil.Clock) HarnessOption {
 }
 
 // WithLogger sets a custom logger.
-func WithLogger(l hclog.Logger) HarnessOption {
+func WithLogger(l logging.Logger) HarnessOption {
 	return func(c *harnessConfig) {
 		c.logger = l
 	}
@@ -80,7 +80,7 @@ func Mount(t *testing.T, opts ...HarnessOption) *Harness {
 		cfg.portChecker = NewFakePortChecker(10000)
 	}
 	if cfg.logger == nil {
-		cfg.logger = hclog.NewNullLogger()
+		cfg.logger = logging.NewNop()
 	}
 	if cfg.clock == nil {
 		cfg.clock = timeutil.RealClock{}

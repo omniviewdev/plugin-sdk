@@ -3,9 +3,9 @@ package plugin
 import (
 	"context"
 	"errors"
-	"log"
 	"runtime/debug"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -24,6 +24,7 @@ type ResourcePluginServer struct {
 	// This is the real implementation
 	Impl             types.ResourceProvider
 	settingsProvider pkgsettings.Provider
+	log              logging.Logger
 }
 
 // newPluginContext creates a PluginContext with settings injected.
@@ -509,7 +510,7 @@ func (s *ResourcePluginServer) ListenForEvents(
 	_ *emptypb.Empty,
 	stream proto.ResourcePlugin_ListenForEventsServer,
 ) error {
-	log.Printf("ListenForEvents")
+	s.log.Debug(stream.Context(), "ListenForEvents started")
 	pluginCtx := s.newPluginContext(stream.Context())
 
 	addChan := make(chan types.InformerAddPayload)
@@ -520,11 +521,14 @@ func (s *ResourcePluginServer) ListenForEvents(
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[PANIC] ListenForEvents goroutine: %v\n%s", r, debug.Stack())
+				s.log.Errorw(stream.Context(), "panic in ListenForEvents goroutine",
+					"panic", r,
+					"stack", string(debug.Stack()),
+				)
 			}
 		}()
 		if err := s.Impl.ListenForEvents(pluginCtx, addChan, updateChan, deleteChan, stateChan); err != nil {
-			log.Printf("failed to listen for events: %s", err.Error())
+			s.log.Error(stream.Context(), "failed to listen for events", logging.Error(err))
 			return
 		}
 	}()
@@ -532,12 +536,12 @@ func (s *ResourcePluginServer) ListenForEvents(
 	for {
 		select {
 		case <-stream.Context().Done():
-			log.Printf("Context Done")
+			s.log.Debug(stream.Context(), "ListenForEvents context done")
 			return status.Errorf(codes.Canceled, "context canceled")
 		case event := <-addChan:
 			data, err := structpb.NewStruct(event.Data)
 			if err != nil {
-				log.Printf("failed to convert data to struct: %s", err.Error())
+				s.log.Error(stream.Context(), "failed to convert add event data", logging.Error(err))
 				continue
 			}
 			if err = stream.SendMsg(&proto.InformerEvent{
@@ -551,17 +555,17 @@ func (s *ResourcePluginServer) ListenForEvents(
 					},
 				},
 			}); err != nil {
-				log.Printf("failed to send add event: %s", err.Error())
+				s.log.Error(stream.Context(), "failed to send add event", logging.Error(err))
 			}
 		case event := <-updateChan:
 			olddata, err := structpb.NewStruct(event.OldData)
 			if err != nil {
-				log.Printf("failed to convert olddata to struct: %s", err.Error())
+				s.log.Error(stream.Context(), "failed to convert old update data", logging.Error(err))
 				continue
 			}
 			newdata, err := structpb.NewStruct(event.NewData)
 			if err != nil {
-				log.Printf("failed to convert newdata to struct: %s", err.Error())
+				s.log.Error(stream.Context(), "failed to convert new update data", logging.Error(err))
 				continue
 			}
 
@@ -577,12 +581,12 @@ func (s *ResourcePluginServer) ListenForEvents(
 					},
 				},
 			}); err != nil {
-				log.Printf("failed to send update event: %s", err.Error())
+				s.log.Error(stream.Context(), "failed to send update event", logging.Error(err))
 			}
 		case event := <-deleteChan:
 			data, err := structpb.NewStruct(event.Data)
 			if err != nil {
-				log.Printf("failed to convert data to struct: %s", err.Error())
+				s.log.Error(stream.Context(), "failed to convert delete event data", logging.Error(err))
 				continue
 			}
 			if err = stream.SendMsg(&proto.InformerEvent{
@@ -596,7 +600,7 @@ func (s *ResourcePluginServer) ListenForEvents(
 					},
 				},
 			}); err != nil {
-				log.Printf("failed to send delete event: %s", err.Error())
+				s.log.Error(stream.Context(), "failed to send delete event", logging.Error(err))
 			}
 		case event := <-stateChan:
 			stateProto := &proto.InformerStateEvent{
@@ -614,7 +618,7 @@ func (s *ResourcePluginServer) ListenForEvents(
 				Connection: event.Connection,
 				Action:     &proto.InformerEvent_State{State: stateProto},
 			}); err != nil {
-				log.Printf("failed to send state event: %s", err.Error())
+				s.log.Error(stream.Context(), "failed to send state event", logging.Error(err))
 			}
 		}
 	}
@@ -819,12 +823,15 @@ func (s *ResourcePluginServer) StreamAction(
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[PANIC] StreamAction goroutine: %v\n%s", r, debug.Stack())
+				s.log.Errorw(stream.Context(), "panic in StreamAction goroutine",
+					"panic", r,
+					"stack", string(debug.Stack()),
+				)
 			}
 			close(eventChan)
 		}()
 		if err := s.Impl.StreamAction(pluginCtx, in.GetKey(), in.GetActionId(), input, eventChan); err != nil {
-			log.Printf("failed to stream action: %s", err.Error())
+			s.log.Error(stream.Context(), "failed to stream action", logging.Error(err))
 		}
 	}()
 
@@ -840,7 +847,7 @@ func (s *ResourcePluginServer) StreamAction(
 			if event.Data != nil {
 				data, err = structpb.NewStruct(event.Data)
 				if err != nil {
-					log.Printf("failed to convert event data: %s", err.Error())
+					s.log.Error(stream.Context(), "failed to convert stream action event data", logging.Error(err))
 					continue
 				}
 			}
@@ -848,7 +855,7 @@ func (s *ResourcePluginServer) StreamAction(
 				Type: event.Type,
 				Data: data,
 			}); err != nil {
-				log.Printf("failed to send stream action event: %s", err.Error())
+				s.log.Error(stream.Context(), "failed to send stream action event", logging.Error(err))
 				return err
 			}
 		}
@@ -1091,7 +1098,7 @@ func (s *ResourcePluginServer) WatchConnections(
 	_ *emptypb.Empty,
 	stream proto.ResourcePlugin_WatchConnectionsServer,
 ) error {
-	log.Printf("WatchConnections")
+	s.log.Debug(stream.Context(), "WatchConnections started")
 	pluginCtx := s.newPluginContext(stream.Context())
 
 	eventChan := make(chan []pkgtypes.Connection)
@@ -1099,11 +1106,14 @@ func (s *ResourcePluginServer) WatchConnections(
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[PANIC] WatchConnections goroutine: %v\n%s", r, debug.Stack())
+				s.log.Errorw(stream.Context(), "panic in WatchConnections goroutine",
+					"panic", r,
+					"stack", string(debug.Stack()),
+				)
 			}
 		}()
 		if err := s.Impl.WatchConnections(pluginCtx, eventChan); err != nil {
-			log.Printf("failed to listen for connection change events: %s", err.Error())
+			s.log.Error(stream.Context(), "failed to listen for connection change events", logging.Error(err))
 			return
 		}
 	}()
@@ -1111,7 +1121,7 @@ func (s *ResourcePluginServer) WatchConnections(
 	for {
 		select {
 		case <-stream.Context().Done():
-			log.Printf("Context Done")
+			s.log.Debug(stream.Context(), "WatchConnections context done")
 			return status.Errorf(codes.Canceled, "context canceled")
 		case event := <-eventChan:
 			// convert and send
@@ -1119,7 +1129,7 @@ func (s *ResourcePluginServer) WatchConnections(
 			for _, connection := range event {
 				converted, err := connectionToProto(connection)
 				if err != nil {
-					log.Printf("failed to convert connection: %s\n", err)
+					s.log.Error(stream.Context(), "failed to convert connection", logging.Error(err))
 					continue
 				}
 				connections = append(connections, converted)
@@ -1129,7 +1139,7 @@ func (s *ResourcePluginServer) WatchConnections(
 				Connections: connections,
 			}); err != nil {
 				// do nothing for now
-				log.Printf("failed to send add event: %s\n", err.Error())
+				s.log.Error(stream.Context(), "failed to send connection event", logging.Error(err))
 			}
 		}
 	}

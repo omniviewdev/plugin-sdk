@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	commandpb "github.com/omniviewdev/plugin-sdk/proto/v1/command"
 	"google.golang.org/grpc/codes"
@@ -15,7 +14,6 @@ import (
 // from the transport layer.
 
 type PluginServer struct {
-	log  hclog.Logger
 	Impl Provider
 }
 

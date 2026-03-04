@@ -2,9 +2,9 @@ package services
 
 import (
 	"fmt"
-	"log"
 	"sync"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
 )
@@ -328,6 +328,7 @@ func (r *StaticResourceTypeManager) RemoveConnection(
 type DynamicResourceTypeManager struct {
 	// provider handles discovery client lifecycle and resource type discovery
 	provider types.DiscoveryProvider
+	log      logging.Logger
 
 	*StaticResourceTypeManager // embed this last for pointer receiver semantics
 }
@@ -349,6 +350,7 @@ func NewDynamicResourceTypeManager(
 			defaultResourceDefinition,
 		),
 		provider: provider,
+		log:      logging.Default().Named("resource.resource_type_manager"),
 	}
 }
 
@@ -370,7 +372,10 @@ func (r *DynamicResourceTypeManager) SyncConnection(
 		)
 	}
 
-	log.Printf("availableResourceTypes: %+v", availableResourceTypes)
+	r.log.Debugw(ctx.Context, "discovered available resource types",
+		"connection_id", connection.ID,
+		"count", len(availableResourceTypes),
+	)
 
 	available := enrichResourceMetas(r.resourceTypes, availableResourceTypes)
 	r.namespacedResourceTypes[connection.ID] = available

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/go-hclog"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/exec"
@@ -28,7 +28,7 @@ type harnessConfig struct {
 	handlers        map[string]exec.Handler
 	terminalFactory exec.TerminalFactory
 	clock           timeutil.Clock
-	logger          hclog.Logger
+	logger          logging.Logger
 }
 
 // WithHandler registers a handler with the harness.
@@ -53,7 +53,7 @@ func WithClock(clk timeutil.Clock) HarnessOption {
 }
 
 // WithLogger sets a custom logger.
-func WithLogger(l hclog.Logger) HarnessOption {
+func WithLogger(l logging.Logger) HarnessOption {
 	return func(c *harnessConfig) {
 		c.logger = l
 	}
@@ -75,7 +75,7 @@ func Mount(t *testing.T, opts ...HarnessOption) *Harness {
 		cfg.terminalFactory = NewFakeTerminalFactory()
 	}
 	if cfg.logger == nil {
-		cfg.logger = hclog.NewNullLogger()
+		cfg.logger = logging.NewNop()
 	}
 	if cfg.clock == nil {
 		cfg.clock = timeutil.RealClock{}

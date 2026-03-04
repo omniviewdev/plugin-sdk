@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/hashicorp/go-hclog"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -17,7 +17,7 @@ import (
 
 type PluginServer struct {
 	execpb.UnimplementedExecPluginServer
-	log  hclog.Logger
+	log  logging.Logger
 	Impl Provider
 }
 

@@ -3,8 +3,8 @@ package resource
 import (
 	"errors"
 	"fmt"
-	"log"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -35,6 +35,7 @@ func NewResourceController[ClientT any](
 		schemaFunc:          schemaFunc,
 		errorClassifier:     errorClassifier,
 		syncPolicies:        syncPolicies,
+		log:                 logging.Default().Named("resource.controller"),
 	}
 	if createInformerFunc != nil {
 		controller.withInformer = true
@@ -69,6 +70,7 @@ type resourceController[ClientT any] struct {
 	deleteChan          chan types.InformerDeletePayload
 	stateChan           chan types.InformerStateEvent
 	withInformer        bool
+	log                 logging.Logger
 }
 
 // ClassifyResourceError delegates to the plugin's error classifier if one was provided.
@@ -239,11 +241,17 @@ func (c *resourceController[ClientT]) StartConnectionInformer(
 	}
 
 	resourceTypes := c.GetResourceTypes(connectionID)
-	log.Println("got resource types in StartConnectionInformer: ", resourceTypes)
+	c.log.Debugw(ctx.Context, "starting informer for resource types",
+		"connection_id", connectionID,
+		"resource_count", len(resourceTypes),
+	)
 	for key, resource := range resourceTypes {
 		policy := c.syncPolicies[key] // defaults to SyncOnConnect (zero value)
 		if err = c.informerManager.RegisterResource(ctx, ctx.Connection, resource, policy); err != nil {
-			log.Printf("unable to register resource: %s", err.Error())
+			c.log.Error(ctx.Context, "unable to register resource",
+				logging.String("resource_key", key),
+				logging.Error(err),
+			)
 		}
 	}
 
@@ -284,11 +292,11 @@ func (c *resourceController[ClientT]) ListenForEvents(
 	stateChan chan types.InformerStateEvent,
 ) error {
 	if !c.withInformer {
-		log.Println("informer not enabled")
+		c.log.Debug(ctx.Context, "informer not enabled")
 		return nil
 	}
 	if err := c.informerManager.Run(c.stopChan, addChan, updateChan, deleteChan, stateChan); err != nil {
-		log.Println("error running informer manager:", err)
+		c.log.Error(ctx.Context, "error running informer manager", logging.Error(err))
 		return fmt.Errorf("error running informer manager: %w", err)
 	}
 	return nil
@@ -525,7 +533,10 @@ func (c *resourceController[ClientT]) GetEditorSchemas(
 	if c.schemaFunc != nil {
 		s, err := c.schemaFunc(ctx, client)
 		if err != nil {
-			log.Printf("connection-level schema func error for %s: %s", connectionID, err)
+			c.log.Error(ctx.Context, "connection-level schema function failed",
+				logging.String("connection_id", connectionID),
+				logging.Error(err),
+			)
 		} else {
 			schemas = append(schemas, s...)
 		}
@@ -538,7 +549,10 @@ func (c *resourceController[ClientT]) GetEditorSchemas(
 		}
 		s, err := sr.GetEditorSchemas(ctx, client, types.ResourceMetaFromString(key))
 		if err != nil {
-			log.Printf("unable to get editor schemas for %s: %s", key, err)
+			c.log.Error(ctx.Context, "unable to get editor schemas",
+				logging.String("resource_key", key),
+				logging.Error(err),
+			)
 			continue
 		}
 		schemas = append(schemas, s...)

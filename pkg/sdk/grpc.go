@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/metadata"
 	"google.golang.org/grpc"
 	grpcMetadata "google.golang.org/grpc/metadata"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
@@ -59,7 +59,43 @@ func UseClientPluginContext(ctx context.Context) (context.Context, error) {
 	return md.ToOutgoing(ctx), nil
 }
 
-func ClientPluginContextInterceptor(
+func ClientPluginContextInterceptor(log logging.Logger) grpc.UnaryClientInterceptor {
+	if log == nil {
+		log = logging.Default()
+	}
+	return func(
+		ctx context.Context,
+		method string,
+		req, reply any,
+		cc *grpc.ClientConn,
+		invoker grpc.UnaryInvoker,
+		opts ...grpc.CallOption,
+	) error {
+		ctx, err := UseClientPluginContext(ctx)
+		if err != nil {
+			if !errors.Is(err, ErrNoPluginContext) {
+				return err
+			}
+			// Plugin context may not be present for all calls; proceed with original context.
+			log.Debug(ctx, "UseClientPluginContext: no plugin context available")
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+func withClientOpts(opts []grpc.DialOption, log logging.Logger) []grpc.DialOption {
+	if log == nil {
+		log = logging.Default()
+	}
+	if opts == nil {
+		opts = make([]grpc.DialOption, 0)
+	}
+	opts = append(opts, grpc.WithUnaryInterceptor(ClientPluginContextInterceptor(log)))
+	return opts
+}
+
+// Deprecated: use ClientPluginContextInterceptor(log).
+func LegacyClientPluginContextInterceptor(
 	ctx context.Context,
 	method string,
 	req, reply any,
@@ -67,21 +103,5 @@ func ClientPluginContextInterceptor(
 	invoker grpc.UnaryInvoker,
 	opts ...grpc.CallOption,
 ) error {
-	ctx, err := UseClientPluginContext(ctx)
-	if err != nil {
-		if !errors.Is(err, ErrNoPluginContext) {
-			return err
-		}
-		// Plugin context may not be present for all calls; proceed with original context.
-		log.Printf("UseClientPluginContext: %v", err)
-	}
-	return invoker(ctx, method, req, reply, cc, opts...)
-}
-
-func withClientOpts(opts []grpc.DialOption) []grpc.DialOption {
-	if opts == nil {
-		opts = make([]grpc.DialOption, 0)
-	}
-	opts = append(opts, grpc.WithUnaryInterceptor(ClientPluginContextInterceptor))
-	return opts
+	return ClientPluginContextInterceptor(logging.Default())(ctx, method, req, reply, cc, invoker, opts...)
 }

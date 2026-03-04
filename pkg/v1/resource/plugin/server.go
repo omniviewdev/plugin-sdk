@@ -3,7 +3,6 @@ package plugin
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"math"
 	"sync"
 
@@ -11,8 +10,9 @@ import (
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/settings"
 
-	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 )
 
 // server implements ResourcePluginServer by delegating to a resource.Provider.
@@ -20,11 +20,16 @@ type server struct {
 	resourcepb.UnimplementedResourcePluginServer
 	provider resource.Provider
 	settings settings.Provider
+	log      logging.Logger
 }
 
 // NewServer creates a gRPC server wrapping the given Provider.
 func NewServer(provider resource.Provider, sp settings.Provider) resourcepb.ResourcePluginServer {
-	return &server{provider: provider, settings: sp}
+	return &server{
+		provider: provider,
+		settings: sp,
+		log:      logging.Default().Named("resource.plugin.server"),
+	}
 }
 
 // clampInt32 safely converts an int to int32, clamping to math.MaxInt32 on overflow.
@@ -387,6 +392,7 @@ func (s *server) StreamAction(req *resourcepb.ExecuteActionRequest, stream resou
 type grpcWatchSink struct {
 	mu     sync.Mutex
 	stream resourcepb.ResourcePlugin_ListenForEventsServer
+	log    logging.Logger
 	err    error // first Send error; once set, all further sends are skipped
 }
 
@@ -408,7 +414,7 @@ func (s *grpcWatchSink) OnAdd(payload resource.WatchAddPayload) {
 		},
 	}); err != nil {
 		s.err = err
-		log.Printf("[watch-grpc-server] Send failed: %v", err)
+		s.log.Error(s.stream.Context(), "watch grpc send failed", logging.Error(err))
 	}
 }
 
@@ -430,7 +436,7 @@ func (s *grpcWatchSink) OnUpdate(payload resource.WatchUpdatePayload) {
 		},
 	}); err != nil {
 		s.err = err
-		log.Printf("[watch-grpc-server] Send failed: %v", err)
+		s.log.Error(s.stream.Context(), "watch grpc send failed", logging.Error(err))
 	}
 }
 
@@ -452,7 +458,7 @@ func (s *grpcWatchSink) OnDelete(payload resource.WatchDeletePayload) {
 		},
 	}); err != nil {
 		s.err = err
-		log.Printf("[watch-grpc-server] Send failed: %v", err)
+		s.log.Error(s.stream.Context(), "watch grpc send failed", logging.Error(err))
 	}
 }
 
@@ -460,10 +466,16 @@ func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
 	protoState, ok := watchStateToProto[event.State]
 	if !ok {
 		protoState = resourcepb.WatchState_WATCH_STATE_UNSPECIFIED
-		log.Printf("[watch-grpc-server] unknown watch state %d, falling back to UNSPECIFIED", event.State)
+		s.log.Warnw(context.Background(), "unknown watch state, falling back to unspecified", "state", event.State)
 	}
-	log.Printf("[watch-grpc-server] sending state: conn=%s key=%s state=%d protoState=%d count=%d errorCode=%s",
-		event.Connection, event.ResourceKey, event.State, protoState, event.ResourceCount, event.ErrorCode)
+	s.log.Debugw(context.Background(), "sending watch state",
+		"connection_id", event.Connection,
+		"resource_key", event.ResourceKey,
+		"state", event.State,
+		"proto_state", protoState,
+		"count", event.ResourceCount,
+		"error_code", event.ErrorCode,
+	)
 	var errMsg string
 	if event.Error != nil {
 		errMsg = event.Error.Error()
@@ -486,12 +498,12 @@ func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
 		},
 	}); err != nil {
 		s.err = err
-		log.Printf("[watch-grpc-server] Send failed: %v", err)
+		s.log.Error(s.stream.Context(), "watch grpc send failed", logging.Error(err))
 	}
 }
 
 func (s *server) ListenForEvents(_ *resourcepb.ListenRequest, stream resourcepb.ResourcePlugin_ListenForEventsServer) error {
-	sink := &grpcWatchSink{stream: stream}
+	sink := &grpcWatchSink{stream: stream, log: s.log.Named("watch_sink")}
 	return s.provider.ListenForEvents(stream.Context(), sink)
 }
 
@@ -600,4 +612,3 @@ func (s *server) GetResourceEvents(ctx context.Context, req *resourcepb.Resource
 	}
 	return &resourcepb.ResourceEventsResponse{Events: pbEvents}, nil
 }
-

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/go-hclog"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	logs "github.com/omniviewdev/plugin-sdk/pkg/v1/logs"
@@ -76,7 +76,7 @@ func Mount(t *testing.T, opts ...HarnessOption) *Harness {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	manager := logs.NewManager(logs.ManagerConfig{
-		Logger:    hclog.NewNullLogger(),
+		Logger:    logging.NewNop(),
 		Handlers:  handlers,
 		Resolvers: cfg.resolvers,
 		Sink:      output, // inject directly — no channel, no consumer goroutine

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/hashicorp/go-hclog"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -13,7 +13,7 @@ import (
 
 type PluginClient struct {
 	client networkerpb.NetworkerPluginClient
-	log    hclog.Logger
+	log    logging.Logger
 }
 
 var _ Provider = (*PluginClient)(nil)
@@ -157,7 +157,7 @@ func (p *PluginClient) ClosePortForwardSession(
 func (p *PluginClient) StopAll() {
 	log := p.log
 	if log == nil {
-		log = hclog.NewNullLogger()
+		log = logging.NewNop()
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -165,7 +165,7 @@ func (p *PluginClient) StopAll() {
 
 	resp, err := p.client.ListPortForwardSessions(ctx, &emptypb.Empty{})
 	if err != nil {
-		log.Warn("StopAll: failed to list sessions", "error", err)
+		log.Warnw(ctx, "StopAll: failed to list sessions", "error", err)
 		return
 	}
 
@@ -176,7 +176,7 @@ func (p *PluginClient) StopAll() {
 		if _, closeErr := p.client.ClosePortForwardSession(ctx,
 			&networkerpb.PortForwardSessionByIdRequest{Id: s.GetId()},
 		); closeErr != nil {
-			log.Warn("StopAll: failed to close session", "session_id", s.GetId(), "error", closeErr)
+			log.Warnw(ctx, "StopAll: failed to close session", "session_id", s.GetId(), "error", closeErr)
 		}
 	}
 }

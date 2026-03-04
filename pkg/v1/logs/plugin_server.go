@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/hashicorp/go-hclog"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -16,7 +16,7 @@ import (
 )
 
 type PluginServer struct {
-	log  hclog.Logger
+	log  logging.Logger
 	Impl Provider
 }
 
@@ -202,7 +202,7 @@ func (s *PluginServer) handleOut(
 			}
 
 			if err := stream.Send(msg); err != nil {
-				s.log.Warn("failed to send LogStreamOutput", "session_id", output.SessionID, "error", err)
+				s.log.Warnw(ctx, "failed to send LogStreamOutput", "session_id", output.SessionID, "error", err)
 				return
 			}
 		}

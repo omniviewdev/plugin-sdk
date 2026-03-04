@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -16,6 +16,7 @@ import (
 
 type PluginClient struct {
 	client logspb.LogPluginClient
+	log    logging.Logger
 }
 
 var _ Provider = (*PluginClient)(nil)
@@ -132,7 +133,7 @@ func (c *PluginClient) Stream(
 	go func() {
 		defer func() {
 			if err := stream.CloseSend(); err != nil {
-				log.Printf("failed to close send log stream: %v", err)
+				c.log.Error(ctx, "failed to close send log stream", logging.Error(err))
 			}
 		}()
 		for {
@@ -144,7 +145,7 @@ func (c *PluginClient) Stream(
 					return
 				}
 				if err := stream.Send(i.ToProto()); err != nil {
-					log.Printf("failed to send log stream input: %v", err)
+					c.log.Error(ctx, "failed to send log stream input", logging.Error(err))
 					return
 				}
 			}
@@ -160,7 +161,7 @@ func (c *PluginClient) Stream(
 				return
 			}
 			if err != nil {
-				log.Printf("failed to receive log stream output: %v", err)
+				c.log.Error(ctx, "failed to receive log stream output", logging.Error(err))
 				return
 			}
 

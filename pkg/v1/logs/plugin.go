@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
@@ -32,7 +32,7 @@ type Plugin struct {
 }
 
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
-	logspb.RegisterLogPluginServer(s, &PluginServer{log: hclog.Default(), Impl: p.Impl})
+	logspb.RegisterLogPluginServer(s, &PluginServer{log: logging.Default().Named("logs.plugin.server"), Impl: p.Impl})
 	return nil
 }
 
@@ -41,7 +41,10 @@ func (p *Plugin) GRPCClient(
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
 ) (interface{}, error) {
-	return &PluginClient{client: logspb.NewLogPluginClient(c)}, nil
+	return &PluginClient{
+		client: logspb.NewLogPluginClient(c),
+		log:    logging.Default().Named("logs.plugin.client"),
+	}, nil
 }
 
 // RegisterPlugin registers the log capability with the plugin system.
@@ -64,7 +67,7 @@ func RegisterPlugin(
 	}
 
 	impl := NewManager(ManagerConfig{
-		Logger:    p.HCLLogger,
+		Logger:    p.Log.Named("logs"),
 		Settings:  p.SettingsProvider,
 		Handlers:  handlers,
 		Resolvers: resolvers,

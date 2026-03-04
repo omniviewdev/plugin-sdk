@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -17,6 +17,7 @@ import (
 
 type PluginClient struct {
 	client metricpb.MetricPluginClient
+	log    logging.Logger
 }
 
 var _ Provider = (*PluginClient)(nil)
@@ -97,17 +98,17 @@ func (c *PluginClient) StreamMetrics(
 	go func() {
 		defer func() {
 			if err := stream.CloseSend(); err != nil {
-				log.Printf("failed to close send metric stream: %v", err)
+				c.log.Error(ctx, "failed to close send metric stream", logging.Error(err))
 			}
 		}()
 		for i := range in {
 			msg, err := streamInputToProto(i)
 			if err != nil {
-				log.Printf("failed to convert metric stream input to proto: %v", err)
+				c.log.Error(ctx, "failed to convert metric stream input to proto", logging.Error(err))
 				return
 			}
 			if err := stream.Send(msg); err != nil {
-				log.Printf("failed to send metric stream input: %v", err)
+				c.log.Error(ctx, "failed to send metric stream input", logging.Error(err))
 				return
 			}
 		}
@@ -122,7 +123,7 @@ func (c *PluginClient) StreamMetrics(
 				return
 			}
 			if err != nil {
-				log.Printf("failed to receive metric stream output: %v", err)
+				c.log.Error(ctx, "failed to receive metric stream output", logging.Error(err))
 				return
 			}
 

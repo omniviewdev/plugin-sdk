@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 
@@ -33,7 +32,7 @@ type Plugin struct {
 }
 
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
-	commandpb.RegisterCommandServer(s, &PluginServer{log: hclog.Default(), Impl: p.Impl})
+	commandpb.RegisterCommandServer(s, &PluginServer{Impl: p.Impl})
 	return nil
 }
 
@@ -54,7 +53,7 @@ func RegisterPlugin(
 	}
 
 	impl := NewManager(
-		p.HCLLogger,
+		p.Log.Named("command"),
 		p.SettingsProvider,
 		opts.Handlers,
 	)

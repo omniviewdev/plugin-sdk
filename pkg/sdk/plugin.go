@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"os"
@@ -11,20 +12,21 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
-	"github.com/omniviewdev/plugin-sdk/pkg/v1/lifecycle"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource"
 	rp "github.com/omniviewdev/plugin-sdk/pkg/resource/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
-	sdksettings "github.com/omniviewdev/plugin-sdk/pkg/v1/settings"
+	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils"
+	"github.com/omniviewdev/plugin-sdk/pkg/v1/lifecycle"
+	sdksettings "github.com/omniviewdev/plugin-sdk/pkg/v1/settings"
 )
 
 // CurrentProtocolVersion is the SDK protocol version that this SDK release
@@ -49,9 +51,10 @@ type Plugin struct {
 	SettingsProvider pkgsettings.Provider
 	// pluginMap is the map of plugins we can dispense. Each plugin entry in the map
 	// is a plugin capability.
-	pluginMap map[string]plugin.Plugin
-	Logger    *zap.SugaredLogger
-	HCLLogger hclog.Logger
+	pluginMap      map[string]plugin.Plugin
+	Log            logging.Logger
+	LogLevel       *logging.LevelController
+	runtimeBackend *logging.HCLBackend
 	// meta holds metadata for the plugin, found inside of the plugin.yaml
 	// file in the same directory as the plugin.
 	meta config.PluginMeta
@@ -93,10 +96,21 @@ func NewPlugin(opts PluginOpts) *Plugin {
 		settings[setting.ID] = setting
 	}
 
-	logger := hclog.New(&hclog.LoggerOptions{
-		Name:  meta.ID,
-		Level: hclog.Debug,
+	level := logging.NewLevelController(logging.LevelInfo)
+	if opts.Debug {
+		level.Set(logging.LevelDebug)
+	}
+
+	runtimeBackend := logging.NewDefaultHCLBackend(meta.ID, level.Level()).Named("runtime")
+	sdkLogger := logging.New(logging.Config{
+		Name:    "plugin",
+		Level:   level,
+		Backend: runtimeBackend,
+		Fields: []logging.Field{
+			logging.String("plugin_id", opts.ID),
+		},
 	})
+	logging.SetDefault(sdkLogger)
 
 	// init the settings provider
 	settingsProvider := pkgsettings.NewProvider(pkgsettings.ProviderOpts{
@@ -118,8 +132,9 @@ func NewPlugin(opts PluginOpts) *Plugin {
 	}
 
 	return &Plugin{
-		Logger:           zap.S().Named("plugin"),
-		HCLLogger:        logger,
+		Log:              sdkLogger,
+		LogLevel:         level,
+		runtimeBackend:   runtimeBackend,
 		meta:             meta,
 		pluginMap:        plugins,
 		SettingsProvider: settingsProvider,
@@ -157,11 +172,29 @@ func (p *Plugin) GetPluginID() string {
 }
 
 func GRPCServerFactory(opts []grpc.ServerOption) *grpc.Server {
-	return grpc.NewServer(utils.RegisterServerOpts(opts)...)
+	return GRPCServerFactoryWithLogger(logging.Default(), opts)
+}
+
+func GRPCServerFactoryWithLogger(log logging.Logger, opts []grpc.ServerOption) *grpc.Server {
+	return grpc.NewServer(utils.RegisterServerOpts(opts, log)...)
 }
 
 func GRPCDialOptions() []grpc.DialOption {
-	return withClientOpts(nil)
+	return withClientOpts(nil, logging.Default())
+}
+
+func GRPCDialOptionsWithLogger(log logging.Logger) []grpc.DialOption {
+	return withClientOpts(nil, log)
+}
+
+func (p *Plugin) SetLogLevel(level logging.Level) {
+	if p == nil || p.LogLevel == nil {
+		return
+	}
+	p.LogLevel.Set(level)
+	if p.runtimeBackend != nil {
+		p.runtimeBackend.SetLevel(level)
+	}
 }
 
 // Serve begins serving the plugin over the given RPC server. This should be called
@@ -175,6 +208,8 @@ func GRPCDialOptions() []grpc.DialOption {
 //   - Write a .devinfo file so the IDE can connect via ReattachConfig
 //   - Register a signal handler to clean up .devinfo on graceful shutdown
 func (p *Plugin) Serve() {
+	startupCtx := p.startupContext()
+
 	// Auto-register the lifecycle service from the current plugin map.
 	p.registerLifecycle()
 	isDev := os.Getenv("OMNIVIEW_DEV") == "1"
@@ -196,7 +231,7 @@ func (p *Plugin) Serve() {
 	origStdout := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
-		p.Logger.Errorw("failed to create pipe for dev info capture", "error", err)
+		p.Log.Error(startupCtx, "failed to create pipe for dev info capture", logging.Error(err))
 		p.serveNormal()
 		return
 	}
@@ -211,11 +246,9 @@ func (p *Plugin) Serve() {
 			VersionedPlugins: map[int]plugin.PluginSet{
 				CurrentProtocolVersion: p.pluginMap,
 			},
-			GRPCServer: GRPCServerFactory,
-			Logger: hclog.New(&hclog.LoggerOptions{
-				Name:  "plugin",
-				Level: hclog.Debug,
-			}),
+			GRPCServer: func(opts []grpc.ServerOption) *grpc.Server {
+				return GRPCServerFactoryWithLogger(p.Log, opts)
+			},
 		})
 		close(done)
 	}()
@@ -228,7 +261,7 @@ func (p *Plugin) Serve() {
 	os.Stdout = origStdout
 
 	if readErr != nil {
-		p.Logger.Errorw("failed to read handshake line", "error", readErr)
+		p.Log.Error(startupCtx, "failed to read handshake line", logging.Error(readErr))
 	} else {
 		handshakeLine := string(buf[:n])
 		// Write it to real stdout so go-plugin host can read it.
@@ -241,10 +274,10 @@ func (p *Plugin) Serve() {
 		}
 
 		if err := WriteDevInfo(p.meta.ID, p.meta.Version, strings.TrimSpace(handshakeLine), vitePort); err != nil {
-			p.Logger.Errorw("failed to write devinfo", "error", err)
+			p.Log.Error(startupCtx, "failed to write devinfo", logging.Error(err))
 		} else {
-			p.Logger.Infow("wrote .devinfo file",
-				"pluginID", p.meta.ID,
+			p.Log.Infow(startupCtx, "wrote .devinfo file",
+				"plugin_id", p.meta.ID,
 				"handshake", strings.TrimSpace(handshakeLine),
 			)
 		}
@@ -261,11 +294,16 @@ func (p *Plugin) serveNormal() {
 		VersionedPlugins: map[int]plugin.PluginSet{
 			CurrentProtocolVersion: p.pluginMap,
 		},
-		GRPCServer: GRPCServerFactory,
-		Logger: hclog.New(&hclog.LoggerOptions{
-			Name:  "plugin",
-			Level: hclog.Debug,
-		}),
+		GRPCServer: func(opts []grpc.ServerOption) *grpc.Server {
+			return GRPCServerFactoryWithLogger(p.Log, opts)
+		},
+	})
+}
+
+func (p *Plugin) startupContext() context.Context {
+	return pkgtypes.WithPluginContext(context.Background(), &pkgtypes.PluginContext{
+		RequestID:   "plugin-startup",
+		RequesterID: "plugin-sdk",
 	})
 }
 
@@ -367,7 +405,7 @@ func RegisterResourcePlugin[ClientT any](
 
 	// Register the resource plugin with the plugin system.
 	p.RegisterCapability("resource", &rp.ResourcePlugin{
-		Impl:            controller,
+		Impl:             controller,
 		SettingsProvider: p.SettingsProvider,
 	})
 }

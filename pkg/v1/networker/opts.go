@@ -3,14 +3,14 @@ package networker
 import (
 	"time"
 
-	"github.com/hashicorp/go-hclog"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 	"github.com/omniviewdev/plugin-sdk/settings"
 )
 
 // ManagerConfig configures the Manager.
 type ManagerConfig struct {
-	Logger       hclog.Logger
+	Logger       logging.Logger
 	Settings     settings.Provider
 	PortChecker  PortChecker    // nil → RealPortChecker
 	Clock        timeutil.Clock // nil → timeutil.RealClock

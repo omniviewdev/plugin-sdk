@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"sync"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
 )
@@ -28,6 +28,7 @@ type InformerManager[ClientT any] struct {
 
 	startConnectionChan chan string
 	stopConnectionChan  chan string
+	log                 logging.Logger
 }
 
 type informerEntry struct {
@@ -61,6 +62,7 @@ func NewInformerManager[ClientT any](
 		stateChan:           stateChan,
 		startConnectionChan: make(chan string),
 		stopConnectionChan:  make(chan string),
+		log:                 logging.Default().Named("resource.informer_manager"),
 	}
 }
 
@@ -78,12 +80,12 @@ func (i *InformerManager[ClientT]) Run(
 		case <-stopCh:
 			return nil
 		case id := <-i.startConnectionChan:
-			log.Println("InformerManager: start event received", id)
+			i.log.Debugw(context.Background(), "start event received", "connection_id", id)
 			i.mu.RLock()
 			entry, ok := i.informers[id]
 			i.mu.RUnlock()
 			if !ok {
-				log.Printf("InformerManager: no entry for connection %s", id)
+				i.log.Warnw(context.Background(), "no informer entry for connection", "connection_id", id)
 				break
 			}
 			go func(id string) {
@@ -92,11 +94,14 @@ func (i *InformerManager[ClientT]) Run(
 					entry.stopCh,
 					i.stateChan,
 				); err != nil {
-					log.Printf("InformerManager: error running informer for connection %s: %v", id, err)
+					i.log.Errorw(context.Background(), "error running informer for connection",
+						"connection_id", id,
+						"error", err,
+					)
 				}
 			}(id)
 		case id := <-i.stopConnectionChan:
-			log.Println("InformerManager: stop event received", id)
+			i.log.Debugw(context.Background(), "stop event received", "connection_id", id)
 			i.mu.Lock()
 			entry, ok := i.informers[id]
 			if !ok {

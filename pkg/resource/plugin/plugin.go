@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/hashicorp/go-plugin"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
 	"google.golang.org/grpc"
 
@@ -24,6 +25,7 @@ func (p *ResourcePlugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error 
 	proto.RegisterResourcePluginServer(s, &ResourcePluginServer{
 		Impl:             p.Impl,
 		settingsProvider: p.SettingsProvider,
+		log:              logging.Default().Named("resource.legacy.plugin.server"),
 	})
 	return nil
 }
@@ -33,5 +35,8 @@ func (p *ResourcePlugin) GRPCClient(
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
 ) (interface{}, error) {
-	return &ResourcePluginClient{client: proto.NewResourcePluginClient(c)}, nil
+	return &ResourcePluginClient{
+		client: proto.NewResourcePluginClient(c),
+		log:    logging.Default().Named("resource.legacy.plugin.client"),
+	}, nil
 }

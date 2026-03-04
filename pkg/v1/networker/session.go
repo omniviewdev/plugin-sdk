@@ -1,6 +1,7 @@
 package networker
 
 import (
+	"context"
 	"maps"
 	"sync"
 	"time"
@@ -150,6 +151,7 @@ func PortForwardProtocolFromProto(
 type sessionEntry struct {
 	mu      sync.RWMutex
 	session PortForwardSession
+	ctx     context.Context
 	cancel  func()
 }
 
