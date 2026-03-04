@@ -28,9 +28,18 @@ func (s SessionState) String() string {
 }
 
 func (s SessionState) ToProto() networkerpb.PortForwardSession_SessionState {
-	return networkerpb.PortForwardSession_SessionState(
-		networkerpb.PortForwardSession_SessionState_value[s.String()],
-	)
+	switch s {
+	case SessionStateActive:
+		return networkerpb.PortForwardSession_ACTIVE
+	case SessionStatePaused:
+		return networkerpb.PortForwardSession_PAUSED
+	case SessionStateStopped:
+		return networkerpb.PortForwardSession_STOPPED
+	case SessionStateFailed:
+		return networkerpb.PortForwardSession_FAILED
+	default:
+		return networkerpb.PortForwardSession_STOPPED
+	}
 }
 
 func sessionStateFromProto(p networkerpb.PortForwardSession_SessionState) SessionState {
@@ -278,6 +287,9 @@ func (PortForwardResourceConnection) connectionType() PortForwardConnectionType 
 }
 
 func (c *PortForwardResourceConnection) ToProto() *networkerpb.PortForwardResourceConnection {
+	if c == nil {
+		return nil
+	}
 	data, err := structpb.NewStruct(c.ResourceData)
 	if err != nil {
 		data, _ = structpb.NewStruct(map[string]interface{}{})
@@ -364,18 +376,27 @@ func (PortForwardStaticConnection) connectionType() PortForwardConnectionType {
 }
 
 func (c *PortForwardStaticConnection) ToProto() *networkerpb.PortForwardStaticConnection {
+	if c == nil {
+		return nil
+	}
 	return &networkerpb.PortForwardStaticConnection{
 		Address: c.Address,
 	}
 }
 
 func (c *PortForwardStaticConnection) ToSessionProto() *networkerpb.PortForwardSession_StaticConnection {
+	if c == nil {
+		return nil
+	}
 	return &networkerpb.PortForwardSession_StaticConnection{
 		StaticConnection: c.ToProto(),
 	}
 }
 
 func (c *PortForwardStaticConnection) ToSessionOptionsProto() *networkerpb.PortForwardSessionOptions_StaticConnection {
+	if c == nil {
+		return nil
+	}
 	return &networkerpb.PortForwardSessionOptions_StaticConnection{
 		StaticConnection: c.ToProto(),
 	}

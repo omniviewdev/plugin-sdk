@@ -10,7 +10,11 @@ type OutputBuffer struct {
 }
 
 // NewOutputBuffer initializes an OutputBuffer with a specified capacity.
+// If capacity is <= 0, a minimum capacity of 0 is used (all appends are discarded).
 func NewOutputBuffer(capacity int) *OutputBuffer {
+	if capacity < 0 {
+		capacity = 0
+	}
 	return &OutputBuffer{
 		buf:      make([]byte, 0, capacity),
 		capacity: capacity,

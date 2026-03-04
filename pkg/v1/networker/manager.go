@@ -57,13 +57,14 @@ func NewManager(cfg ManagerConfig, opts PluginOpts) *Manager {
 		closeTimeout = defaultCloseTimeout
 	}
 
-	rf := opts.ResourceForwarders
-	if rf == nil {
-		rf = make(map[string]ResourceForwarder)
+	// Defensive copy of forwarder maps to prevent external mutation.
+	rf := make(map[string]ResourceForwarder, len(opts.ResourceForwarders))
+	for k, v := range opts.ResourceForwarders {
+		rf[k] = v
 	}
-	sf := opts.StaticForwarders
-	if sf == nil {
-		sf = make(map[string]StaticForwarder)
+	sf := make(map[string]StaticForwarder, len(opts.StaticForwarders))
+	for k, v := range opts.StaticForwarders {
+		sf[k] = v
 	}
 
 	return &Manager{
@@ -193,22 +194,41 @@ func (m *Manager) StartPortForwardSession(
 		return nil, err
 	}
 
+	if result == nil {
+		cancel()
+		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("forwarder returned nil result"))
+	}
+
 	// Use session ID from the forwarder if it provided one, otherwise use ours.
 	if result.SessionID != "" {
 		sessionID = result.SessionID
 	}
 
 	// Wait for the forwarder to report ready (or fail).
+	// Prefer ready over errCh with a non-blocking check first, since both
+	// may be signalled simultaneously (e.g. forwarder closes ready then errCh).
 	if result.Ready != nil {
 		select {
 		case <-result.Ready:
 			// tunnel established
-		case err := <-result.ErrCh:
-			cancel()
-			return nil, NewForwarderFailedError(sessionID, err)
-		case <-m.clock.After(readyTimeout):
-			cancel()
-			return nil, NewForwarderFailedError(sessionID, fmt.Errorf("timed out waiting for tunnel to be ready"))
+		default:
+			// Not ready yet — wait on all channels.
+			select {
+			case <-result.Ready:
+				// tunnel established
+			case err, ok := <-result.ErrCh:
+				cancel()
+				if !ok {
+					return nil, NewForwarderFailedError(sessionID, fmt.Errorf("forwarder error channel closed before ready"))
+				}
+				return nil, NewForwarderFailedError(sessionID, err)
+			case <-ctx.Done():
+				cancel()
+				return nil, NewForwarderFailedError(sessionID, fmt.Errorf("context cancelled while waiting for tunnel"))
+			case <-m.clock.After(readyTimeout):
+				cancel()
+				return nil, NewForwarderFailedError(sessionID, fmt.Errorf("timed out waiting for tunnel to be ready"))
+			}
 		}
 	}
 
@@ -233,6 +253,11 @@ func (m *Manager) StartPortForwardSession(
 	}
 
 	m.mu.Lock()
+	if _, exists := m.sessions[sessionID]; exists {
+		m.mu.Unlock()
+		cancel()
+		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("duplicate session ID %q", sessionID))
+	}
 	m.sessions[sessionID] = entry
 	m.mu.Unlock()
 

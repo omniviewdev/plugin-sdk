@@ -49,6 +49,7 @@ func (s *StubResourceForwarder) ForwardResource(
 	if s.FailAfter != nil {
 		go func() {
 			errCh <- s.FailAfter
+			close(errCh)
 		}()
 	} else {
 		go func() {

@@ -76,3 +76,25 @@ func TestOutputBuffer_DefaultCapacity(t *testing.T) {
 		t.Fatalf("expected 1000, got %d", buf.Len())
 	}
 }
+
+func TestOutputBuffer_NegativeCapacity(t *testing.T) {
+	buf := exec.NewOutputBuffer(-1)
+	buf.Append([]byte("abc"))
+	// With capacity -1, every Append triggers eviction to the last -1 bytes,
+	// which is effectively zero. Verify it doesn't panic.
+	if buf.Len() < 0 {
+		t.Fatal("negative length")
+	}
+}
+
+func TestOutputBuffer_OversizedChunk(t *testing.T) {
+	buf := exec.NewOutputBuffer(5)
+	buf.Append([]byte("abcdefghij")) // 10 bytes into a capacity-5 buffer
+	got := buf.GetAll()
+	if string(got) != "fghij" {
+		t.Fatalf("expected %q, got %q", "fghij", string(got))
+	}
+	if buf.Len() != 5 {
+		t.Fatalf("expected len 5, got %d", buf.Len())
+	}
+}

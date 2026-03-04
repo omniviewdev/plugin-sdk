@@ -1,6 +1,7 @@
 package networktest
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/networker"
@@ -26,9 +27,15 @@ func NewFakePortChecker(startPort int32) *FakePortChecker {
 func (f *FakePortChecker) FindFreePort() (int32, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	port := f.nextPort
-	f.nextPort++
-	return port, nil
+	const maxProbes = 10000
+	for i := 0; i < maxProbes; i++ {
+		port := f.nextPort
+		f.nextPort++
+		if !f.unavailablePorts[port] {
+			return port, nil
+		}
+	}
+	return 0, fmt.Errorf("no free port found after %d probes", maxProbes)
 }
 
 func (f *FakePortChecker) IsPortUnavailable(port int32) bool {

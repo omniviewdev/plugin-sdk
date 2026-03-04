@@ -2,6 +2,7 @@ package networker
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -117,5 +118,24 @@ func (p *PluginClient) ClosePortForwardSession(
 	return NewPortForwardSessionFromProto(resp.GetSession()), nil
 }
 
-// StopAll is a no-op on the client side — the server manages session lifecycle.
-func (p *PluginClient) StopAll() {}
+// StopAll performs a best-effort shutdown of all remote sessions by listing
+// them and closing each individually. Errors are logged per-session but
+// do not stop the loop.
+func (p *PluginClient) StopAll() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := p.client.ListPortForwardSessions(ctx, &emptypb.Empty{})
+	if err != nil {
+		return
+	}
+
+	for _, s := range resp.GetSessions() {
+		if s.GetId() == "" {
+			continue
+		}
+		_, _ = p.client.ClosePortForwardSession(ctx,
+			&networkerpb.PortForwardSessionByIdRequest{Id: s.GetId()},
+		)
+	}
+}

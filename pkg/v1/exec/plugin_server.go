@@ -199,8 +199,8 @@ func (s *PluginServer) Stream(stream execpb.ExecPlugin_StreamServer) error {
 		return err
 	}
 
-	// handle the output
-	go s.handleOut(ctx, out, stream)
+	// handle the output — pass cancel so send errors break the recv loop
+	go s.handleOut(ctx, cancel, out, stream)
 
 	// handle the input
 	for {
@@ -218,6 +218,7 @@ func (s *PluginServer) Stream(stream execpb.ExecPlugin_StreamServer) error {
 
 func (s *PluginServer) handleOut(
 	ctx context.Context,
+	cancel context.CancelFunc,
 	out <-chan StreamOutput,
 	stream execpb.ExecPlugin_StreamServer,
 ) {
@@ -230,6 +231,7 @@ func (s *PluginServer) handleOut(
 				return
 			}
 			if err := stream.Send(msg.ToProto()); err != nil {
+				cancel() // unblock the recv loop
 				return
 			}
 		}
