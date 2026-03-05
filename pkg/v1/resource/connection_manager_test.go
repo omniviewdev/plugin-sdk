@@ -273,6 +273,33 @@ func TestCM_RootCancelCancelsAll(t *testing.T) {
 	}
 }
 
+// --- CM-022b: Nil root context is normalized to Background ---
+func TestCM_NilRootContextDefaultsToBackground(t *testing.T) {
+	cp := &resourcetest.StubConnectionProvider[string]{}
+	mgr := resource.NewConnectionManagerForTest(nil, cp)
+
+	_, err := mgr.LoadConnections(context.Background())
+	if err != nil {
+		t.Fatalf("LoadConnections: %v", err)
+	}
+
+	_, err = mgr.StartConnection(context.Background(), "conn-1")
+	if err != nil {
+		t.Fatalf("StartConnection: %v", err)
+	}
+
+	connCtx, err := mgr.GetConnectionCtx("conn-1")
+	if err != nil {
+		t.Fatalf("GetConnectionCtx: %v", err)
+	}
+	if connCtx == nil {
+		t.Fatal("expected non-nil connection context")
+	}
+	if connCtx.Err() != nil {
+		t.Fatalf("expected active connection context, got: %v", connCtx.Err())
+	}
+}
+
 // --- CM-009: StopConnection DestroyClient fails, still removes ---
 func TestCM_StopConnectionDestroyFails(t *testing.T) {
 	ctx := context.Background()

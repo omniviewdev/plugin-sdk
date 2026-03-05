@@ -17,18 +17,100 @@ import (
 // errors.Is(err, ErrConnectionUnchanged) to detect the no-op case.
 var ErrConnectionUnchanged = errors.New("connection unchanged")
 
-// cloneConnection returns a copy of c with fresh map allocations for Data,
-// Labels, and sensitiveData so that the caller and the connection manager
-// cannot mutate each other's state through shared map headers.
-// maps.Clone produces a shallow copy, which is sufficient because connection
-// map values are typically primitives or JSON-serializable types.
+func deepCloneMap(in map[string]any) map[string]any {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = deepCloneValue(v)
+	}
+	return out
+}
+
+func assignClonedValue(dst reflect.Value, cloned any, fallback reflect.Value) {
+	cv := reflect.ValueOf(cloned)
+	if !cv.IsValid() {
+		dst.Set(reflect.Zero(dst.Type()))
+		return
+	}
+	if cv.Type().AssignableTo(dst.Type()) {
+		dst.Set(cv)
+		return
+	}
+	if cv.Type().ConvertibleTo(dst.Type()) {
+		dst.Set(cv.Convert(dst.Type()))
+		return
+	}
+	dst.Set(fallback)
+}
+
+func deepCloneValue(v any) any {
+	if v == nil {
+		return nil
+	}
+	switch t := v.(type) {
+	case map[string]any:
+		return deepCloneMap(t)
+	case []any:
+		out := make([]any, len(t))
+		for i, elem := range t {
+			out[i] = deepCloneValue(elem)
+		}
+		return out
+	}
+
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Map:
+		if rv.IsNil() {
+			return v
+		}
+		out := reflect.MakeMapWithSize(rv.Type(), rv.Len())
+		iter := rv.MapRange()
+		for iter.Next() {
+			key := iter.Key()
+			srcVal := iter.Value()
+			dstVal := reflect.New(rv.Type().Elem()).Elem()
+			assignClonedValue(dstVal, deepCloneValue(srcVal.Interface()), srcVal)
+			out.SetMapIndex(key, dstVal)
+		}
+		return out.Interface()
+	case reflect.Slice:
+		if rv.IsNil() {
+			return v
+		}
+		out := reflect.MakeSlice(rv.Type(), rv.Len(), rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			srcVal := rv.Index(i)
+			assignClonedValue(out.Index(i), deepCloneValue(srcVal.Interface()), srcVal)
+		}
+		return out.Interface()
+	case reflect.Pointer:
+		if rv.IsNil() {
+			return v
+		}
+		dstPtr := reflect.New(rv.Elem().Type())
+		assignClonedValue(dstPtr.Elem(), deepCloneValue(rv.Elem().Interface()), rv.Elem())
+		return dstPtr.Interface()
+	default:
+		return v
+	}
+}
+
+// cloneConnection returns a copy of c with deep-cloned map/slice data so the
+// caller and manager cannot share mutable nested state.
 func cloneConnection(c types.Connection) types.Connection {
-	c.Data = maps.Clone(c.Data)
-	c.Labels = maps.Clone(c.Labels)
-	c.SetSensitiveData(maps.Clone(c.GetSensitiveData()))
-	c.Lifecycle.AutoConnect.Triggers = slices.Clone(c.Lifecycle.AutoConnect.Triggers)
-	if c.Lifecycle.AutoConnect.Retry == "" {
-		c.Lifecycle.AutoConnect.Retry = types.ConnectionAutoConnectRetryNone
+	c.Data = deepCloneMap(c.Data)
+	c.Labels = deepCloneMap(c.Labels)
+	c.SetSensitiveData(deepCloneMap(c.GetSensitiveData()))
+	if c.Lifecycle.AutoConnect != nil {
+		auto := *c.Lifecycle.AutoConnect
+		auto.Triggers = slices.Clone(auto.Triggers)
+		if auto.Retry == "" {
+			auto.Retry = types.ConnectionAutoConnectRetryNone
+		}
+		c.Lifecycle.AutoConnect = &auto
 	}
 	return c
 }
@@ -74,6 +156,9 @@ type connectionManager[ClientT any] struct {
 }
 
 func newConnectionManager[ClientT any](rootCtx context.Context, provider ConnectionProvider[ClientT]) *connectionManager[ClientT] {
+	if rootCtx == nil {
+		rootCtx = context.Background()
+	}
 	return &connectionManager[ClientT]{
 		provider: provider,
 		conns:    make(map[string]*connectionState[ClientT]),
@@ -147,7 +232,9 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 		m.mu.Unlock()
 		// Release lock before calling external provider methods.
 		cancel()
-		_ = m.provider.DestroyClient(ctx, client)
+		if err := m.provider.DestroyClient(ctx, client); err != nil {
+			return types.ConnectionStatus{}, fmt.Errorf("cleanup error after duplicate start for %q: %w", connectionID, err)
+		}
 		return types.ConnectionStatus{
 			Connection: &connCopy,
 			Status:     types.ConnectionStatusConnected,
@@ -159,16 +246,22 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 	if !stillLoaded {
 		m.mu.Unlock()
 		cancel()
-		_ = m.provider.DestroyClient(ctx, client)
-		return types.ConnectionStatus{}, fmt.Errorf("connection %q was deleted during start", connectionID)
+		originalErr := fmt.Errorf("connection %q was deleted during start", connectionID)
+		if cleanupErr := m.provider.DestroyClient(ctx, client); cleanupErr != nil {
+			return types.ConnectionStatus{}, fmt.Errorf("original error: %w; cleanup error: %w", originalErr, cleanupErr)
+		}
+		return types.ConnectionStatus{}, originalErr
 	}
 	// If the loaded config changed while we were unlocked, the client was
 	// built with stale data. Discard the client and let the caller retry.
 	if !connectionEqual(conn, currentConn) {
 		m.mu.Unlock()
 		cancel()
-		_ = m.provider.DestroyClient(ctx, client)
-		return types.ConnectionStatus{}, fmt.Errorf("connection %q config changed during start; retry", connectionID)
+		originalErr := fmt.Errorf("connection %q config changed during start; retry", connectionID)
+		if cleanupErr := m.provider.DestroyClient(ctx, client); cleanupErr != nil {
+			return types.ConnectionStatus{}, fmt.Errorf("original error: %w; cleanup error: %w", originalErr, cleanupErr)
+		}
+		return types.ConnectionStatus{}, originalErr
 	}
 	m.conns[connectionID] = &connectionState[ClientT]{
 		conn:   conn,
@@ -343,8 +436,11 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 		// blocking other operations or risking deadlocks.
 		m.mu.Unlock()
 		newCancel()
-		_ = m.provider.DestroyClient(ctx, newClient)
-		return conn, fmt.Errorf("connection %q was modified during update", conn.ID)
+		originalErr := fmt.Errorf("connection %q was modified during update", conn.ID)
+		if cleanupErr := m.provider.DestroyClient(ctx, newClient); cleanupErr != nil {
+			return conn, fmt.Errorf("original error: %w; cleanup error: %w", originalErr, cleanupErr)
+		}
+		return conn, originalErr
 	}
 	// Commit the loaded config only after successful client recreation.
 	m.loaded[conn.ID] = stored

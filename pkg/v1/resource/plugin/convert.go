@@ -47,11 +47,7 @@ func connectionToProto(c types.Connection) (*commonpb.Connection, error) {
 
 func connectionFromProto(pb *commonpb.Connection) types.Connection {
 	if pb == nil {
-		return types.Connection{
-			Lifecycle: types.ConnectionLifecycle{
-				AutoConnect: types.ConnectionAutoConnect{Retry: types.ConnectionAutoConnectRetryNone},
-			},
-		}
+		return types.Connection{}
 	}
 	labels := make(map[string]any, len(pb.GetLabels()))
 	for k, v := range pb.GetLabels() {
@@ -73,32 +69,41 @@ func connectionFromProto(pb *commonpb.Connection) types.Connection {
 }
 
 func connectionLifecycleToProto(lc types.ConnectionLifecycle) *commonpb.ConnectionLifecycle {
+	if lc.AutoConnect == nil {
+		return nil
+	}
+	retry := lc.AutoConnect.Retry
+	if retry == "" {
+		retry = types.ConnectionAutoConnectRetryNone
+	}
+
 	return &commonpb.ConnectionLifecycle{
 		AutoConnect: &commonpb.ConnectionAutoConnect{
 			Enabled:  lc.AutoConnect.Enabled,
 			Triggers: connectionAutoConnectTriggersToProto(lc.AutoConnect.Triggers),
-			Retry:    connectionAutoConnectRetryToProto(lc.AutoConnect.Retry),
+			Retry:    connectionAutoConnectRetryToProto(retry),
 		},
 	}
 }
 
 func connectionLifecycleFromProto(pb *commonpb.ConnectionLifecycle) types.ConnectionLifecycle {
 	if pb == nil {
-		return types.ConnectionLifecycle{
-			AutoConnect: types.ConnectionAutoConnect{Retry: types.ConnectionAutoConnectRetryNone},
-		}
+		return types.ConnectionLifecycle{}
 	}
 	auto := pb.GetAutoConnect()
 	if auto == nil {
-		return types.ConnectionLifecycle{
-			AutoConnect: types.ConnectionAutoConnect{Retry: types.ConnectionAutoConnectRetryNone},
-		}
+		return types.ConnectionLifecycle{}
 	}
+	retry := connectionAutoConnectRetryFromProto(auto.GetRetry())
+	if retry == "" {
+		retry = types.ConnectionAutoConnectRetryNone
+	}
+
 	return types.ConnectionLifecycle{
-		AutoConnect: types.ConnectionAutoConnect{
+		AutoConnect: &types.ConnectionAutoConnect{
 			Enabled:  auto.GetEnabled(),
 			Triggers: connectionAutoConnectTriggersFromProto(auto.GetTriggers()),
-			Retry:    connectionAutoConnectRetryFromProto(auto.GetRetry()),
+			Retry:    retry,
 		},
 	}
 }

@@ -2,6 +2,7 @@ package networker
 
 import (
 	"context"
+	"log"
 	"maps"
 	"sync"
 	"time"
@@ -336,6 +337,14 @@ func (c *PortForwardResourceConnection) ToProto() *networkerpb.PortForwardResour
 	}
 	data, err := structpb.NewStruct(c.ResourceData)
 	if err != nil {
+		log.Printf(
+			"networker: ResourceData -> structpb.Struct conversion failed (connection_id=%q plugin_id=%q resource_id=%q resource_key=%q): %v",
+			c.ConnectionID,
+			c.PluginID,
+			c.ResourceID,
+			c.ResourceKey,
+			err,
+		)
 		data, _ = structpb.NewStruct(map[string]interface{}{})
 	}
 

@@ -1,7 +1,9 @@
 package networker_test
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -287,8 +289,25 @@ func TestManager_ConcurrentStartClose(t *testing.T) {
 				errs <- err
 				return
 			}
-			// small delay to let monitor start
-			time.Sleep(10 * time.Millisecond)
+
+			waitCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+
+			var current *networker.PortForwardSession
+			var getErr error
+			for {
+				current, getErr = h.GetSession(sess.ID)
+				if getErr == nil && current != nil {
+					break
+				}
+				select {
+				case <-waitCtx.Done():
+					errs <- fmt.Errorf("wait for session %q to become active: %w", sess.ID, waitCtx.Err())
+					return
+				case <-time.After(5 * time.Millisecond):
+				}
+			}
+
 			if _, err := h.CloseSession(sess.ID); err != nil {
 				errs <- err
 			}

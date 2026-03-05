@@ -14,7 +14,7 @@ func TestConnectionLifecycleProtoRoundTrip(t *testing.T) {
 		ID:   "conn-1",
 		Name: "Connection 1",
 		Lifecycle: types.ConnectionLifecycle{
-			AutoConnect: types.ConnectionAutoConnect{
+			AutoConnect: &types.ConnectionAutoConnect{
 				Enabled: true,
 				Triggers: []types.ConnectionAutoConnectTrigger{
 					types.ConnectionAutoConnectTriggerPluginStart,
@@ -34,8 +34,19 @@ func TestConnectionLifecycleProtoRoundTrip(t *testing.T) {
 
 func TestConnectionLifecycleFromProtoDefaultsRetry(t *testing.T) {
 	out := connectionFromProto(nil)
-	require.Equal(t, types.ConnectionAutoConnectRetryNone, out.Lifecycle.AutoConnect.Retry)
+	require.Nil(t, out.Lifecycle.AutoConnect)
 
 	out = connectionFromProto(&commonpb.Connection{Id: "conn-1"})
+	require.Nil(t, out.Lifecycle.AutoConnect)
+
+	out = connectionFromProto(&commonpb.Connection{
+		Id: "conn-1",
+		Lifecycle: &commonpb.ConnectionLifecycle{
+			AutoConnect: &commonpb.ConnectionAutoConnect{
+				Enabled: true,
+			},
+		},
+	})
+	require.NotNil(t, out.Lifecycle.AutoConnect)
 	require.Equal(t, types.ConnectionAutoConnectRetryNone, out.Lifecycle.AutoConnect.Retry)
 }

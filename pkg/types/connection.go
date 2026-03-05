@@ -3,6 +3,7 @@ package types
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,6 +27,24 @@ const (
 	ConnectionAutoConnectRetryOnChange ConnectionAutoConnectRetry = "ON_CHANGE"
 )
 
+func (t ConnectionAutoConnectTrigger) Valid() bool {
+	switch t {
+	case ConnectionAutoConnectTriggerPluginStart, ConnectionAutoConnectTriggerConnectionDiscovered:
+		return true
+	default:
+		return false
+	}
+}
+
+func (r ConnectionAutoConnectRetry) Valid() bool {
+	switch r {
+	case ConnectionAutoConnectRetryNone, ConnectionAutoConnectRetryOnChange:
+		return true
+	default:
+		return false
+	}
+}
+
 type ConnectionAutoConnect struct {
 	Enabled  bool                           `json:"enabled"`
 	Triggers []ConnectionAutoConnectTrigger `json:"triggers"`
@@ -33,7 +52,7 @@ type ConnectionAutoConnect struct {
 }
 
 type ConnectionLifecycle struct {
-	AutoConnect ConnectionAutoConnect `json:"auto_connect"`
+	AutoConnect *ConnectionAutoConnect `json:"auto_connect,omitempty"`
 }
 
 // prevent collisions in context values.
@@ -198,8 +217,20 @@ func NewConnection(opts ConnectionOpts) (*Connection, error) {
 		// default to 24 hours
 		opts.ExpiryTime = ConnectionDefaultExpiryTime
 	}
-	if opts.Lifecycle.AutoConnect.Retry == "" {
-		opts.Lifecycle.AutoConnect.Retry = ConnectionAutoConnectRetryNone
+	if opts.Lifecycle.AutoConnect != nil {
+		auto := *opts.Lifecycle.AutoConnect
+		if auto.Retry == "" {
+			auto.Retry = ConnectionAutoConnectRetryNone
+		}
+		if !auto.Retry.Valid() {
+			return nil, fmt.Errorf("invalid lifecycle auto_connect.retry: %q", auto.Retry)
+		}
+		for _, trigger := range auto.Triggers {
+			if !trigger.Valid() {
+				return nil, fmt.Errorf("invalid lifecycle auto_connect.trigger: %q", trigger)
+			}
+		}
+		opts.Lifecycle.AutoConnect = &auto
 	}
 
 	return &Connection{
