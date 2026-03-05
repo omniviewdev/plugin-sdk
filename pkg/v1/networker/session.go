@@ -118,9 +118,8 @@ func (p PortForwardProtocol) Valid() bool {
 	return p == PortForwardProtocolTCP || p == PortForwardProtocolUDP
 }
 
-// ToProto converts to the protobuf enum. Unknown values are mapped to TCP
-// (the proto3 zero value) — callers should validate with Valid() before
-// reaching this point.
+// ToProto converts to the protobuf enum. Unknown values are encoded as an
+// unknown enum value (-1), so callers should validate with Valid() upstream.
 func (p PortForwardProtocol) ToProto() networkerpb.PortForwardProtocol {
 	switch p {
 	case PortForwardProtocolTCP:
@@ -128,9 +127,8 @@ func (p PortForwardProtocol) ToProto() networkerpb.PortForwardProtocol {
 	case PortForwardProtocolUDP:
 		return networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_UDP
 	default:
-		// Unknown protocol — fall through to proto3 zero value (TCP).
-		// Input should have been validated upstream via Valid().
-		return networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_TCP
+		// Keep unknown values unknown instead of coercing to TCP.
+		return networkerpb.PortForwardProtocol(-1)
 	}
 }
 
@@ -142,7 +140,8 @@ const (
 )
 
 // PortForwardProtocolFromProto converts from the protobuf enum. Unknown proto
-// values map to TCP (the proto3 zero value).
+// values map to an invalid internal protocol (empty string), which callers
+// can detect via Valid().
 func PortForwardProtocolFromProto(
 	p networkerpb.PortForwardProtocol,
 ) PortForwardProtocol {
@@ -152,7 +151,7 @@ func PortForwardProtocolFromProto(
 	case networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_UDP:
 		return PortForwardProtocolUDP
 	default:
-		return PortForwardProtocolTCP
+		return PortForwardProtocol("")
 	}
 }
 
@@ -268,6 +267,8 @@ func (s *PortForwardSession) ToProto() *networkerpb.PortForwardSession {
 		session.Protocol = networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_TCP
 	case PortForwardProtocolUDP:
 		session.Protocol = networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_UDP
+	default:
+		session.Protocol = networkerpb.PortForwardProtocol(-1)
 	}
 
 	return session

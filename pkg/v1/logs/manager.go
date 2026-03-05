@@ -52,10 +52,10 @@ type sessionState struct {
 	sourceSem chan struct{}
 
 	// Readiness — totalSources set BEFORE goroutines start (no race)
-	totalSources     int32        // immutable after set in orchestrateSession
-	readySources     atomic.Int32 // number of unique sources that sent their first line
-	readied          atomic.Bool  // whether SESSION_READY has been emitted
-	readySet         sync.Map     // map[string]struct{} — tracks which source IDs have been counted
+	totalSources     int32               // immutable after set in orchestrateSession
+	readySources     atomic.Int32        // number of unique sources that sent their first line
+	readied          atomic.Bool         // whether SESSION_READY has been emitted
+	readySet         sync.Map            // map[string]struct{} — tracks which source IDs have been counted
 	initialSourceIDs map[string]struct{} // snapshot of source IDs at session init; only these gate readiness
 
 	opts      CreateSessionOptions
@@ -459,7 +459,7 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	// Watch for dynamic source changes BEFORE the blocking fanOutSources call,
 	// because fanOutSources blocks until all source goroutines complete (which
 	// for Follow=true sessions, only happens when the context is cancelled).
-	if result.Events != nil {
+	if opts.Options.Follow && result.Events != nil {
 		ss.sourceWg.Add(1)
 		go func() {
 			defer ss.sourceWg.Done()
@@ -523,6 +523,21 @@ func (m *Manager) fanOutSources(
 	wg.Wait()
 }
 
+// registerSourceCtx creates and registers the per-source cancel handle.
+// Returns false if the source is already registered/running.
+func (m *Manager) registerSourceCtx(ss *sessionState, sourceID string) (context.Context, bool) {
+	sourceCtx, sourceCancel := context.WithCancel(ss.ctx)
+	ss.sourceMu.Lock()
+	if _, exists := ss.sourceCtxs[sourceID]; exists {
+		ss.sourceMu.Unlock()
+		sourceCancel()
+		return nil, false
+	}
+	ss.sourceCtxs[sourceID] = sourceCancel
+	ss.sourceMu.Unlock()
+	return sourceCtx, true
+}
+
 // launchSource registers a cancellable context for the source, acquires the
 // session-level concurrency semaphore, then runs streamSource. All source
 // launches (initial fan-out, dynamic events, re-enabled sources) go through
@@ -537,12 +552,23 @@ func (m *Manager) launchSource(
 	opts CreateSessionOptions,
 	logger logging.Logger,
 ) {
-	// Register a cancellable context so SourceRemoved can cancel queued sources.
-	sourceCtx, sourceCancel := context.WithCancel(ss.ctx)
-	ss.sourceMu.Lock()
-	ss.sourceCtxs[source.ID] = sourceCancel
-	ss.sourceMu.Unlock()
+	sourceCtx, ok := m.registerSourceCtx(ss, source.ID)
+	if !ok {
+		return
+	}
+	m.launchRegisteredSource(sourceCtx, ss, handler, source, opts, logger)
+}
 
+// launchRegisteredSource launches a source that already has an entry in
+// ss.sourceCtxs.
+func (m *Manager) launchRegisteredSource(
+	sourceCtx context.Context,
+	ss *sessionState,
+	handler Handler,
+	source LogSource,
+	opts CreateSessionOptions,
+	logger logging.Logger,
+) {
 	// Acquire semaphore with context check to avoid blocking on shutdown
 	// or if this specific source was cancelled while queued.
 	select {
@@ -811,6 +837,11 @@ func (m *Manager) watchSourceEvents(
 
 			switch event.Type {
 			case SourceAdded:
+				sourceCtx, shouldLaunch := m.registerSourceCtx(ss, event.Source.ID)
+				if !shouldLaunch {
+					continue
+				}
+
 				ss.addSource(event.Source)
 				m.emitEvent(ss.session.ID, LogStreamEvent{
 					Type:      StreamEventSourceAdded,
@@ -824,10 +855,10 @@ func (m *Manager) watchSourceEvents(
 				currentOpts := ss.opts
 				ss.mu.RUnlock()
 				ss.sourceWg.Add(1)
-				go func() {
+				go func(src LogSource, opts CreateSessionOptions, ctx context.Context) {
 					defer ss.sourceWg.Done()
-					m.launchSource(ss, handler, event.Source, currentOpts, logger)
-				}()
+					m.launchRegisteredSource(ctx, ss, handler, src, opts, logger)
+				}(event.Source, currentOpts, sourceCtx)
 
 			case SourceRemoved:
 				// Cancel the source's streaming goroutine so it stops retrying
@@ -927,6 +958,7 @@ func (m *Manager) updateEnabledSources(ss *sessionState, enabledStr string) {
 	for sourceID, cancel := range ss.sourceCtxs {
 		if !allEnabled && !enabledSet[sourceID] {
 			cancel()
+			delete(ss.sourceCtxs, sourceID)
 			removedEvents = append(removedEvents, LogStreamEvent{
 				Type:      StreamEventSourceRemoved,
 				SourceID:  sourceID,

@@ -55,6 +55,7 @@ func TestNetworkerErrorCode_String(t *testing.T) {
 		{networker.ErrCodeNoHandlerFound, "NO_HANDLER_FOUND"},
 		{networker.ErrCodePortUnavailable, "PORT_UNAVAILABLE"},
 		{networker.ErrCodeForwarderFailed, "FORWARDER_FAILED"},
+		{networker.ErrCodeManagerShuttingDown, "MANAGER_SHUTTING_DOWN"},
 		{networker.ErrCodeInvalidStateTransition, "INVALID_STATE_TRANSITION"},
 		{networker.ErrCodeInvalidConnectionType, "INVALID_CONNECTION_TYPE"},
 		{networker.NetworkerErrorCode(999), "UNKNOWN"},

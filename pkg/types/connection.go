@@ -12,6 +12,30 @@ const (
 	ConnectionDefaultExpiryTime = time.Hour * 24
 )
 
+type ConnectionAutoConnectTrigger string
+
+const (
+	ConnectionAutoConnectTriggerPluginStart          ConnectionAutoConnectTrigger = "PLUGIN_START"
+	ConnectionAutoConnectTriggerConnectionDiscovered ConnectionAutoConnectTrigger = "CONNECTION_DISCOVERED"
+)
+
+type ConnectionAutoConnectRetry string
+
+const (
+	ConnectionAutoConnectRetryNone     ConnectionAutoConnectRetry = "NONE"
+	ConnectionAutoConnectRetryOnChange ConnectionAutoConnectRetry = "ON_CHANGE"
+)
+
+type ConnectionAutoConnect struct {
+	Enabled  bool                           `json:"enabled"`
+	Triggers []ConnectionAutoConnectTrigger `json:"triggers"`
+	Retry    ConnectionAutoConnectRetry     `json:"retry"`
+}
+
+type ConnectionLifecycle struct {
+	AutoConnect ConnectionAutoConnect `json:"auto_connect"`
+}
+
 // prevent collisions in context values.
 type connectionCtxKey struct{}
 
@@ -45,6 +69,10 @@ type Connection struct {
 	// Labels is a map of arbitrary key-value pairs that can be used to store additional information about the connection.
 	// Users will likely use and modify these labels to help organize and categorize their connections.
 	Labels map[string]any `json:"labels"`
+
+	// Lifecycle contains IDE-managed lifecycle behavior for the connection.
+	// This is used by the host to orchestrate behaviors like auto-connect.
+	Lifecycle ConnectionLifecycle `json:"lifecycle"`
 
 	// ID is the unique identifier for the connection that makes sense to the plugin implementation.
 	// +required
@@ -124,6 +152,9 @@ type ConnectionOpts struct {
 	// Labels is a map of arbitrary key-value pairs that can be used to store additional information about the namespace.
 	Labels map[string]any
 
+	// Lifecycle contains IDE-managed lifecycle behavior for the connection.
+	Lifecycle ConnectionLifecycle
+
 	// ID is the unique identifier for the authorization context that makes sense to the
 	ID string
 
@@ -149,7 +180,7 @@ func NewConnection(opts ConnectionOpts) (*Connection, error) {
 		return nil, errors.New("ID is required when creating an authorization context")
 	}
 	if opts.Name == "" {
-		opts.ID = opts.Name
+		opts.Name = opts.ID
 	}
 	if opts.UID == "" {
 		opts.UID = uuid.New().String()
@@ -167,6 +198,9 @@ func NewConnection(opts ConnectionOpts) (*Connection, error) {
 		// default to 24 hours
 		opts.ExpiryTime = ConnectionDefaultExpiryTime
 	}
+	if opts.Lifecycle.AutoConnect.Retry == "" {
+		opts.Lifecycle.AutoConnect.Retry = ConnectionAutoConnectRetryNone
+	}
 
 	return &Connection{
 		ID:            opts.ID,
@@ -178,6 +212,7 @@ func NewConnection(opts ConnectionOpts) (*Connection, error) {
 		sensitiveData: opts.SensitiveData,
 		ExpiryTime:    opts.ExpiryTime,
 		Labels:        opts.Labels,
+		Lifecycle:     opts.Lifecycle,
 	}, nil
 }
 

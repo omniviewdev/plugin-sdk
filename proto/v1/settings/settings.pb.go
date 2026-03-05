@@ -26,34 +26,40 @@ const (
 type SettingType int32
 
 const (
-	SettingType_SETTING_TYPE_TEXT     SettingType = 0
-	SettingType_SETTING_TYPE_INTEGER  SettingType = 1
-	SettingType_SETTING_TYPE_FLOAT    SettingType = 2
-	SettingType_SETTING_TYPE_TOGGLE   SettingType = 3
-	SettingType_SETTING_TYPE_COLOR    SettingType = 4
-	SettingType_SETTING_TYPE_DATETIME SettingType = 5
-	SettingType_SETTING_TYPE_PASSWORD SettingType = 6
+	SettingType_SETTING_TYPE_TEXT         SettingType = 0
+	SettingType_SETTING_TYPE_SELECT       SettingType = 1
+	SettingType_SETTING_TYPE_MULTI_SELECT SettingType = 2
+	SettingType_SETTING_TYPE_INTEGER      SettingType = 3
+	SettingType_SETTING_TYPE_FLOAT        SettingType = 4
+	SettingType_SETTING_TYPE_TOGGLE       SettingType = 5
+	SettingType_SETTING_TYPE_COLOR        SettingType = 6
+	SettingType_SETTING_TYPE_DATETIME     SettingType = 7
+	SettingType_SETTING_TYPE_PASSWORD     SettingType = 8
 )
 
 // Enum value maps for SettingType.
 var (
 	SettingType_name = map[int32]string{
 		0: "SETTING_TYPE_TEXT",
-		1: "SETTING_TYPE_INTEGER",
-		2: "SETTING_TYPE_FLOAT",
-		3: "SETTING_TYPE_TOGGLE",
-		4: "SETTING_TYPE_COLOR",
-		5: "SETTING_TYPE_DATETIME",
-		6: "SETTING_TYPE_PASSWORD",
+		1: "SETTING_TYPE_SELECT",
+		2: "SETTING_TYPE_MULTI_SELECT",
+		3: "SETTING_TYPE_INTEGER",
+		4: "SETTING_TYPE_FLOAT",
+		5: "SETTING_TYPE_TOGGLE",
+		6: "SETTING_TYPE_COLOR",
+		7: "SETTING_TYPE_DATETIME",
+		8: "SETTING_TYPE_PASSWORD",
 	}
 	SettingType_value = map[string]int32{
-		"SETTING_TYPE_TEXT":     0,
-		"SETTING_TYPE_INTEGER":  1,
-		"SETTING_TYPE_FLOAT":    2,
-		"SETTING_TYPE_TOGGLE":   3,
-		"SETTING_TYPE_COLOR":    4,
-		"SETTING_TYPE_DATETIME": 5,
-		"SETTING_TYPE_PASSWORD": 6,
+		"SETTING_TYPE_TEXT":         0,
+		"SETTING_TYPE_SELECT":       1,
+		"SETTING_TYPE_MULTI_SELECT": 2,
+		"SETTING_TYPE_INTEGER":      3,
+		"SETTING_TYPE_FLOAT":        4,
+		"SETTING_TYPE_TOGGLE":       5,
+		"SETTING_TYPE_COLOR":        6,
+		"SETTING_TYPE_DATETIME":     7,
+		"SETTING_TYPE_PASSWORD":     8,
 	}
 )
 
@@ -916,15 +922,17 @@ const file_proto_v1_settings_settings_proto_rawDesc = "" +
 	"\x05TABLE\x10\x01\x12\r\n" +
 	"\tTABLE_ROW\x10\x02\x12\x0e\n" +
 	"\n" +
-	"TABLE_CELL\x10\x03*\xbd\x01\n" +
+	"TABLE_CELL\x10\x03*\xf5\x01\n" +
 	"\vSettingType\x12\x15\n" +
-	"\x11SETTING_TYPE_TEXT\x10\x00\x12\x18\n" +
-	"\x14SETTING_TYPE_INTEGER\x10\x01\x12\x16\n" +
-	"\x12SETTING_TYPE_FLOAT\x10\x02\x12\x17\n" +
-	"\x13SETTING_TYPE_TOGGLE\x10\x03\x12\x16\n" +
-	"\x12SETTING_TYPE_COLOR\x10\x04\x12\x19\n" +
-	"\x15SETTING_TYPE_DATETIME\x10\x05\x12\x19\n" +
-	"\x15SETTING_TYPE_PASSWORD\x10\x062\xe6\x03\n" +
+	"\x11SETTING_TYPE_TEXT\x10\x00\x12\x17\n" +
+	"\x13SETTING_TYPE_SELECT\x10\x01\x12\x1d\n" +
+	"\x19SETTING_TYPE_MULTI_SELECT\x10\x02\x12\x18\n" +
+	"\x14SETTING_TYPE_INTEGER\x10\x03\x12\x16\n" +
+	"\x12SETTING_TYPE_FLOAT\x10\x04\x12\x17\n" +
+	"\x13SETTING_TYPE_TOGGLE\x10\x05\x12\x16\n" +
+	"\x12SETTING_TYPE_COLOR\x10\x06\x12\x19\n" +
+	"\x15SETTING_TYPE_DATETIME\x10\a\x12\x19\n" +
+	"\x15SETTING_TYPE_PASSWORD\x10\b2\xe6\x03\n" +
 	"\x0eSettingsPlugin\x12V\n" +
 	"\fListSettings\x12\x16.google.protobuf.Empty\x1a..omniview.sdk.settings.v1.ListSettingsResponse\x12\\\n" +
 	"\n" +

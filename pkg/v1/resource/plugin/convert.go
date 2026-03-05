@@ -10,8 +10,8 @@ import (
 	commonpb "github.com/omniviewdev/plugin-sdk/proto/v1/common"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/v1/resource"
 
-	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -41,12 +41,17 @@ func connectionToProto(c types.Connection) (*commonpb.Connection, error) {
 		Avatar:      c.Avatar,
 		Labels:      labels,
 		Data:        data,
+		Lifecycle:   connectionLifecycleToProto(c.Lifecycle),
 	}, nil
 }
 
 func connectionFromProto(pb *commonpb.Connection) types.Connection {
 	if pb == nil {
-		return types.Connection{}
+		return types.Connection{
+			Lifecycle: types.ConnectionLifecycle{
+				AutoConnect: types.ConnectionAutoConnect{Retry: types.ConnectionAutoConnectRetryNone},
+			},
+		}
 	}
 	labels := make(map[string]any, len(pb.GetLabels()))
 	for k, v := range pb.GetLabels() {
@@ -63,6 +68,88 @@ func connectionFromProto(pb *commonpb.Connection) types.Connection {
 		Avatar:      pb.GetAvatar(),
 		Labels:      labels,
 		Data:        data,
+		Lifecycle:   connectionLifecycleFromProto(pb.GetLifecycle()),
+	}
+}
+
+func connectionLifecycleToProto(lc types.ConnectionLifecycle) *commonpb.ConnectionLifecycle {
+	return &commonpb.ConnectionLifecycle{
+		AutoConnect: &commonpb.ConnectionAutoConnect{
+			Enabled:  lc.AutoConnect.Enabled,
+			Triggers: connectionAutoConnectTriggersToProto(lc.AutoConnect.Triggers),
+			Retry:    connectionAutoConnectRetryToProto(lc.AutoConnect.Retry),
+		},
+	}
+}
+
+func connectionLifecycleFromProto(pb *commonpb.ConnectionLifecycle) types.ConnectionLifecycle {
+	if pb == nil {
+		return types.ConnectionLifecycle{
+			AutoConnect: types.ConnectionAutoConnect{Retry: types.ConnectionAutoConnectRetryNone},
+		}
+	}
+	auto := pb.GetAutoConnect()
+	if auto == nil {
+		return types.ConnectionLifecycle{
+			AutoConnect: types.ConnectionAutoConnect{Retry: types.ConnectionAutoConnectRetryNone},
+		}
+	}
+	return types.ConnectionLifecycle{
+		AutoConnect: types.ConnectionAutoConnect{
+			Enabled:  auto.GetEnabled(),
+			Triggers: connectionAutoConnectTriggersFromProto(auto.GetTriggers()),
+			Retry:    connectionAutoConnectRetryFromProto(auto.GetRetry()),
+		},
+	}
+}
+
+func connectionAutoConnectTriggersToProto(in []types.ConnectionAutoConnectTrigger) []commonpb.ConnectionAutoConnectTrigger {
+	out := make([]commonpb.ConnectionAutoConnectTrigger, 0, len(in))
+	for _, t := range in {
+		switch t {
+		case types.ConnectionAutoConnectTriggerPluginStart:
+			out = append(out, commonpb.ConnectionAutoConnectTrigger_CONNECTION_AUTO_CONNECT_TRIGGER_PLUGIN_START)
+		case types.ConnectionAutoConnectTriggerConnectionDiscovered:
+			out = append(out, commonpb.ConnectionAutoConnectTrigger_CONNECTION_AUTO_CONNECT_TRIGGER_CONNECTION_DISCOVERED)
+		default:
+			out = append(out, commonpb.ConnectionAutoConnectTrigger_CONNECTION_AUTO_CONNECT_TRIGGER_UNSPECIFIED)
+		}
+	}
+	return out
+}
+
+func connectionAutoConnectTriggersFromProto(in []commonpb.ConnectionAutoConnectTrigger) []types.ConnectionAutoConnectTrigger {
+	out := make([]types.ConnectionAutoConnectTrigger, 0, len(in))
+	for _, t := range in {
+		switch t {
+		case commonpb.ConnectionAutoConnectTrigger_CONNECTION_AUTO_CONNECT_TRIGGER_PLUGIN_START:
+			out = append(out, types.ConnectionAutoConnectTriggerPluginStart)
+		case commonpb.ConnectionAutoConnectTrigger_CONNECTION_AUTO_CONNECT_TRIGGER_CONNECTION_DISCOVERED:
+			out = append(out, types.ConnectionAutoConnectTriggerConnectionDiscovered)
+		}
+	}
+	return out
+}
+
+func connectionAutoConnectRetryToProto(r types.ConnectionAutoConnectRetry) commonpb.ConnectionAutoConnectRetry {
+	switch r {
+	case types.ConnectionAutoConnectRetryOnChange:
+		return commonpb.ConnectionAutoConnectRetry_CONNECTION_AUTO_CONNECT_RETRY_ON_CHANGE
+	case types.ConnectionAutoConnectRetryNone:
+		return commonpb.ConnectionAutoConnectRetry_CONNECTION_AUTO_CONNECT_RETRY_NONE
+	default:
+		return commonpb.ConnectionAutoConnectRetry_CONNECTION_AUTO_CONNECT_RETRY_NONE
+	}
+}
+
+func connectionAutoConnectRetryFromProto(r commonpb.ConnectionAutoConnectRetry) types.ConnectionAutoConnectRetry {
+	switch r {
+	case commonpb.ConnectionAutoConnectRetry_CONNECTION_AUTO_CONNECT_RETRY_ON_CHANGE:
+		return types.ConnectionAutoConnectRetryOnChange
+	case commonpb.ConnectionAutoConnectRetry_CONNECTION_AUTO_CONNECT_RETRY_NONE:
+		return types.ConnectionAutoConnectRetryNone
+	default:
+		return types.ConnectionAutoConnectRetryNone
 	}
 }
 
@@ -606,7 +693,7 @@ func watchConnectionSummaryFromProto(pb *resourcepb.GetWatchStateResponse) *reso
 
 var actionScopeToProto = map[resource.ActionScope]resourcepb.ActionScope{
 	resource.ActionScopeInstance: resourcepb.ActionScope_ACTION_SCOPE_INSTANCE,
-	resource.ActionScopeType:    resourcepb.ActionScope_ACTION_SCOPE_COLLECTION,
+	resource.ActionScopeType:     resourcepb.ActionScope_ACTION_SCOPE_COLLECTION,
 }
 
 var actionScopeFromProto = map[resourcepb.ActionScope]resource.ActionScope{
@@ -1142,4 +1229,3 @@ func resourceEventFromProto(pb *resourcepb.ResourceEvent) resource.ResourceEvent
 		LastSeen:  lastSeen,
 	}
 }
-

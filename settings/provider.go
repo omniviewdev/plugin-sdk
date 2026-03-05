@@ -481,7 +481,7 @@ func (p *provider) GetString(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if setting.Type != Text {
+	if setting.Type != Text && setting.Type != Select {
 		return "", ErrSettingTypeMismatch
 	}
 	val, ok := setting.Value.(string)
@@ -497,7 +497,7 @@ func (p *provider) GetStringSlice(id string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if setting.Type != Text {
+	if setting.Type != Text && setting.Type != MultiSelect {
 		return nil, ErrSettingTypeMismatch
 	}
 

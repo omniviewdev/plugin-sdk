@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/networker"
+	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
 )
 
 func TestCanTransition_ValidPaths(t *testing.T) {
@@ -55,4 +56,34 @@ func TestConnectionInterface_StaticConnection(t *testing.T) {
 		Address: "localhost:8080",
 	}
 	_ = c
+}
+
+func TestPortForwardProtocolToProtoUnknown(t *testing.T) {
+	got := networker.PortForwardProtocol("SCTP").ToProto()
+	if got == networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_TCP || got == networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_UDP {
+		t.Fatalf("expected unknown proto enum for unknown protocol, got %v", got)
+	}
+	if int32(got) != -1 {
+		t.Fatalf("expected unknown enum value -1, got %d", got)
+	}
+}
+
+func TestPortForwardProtocolFromProtoUnknown(t *testing.T) {
+	got := networker.PortForwardProtocolFromProto(networkerpb.PortForwardProtocol(99))
+	if got.Valid() {
+		t.Fatalf("expected invalid protocol for unknown enum, got %q", got)
+	}
+	if got != "" {
+		t.Fatalf("expected empty protocol for unknown enum, got %q", got)
+	}
+}
+
+func TestPortForwardSessionToProtoUnknownProtocol(t *testing.T) {
+	session := &networker.PortForwardSession{
+		Protocol: networker.PortForwardProtocol("SCTP"),
+	}
+	got := session.ToProto().GetProtocol()
+	if int32(got) != -1 {
+		t.Fatalf("expected unknown enum value -1, got %d", got)
+	}
 }

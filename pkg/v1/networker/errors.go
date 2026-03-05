@@ -9,10 +9,11 @@ import (
 type NetworkerErrorCode int
 
 const (
-	ErrCodeSessionNotFound         NetworkerErrorCode = iota + 1
+	ErrCodeSessionNotFound NetworkerErrorCode = iota + 1
 	ErrCodeNoHandlerFound
 	ErrCodePortUnavailable
 	ErrCodeForwarderFailed
+	ErrCodeManagerShuttingDown
 	ErrCodeInvalidStateTransition
 	ErrCodeInvalidConnectionType
 )
@@ -27,6 +28,8 @@ func (c NetworkerErrorCode) String() string {
 		return "PORT_UNAVAILABLE"
 	case ErrCodeForwarderFailed:
 		return "FORWARDER_FAILED"
+	case ErrCodeManagerShuttingDown:
+		return "MANAGER_SHUTTING_DOWN"
 	case ErrCodeInvalidStateTransition:
 		return "INVALID_STATE_TRANSITION"
 	case ErrCodeInvalidConnectionType:
@@ -64,12 +67,13 @@ func (e *NetworkerError) Is(target error) bool {
 
 // Sentinel errors for errors.Is matching.
 var (
-	ErrNetSessionNotFound         = &NetworkerError{Code: ErrCodeSessionNotFound}
-	ErrNetNoHandlerFound          = &NetworkerError{Code: ErrCodeNoHandlerFound}
-	ErrNetPortUnavailable         = &NetworkerError{Code: ErrCodePortUnavailable}
-	ErrNetForwarderFailed         = &NetworkerError{Code: ErrCodeForwarderFailed}
-	ErrNetInvalidStateTransition  = &NetworkerError{Code: ErrCodeInvalidStateTransition}
-	ErrNetInvalidConnectionType   = &NetworkerError{Code: ErrCodeInvalidConnectionType}
+	ErrNetSessionNotFound        = &NetworkerError{Code: ErrCodeSessionNotFound}
+	ErrNetNoHandlerFound         = &NetworkerError{Code: ErrCodeNoHandlerFound}
+	ErrNetPortUnavailable        = &NetworkerError{Code: ErrCodePortUnavailable}
+	ErrNetForwarderFailed        = &NetworkerError{Code: ErrCodeForwarderFailed}
+	ErrNetManagerShuttingDown    = &NetworkerError{Code: ErrCodeManagerShuttingDown}
+	ErrNetInvalidStateTransition = &NetworkerError{Code: ErrCodeInvalidStateTransition}
+	ErrNetInvalidConnectionType  = &NetworkerError{Code: ErrCodeInvalidConnectionType}
 )
 
 // Constructor helpers.
@@ -102,6 +106,14 @@ func NewForwarderFailedError(sessionID string, err error) *NetworkerError {
 		SessionID: sessionID,
 		Message:   fmt.Sprintf("forwarder failed: %v", err),
 		Err:       err,
+	}
+}
+
+func NewManagerShuttingDownError(sessionID string) *NetworkerError {
+	return &NetworkerError{
+		Code:      ErrCodeManagerShuttingDown,
+		SessionID: sessionID,
+		Message:   "manager is shutting down",
 	}
 }
 

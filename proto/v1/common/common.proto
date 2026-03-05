@@ -14,6 +14,29 @@ message Connection {
     string avatar = 4;
     map<string, string> labels = 5;
     google.protobuf.Struct data = 6;
+    ConnectionLifecycle lifecycle = 7;
+}
+
+message ConnectionLifecycle {
+    ConnectionAutoConnect auto_connect = 1;
+}
+
+message ConnectionAutoConnect {
+    bool enabled = 1;
+    repeated ConnectionAutoConnectTrigger triggers = 2;
+    ConnectionAutoConnectRetry retry = 3;
+}
+
+enum ConnectionAutoConnectTrigger {
+    CONNECTION_AUTO_CONNECT_TRIGGER_UNSPECIFIED = 0;
+    CONNECTION_AUTO_CONNECT_TRIGGER_PLUGIN_START = 1;
+    CONNECTION_AUTO_CONNECT_TRIGGER_CONNECTION_DISCOVERED = 2;
+}
+
+enum ConnectionAutoConnectRetry {
+    CONNECTION_AUTO_CONNECT_RETRY_UNSPECIFIED = 0;
+    CONNECTION_AUTO_CONNECT_RETRY_NONE = 1;
+    CONNECTION_AUTO_CONNECT_RETRY_ON_CHANGE = 2;
 }
 
 // ConnectionStatus reports the health of a connection.

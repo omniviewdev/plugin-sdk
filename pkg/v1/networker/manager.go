@@ -204,7 +204,7 @@ func (m *Manager) StartPortForwardSession(
 	m.mu.RUnlock()
 	if shuttingDown {
 		cancel()
-		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("manager is shutting down"))
+		return nil, NewManagerShuttingDownError(sessionID)
 	}
 
 	var result *ForwarderResult
@@ -298,7 +298,7 @@ func (m *Manager) StartPortForwardSession(
 	if m.stopped {
 		m.mu.Unlock()
 		cancel()
-		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("manager is shutting down"))
+		return nil, NewManagerShuttingDownError(sessionID)
 	}
 	if _, exists := m.sessions[sessionID]; exists {
 		m.mu.Unlock()

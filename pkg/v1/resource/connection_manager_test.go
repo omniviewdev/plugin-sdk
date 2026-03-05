@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/resource/resourcetest"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
 func loadAndStart(t *testing.T, mgr *resource.ConnectionManagerForTest, ctx context.Context) {
@@ -536,6 +536,51 @@ func TestCM_UpdateConnectionRestartsClient(t *testing.T) {
 	}
 	if cp.DestroyClientCalls.Load() != 1 {
 		t.Fatalf("expected 1 DestroyClient call, got %d", cp.DestroyClientCalls.Load())
+	}
+}
+
+// --- CM-017b: UpdateConnection returns old-client cleanup errors after swap ---
+func TestCM_UpdateConnectionDestroyOldClientFails(t *testing.T) {
+	ctx := context.Background()
+	callCount := 0
+	destroyErr := errors.New("destroy failed")
+	cp := &resourcetest.StubConnectionProvider[string]{
+		CreateClientFunc: func(_ context.Context) (*string, error) {
+			callCount++
+			s := fmt.Sprintf("client-%d", callCount)
+			return &s, nil
+		},
+		DestroyClientFunc: func(_ context.Context, client *string) error {
+			if client != nil && *client == "client-1" {
+				return destroyErr
+			}
+			return nil
+		},
+	}
+	mgr := resource.NewConnectionManagerForTest(ctx, cp)
+	loadAndStart(t, mgr, ctx)
+
+	oldCtx, _ := mgr.GetConnectionCtx("conn-1")
+
+	_, err := mgr.UpdateConnection(ctx, types.Connection{ID: "conn-1", Name: "Updated"})
+	if !errors.Is(err, destroyErr) {
+		t.Fatalf("expected destroy error, got %v", err)
+	}
+
+	// New client/state remain active despite old-client cleanup failure.
+	c2, getErr := mgr.GetClient("conn-1")
+	if getErr != nil {
+		t.Fatalf("GetClient: %v", getErr)
+	}
+	if *c2 != "client-2" {
+		t.Fatalf("expected client-2, got %s", *c2)
+	}
+	newCtx, _ := mgr.GetConnectionCtx("conn-1")
+	if newCtx.Err() != nil {
+		t.Fatal("expected new connection context to remain active")
+	}
+	if oldCtx.Err() == nil {
+		t.Fatal("expected old connection context to be cancelled")
 	}
 }
 

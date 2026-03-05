@@ -5,6 +5,10 @@ type SettingType string
 const (
 	// Text is the type for a text field entry.
 	Text SettingType = "text"
+	// Select is the type for a single-select field entry.
+	Select SettingType = "select"
+	// MultiSelect is the type for a multi-select field entry.
+	MultiSelect SettingType = "multiselect"
 	// Integer is the type for an integer field entry.
 	Integer SettingType = "integer"
 	// Float is the type for a float field entry.
@@ -43,6 +47,8 @@ var AllSettingTypes = []struct {
 	TSName string
 }{
 	{Text, "TEXT"},
+	{Select, "SELECT"},
+	{MultiSelect, "MULTISELECT"},
 	{Integer, "INTEGER"},
 	{Float, "FLOAT"},
 	{Toggle, "TOGGLE"},

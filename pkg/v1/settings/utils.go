@@ -15,6 +15,10 @@ func SettingTypeToProtoType(t settings.SettingType) settingspb.SettingType {
 	switch t {
 	case settings.Text:
 		return settingspb.SettingType_SETTING_TYPE_TEXT
+	case settings.Select:
+		return settingspb.SettingType_SETTING_TYPE_SELECT
+	case settings.MultiSelect:
+		return settingspb.SettingType_SETTING_TYPE_MULTI_SELECT
 	case settings.Integer:
 		return settingspb.SettingType_SETTING_TYPE_INTEGER
 	case settings.Float:
@@ -35,6 +39,10 @@ func ProtoTypeToSettingType(t settingspb.SettingType) settings.SettingType {
 	switch t {
 	case settingspb.SettingType_SETTING_TYPE_TEXT:
 		return settings.Text
+	case settingspb.SettingType_SETTING_TYPE_SELECT:
+		return settings.Select
+	case settingspb.SettingType_SETTING_TYPE_MULTI_SELECT:
+		return settings.MultiSelect
 	case settingspb.SettingType_SETTING_TYPE_INTEGER:
 		return settings.Integer
 	case settingspb.SettingType_SETTING_TYPE_FLOAT:

@@ -26,6 +26,10 @@ func cloneConnection(c types.Connection) types.Connection {
 	c.Data = maps.Clone(c.Data)
 	c.Labels = maps.Clone(c.Labels)
 	c.SetSensitiveData(maps.Clone(c.GetSensitiveData()))
+	c.Lifecycle.AutoConnect.Triggers = slices.Clone(c.Lifecycle.AutoConnect.Triggers)
+	if c.Lifecycle.AutoConnect.Retry == "" {
+		c.Lifecycle.AutoConnect.Retry = types.ConnectionAutoConnectRetryNone
+	}
 	return c
 }
 
@@ -42,6 +46,9 @@ func connectionEqual(a, b types.Connection) bool {
 		return false
 	}
 	if !reflect.DeepEqual(a.GetSensitiveData(), b.GetSensitiveData()) {
+		return false
+	}
+	if !reflect.DeepEqual(a.Lifecycle, b.Lifecycle) {
 		return false
 	}
 	return true
@@ -350,7 +357,9 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 
 	// Clean up old resources after successful swap.
 	oldCancel()
-	_ = m.provider.DestroyClient(ctx, oldClient)
+	if err := m.provider.DestroyClient(ctx, oldClient); err != nil {
+		return conn, err
+	}
 
 	return conn, nil
 }

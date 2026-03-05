@@ -158,16 +158,43 @@ func TestManager_StopAll_CleansUp(t *testing.T) {
 		}
 	}
 
-	sessions, _ := h.ListSessions()
+	sessions, err := h.ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions before StopAll: %v", err)
+	}
 	if len(sessions) != 3 {
 		t.Fatalf("expected 3 sessions, got %d", len(sessions))
 	}
 
 	h.Manager.StopAll()
 
-	sessions, _ = h.ListSessions()
+	sessions, err = h.ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions after StopAll: %v", err)
+	}
 	if len(sessions) != 0 {
 		t.Fatalf("expected 0 sessions after StopAll, got %d", len(sessions))
+	}
+}
+
+func TestManager_StartSession_ShuttingDown(t *testing.T) {
+	forwarder := &networktest.StubResourceForwarder{}
+	h := networktest.Mount(t,
+		networktest.WithResourceForwarder("core::v1::Pod", forwarder),
+	)
+
+	h.Manager.StopAll()
+
+	_, err := h.StartSession(networker.PortForwardSessionOptions{
+		ConnectionType: networker.PortForwardConnectionTypeResource,
+		Protocol:       networker.PortForwardProtocolTCP,
+		Connection: networker.PortForwardResourceConnection{
+			ResourceKey: "core::v1::Pod",
+		},
+		RemotePort: 8080,
+	})
+	if !errors.Is(err, networker.ErrNetManagerShuttingDown) {
+		t.Fatalf("expected ManagerShuttingDown, got: %v", err)
 	}
 }
 

@@ -23,6 +23,104 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ConnectionAutoConnectTrigger int32
+
+const (
+	ConnectionAutoConnectTrigger_CONNECTION_AUTO_CONNECT_TRIGGER_UNSPECIFIED           ConnectionAutoConnectTrigger = 0
+	ConnectionAutoConnectTrigger_CONNECTION_AUTO_CONNECT_TRIGGER_PLUGIN_START          ConnectionAutoConnectTrigger = 1
+	ConnectionAutoConnectTrigger_CONNECTION_AUTO_CONNECT_TRIGGER_CONNECTION_DISCOVERED ConnectionAutoConnectTrigger = 2
+)
+
+// Enum value maps for ConnectionAutoConnectTrigger.
+var (
+	ConnectionAutoConnectTrigger_name = map[int32]string{
+		0: "CONNECTION_AUTO_CONNECT_TRIGGER_UNSPECIFIED",
+		1: "CONNECTION_AUTO_CONNECT_TRIGGER_PLUGIN_START",
+		2: "CONNECTION_AUTO_CONNECT_TRIGGER_CONNECTION_DISCOVERED",
+	}
+	ConnectionAutoConnectTrigger_value = map[string]int32{
+		"CONNECTION_AUTO_CONNECT_TRIGGER_UNSPECIFIED":           0,
+		"CONNECTION_AUTO_CONNECT_TRIGGER_PLUGIN_START":          1,
+		"CONNECTION_AUTO_CONNECT_TRIGGER_CONNECTION_DISCOVERED": 2,
+	}
+)
+
+func (x ConnectionAutoConnectTrigger) Enum() *ConnectionAutoConnectTrigger {
+	p := new(ConnectionAutoConnectTrigger)
+	*p = x
+	return p
+}
+
+func (x ConnectionAutoConnectTrigger) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConnectionAutoConnectTrigger) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_v1_common_common_proto_enumTypes[0].Descriptor()
+}
+
+func (ConnectionAutoConnectTrigger) Type() protoreflect.EnumType {
+	return &file_proto_v1_common_common_proto_enumTypes[0]
+}
+
+func (x ConnectionAutoConnectTrigger) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConnectionAutoConnectTrigger.Descriptor instead.
+func (ConnectionAutoConnectTrigger) EnumDescriptor() ([]byte, []int) {
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{0}
+}
+
+type ConnectionAutoConnectRetry int32
+
+const (
+	ConnectionAutoConnectRetry_CONNECTION_AUTO_CONNECT_RETRY_UNSPECIFIED ConnectionAutoConnectRetry = 0
+	ConnectionAutoConnectRetry_CONNECTION_AUTO_CONNECT_RETRY_NONE        ConnectionAutoConnectRetry = 1
+	ConnectionAutoConnectRetry_CONNECTION_AUTO_CONNECT_RETRY_ON_CHANGE   ConnectionAutoConnectRetry = 2
+)
+
+// Enum value maps for ConnectionAutoConnectRetry.
+var (
+	ConnectionAutoConnectRetry_name = map[int32]string{
+		0: "CONNECTION_AUTO_CONNECT_RETRY_UNSPECIFIED",
+		1: "CONNECTION_AUTO_CONNECT_RETRY_NONE",
+		2: "CONNECTION_AUTO_CONNECT_RETRY_ON_CHANGE",
+	}
+	ConnectionAutoConnectRetry_value = map[string]int32{
+		"CONNECTION_AUTO_CONNECT_RETRY_UNSPECIFIED": 0,
+		"CONNECTION_AUTO_CONNECT_RETRY_NONE":        1,
+		"CONNECTION_AUTO_CONNECT_RETRY_ON_CHANGE":   2,
+	}
+)
+
+func (x ConnectionAutoConnectRetry) Enum() *ConnectionAutoConnectRetry {
+	p := new(ConnectionAutoConnectRetry)
+	*p = x
+	return p
+}
+
+func (x ConnectionAutoConnectRetry) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConnectionAutoConnectRetry) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_v1_common_common_proto_enumTypes[1].Descriptor()
+}
+
+func (ConnectionAutoConnectRetry) Type() protoreflect.EnumType {
+	return &file_proto_v1_common_common_proto_enumTypes[1]
+}
+
+func (x ConnectionAutoConnectRetry) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConnectionAutoConnectRetry.Descriptor instead.
+func (ConnectionAutoConnectRetry) EnumDescriptor() ([]byte, []int) {
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{1}
+}
+
 type ConnectionState int32
 
 const (
@@ -62,11 +160,11 @@ func (x ConnectionState) String() string {
 }
 
 func (ConnectionState) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_v1_common_common_proto_enumTypes[0].Descriptor()
+	return file_proto_v1_common_common_proto_enumTypes[2].Descriptor()
 }
 
 func (ConnectionState) Type() protoreflect.EnumType {
-	return &file_proto_v1_common_common_proto_enumTypes[0]
+	return &file_proto_v1_common_common_proto_enumTypes[2]
 }
 
 func (x ConnectionState) Number() protoreflect.EnumNumber {
@@ -75,7 +173,7 @@ func (x ConnectionState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ConnectionState.Descriptor instead.
 func (ConnectionState) EnumDescriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{0}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{2}
 }
 
 type ColumnType int32
@@ -132,11 +230,11 @@ func (x ColumnType) String() string {
 }
 
 func (ColumnType) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_v1_common_common_proto_enumTypes[1].Descriptor()
+	return file_proto_v1_common_common_proto_enumTypes[3].Descriptor()
 }
 
 func (ColumnType) Type() protoreflect.EnumType {
-	return &file_proto_v1_common_common_proto_enumTypes[1]
+	return &file_proto_v1_common_common_proto_enumTypes[3]
 }
 
 func (x ColumnType) Number() protoreflect.EnumNumber {
@@ -145,7 +243,7 @@ func (x ColumnType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ColumnType.Descriptor instead.
 func (ColumnType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{1}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{3}
 }
 
 type ColumnAlignment int32
@@ -184,11 +282,11 @@ func (x ColumnAlignment) String() string {
 }
 
 func (ColumnAlignment) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_v1_common_common_proto_enumTypes[2].Descriptor()
+	return file_proto_v1_common_common_proto_enumTypes[4].Descriptor()
 }
 
 func (ColumnAlignment) Type() protoreflect.EnumType {
-	return &file_proto_v1_common_common_proto_enumTypes[2]
+	return &file_proto_v1_common_common_proto_enumTypes[4]
 }
 
 func (x ColumnAlignment) Number() protoreflect.EnumNumber {
@@ -197,7 +295,7 @@ func (x ColumnAlignment) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ColumnAlignment.Descriptor instead.
 func (ColumnAlignment) EnumDescriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{2}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{4}
 }
 
 type OperationType int32
@@ -245,11 +343,11 @@ func (x OperationType) String() string {
 }
 
 func (OperationType) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_v1_common_common_proto_enumTypes[3].Descriptor()
+	return file_proto_v1_common_common_proto_enumTypes[5].Descriptor()
 }
 
 func (OperationType) Type() protoreflect.EnumType {
-	return &file_proto_v1_common_common_proto_enumTypes[3]
+	return &file_proto_v1_common_common_proto_enumTypes[5]
 }
 
 func (x OperationType) Number() protoreflect.EnumNumber {
@@ -258,7 +356,7 @@ func (x OperationType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use OperationType.Descriptor instead.
 func (OperationType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{3}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{5}
 }
 
 // ResourceErrorCode enumerates structured error codes for resource operations.
@@ -331,11 +429,11 @@ func (x ResourceErrorCode) String() string {
 }
 
 func (ResourceErrorCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_v1_common_common_proto_enumTypes[4].Descriptor()
+	return file_proto_v1_common_common_proto_enumTypes[6].Descriptor()
 }
 
 func (ResourceErrorCode) Type() protoreflect.EnumType {
-	return &file_proto_v1_common_common_proto_enumTypes[4]
+	return &file_proto_v1_common_common_proto_enumTypes[6]
 }
 
 func (x ResourceErrorCode) Number() protoreflect.EnumNumber {
@@ -344,7 +442,7 @@ func (x ResourceErrorCode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ResourceErrorCode.Descriptor instead.
 func (ResourceErrorCode) EnumDescriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{4}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{6}
 }
 
 // Connection represents a configured connection to a backend system.
@@ -356,6 +454,7 @@ type Connection struct {
 	Avatar        string                 `protobuf:"bytes,4,opt,name=avatar,proto3" json:"avatar,omitempty"`
 	Labels        map[string]string      `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Data          *structpb.Struct       `protobuf:"bytes,6,opt,name=data,proto3" json:"data,omitempty"`
+	Lifecycle     *ConnectionLifecycle   `protobuf:"bytes,7,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -432,6 +531,117 @@ func (x *Connection) GetData() *structpb.Struct {
 	return nil
 }
 
+func (x *Connection) GetLifecycle() *ConnectionLifecycle {
+	if x != nil {
+		return x.Lifecycle
+	}
+	return nil
+}
+
+type ConnectionLifecycle struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AutoConnect   *ConnectionAutoConnect `protobuf:"bytes,1,opt,name=auto_connect,json=autoConnect,proto3" json:"auto_connect,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConnectionLifecycle) Reset() {
+	*x = ConnectionLifecycle{}
+	mi := &file_proto_v1_common_common_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionLifecycle) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionLifecycle) ProtoMessage() {}
+
+func (x *ConnectionLifecycle) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_common_common_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionLifecycle.ProtoReflect.Descriptor instead.
+func (*ConnectionLifecycle) Descriptor() ([]byte, []int) {
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ConnectionLifecycle) GetAutoConnect() *ConnectionAutoConnect {
+	if x != nil {
+		return x.AutoConnect
+	}
+	return nil
+}
+
+type ConnectionAutoConnect struct {
+	state         protoimpl.MessageState         `protogen:"open.v1"`
+	Enabled       bool                           `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Triggers      []ConnectionAutoConnectTrigger `protobuf:"varint,2,rep,packed,name=triggers,proto3,enum=omniview.sdk.common.v1.ConnectionAutoConnectTrigger" json:"triggers,omitempty"`
+	Retry         ConnectionAutoConnectRetry     `protobuf:"varint,3,opt,name=retry,proto3,enum=omniview.sdk.common.v1.ConnectionAutoConnectRetry" json:"retry,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConnectionAutoConnect) Reset() {
+	*x = ConnectionAutoConnect{}
+	mi := &file_proto_v1_common_common_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectionAutoConnect) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectionAutoConnect) ProtoMessage() {}
+
+func (x *ConnectionAutoConnect) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_common_common_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectionAutoConnect.ProtoReflect.Descriptor instead.
+func (*ConnectionAutoConnect) Descriptor() ([]byte, []int) {
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ConnectionAutoConnect) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *ConnectionAutoConnect) GetTriggers() []ConnectionAutoConnectTrigger {
+	if x != nil {
+		return x.Triggers
+	}
+	return nil
+}
+
+func (x *ConnectionAutoConnect) GetRetry() ConnectionAutoConnectRetry {
+	if x != nil {
+		return x.Retry
+	}
+	return ConnectionAutoConnectRetry_CONNECTION_AUTO_CONNECT_RETRY_UNSPECIFIED
+}
+
 // ConnectionStatus reports the health of a connection.
 type ConnectionStatus struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -446,7 +656,7 @@ type ConnectionStatus struct {
 
 func (x *ConnectionStatus) Reset() {
 	*x = ConnectionStatus{}
-	mi := &file_proto_v1_common_common_proto_msgTypes[1]
+	mi := &file_proto_v1_common_common_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -458,7 +668,7 @@ func (x *ConnectionStatus) String() string {
 func (*ConnectionStatus) ProtoMessage() {}
 
 func (x *ConnectionStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_common_common_proto_msgTypes[1]
+	mi := &file_proto_v1_common_common_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -471,7 +681,7 @@ func (x *ConnectionStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectionStatus.ProtoReflect.Descriptor instead.
 func (*ConnectionStatus) Descriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{1}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ConnectionStatus) GetConnection() *Connection {
@@ -528,7 +738,7 @@ type ResourceMeta struct {
 
 func (x *ResourceMeta) Reset() {
 	*x = ResourceMeta{}
-	mi := &file_proto_v1_common_common_proto_msgTypes[2]
+	mi := &file_proto_v1_common_common_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -540,7 +750,7 @@ func (x *ResourceMeta) String() string {
 func (*ResourceMeta) ProtoMessage() {}
 
 func (x *ResourceMeta) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_common_common_proto_msgTypes[2]
+	mi := &file_proto_v1_common_common_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -553,7 +763,7 @@ func (x *ResourceMeta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceMeta.ProtoReflect.Descriptor instead.
 func (*ResourceMeta) Descriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{2}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ResourceMeta) GetGroup() string {
@@ -640,7 +850,7 @@ type ResourceGroup struct {
 
 func (x *ResourceGroup) Reset() {
 	*x = ResourceGroup{}
-	mi := &file_proto_v1_common_common_proto_msgTypes[3]
+	mi := &file_proto_v1_common_common_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -652,7 +862,7 @@ func (x *ResourceGroup) String() string {
 func (*ResourceGroup) ProtoMessage() {}
 
 func (x *ResourceGroup) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_common_common_proto_msgTypes[3]
+	mi := &file_proto_v1_common_common_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -665,7 +875,7 @@ func (x *ResourceGroup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceGroup.ProtoReflect.Descriptor instead.
 func (*ResourceGroup) Descriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{3}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ResourceGroup) GetId() string {
@@ -718,7 +928,7 @@ type ResourceDefinition struct {
 
 func (x *ResourceDefinition) Reset() {
 	*x = ResourceDefinition{}
-	mi := &file_proto_v1_common_common_proto_msgTypes[4]
+	mi := &file_proto_v1_common_common_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -730,7 +940,7 @@ func (x *ResourceDefinition) String() string {
 func (*ResourceDefinition) ProtoMessage() {}
 
 func (x *ResourceDefinition) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_common_common_proto_msgTypes[4]
+	mi := &file_proto_v1_common_common_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -743,7 +953,7 @@ func (x *ResourceDefinition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceDefinition.ProtoReflect.Descriptor instead.
 func (*ResourceDefinition) Descriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{4}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ResourceDefinition) GetMeta() *ResourceMeta {
@@ -807,7 +1017,7 @@ type ColumnDefinition struct {
 
 func (x *ColumnDefinition) Reset() {
 	*x = ColumnDefinition{}
-	mi := &file_proto_v1_common_common_proto_msgTypes[5]
+	mi := &file_proto_v1_common_common_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -819,7 +1029,7 @@ func (x *ColumnDefinition) String() string {
 func (*ColumnDefinition) ProtoMessage() {}
 
 func (x *ColumnDefinition) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_common_common_proto_msgTypes[5]
+	mi := &file_proto_v1_common_common_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -832,7 +1042,7 @@ func (x *ColumnDefinition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ColumnDefinition.ProtoReflect.Descriptor instead.
 func (*ColumnDefinition) Descriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{5}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ColumnDefinition) GetId() string {
@@ -922,7 +1132,7 @@ type ResourceLink struct {
 
 func (x *ResourceLink) Reset() {
 	*x = ResourceLink{}
-	mi := &file_proto_v1_common_common_proto_msgTypes[6]
+	mi := &file_proto_v1_common_common_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -934,7 +1144,7 @@ func (x *ResourceLink) String() string {
 func (*ResourceLink) ProtoMessage() {}
 
 func (x *ResourceLink) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_common_common_proto_msgTypes[6]
+	mi := &file_proto_v1_common_common_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -947,7 +1157,7 @@ func (x *ResourceLink) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceLink.ProtoReflect.Descriptor instead.
 func (*ResourceLink) Descriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{6}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ResourceLink) GetIdAccessor() string {
@@ -1020,7 +1230,7 @@ type ResourceError struct {
 
 func (x *ResourceError) Reset() {
 	*x = ResourceError{}
-	mi := &file_proto_v1_common_common_proto_msgTypes[7]
+	mi := &file_proto_v1_common_common_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1032,7 +1242,7 @@ func (x *ResourceError) String() string {
 func (*ResourceError) ProtoMessage() {}
 
 func (x *ResourceError) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_common_common_proto_msgTypes[7]
+	mi := &file_proto_v1_common_common_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1045,7 +1255,7 @@ func (x *ResourceError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceError.ProtoReflect.Descriptor instead.
 func (*ResourceError) Descriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{7}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ResourceError) GetCode() int32 {
@@ -1096,7 +1306,7 @@ type EditorSchema struct {
 
 func (x *EditorSchema) Reset() {
 	*x = EditorSchema{}
-	mi := &file_proto_v1_common_common_proto_msgTypes[8]
+	mi := &file_proto_v1_common_common_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1108,7 +1318,7 @@ func (x *EditorSchema) String() string {
 func (*EditorSchema) ProtoMessage() {}
 
 func (x *EditorSchema) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_common_common_proto_msgTypes[8]
+	mi := &file_proto_v1_common_common_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1121,7 +1331,7 @@ func (x *EditorSchema) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditorSchema.ProtoReflect.Descriptor instead.
 func (*EditorSchema) Descriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{8}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *EditorSchema) GetUri() string {
@@ -1165,7 +1375,7 @@ type ActionTarget struct {
 
 func (x *ActionTarget) Reset() {
 	*x = ActionTarget{}
-	mi := &file_proto_v1_common_common_proto_msgTypes[9]
+	mi := &file_proto_v1_common_common_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1177,7 +1387,7 @@ func (x *ActionTarget) String() string {
 func (*ActionTarget) ProtoMessage() {}
 
 func (x *ActionTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_common_common_proto_msgTypes[9]
+	mi := &file_proto_v1_common_common_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1190,7 +1400,7 @@ func (x *ActionTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionTarget.ProtoReflect.Descriptor instead.
 func (*ActionTarget) Descriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{9}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ActionTarget) GetLabel() string {
@@ -1234,7 +1444,7 @@ type ActionTargetBuilder struct {
 
 func (x *ActionTargetBuilder) Reset() {
 	*x = ActionTargetBuilder{}
-	mi := &file_proto_v1_common_common_proto_msgTypes[10]
+	mi := &file_proto_v1_common_common_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1246,7 +1456,7 @@ func (x *ActionTargetBuilder) String() string {
 func (*ActionTargetBuilder) ProtoMessage() {}
 
 func (x *ActionTargetBuilder) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_common_common_proto_msgTypes[10]
+	mi := &file_proto_v1_common_common_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1259,7 +1469,7 @@ func (x *ActionTargetBuilder) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionTargetBuilder.ProtoReflect.Descriptor instead.
 func (*ActionTargetBuilder) Descriptor() ([]byte, []int) {
-	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{10}
+	return file_proto_v1_common_common_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ActionTargetBuilder) GetLabel() string {
@@ -1294,7 +1504,7 @@ var File_proto_v1_common_common_proto protoreflect.FileDescriptor
 
 const file_proto_v1_common_common_proto_rawDesc = "" +
 	"\n" +
-	"\x1cproto/v1/common/common.proto\x12\x16omniview.sdk.common.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x9a\x02\n" +
+	"\x1cproto/v1/common/common.proto\x12\x16omniview.sdk.common.v1\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe5\x02\n" +
 	"\n" +
 	"Connection\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
@@ -1302,10 +1512,17 @@ const file_proto_v1_common_common_proto_rawDesc = "" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x16\n" +
 	"\x06avatar\x18\x04 \x01(\tR\x06avatar\x12F\n" +
 	"\x06labels\x18\x05 \x03(\v2..omniview.sdk.common.v1.Connection.LabelsEntryR\x06labels\x12+\n" +
-	"\x04data\x18\x06 \x01(\v2\x17.google.protobuf.StructR\x04data\x1a9\n" +
+	"\x04data\x18\x06 \x01(\v2\x17.google.protobuf.StructR\x04data\x12I\n" +
+	"\tlifecycle\x18\a \x01(\v2+.omniview.sdk.common.v1.ConnectionLifecycleR\tlifecycle\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xfa\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"g\n" +
+	"\x13ConnectionLifecycle\x12P\n" +
+	"\fauto_connect\x18\x01 \x01(\v2-.omniview.sdk.common.v1.ConnectionAutoConnectR\vautoConnect\"\xcd\x01\n" +
+	"\x15ConnectionAutoConnect\x12\x18\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\x12P\n" +
+	"\btriggers\x18\x02 \x03(\x0e24.omniview.sdk.common.v1.ConnectionAutoConnectTriggerR\btriggers\x12H\n" +
+	"\x05retry\x18\x03 \x01(\x0e22.omniview.sdk.common.v1.ConnectionAutoConnectRetryR\x05retry\"\xfa\x01\n" +
 	"\x10ConnectionStatus\x12B\n" +
 	"\n" +
 	"connection\x18\x01 \x01(\v2\".omniview.sdk.common.v1.ConnectionR\n" +
@@ -1399,7 +1616,15 @@ const file_proto_v1_common_common_proto_rawDesc = "" +
 	"\tselectors\x18\x04 \x03(\v2:.omniview.sdk.common.v1.ActionTargetBuilder.SelectorsEntryR\tselectors\x1a<\n" +
 	"\x0eSelectorsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xb5\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\xbc\x01\n" +
+	"\x1cConnectionAutoConnectTrigger\x12/\n" +
+	"+CONNECTION_AUTO_CONNECT_TRIGGER_UNSPECIFIED\x10\x00\x120\n" +
+	",CONNECTION_AUTO_CONNECT_TRIGGER_PLUGIN_START\x10\x01\x129\n" +
+	"5CONNECTION_AUTO_CONNECT_TRIGGER_CONNECTION_DISCOVERED\x10\x02*\xa0\x01\n" +
+	"\x1aConnectionAutoConnectRetry\x12-\n" +
+	")CONNECTION_AUTO_CONNECT_RETRY_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"CONNECTION_AUTO_CONNECT_RETRY_NONE\x10\x01\x12+\n" +
+	"'CONNECTION_AUTO_CONNECT_RETRY_ON_CHANGE\x10\x02*\xb5\x01\n" +
 	"\x0fConnectionState\x12 \n" +
 	"\x1cCONNECTION_STATE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aCONNECTION_STATE_CONNECTED\x10\x01\x12!\n" +
@@ -1461,55 +1686,63 @@ func file_proto_v1_common_common_proto_rawDescGZIP() []byte {
 	return file_proto_v1_common_common_proto_rawDescData
 }
 
-var file_proto_v1_common_common_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_proto_v1_common_common_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_proto_v1_common_common_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_proto_v1_common_common_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_proto_v1_common_common_proto_goTypes = []any{
-	(ConnectionState)(0),        // 0: omniview.sdk.common.v1.ConnectionState
-	(ColumnType)(0),             // 1: omniview.sdk.common.v1.ColumnType
-	(ColumnAlignment)(0),        // 2: omniview.sdk.common.v1.ColumnAlignment
-	(OperationType)(0),          // 3: omniview.sdk.common.v1.OperationType
-	(ResourceErrorCode)(0),      // 4: omniview.sdk.common.v1.ResourceErrorCode
-	(*Connection)(nil),          // 5: omniview.sdk.common.v1.Connection
-	(*ConnectionStatus)(nil),    // 6: omniview.sdk.common.v1.ConnectionStatus
-	(*ResourceMeta)(nil),        // 7: omniview.sdk.common.v1.ResourceMeta
-	(*ResourceGroup)(nil),       // 8: omniview.sdk.common.v1.ResourceGroup
-	(*ResourceDefinition)(nil),  // 9: omniview.sdk.common.v1.ResourceDefinition
-	(*ColumnDefinition)(nil),    // 10: omniview.sdk.common.v1.ColumnDefinition
-	(*ResourceLink)(nil),        // 11: omniview.sdk.common.v1.ResourceLink
-	(*ResourceError)(nil),       // 12: omniview.sdk.common.v1.ResourceError
-	(*EditorSchema)(nil),        // 13: omniview.sdk.common.v1.EditorSchema
-	(*ActionTarget)(nil),        // 14: omniview.sdk.common.v1.ActionTarget
-	(*ActionTargetBuilder)(nil), // 15: omniview.sdk.common.v1.ActionTargetBuilder
-	nil,                         // 16: omniview.sdk.common.v1.Connection.LabelsEntry
-	nil,                         // 17: omniview.sdk.common.v1.ResourceLink.KeyMapEntry
-	nil,                         // 18: omniview.sdk.common.v1.ResourceLink.DetailExtractorsEntry
-	nil,                         // 19: omniview.sdk.common.v1.ActionTarget.SelectorsEntry
-	nil,                         // 20: omniview.sdk.common.v1.ActionTargetBuilder.SelectorsEntry
-	(*structpb.Struct)(nil),     // 21: google.protobuf.Struct
+	(ConnectionAutoConnectTrigger)(0), // 0: omniview.sdk.common.v1.ConnectionAutoConnectTrigger
+	(ConnectionAutoConnectRetry)(0),   // 1: omniview.sdk.common.v1.ConnectionAutoConnectRetry
+	(ConnectionState)(0),              // 2: omniview.sdk.common.v1.ConnectionState
+	(ColumnType)(0),                   // 3: omniview.sdk.common.v1.ColumnType
+	(ColumnAlignment)(0),              // 4: omniview.sdk.common.v1.ColumnAlignment
+	(OperationType)(0),                // 5: omniview.sdk.common.v1.OperationType
+	(ResourceErrorCode)(0),            // 6: omniview.sdk.common.v1.ResourceErrorCode
+	(*Connection)(nil),                // 7: omniview.sdk.common.v1.Connection
+	(*ConnectionLifecycle)(nil),       // 8: omniview.sdk.common.v1.ConnectionLifecycle
+	(*ConnectionAutoConnect)(nil),     // 9: omniview.sdk.common.v1.ConnectionAutoConnect
+	(*ConnectionStatus)(nil),          // 10: omniview.sdk.common.v1.ConnectionStatus
+	(*ResourceMeta)(nil),              // 11: omniview.sdk.common.v1.ResourceMeta
+	(*ResourceGroup)(nil),             // 12: omniview.sdk.common.v1.ResourceGroup
+	(*ResourceDefinition)(nil),        // 13: omniview.sdk.common.v1.ResourceDefinition
+	(*ColumnDefinition)(nil),          // 14: omniview.sdk.common.v1.ColumnDefinition
+	(*ResourceLink)(nil),              // 15: omniview.sdk.common.v1.ResourceLink
+	(*ResourceError)(nil),             // 16: omniview.sdk.common.v1.ResourceError
+	(*EditorSchema)(nil),              // 17: omniview.sdk.common.v1.EditorSchema
+	(*ActionTarget)(nil),              // 18: omniview.sdk.common.v1.ActionTarget
+	(*ActionTargetBuilder)(nil),       // 19: omniview.sdk.common.v1.ActionTargetBuilder
+	nil,                               // 20: omniview.sdk.common.v1.Connection.LabelsEntry
+	nil,                               // 21: omniview.sdk.common.v1.ResourceLink.KeyMapEntry
+	nil,                               // 22: omniview.sdk.common.v1.ResourceLink.DetailExtractorsEntry
+	nil,                               // 23: omniview.sdk.common.v1.ActionTarget.SelectorsEntry
+	nil,                               // 24: omniview.sdk.common.v1.ActionTargetBuilder.SelectorsEntry
+	(*structpb.Struct)(nil),           // 25: google.protobuf.Struct
 }
 var file_proto_v1_common_common_proto_depIdxs = []int32{
-	16, // 0: omniview.sdk.common.v1.Connection.labels:type_name -> omniview.sdk.common.v1.Connection.LabelsEntry
-	21, // 1: omniview.sdk.common.v1.Connection.data:type_name -> google.protobuf.Struct
-	5,  // 2: omniview.sdk.common.v1.ConnectionStatus.connection:type_name -> omniview.sdk.common.v1.Connection
-	0,  // 3: omniview.sdk.common.v1.ConnectionStatus.state:type_name -> omniview.sdk.common.v1.ConnectionState
-	21, // 4: omniview.sdk.common.v1.ConnectionStatus.metadata:type_name -> google.protobuf.Struct
-	7,  // 5: omniview.sdk.common.v1.ResourceGroup.resources:type_name -> omniview.sdk.common.v1.ResourceMeta
-	7,  // 6: omniview.sdk.common.v1.ResourceDefinition.meta:type_name -> omniview.sdk.common.v1.ResourceMeta
-	10, // 7: omniview.sdk.common.v1.ResourceDefinition.column_definitions:type_name -> omniview.sdk.common.v1.ColumnDefinition
-	3,  // 8: omniview.sdk.common.v1.ResourceDefinition.supported_operations:type_name -> omniview.sdk.common.v1.OperationType
-	1,  // 9: omniview.sdk.common.v1.ColumnDefinition.type:type_name -> omniview.sdk.common.v1.ColumnType
-	2,  // 10: omniview.sdk.common.v1.ColumnDefinition.alignment:type_name -> omniview.sdk.common.v1.ColumnAlignment
-	11, // 11: omniview.sdk.common.v1.ColumnDefinition.resource_link:type_name -> omniview.sdk.common.v1.ResourceLink
-	17, // 12: omniview.sdk.common.v1.ResourceLink.key_map:type_name -> omniview.sdk.common.v1.ResourceLink.KeyMapEntry
-	18, // 13: omniview.sdk.common.v1.ResourceLink.detail_extractors:type_name -> omniview.sdk.common.v1.ResourceLink.DetailExtractorsEntry
-	21, // 14: omniview.sdk.common.v1.ResourceError.details:type_name -> google.protobuf.Struct
-	19, // 15: omniview.sdk.common.v1.ActionTarget.selectors:type_name -> omniview.sdk.common.v1.ActionTarget.SelectorsEntry
-	20, // 16: omniview.sdk.common.v1.ActionTargetBuilder.selectors:type_name -> omniview.sdk.common.v1.ActionTargetBuilder.SelectorsEntry
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	20, // 0: omniview.sdk.common.v1.Connection.labels:type_name -> omniview.sdk.common.v1.Connection.LabelsEntry
+	25, // 1: omniview.sdk.common.v1.Connection.data:type_name -> google.protobuf.Struct
+	8,  // 2: omniview.sdk.common.v1.Connection.lifecycle:type_name -> omniview.sdk.common.v1.ConnectionLifecycle
+	9,  // 3: omniview.sdk.common.v1.ConnectionLifecycle.auto_connect:type_name -> omniview.sdk.common.v1.ConnectionAutoConnect
+	0,  // 4: omniview.sdk.common.v1.ConnectionAutoConnect.triggers:type_name -> omniview.sdk.common.v1.ConnectionAutoConnectTrigger
+	1,  // 5: omniview.sdk.common.v1.ConnectionAutoConnect.retry:type_name -> omniview.sdk.common.v1.ConnectionAutoConnectRetry
+	7,  // 6: omniview.sdk.common.v1.ConnectionStatus.connection:type_name -> omniview.sdk.common.v1.Connection
+	2,  // 7: omniview.sdk.common.v1.ConnectionStatus.state:type_name -> omniview.sdk.common.v1.ConnectionState
+	25, // 8: omniview.sdk.common.v1.ConnectionStatus.metadata:type_name -> google.protobuf.Struct
+	11, // 9: omniview.sdk.common.v1.ResourceGroup.resources:type_name -> omniview.sdk.common.v1.ResourceMeta
+	11, // 10: omniview.sdk.common.v1.ResourceDefinition.meta:type_name -> omniview.sdk.common.v1.ResourceMeta
+	14, // 11: omniview.sdk.common.v1.ResourceDefinition.column_definitions:type_name -> omniview.sdk.common.v1.ColumnDefinition
+	5,  // 12: omniview.sdk.common.v1.ResourceDefinition.supported_operations:type_name -> omniview.sdk.common.v1.OperationType
+	3,  // 13: omniview.sdk.common.v1.ColumnDefinition.type:type_name -> omniview.sdk.common.v1.ColumnType
+	4,  // 14: omniview.sdk.common.v1.ColumnDefinition.alignment:type_name -> omniview.sdk.common.v1.ColumnAlignment
+	15, // 15: omniview.sdk.common.v1.ColumnDefinition.resource_link:type_name -> omniview.sdk.common.v1.ResourceLink
+	21, // 16: omniview.sdk.common.v1.ResourceLink.key_map:type_name -> omniview.sdk.common.v1.ResourceLink.KeyMapEntry
+	22, // 17: omniview.sdk.common.v1.ResourceLink.detail_extractors:type_name -> omniview.sdk.common.v1.ResourceLink.DetailExtractorsEntry
+	25, // 18: omniview.sdk.common.v1.ResourceError.details:type_name -> google.protobuf.Struct
+	23, // 19: omniview.sdk.common.v1.ActionTarget.selectors:type_name -> omniview.sdk.common.v1.ActionTarget.SelectorsEntry
+	24, // 20: omniview.sdk.common.v1.ActionTargetBuilder.selectors:type_name -> omniview.sdk.common.v1.ActionTargetBuilder.SelectorsEntry
+	21, // [21:21] is the sub-list for method output_type
+	21, // [21:21] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_common_common_proto_init() }
@@ -1522,8 +1755,8 @@ func file_proto_v1_common_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_common_common_proto_rawDesc), len(file_proto_v1_common_common_proto_rawDesc)),
-			NumEnums:      5,
-			NumMessages:   16,
+			NumEnums:      7,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
