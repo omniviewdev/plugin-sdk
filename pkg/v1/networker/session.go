@@ -204,7 +204,7 @@ func cloneConnection(c Connection) Connection {
 		}
 		cp := *v
 		cp.ResourceData = maps.Clone(v.ResourceData)
-		return cp
+		return &cp
 	case PortForwardStaticConnection:
 		return v
 	case *PortForwardStaticConnection:
@@ -212,7 +212,7 @@ func cloneConnection(c Connection) Connection {
 			return nil
 		}
 		cp := *v
-		return cp
+		return &cp
 	default:
 		return c
 	}
@@ -278,7 +278,7 @@ func (s *PortForwardSession) ToProto() *networkerpb.PortForwardSession {
 // NewPortForwardSessionFromProto creates a PortForwardSession from a protobuf.
 func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) *PortForwardSession {
 	if s == nil {
-		return &PortForwardSession{}
+		return nil
 	}
 
 	var connection Connection
@@ -566,7 +566,7 @@ func NewPortForwardSessionOptionsFromProto(
 	o *networkerpb.PortForwardSessionOptions,
 ) *PortForwardSessionOptions {
 	if o == nil {
-		return &PortForwardSessionOptions{}
+		return nil
 	}
 
 	var connection Connection

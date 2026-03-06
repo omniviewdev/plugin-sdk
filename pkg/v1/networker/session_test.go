@@ -87,3 +87,15 @@ func TestPortForwardSessionToProtoUnknownProtocol(t *testing.T) {
 		t.Fatalf("expected unknown enum value -1, got %d", got)
 	}
 }
+
+func TestNewPortForwardSessionFromProtoNil(t *testing.T) {
+	if got := networker.NewPortForwardSessionFromProto(nil); got != nil {
+		t.Fatalf("expected nil, got %#v", got)
+	}
+}
+
+func TestNewPortForwardSessionOptionsFromProtoNil(t *testing.T) {
+	if got := networker.NewPortForwardSessionOptionsFromProto(nil); got != nil {
+		t.Fatalf("expected nil, got %#v", got)
+	}
+}

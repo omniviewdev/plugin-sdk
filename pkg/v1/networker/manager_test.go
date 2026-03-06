@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/networker"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/networker/networktest"
 )
@@ -264,7 +265,21 @@ func TestManager_FindSessions_ByResourceID(t *testing.T) {
 }
 
 func TestManager_ConcurrentStartClose(t *testing.T) {
-	forwarder := &networktest.StubResourceForwarder{}
+	forwarder := networker.ResourceForwarderFunc(func(
+		_ context.Context,
+		_ *types.PluginContext,
+		_ networker.ResourcePortForwardHandlerOpts,
+	) (*networker.ForwarderResult, error) {
+		ready := make(chan struct{})
+		close(ready)
+
+		// Keep the session ACTIVE until CloseSession cancels its context.
+		errCh := make(chan error)
+		return &networker.ForwarderResult{
+			Ready: ready,
+			ErrCh: errCh,
+		}, nil
+	})
 	h := networktest.Mount(t,
 		networktest.WithResourceForwarder("core::v1::Pod", forwarder),
 	)
@@ -297,7 +312,7 @@ func TestManager_ConcurrentStartClose(t *testing.T) {
 			var getErr error
 			for {
 				current, getErr = h.GetSession(sess.ID)
-				if getErr == nil && current != nil {
+				if getErr == nil && current != nil && current.State == networker.SessionStateActive {
 					break
 				}
 				select {

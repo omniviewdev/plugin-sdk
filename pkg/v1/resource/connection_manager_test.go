@@ -392,6 +392,46 @@ func TestCM_UpdateConnection(t *testing.T) {
 	}
 }
 
+// --- CM-016b: UpdateConnection no-op check uses normalized incoming connection ---
+func TestCM_UpdateConnectionNormalizedNoOp(t *testing.T) {
+	ctx := context.Background()
+	cp := &resourcetest.StubConnectionProvider[string]{
+		LoadConnectionsFunc: func(_ context.Context) ([]types.Connection, error) {
+			return []types.Connection{
+				{
+					ID:   "conn-1",
+					Name: "One",
+					Lifecycle: types.ConnectionLifecycle{
+						AutoConnect: &types.ConnectionAutoConnect{
+							Enabled: true,
+							Retry:   types.ConnectionAutoConnectRetryNone,
+						},
+					},
+				},
+			}, nil
+		},
+	}
+	mgr := resource.NewConnectionManagerForTest(ctx, cp)
+	_, err := mgr.LoadConnections(ctx)
+	if err != nil {
+		t.Fatalf("LoadConnections: %v", err)
+	}
+
+	_, err = mgr.UpdateConnection(ctx, types.Connection{
+		ID:   "conn-1",
+		Name: "One",
+		Lifecycle: types.ConnectionLifecycle{
+			AutoConnect: &types.ConnectionAutoConnect{
+				Enabled: true,
+				// Retry omitted intentionally; normalization should default this.
+			},
+		},
+	})
+	if !errors.Is(err, resource.ErrConnectionUnchanged) {
+		t.Fatalf("expected ErrConnectionUnchanged, got %v", err)
+	}
+}
+
 // --- CM-019: DeleteConnection not running, just removes ---
 func TestCM_DeleteConnectionNotRunning(t *testing.T) {
 	ctx := context.Background()

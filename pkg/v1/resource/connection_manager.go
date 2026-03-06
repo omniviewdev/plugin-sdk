@@ -17,18 +17,37 @@ import (
 // errors.Is(err, ErrConnectionUnchanged) to detect the no-op case.
 var ErrConnectionUnchanged = errors.New("connection unchanged")
 
+type deepCloneVisitKey struct {
+	typ reflect.Type
+	ptr uintptr
+}
+
 func deepCloneMap(in map[string]any) map[string]any {
+	return deepCloneMapWithVisited(in, make(map[deepCloneVisitKey]reflect.Value))
+}
+
+func deepCloneMapWithVisited(in map[string]any, visited map[deepCloneVisitKey]reflect.Value) map[string]any {
 	if in == nil {
 		return nil
 	}
+	rv := reflect.ValueOf(in)
+	key := deepCloneVisitKey{typ: rv.Type(), ptr: rv.Pointer()}
+	if existing, ok := visited[key]; ok {
+		if out, ok := existing.Interface().(map[string]any); ok {
+			return out
+		}
+	}
+
 	out := make(map[string]any, len(in))
+	visited[key] = reflect.ValueOf(out)
 	for k, v := range in {
-		out[k] = deepCloneValue(v)
+		out[k] = deepCloneValueWithVisited(v, visited)
 	}
 	return out
 }
 
-func assignClonedValue(dst reflect.Value, cloned any, fallback reflect.Value) {
+func assignClonedValue(dst reflect.Value, src reflect.Value, visited map[deepCloneVisitKey]reflect.Value) {
+	cloned := deepCloneValueWithVisited(src.Interface(), visited)
 	cv := reflect.ValueOf(cloned)
 	if !cv.IsValid() {
 		dst.Set(reflect.Zero(dst.Type()))
@@ -42,22 +61,16 @@ func assignClonedValue(dst reflect.Value, cloned any, fallback reflect.Value) {
 		dst.Set(cv.Convert(dst.Type()))
 		return
 	}
-	dst.Set(fallback)
+	dst.Set(src)
 }
 
 func deepCloneValue(v any) any {
+	return deepCloneValueWithVisited(v, make(map[deepCloneVisitKey]reflect.Value))
+}
+
+func deepCloneValueWithVisited(v any, visited map[deepCloneVisitKey]reflect.Value) any {
 	if v == nil {
 		return nil
-	}
-	switch t := v.(type) {
-	case map[string]any:
-		return deepCloneMap(t)
-	case []any:
-		out := make([]any, len(t))
-		for i, elem := range t {
-			out[i] = deepCloneValue(elem)
-		}
-		return out
 	}
 
 	rv := reflect.ValueOf(v)
@@ -66,13 +79,18 @@ func deepCloneValue(v any) any {
 		if rv.IsNil() {
 			return v
 		}
+		key := deepCloneVisitKey{typ: rv.Type(), ptr: rv.Pointer()}
+		if existing, ok := visited[key]; ok {
+			return existing.Interface()
+		}
 		out := reflect.MakeMapWithSize(rv.Type(), rv.Len())
+		visited[key] = out
 		iter := rv.MapRange()
 		for iter.Next() {
 			key := iter.Key()
 			srcVal := iter.Value()
 			dstVal := reflect.New(rv.Type().Elem()).Elem()
-			assignClonedValue(dstVal, deepCloneValue(srcVal.Interface()), srcVal)
+			assignClonedValue(dstVal, srcVal, visited)
 			out.SetMapIndex(key, dstVal)
 		}
 		return out.Interface()
@@ -80,18 +98,28 @@ func deepCloneValue(v any) any {
 		if rv.IsNil() {
 			return v
 		}
+		key := deepCloneVisitKey{typ: rv.Type(), ptr: rv.Pointer()}
+		if existing, ok := visited[key]; ok {
+			return existing.Interface()
+		}
 		out := reflect.MakeSlice(rv.Type(), rv.Len(), rv.Len())
+		visited[key] = out
 		for i := 0; i < rv.Len(); i++ {
 			srcVal := rv.Index(i)
-			assignClonedValue(out.Index(i), deepCloneValue(srcVal.Interface()), srcVal)
+			assignClonedValue(out.Index(i), srcVal, visited)
 		}
 		return out.Interface()
 	case reflect.Pointer:
 		if rv.IsNil() {
 			return v
 		}
+		key := deepCloneVisitKey{typ: rv.Type(), ptr: rv.Pointer()}
+		if existing, ok := visited[key]; ok {
+			return existing.Interface()
+		}
 		dstPtr := reflect.New(rv.Elem().Type())
-		assignClonedValue(dstPtr.Elem(), deepCloneValue(rv.Elem().Interface()), rv.Elem())
+		visited[key] = dstPtr
+		assignClonedValue(dstPtr.Elem(), rv.Elem(), visited)
 		return dstPtr.Interface()
 	default:
 		return v
@@ -388,15 +416,17 @@ func (m *connectionManager[ClientT]) CheckConnection(ctx context.Context, connec
 // If the connection is active, restarts the client with the new connection data.
 // Returns ErrConnectionUnchanged if the incoming data matches the stored connection.
 func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn types.Connection) (types.Connection, error) {
+	normalizedConn := cloneConnection(conn)
+
 	m.mu.Lock()
 
 	// Check whether the connection data actually changed.
-	if old, ok := m.loaded[conn.ID]; ok && connectionEqual(old, conn) {
+	if old, ok := m.loaded[conn.ID]; ok && connectionEqual(old, normalizedConn) {
 		m.mu.Unlock()
 		return conn, ErrConnectionUnchanged
 	}
 
-	stored := cloneConnection(conn)
+	stored := normalizedConn
 
 	state, isActive := m.conns[conn.ID]
 	if !isActive {
@@ -414,7 +444,7 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 
 	// Create a new client with the updated connection data.
 	// Clone to prevent provider from mutating manager-owned maps.
-	connForProvider := cloneConnection(conn)
+	connForProvider := cloneConnection(stored)
 	clientCtx := WithSession(ctx, &Session{Connection: &connForProvider})
 	newClient, err := m.provider.CreateClient(clientCtx)
 	if err != nil {
