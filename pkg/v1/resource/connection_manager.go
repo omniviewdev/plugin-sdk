@@ -236,7 +236,7 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 	}
 
 	// Must be a known connection.
-	conn, ok := m.loaded[connectionID]
+	connSnapshot, ok := m.loaded[connectionID]
 	if !ok {
 		m.mu.Unlock()
 		return types.ConnectionStatus{}, fmt.Errorf("connection %q not found", connectionID)
@@ -244,8 +244,9 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 	m.mu.Unlock()
 
 	// Clone before passing to provider — prevents mutation of manager-owned maps.
-	connForProvider := cloneConnection(conn)
-	clientCtx := WithSession(ctx, &Session{Connection: &connForProvider})
+	connForProvider := cloneConnection(connSnapshot)
+	session := &Session{Connection: &connForProvider}
+	clientCtx := WithSession(ctx, session)
 	client, err := m.provider.CreateClient(clientCtx)
 	if err != nil {
 		return types.ConnectionStatus{}, fmt.Errorf("create client for %q: %w", connectionID, err)
@@ -260,7 +261,7 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 		m.mu.Unlock()
 		// Release lock before calling external provider methods.
 		cancel()
-		if err := m.provider.DestroyClient(ctx, client); err != nil {
+		if err := m.provider.DestroyClient(clientCtx, client); err != nil {
 			return types.ConnectionStatus{}, fmt.Errorf("cleanup error after duplicate start for %q: %w", connectionID, err)
 		}
 		return types.ConnectionStatus{
@@ -275,31 +276,32 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 		m.mu.Unlock()
 		cancel()
 		originalErr := fmt.Errorf("connection %q was deleted during start", connectionID)
-		if cleanupErr := m.provider.DestroyClient(ctx, client); cleanupErr != nil {
+		if cleanupErr := m.provider.DestroyClient(clientCtx, client); cleanupErr != nil {
 			return types.ConnectionStatus{}, fmt.Errorf("original error: %w; cleanup error: %w", originalErr, cleanupErr)
 		}
 		return types.ConnectionStatus{}, originalErr
 	}
 	// If the loaded config changed while we were unlocked, the client was
 	// built with stale data. Discard the client and let the caller retry.
-	if !connectionEqual(conn, currentConn) {
+	if !connectionEqual(connSnapshot, currentConn) {
 		m.mu.Unlock()
 		cancel()
 		originalErr := fmt.Errorf("connection %q config changed during start; retry", connectionID)
-		if cleanupErr := m.provider.DestroyClient(ctx, client); cleanupErr != nil {
+		if cleanupErr := m.provider.DestroyClient(clientCtx, client); cleanupErr != nil {
 			return types.ConnectionStatus{}, fmt.Errorf("original error: %w; cleanup error: %w", originalErr, cleanupErr)
 		}
 		return types.ConnectionStatus{}, originalErr
 	}
+	connSnapshot = currentConn
 	m.conns[connectionID] = &connectionState[ClientT]{
-		conn:   conn,
+		conn:   connSnapshot,
 		client: client,
 		ctx:    connCtx,
 		cancel: cancel,
 	}
 	m.mu.Unlock()
 
-	connOut := cloneConnection(conn)
+	connOut := cloneConnection(connSnapshot)
 	return types.ConnectionStatus{
 		Connection: &connOut,
 		Status:     types.ConnectionStatusConnected,
@@ -437,6 +439,7 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 	}
 
 	origState := state
+	oldConn := cloneConnection(state.conn)
 	oldClient := state.client
 	oldCancel := state.cancel
 	capturedGen := state.gen
@@ -467,7 +470,7 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 		m.mu.Unlock()
 		newCancel()
 		originalErr := fmt.Errorf("connection %q was modified during update", conn.ID)
-		if cleanupErr := m.provider.DestroyClient(ctx, newClient); cleanupErr != nil {
+		if cleanupErr := m.provider.DestroyClient(clientCtx, newClient); cleanupErr != nil {
 			return conn, fmt.Errorf("original error: %w; cleanup error: %w", originalErr, cleanupErr)
 		}
 		return conn, originalErr
@@ -483,7 +486,8 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 
 	// Clean up old resources after successful swap.
 	oldCancel()
-	if err := m.provider.DestroyClient(ctx, oldClient); err != nil {
+	oldDestroyCtx := WithSession(ctx, &Session{Connection: &oldConn})
+	if err := m.provider.DestroyClient(oldDestroyCtx, oldClient); err != nil {
 		return conn, err
 	}
 

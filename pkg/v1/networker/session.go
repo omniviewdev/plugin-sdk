@@ -248,8 +248,8 @@ func (s *PortForwardSession) ToProto() *networkerpb.PortForwardSession {
 		Id:         s.ID,
 		State:      s.State.ToProto(),
 		Encryption: s.Encryption.ToProto(),
-		LocalPort:  int32(s.LocalPort),
-		RemotePort: int32(s.RemotePort),
+		LocalPort:  s.LocalPort,
+		RemotePort: s.RemotePort,
 	}
 
 	switch c := s.Connection.(type) {
@@ -263,14 +263,7 @@ func (s *PortForwardSession) ToProto() *networkerpb.PortForwardSession {
 		session.Connection = c.ToSessionProto()
 	}
 
-	switch s.Protocol {
-	case PortForwardProtocolTCP:
-		session.Protocol = networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_TCP
-	case PortForwardProtocolUDP:
-		session.Protocol = networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_UDP
-	default:
-		session.Protocol = networkerpb.PortForwardProtocol(-1)
-	}
+	session.Protocol = s.Protocol.ToProto()
 
 	return session
 }
