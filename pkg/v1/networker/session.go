@@ -177,6 +177,7 @@ func (e *sessionEntry) transition(to SessionState) error {
 		return NewInvalidStateTransitionError(e.session.ID, from, to)
 	}
 	e.session.State = to
+	e.session.UpdatedAt = time.Now()
 	return nil
 }
 
@@ -244,7 +245,7 @@ func (s *PortForwardSession) ToProto() *networkerpb.PortForwardSession {
 	session := &networkerpb.PortForwardSession{
 		CreatedAt:  timestamppb.New(s.CreatedAt),
 		UpdatedAt:  timestamppb.New(s.UpdatedAt),
-		Labels:     s.Labels,
+		Labels:     maps.Clone(s.Labels),
 		Id:         s.ID,
 		State:      s.State.ToProto(),
 		Encryption: s.Encryption.ToProto(),
@@ -536,8 +537,8 @@ func (o *PortForwardSessionOptions) ToProto() *networkerpb.PortForwardSessionOpt
 		LocalPort:  o.LocalPort,
 		RemotePort: o.RemotePort,
 		Protocol:   o.Protocol.ToProto(),
-		Labels:     o.Labels,
-		Params:     o.Params,
+		Labels:     maps.Clone(o.Labels),
+		Params:     maps.Clone(o.Params),
 		Encryption: o.Encryption.ToProto(),
 	}
 
