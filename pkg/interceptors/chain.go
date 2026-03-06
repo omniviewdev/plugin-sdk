@@ -1,23 +1,26 @@
 package interceptors
 
-import "google.golang.org/grpc"
+import (
+	logging "github.com/omniviewdev/plugin-sdk/log"
+	"google.golang.org/grpc"
+)
 
 // DefaultUnaryInterceptors returns the standard interceptor chain for unary RPCs.
 // Order: recovery (outermost) → logging → context (innermost, closest to handler).
-func DefaultUnaryInterceptors() []grpc.UnaryServerInterceptor {
+func DefaultUnaryInterceptors(log logging.Logger) []grpc.UnaryServerInterceptor {
 	return []grpc.UnaryServerInterceptor{
-		UnaryPanicRecovery(),
-		UnaryLogging(),
+		UnaryPanicRecovery(log),
+		UnaryLogging(log),
 		UnaryPluginContext(),
 	}
 }
 
 // DefaultStreamInterceptors returns the standard interceptor chain for stream RPCs.
 // Order: recovery (outermost) → logging → context (innermost, closest to handler).
-func DefaultStreamInterceptors() []grpc.StreamServerInterceptor {
+func DefaultStreamInterceptors(log logging.Logger) []grpc.StreamServerInterceptor {
 	return []grpc.StreamServerInterceptor{
-		StreamPanicRecovery(),
-		StreamLogging(),
+		StreamPanicRecovery(log),
+		StreamLogging(log),
 		StreamPluginContext(),
 	}
 }

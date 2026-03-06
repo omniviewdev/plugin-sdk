@@ -82,6 +82,7 @@ const (
 	LogStreamEventType_LOG_STREAM_EVENT_RECONNECTING   LogStreamEventType = 3
 	LogStreamEventType_LOG_STREAM_EVENT_RECONNECTED    LogStreamEventType = 4
 	LogStreamEventType_LOG_STREAM_EVENT_STREAM_ENDED   LogStreamEventType = 5
+	LogStreamEventType_LOG_STREAM_EVENT_SESSION_READY  LogStreamEventType = 6
 )
 
 // Enum value maps for LogStreamEventType.
@@ -93,6 +94,7 @@ var (
 		3: "LOG_STREAM_EVENT_RECONNECTING",
 		4: "LOG_STREAM_EVENT_RECONNECTED",
 		5: "LOG_STREAM_EVENT_STREAM_ENDED",
+		6: "LOG_STREAM_EVENT_SESSION_READY",
 	}
 	LogStreamEventType_value = map[string]int32{
 		"LOG_STREAM_EVENT_SOURCE_ADDED":   0,
@@ -101,6 +103,7 @@ var (
 		"LOG_STREAM_EVENT_RECONNECTING":   3,
 		"LOG_STREAM_EVENT_RECONNECTED":    4,
 		"LOG_STREAM_EVENT_STREAM_ENDED":   5,
+		"LOG_STREAM_EVENT_SESSION_READY":  6,
 	}
 )
 
@@ -183,10 +186,12 @@ func (LogStreamCommand) EnumDescriptor() ([]byte, []int) {
 type LogSessionStatus int32
 
 const (
-	LogSessionStatus_LOG_SESSION_STATUS_ACTIVE LogSessionStatus = 0
-	LogSessionStatus_LOG_SESSION_STATUS_PAUSED LogSessionStatus = 1
-	LogSessionStatus_LOG_SESSION_STATUS_CLOSED LogSessionStatus = 2
-	LogSessionStatus_LOG_SESSION_STATUS_ERROR  LogSessionStatus = 3
+	LogSessionStatus_LOG_SESSION_STATUS_ACTIVE       LogSessionStatus = 0
+	LogSessionStatus_LOG_SESSION_STATUS_PAUSED       LogSessionStatus = 1
+	LogSessionStatus_LOG_SESSION_STATUS_CLOSED       LogSessionStatus = 2
+	LogSessionStatus_LOG_SESSION_STATUS_ERROR        LogSessionStatus = 3
+	LogSessionStatus_LOG_SESSION_STATUS_CONNECTING   LogSessionStatus = 4
+	LogSessionStatus_LOG_SESSION_STATUS_INITIALIZING LogSessionStatus = 5
 )
 
 // Enum value maps for LogSessionStatus.
@@ -196,12 +201,16 @@ var (
 		1: "LOG_SESSION_STATUS_PAUSED",
 		2: "LOG_SESSION_STATUS_CLOSED",
 		3: "LOG_SESSION_STATUS_ERROR",
+		4: "LOG_SESSION_STATUS_CONNECTING",
+		5: "LOG_SESSION_STATUS_INITIALIZING",
 	}
 	LogSessionStatus_value = map[string]int32{
-		"LOG_SESSION_STATUS_ACTIVE": 0,
-		"LOG_SESSION_STATUS_PAUSED": 1,
-		"LOG_SESSION_STATUS_CLOSED": 2,
-		"LOG_SESSION_STATUS_ERROR":  3,
+		"LOG_SESSION_STATUS_ACTIVE":       0,
+		"LOG_SESSION_STATUS_PAUSED":       1,
+		"LOG_SESSION_STATUS_CLOSED":       2,
+		"LOG_SESSION_STATUS_ERROR":        3,
+		"LOG_SESSION_STATUS_CONNECTING":   4,
+		"LOG_SESSION_STATUS_INITIALIZING": 5,
 	}
 )
 
@@ -232,6 +241,67 @@ func (LogSessionStatus) EnumDescriptor() ([]byte, []int) {
 	return file_proto_logs_proto_rawDescGZIP(), []int{3}
 }
 
+type LogLevel int32
+
+const (
+	LogLevel_LOG_LEVEL_UNSPECIFIED LogLevel = 0
+	LogLevel_LOG_LEVEL_TRACE       LogLevel = 1
+	LogLevel_LOG_LEVEL_DEBUG       LogLevel = 2
+	LogLevel_LOG_LEVEL_INFO        LogLevel = 3
+	LogLevel_LOG_LEVEL_WARN        LogLevel = 4
+	LogLevel_LOG_LEVEL_ERROR       LogLevel = 5
+	LogLevel_LOG_LEVEL_FATAL       LogLevel = 6
+)
+
+// Enum value maps for LogLevel.
+var (
+	LogLevel_name = map[int32]string{
+		0: "LOG_LEVEL_UNSPECIFIED",
+		1: "LOG_LEVEL_TRACE",
+		2: "LOG_LEVEL_DEBUG",
+		3: "LOG_LEVEL_INFO",
+		4: "LOG_LEVEL_WARN",
+		5: "LOG_LEVEL_ERROR",
+		6: "LOG_LEVEL_FATAL",
+	}
+	LogLevel_value = map[string]int32{
+		"LOG_LEVEL_UNSPECIFIED": 0,
+		"LOG_LEVEL_TRACE":       1,
+		"LOG_LEVEL_DEBUG":       2,
+		"LOG_LEVEL_INFO":        3,
+		"LOG_LEVEL_WARN":        4,
+		"LOG_LEVEL_ERROR":       5,
+		"LOG_LEVEL_FATAL":       6,
+	}
+)
+
+func (x LogLevel) Enum() *LogLevel {
+	p := new(LogLevel)
+	*p = x
+	return p
+}
+
+func (x LogLevel) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (LogLevel) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_logs_proto_enumTypes[4].Descriptor()
+}
+
+func (LogLevel) Type() protoreflect.EnumType {
+	return &file_proto_logs_proto_enumTypes[4]
+}
+
+func (x LogLevel) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use LogLevel.Descriptor instead.
+func (LogLevel) EnumDescriptor() ([]byte, []int) {
+	return file_proto_logs_proto_rawDescGZIP(), []int{4}
+}
+
 type LogLine struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -240,6 +310,7 @@ type LogLine struct {
 	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	Content       []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
 	Origin        LogLineOrigin          `protobuf:"varint,6,opt,name=origin,proto3,enum=com.omniview.pluginsdk.LogLineOrigin" json:"origin,omitempty"`
+	Level         LogLevel               `protobuf:"varint,7,opt,name=level,proto3,enum=com.omniview.pluginsdk.LogLevel" json:"level,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -314,6 +385,13 @@ func (x *LogLine) GetOrigin() LogLineOrigin {
 		return x.Origin
 	}
 	return LogLineOrigin_LOG_LINE_ORIGIN_CURRENT
+}
+
+func (x *LogLine) GetLevel() LogLevel {
+	if x != nil {
+		return x.Level
+	}
+	return LogLevel_LOG_LEVEL_UNSPECIFIED
 }
 
 type LogSource struct {
@@ -1306,7 +1384,7 @@ var File_proto_logs_proto protoreflect.FileDescriptor
 
 const file_proto_logs_proto_rawDesc = "" +
 	"\n" +
-	"\x10proto/logs.proto\x12\x16com.omniview.pluginsdk\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14proto/resource.proto\"\xd8\x02\n" +
+	"\x10proto/logs.proto\x12\x16com.omniview.pluginsdk\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14proto/resource.proto\"\x90\x03\n" +
 	"\aLogLine\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
@@ -1314,7 +1392,8 @@ const file_proto_logs_proto_rawDesc = "" +
 	"\x06labels\x18\x03 \x03(\v2+.com.omniview.pluginsdk.LogLine.LabelsEntryR\x06labels\x128\n" +
 	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x18\n" +
 	"\acontent\x18\x05 \x01(\fR\acontent\x12=\n" +
-	"\x06origin\x18\x06 \x01(\x0e2%.com.omniview.pluginsdk.LogLineOriginR\x06origin\x1a9\n" +
+	"\x06origin\x18\x06 \x01(\x0e2%.com.omniview.pluginsdk.LogLineOriginR\x06origin\x126\n" +
+	"\x05level\x18\a \x01(\x0e2 .com.omniview.pluginsdk.LogLevelR\x05level\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9d\x01\n" +
@@ -1408,23 +1487,34 @@ const file_proto_logs_proto_rawDesc = "" +
 	"\rLogLineOrigin\x12\x1b\n" +
 	"\x17LOG_LINE_ORIGIN_CURRENT\x10\x00\x12\x1c\n" +
 	"\x18LOG_LINE_ORIGIN_PREVIOUS\x10\x01\x12\x1a\n" +
-	"\x16LOG_LINE_ORIGIN_SYSTEM\x10\x02*\xe7\x01\n" +
+	"\x16LOG_LINE_ORIGIN_SYSTEM\x10\x02*\x8b\x02\n" +
 	"\x12LogStreamEventType\x12!\n" +
 	"\x1dLOG_STREAM_EVENT_SOURCE_ADDED\x10\x00\x12#\n" +
 	"\x1fLOG_STREAM_EVENT_SOURCE_REMOVED\x10\x01\x12!\n" +
 	"\x1dLOG_STREAM_EVENT_STREAM_ERROR\x10\x02\x12!\n" +
 	"\x1dLOG_STREAM_EVENT_RECONNECTING\x10\x03\x12 \n" +
 	"\x1cLOG_STREAM_EVENT_RECONNECTED\x10\x04\x12!\n" +
-	"\x1dLOG_STREAM_EVENT_STREAM_ENDED\x10\x05*m\n" +
+	"\x1dLOG_STREAM_EVENT_STREAM_ENDED\x10\x05\x12\"\n" +
+	"\x1eLOG_STREAM_EVENT_SESSION_READY\x10\x06*m\n" +
 	"\x10LogStreamCommand\x12\x1c\n" +
 	"\x18LOG_STREAM_COMMAND_PAUSE\x10\x00\x12\x1d\n" +
 	"\x19LOG_STREAM_COMMAND_RESUME\x10\x01\x12\x1c\n" +
-	"\x18LOG_STREAM_COMMAND_CLOSE\x10\x02*\x8d\x01\n" +
+	"\x18LOG_STREAM_COMMAND_CLOSE\x10\x02*\xd5\x01\n" +
 	"\x10LogSessionStatus\x12\x1d\n" +
 	"\x19LOG_SESSION_STATUS_ACTIVE\x10\x00\x12\x1d\n" +
 	"\x19LOG_SESSION_STATUS_PAUSED\x10\x01\x12\x1d\n" +
 	"\x19LOG_SESSION_STATUS_CLOSED\x10\x02\x12\x1c\n" +
-	"\x18LOG_SESSION_STATUS_ERROR\x10\x032\xff\x05\n" +
+	"\x18LOG_SESSION_STATUS_ERROR\x10\x03\x12!\n" +
+	"\x1dLOG_SESSION_STATUS_CONNECTING\x10\x04\x12#\n" +
+	"\x1fLOG_SESSION_STATUS_INITIALIZING\x10\x05*\xa1\x01\n" +
+	"\bLogLevel\x12\x19\n" +
+	"\x15LOG_LEVEL_UNSPECIFIED\x10\x00\x12\x13\n" +
+	"\x0fLOG_LEVEL_TRACE\x10\x01\x12\x13\n" +
+	"\x0fLOG_LEVEL_DEBUG\x10\x02\x12\x12\n" +
+	"\x0eLOG_LEVEL_INFO\x10\x03\x12\x12\n" +
+	"\x0eLOG_LEVEL_WARN\x10\x04\x12\x13\n" +
+	"\x0fLOG_LEVEL_ERROR\x10\x05\x12\x13\n" +
+	"\x0fLOG_LEVEL_FATAL\x10\x062\xff\x05\n" +
 	"\tLogPlugin\x12i\n" +
 	"\x15GetSupportedResources\x12\x16.google.protobuf.Empty\x1a8.com.omniview.pluginsdk.GetSupportedLogResourcesResponse\x12r\n" +
 	"\rCreateSession\x12/.com.omniview.pluginsdk.CreateLogSessionRequest\x1a0.com.omniview.pluginsdk.CreateLogSessionResponse\x12k\n" +
@@ -1447,80 +1537,82 @@ func file_proto_logs_proto_rawDescGZIP() []byte {
 	return file_proto_logs_proto_rawDescData
 }
 
-var file_proto_logs_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_proto_logs_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
 var file_proto_logs_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_proto_logs_proto_goTypes = []any{
 	(LogLineOrigin)(0),                       // 0: com.omniview.pluginsdk.LogLineOrigin
 	(LogStreamEventType)(0),                  // 1: com.omniview.pluginsdk.LogStreamEventType
 	(LogStreamCommand)(0),                    // 2: com.omniview.pluginsdk.LogStreamCommand
 	(LogSessionStatus)(0),                    // 3: com.omniview.pluginsdk.LogSessionStatus
-	(*LogLine)(nil),                          // 4: com.omniview.pluginsdk.LogLine
-	(*LogSource)(nil),                        // 5: com.omniview.pluginsdk.LogSource
-	(*LogStreamEvent)(nil),                   // 6: com.omniview.pluginsdk.LogStreamEvent
-	(*LogSessionOptions)(nil),                // 7: com.omniview.pluginsdk.LogSessionOptions
-	(*LogSession)(nil),                       // 8: com.omniview.pluginsdk.LogSession
-	(*LogHandler)(nil),                       // 9: com.omniview.pluginsdk.LogHandler
-	(*GetSupportedLogResourcesResponse)(nil), // 10: com.omniview.pluginsdk.GetSupportedLogResourcesResponse
-	(*CreateLogSessionRequest)(nil),          // 11: com.omniview.pluginsdk.CreateLogSessionRequest
-	(*CreateLogSessionResponse)(nil),         // 12: com.omniview.pluginsdk.CreateLogSessionResponse
-	(*LogSessionByIdRequest)(nil),            // 13: com.omniview.pluginsdk.LogSessionByIdRequest
-	(*LogSessionByIdResponse)(nil),           // 14: com.omniview.pluginsdk.LogSessionByIdResponse
-	(*ListLogSessionsResponse)(nil),          // 15: com.omniview.pluginsdk.ListLogSessionsResponse
-	(*CloseLogSessionResponse)(nil),          // 16: com.omniview.pluginsdk.CloseLogSessionResponse
-	(*UpdateLogSessionOptionsRequest)(nil),   // 17: com.omniview.pluginsdk.UpdateLogSessionOptionsRequest
-	(*LogStreamInput)(nil),                   // 18: com.omniview.pluginsdk.LogStreamInput
-	(*LogStreamOutput)(nil),                  // 19: com.omniview.pluginsdk.LogStreamOutput
-	nil,                                      // 20: com.omniview.pluginsdk.LogLine.LabelsEntry
-	nil,                                      // 21: com.omniview.pluginsdk.LogSource.LabelsEntry
-	nil,                                      // 22: com.omniview.pluginsdk.LogSessionOptions.ParamsEntry
-	(*timestamppb.Timestamp)(nil),            // 23: google.protobuf.Timestamp
-	(*ResourceActionTargetBuilder)(nil),      // 24: com.omniview.pluginsdk.ResourceActionTargetBuilder
-	(*structpb.Struct)(nil),                  // 25: google.protobuf.Struct
-	(*emptypb.Empty)(nil),                    // 26: google.protobuf.Empty
+	(LogLevel)(0),                            // 4: com.omniview.pluginsdk.LogLevel
+	(*LogLine)(nil),                          // 5: com.omniview.pluginsdk.LogLine
+	(*LogSource)(nil),                        // 6: com.omniview.pluginsdk.LogSource
+	(*LogStreamEvent)(nil),                   // 7: com.omniview.pluginsdk.LogStreamEvent
+	(*LogSessionOptions)(nil),                // 8: com.omniview.pluginsdk.LogSessionOptions
+	(*LogSession)(nil),                       // 9: com.omniview.pluginsdk.LogSession
+	(*LogHandler)(nil),                       // 10: com.omniview.pluginsdk.LogHandler
+	(*GetSupportedLogResourcesResponse)(nil), // 11: com.omniview.pluginsdk.GetSupportedLogResourcesResponse
+	(*CreateLogSessionRequest)(nil),          // 12: com.omniview.pluginsdk.CreateLogSessionRequest
+	(*CreateLogSessionResponse)(nil),         // 13: com.omniview.pluginsdk.CreateLogSessionResponse
+	(*LogSessionByIdRequest)(nil),            // 14: com.omniview.pluginsdk.LogSessionByIdRequest
+	(*LogSessionByIdResponse)(nil),           // 15: com.omniview.pluginsdk.LogSessionByIdResponse
+	(*ListLogSessionsResponse)(nil),          // 16: com.omniview.pluginsdk.ListLogSessionsResponse
+	(*CloseLogSessionResponse)(nil),          // 17: com.omniview.pluginsdk.CloseLogSessionResponse
+	(*UpdateLogSessionOptionsRequest)(nil),   // 18: com.omniview.pluginsdk.UpdateLogSessionOptionsRequest
+	(*LogStreamInput)(nil),                   // 19: com.omniview.pluginsdk.LogStreamInput
+	(*LogStreamOutput)(nil),                  // 20: com.omniview.pluginsdk.LogStreamOutput
+	nil,                                      // 21: com.omniview.pluginsdk.LogLine.LabelsEntry
+	nil,                                      // 22: com.omniview.pluginsdk.LogSource.LabelsEntry
+	nil,                                      // 23: com.omniview.pluginsdk.LogSessionOptions.ParamsEntry
+	(*timestamppb.Timestamp)(nil),            // 24: google.protobuf.Timestamp
+	(*ResourceActionTargetBuilder)(nil),      // 25: com.omniview.pluginsdk.ResourceActionTargetBuilder
+	(*structpb.Struct)(nil),                  // 26: google.protobuf.Struct
+	(*emptypb.Empty)(nil),                    // 27: google.protobuf.Empty
 }
 var file_proto_logs_proto_depIdxs = []int32{
-	20, // 0: com.omniview.pluginsdk.LogLine.labels:type_name -> com.omniview.pluginsdk.LogLine.LabelsEntry
-	23, // 1: com.omniview.pluginsdk.LogLine.timestamp:type_name -> google.protobuf.Timestamp
+	21, // 0: com.omniview.pluginsdk.LogLine.labels:type_name -> com.omniview.pluginsdk.LogLine.LabelsEntry
+	24, // 1: com.omniview.pluginsdk.LogLine.timestamp:type_name -> google.protobuf.Timestamp
 	0,  // 2: com.omniview.pluginsdk.LogLine.origin:type_name -> com.omniview.pluginsdk.LogLineOrigin
-	21, // 3: com.omniview.pluginsdk.LogSource.labels:type_name -> com.omniview.pluginsdk.LogSource.LabelsEntry
-	1,  // 4: com.omniview.pluginsdk.LogStreamEvent.type:type_name -> com.omniview.pluginsdk.LogStreamEventType
-	23, // 5: com.omniview.pluginsdk.LogStreamEvent.timestamp:type_name -> google.protobuf.Timestamp
-	23, // 6: com.omniview.pluginsdk.LogSessionOptions.since_time:type_name -> google.protobuf.Timestamp
-	22, // 7: com.omniview.pluginsdk.LogSessionOptions.params:type_name -> com.omniview.pluginsdk.LogSessionOptions.ParamsEntry
-	7,  // 8: com.omniview.pluginsdk.LogSession.options:type_name -> com.omniview.pluginsdk.LogSessionOptions
-	3,  // 9: com.omniview.pluginsdk.LogSession.status:type_name -> com.omniview.pluginsdk.LogSessionStatus
-	5,  // 10: com.omniview.pluginsdk.LogSession.active_sources:type_name -> com.omniview.pluginsdk.LogSource
-	23, // 11: com.omniview.pluginsdk.LogSession.created_at:type_name -> google.protobuf.Timestamp
-	24, // 12: com.omniview.pluginsdk.LogHandler.target_builder:type_name -> com.omniview.pluginsdk.ResourceActionTargetBuilder
-	9,  // 13: com.omniview.pluginsdk.GetSupportedLogResourcesResponse.handlers:type_name -> com.omniview.pluginsdk.LogHandler
-	25, // 14: com.omniview.pluginsdk.CreateLogSessionRequest.resource_data:type_name -> google.protobuf.Struct
-	7,  // 15: com.omniview.pluginsdk.CreateLogSessionRequest.options:type_name -> com.omniview.pluginsdk.LogSessionOptions
-	8,  // 16: com.omniview.pluginsdk.CreateLogSessionResponse.session:type_name -> com.omniview.pluginsdk.LogSession
-	8,  // 17: com.omniview.pluginsdk.LogSessionByIdResponse.session:type_name -> com.omniview.pluginsdk.LogSession
-	8,  // 18: com.omniview.pluginsdk.ListLogSessionsResponse.sessions:type_name -> com.omniview.pluginsdk.LogSession
-	7,  // 19: com.omniview.pluginsdk.UpdateLogSessionOptionsRequest.options:type_name -> com.omniview.pluginsdk.LogSessionOptions
-	2,  // 20: com.omniview.pluginsdk.LogStreamInput.command:type_name -> com.omniview.pluginsdk.LogStreamCommand
-	4,  // 21: com.omniview.pluginsdk.LogStreamOutput.line:type_name -> com.omniview.pluginsdk.LogLine
-	6,  // 22: com.omniview.pluginsdk.LogStreamOutput.event:type_name -> com.omniview.pluginsdk.LogStreamEvent
-	26, // 23: com.omniview.pluginsdk.LogPlugin.GetSupportedResources:input_type -> google.protobuf.Empty
-	11, // 24: com.omniview.pluginsdk.LogPlugin.CreateSession:input_type -> com.omniview.pluginsdk.CreateLogSessionRequest
-	13, // 25: com.omniview.pluginsdk.LogPlugin.GetSession:input_type -> com.omniview.pluginsdk.LogSessionByIdRequest
-	26, // 26: com.omniview.pluginsdk.LogPlugin.ListSessions:input_type -> google.protobuf.Empty
-	13, // 27: com.omniview.pluginsdk.LogPlugin.CloseSession:input_type -> com.omniview.pluginsdk.LogSessionByIdRequest
-	17, // 28: com.omniview.pluginsdk.LogPlugin.UpdateSessionOptions:input_type -> com.omniview.pluginsdk.UpdateLogSessionOptionsRequest
-	18, // 29: com.omniview.pluginsdk.LogPlugin.Stream:input_type -> com.omniview.pluginsdk.LogStreamInput
-	10, // 30: com.omniview.pluginsdk.LogPlugin.GetSupportedResources:output_type -> com.omniview.pluginsdk.GetSupportedLogResourcesResponse
-	12, // 31: com.omniview.pluginsdk.LogPlugin.CreateSession:output_type -> com.omniview.pluginsdk.CreateLogSessionResponse
-	14, // 32: com.omniview.pluginsdk.LogPlugin.GetSession:output_type -> com.omniview.pluginsdk.LogSessionByIdResponse
-	15, // 33: com.omniview.pluginsdk.LogPlugin.ListSessions:output_type -> com.omniview.pluginsdk.ListLogSessionsResponse
-	16, // 34: com.omniview.pluginsdk.LogPlugin.CloseSession:output_type -> com.omniview.pluginsdk.CloseLogSessionResponse
-	14, // 35: com.omniview.pluginsdk.LogPlugin.UpdateSessionOptions:output_type -> com.omniview.pluginsdk.LogSessionByIdResponse
-	19, // 36: com.omniview.pluginsdk.LogPlugin.Stream:output_type -> com.omniview.pluginsdk.LogStreamOutput
-	30, // [30:37] is the sub-list for method output_type
-	23, // [23:30] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	4,  // 3: com.omniview.pluginsdk.LogLine.level:type_name -> com.omniview.pluginsdk.LogLevel
+	22, // 4: com.omniview.pluginsdk.LogSource.labels:type_name -> com.omniview.pluginsdk.LogSource.LabelsEntry
+	1,  // 5: com.omniview.pluginsdk.LogStreamEvent.type:type_name -> com.omniview.pluginsdk.LogStreamEventType
+	24, // 6: com.omniview.pluginsdk.LogStreamEvent.timestamp:type_name -> google.protobuf.Timestamp
+	24, // 7: com.omniview.pluginsdk.LogSessionOptions.since_time:type_name -> google.protobuf.Timestamp
+	23, // 8: com.omniview.pluginsdk.LogSessionOptions.params:type_name -> com.omniview.pluginsdk.LogSessionOptions.ParamsEntry
+	8,  // 9: com.omniview.pluginsdk.LogSession.options:type_name -> com.omniview.pluginsdk.LogSessionOptions
+	3,  // 10: com.omniview.pluginsdk.LogSession.status:type_name -> com.omniview.pluginsdk.LogSessionStatus
+	6,  // 11: com.omniview.pluginsdk.LogSession.active_sources:type_name -> com.omniview.pluginsdk.LogSource
+	24, // 12: com.omniview.pluginsdk.LogSession.created_at:type_name -> google.protobuf.Timestamp
+	25, // 13: com.omniview.pluginsdk.LogHandler.target_builder:type_name -> com.omniview.pluginsdk.ResourceActionTargetBuilder
+	10, // 14: com.omniview.pluginsdk.GetSupportedLogResourcesResponse.handlers:type_name -> com.omniview.pluginsdk.LogHandler
+	26, // 15: com.omniview.pluginsdk.CreateLogSessionRequest.resource_data:type_name -> google.protobuf.Struct
+	8,  // 16: com.omniview.pluginsdk.CreateLogSessionRequest.options:type_name -> com.omniview.pluginsdk.LogSessionOptions
+	9,  // 17: com.omniview.pluginsdk.CreateLogSessionResponse.session:type_name -> com.omniview.pluginsdk.LogSession
+	9,  // 18: com.omniview.pluginsdk.LogSessionByIdResponse.session:type_name -> com.omniview.pluginsdk.LogSession
+	9,  // 19: com.omniview.pluginsdk.ListLogSessionsResponse.sessions:type_name -> com.omniview.pluginsdk.LogSession
+	8,  // 20: com.omniview.pluginsdk.UpdateLogSessionOptionsRequest.options:type_name -> com.omniview.pluginsdk.LogSessionOptions
+	2,  // 21: com.omniview.pluginsdk.LogStreamInput.command:type_name -> com.omniview.pluginsdk.LogStreamCommand
+	5,  // 22: com.omniview.pluginsdk.LogStreamOutput.line:type_name -> com.omniview.pluginsdk.LogLine
+	7,  // 23: com.omniview.pluginsdk.LogStreamOutput.event:type_name -> com.omniview.pluginsdk.LogStreamEvent
+	27, // 24: com.omniview.pluginsdk.LogPlugin.GetSupportedResources:input_type -> google.protobuf.Empty
+	12, // 25: com.omniview.pluginsdk.LogPlugin.CreateSession:input_type -> com.omniview.pluginsdk.CreateLogSessionRequest
+	14, // 26: com.omniview.pluginsdk.LogPlugin.GetSession:input_type -> com.omniview.pluginsdk.LogSessionByIdRequest
+	27, // 27: com.omniview.pluginsdk.LogPlugin.ListSessions:input_type -> google.protobuf.Empty
+	14, // 28: com.omniview.pluginsdk.LogPlugin.CloseSession:input_type -> com.omniview.pluginsdk.LogSessionByIdRequest
+	18, // 29: com.omniview.pluginsdk.LogPlugin.UpdateSessionOptions:input_type -> com.omniview.pluginsdk.UpdateLogSessionOptionsRequest
+	19, // 30: com.omniview.pluginsdk.LogPlugin.Stream:input_type -> com.omniview.pluginsdk.LogStreamInput
+	11, // 31: com.omniview.pluginsdk.LogPlugin.GetSupportedResources:output_type -> com.omniview.pluginsdk.GetSupportedLogResourcesResponse
+	13, // 32: com.omniview.pluginsdk.LogPlugin.CreateSession:output_type -> com.omniview.pluginsdk.CreateLogSessionResponse
+	15, // 33: com.omniview.pluginsdk.LogPlugin.GetSession:output_type -> com.omniview.pluginsdk.LogSessionByIdResponse
+	16, // 34: com.omniview.pluginsdk.LogPlugin.ListSessions:output_type -> com.omniview.pluginsdk.ListLogSessionsResponse
+	17, // 35: com.omniview.pluginsdk.LogPlugin.CloseSession:output_type -> com.omniview.pluginsdk.CloseLogSessionResponse
+	15, // 36: com.omniview.pluginsdk.LogPlugin.UpdateSessionOptions:output_type -> com.omniview.pluginsdk.LogSessionByIdResponse
+	20, // 37: com.omniview.pluginsdk.LogPlugin.Stream:output_type -> com.omniview.pluginsdk.LogStreamOutput
+	31, // [31:38] is the sub-list for method output_type
+	24, // [24:31] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_proto_logs_proto_init() }
@@ -1538,7 +1630,7 @@ func file_proto_logs_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_logs_proto_rawDesc), len(file_proto_logs_proto_rawDesc)),
-			NumEnums:      4,
+			NumEnums:      5,
 			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,

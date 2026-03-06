@@ -1,0 +1,97 @@
+syntax = "proto3";
+package omniview.sdk.resource.v1;
+
+option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/resource;resourcepb";
+
+import "google/protobuf/struct.proto";
+
+// ─────────────────────────────────────────────────────────────────────
+// Filter Operators & Field Types
+// ─────────────────────────────────────────────────────────────────────
+
+enum FilterOperator {
+    FILTER_OP_UNSPECIFIED = 0;
+    FILTER_OP_EQ = 1;
+    FILTER_OP_NEQ = 2;
+    FILTER_OP_GT = 3;
+    FILTER_OP_GTE = 4;
+    FILTER_OP_LT = 5;
+    FILTER_OP_LTE = 6;
+    FILTER_OP_CONTAINS = 7;
+    FILTER_OP_PREFIX = 8;
+    FILTER_OP_SUFFIX = 9;
+    FILTER_OP_REGEX = 10;
+    FILTER_OP_IN = 11;
+    FILTER_OP_NOT_IN = 12;
+    FILTER_OP_EXISTS = 13;
+    FILTER_OP_NOT_EXISTS = 14;
+    FILTER_OP_HAS_KEY = 15;
+}
+
+enum FilterFieldType {
+    FILTER_FIELD_TYPE_UNSPECIFIED = 0;
+    FILTER_FIELD_TYPE_STRING = 1;
+    FILTER_FIELD_TYPE_INTEGER = 2;
+    FILTER_FIELD_TYPE_NUMBER = 3;
+    FILTER_FIELD_TYPE_BOOLEAN = 4;
+    FILTER_FIELD_TYPE_DATETIME = 5;
+    FILTER_FIELD_TYPE_ENUM = 6;
+    FILTER_FIELD_TYPE_MAP = 7;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Introspection Types
+// ─────────────────────────────────────────────────────────────────────
+
+// FilterField declares a filterable field for introspection.
+message FilterField {
+    string path = 1;
+    string display_name = 2;
+    string description = 3;
+    FilterFieldType type = 4;
+    repeated FilterOperator operators = 5;
+    repeated string allowed_values = 6;
+    bool required = 7;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Request Types
+// ─────────────────────────────────────────────────────────────────────
+
+// FilterPredicate is a single condition in a query.
+message FilterPredicate {
+    string field = 1;
+    FilterOperator operator = 2;
+    google.protobuf.Value value = 3;
+}
+
+enum FilterLogic {
+    FILTER_LOGIC_UNSPECIFIED = 0;
+    FILTER_LOGIC_AND = 1;
+    FILTER_LOGIC_OR = 2;
+}
+
+// FilterExpression combines predicates with a logical operator.
+// Supports one level of nesting (AND of ORs, or OR of ANDs).
+message FilterExpression {
+    FilterLogic logic = 1;
+    repeated FilterPredicate predicates = 2;
+    repeated FilterExpression groups = 3;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Ordering & Pagination
+// ─────────────────────────────────────────────────────────────────────
+
+// OrderField specifies a sort field.
+message OrderField {
+    string path = 1;
+    bool descending = 2;
+}
+
+// PaginationParams supports both page-based and cursor-based pagination.
+message PaginationParams {
+    int32 page = 1;
+    int32 page_size = 2;
+    string cursor = 3;
+}

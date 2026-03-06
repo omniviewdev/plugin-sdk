@@ -1,0 +1,156 @@
+syntax = "proto3";
+package omniview.sdk.resource.v1;
+
+option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/resource;resourcepb";
+
+import "google/protobuf/timestamp.proto";
+import "proto/v1/common/common.proto";
+import "proto/v1/resource/relationship.proto";
+
+// ─────────────────────────────────────────────────────────────────────
+// Health Types
+// ─────────────────────────────────────────────────────────────────────
+
+enum HealthStatus {
+    HEALTH_STATUS_UNSPECIFIED = 0;
+    HEALTH_STATUS_HEALTHY = 1;
+    HEALTH_STATUS_DEGRADED = 2;
+    HEALTH_STATUS_UNHEALTHY = 3;
+    HEALTH_STATUS_PENDING = 4;
+    HEALTH_STATUS_UNKNOWN = 5;
+}
+
+// ResourceHealth is the normalized health assessment for a resource.
+message ResourceHealth {
+    HealthStatus status = 1;
+    string reason = 2;
+    string message = 3;
+    optional google.protobuf.Timestamp since = 4;
+    repeated HealthCondition conditions = 5;
+}
+
+// HealthCondition is a single health condition (Ready, Scheduled, etc.).
+message HealthCondition {
+    string type = 1;
+    string status = 2;
+    string reason = 3;
+    string message = 4;
+    optional google.protobuf.Timestamp last_probe_time = 5;
+    optional google.protobuf.Timestamp last_transition_time = 6;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Event Types
+// ─────────────────────────────────────────────────────────────────────
+
+enum EventSeverity {
+    EVENT_SEVERITY_UNSPECIFIED = 0;
+    EVENT_SEVERITY_NORMAL = 1;
+    EVENT_SEVERITY_WARNING = 2;
+    EVENT_SEVERITY_ERROR = 3;
+}
+
+// ResourceEvent is a diagnostic event.
+message ResourceEvent {
+    EventSeverity type = 1;
+    string reason = 2;
+    string message = 3;
+    string source = 4;
+    int32 count = 5;
+    google.protobuf.Timestamp first_seen = 6;
+    google.protobuf.Timestamp last_seen = 7;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Diagnostic Graph Types
+// ─────────────────────────────────────────────────────────────────────
+
+// AnnotatedNode is a resource with health and event context.
+message AnnotatedNode {
+    ResourceRef ref = 1;
+    ResourceHealth health = 2;
+    repeated ResourceEvent events = 3;
+}
+
+// AnnotatedEdge is a relationship edge with health on the target.
+message AnnotatedEdge {
+    RelationshipEdge edge = 1;
+    AnnotatedNode target = 2;
+}
+
+// DiagnosticContext is the complete debugging context for a single resource.
+message DiagnosticContext {
+    bytes resource = 1;
+    ResourceHealth health = 2;
+    repeated ResourceEvent events = 3;
+    repeated AnnotatedEdge related = 4;
+    repeated AnnotatedNode owner_chain = 5;
+}
+
+// DiagnosticTree is a health-annotated dependency tree for UI rendering.
+message DiagnosticTree {
+    AnnotatedNode root = 1;
+    repeated DiagnosticBranch children = 2;
+}
+
+// DiagnosticBranch is a node in the diagnostic tree (self-referencing).
+message DiagnosticBranch {
+    RelationshipEdge edge = 1;
+    AnnotatedNode node = 2;
+    repeated DiagnosticBranch children = 3;
+}
+
+// ImpactReport describes what would be affected by a resource failure/removal.
+message ImpactReport {
+    ResourceRef target = 1;
+    map<string, AnnotatedNodeList> direct_dependents = 2;
+    map<string, AnnotatedNodeList> transitive_dependents = 3;
+    string summary = 4;
+    map<string, int32> affected_counts = 5;
+}
+
+// AnnotatedNodeList wraps repeated AnnotatedNode for use as proto map value.
+message AnnotatedNodeList {
+    repeated AnnotatedNode nodes = 1;
+}
+
+// CommonCauseResult identifies shared dependencies between multiple resources.
+message CommonCauseResult {
+    repeated ResourceRef resources = 1;
+    repeated AnnotatedNode shared_dependencies = 2;
+    repeated SharedDependency shared_by_count = 3;
+}
+
+// SharedDependency groups a dependency by how many input resources share it.
+message SharedDependency {
+    AnnotatedNode resource = 1;
+    int32 shared_by = 2;
+    int32 total_input = 3;
+    repeated ResourceRef depended_by = 4;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// RPC Messages
+// ─────────────────────────────────────────────────────────────────────
+
+message HealthRequest {
+    string connection_id = 1;
+    string resource_key = 2;
+    bytes data = 3;
+}
+
+message HealthResponse {
+    ResourceHealth health = 1;
+}
+
+message ResourceEventsRequest {
+    string connection_id = 1;
+    string resource_key = 2;
+    string id = 3;
+    string namespace = 4;
+    int32 limit = 5;
+}
+
+message ResourceEventsResponse {
+    repeated ResourceEvent events = 1;
+}

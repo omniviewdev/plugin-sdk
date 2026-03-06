@@ -5,10 +5,36 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/omniviewdev/plugin-sdk/settings"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
+	"github.com/omniviewdev/plugin-sdk/settings"
 )
+
+func init() {
+	logging.RegisterContextEnricher(pluginContextEnricher)
+}
+
+func pluginContextEnricher(ctx context.Context) []logging.Field {
+	pc := PluginContextFromContext(ctx)
+	if pc == nil {
+		return nil
+	}
+	var fields []logging.Field
+	if pc.RequestID != "" {
+		fields = append(fields, logging.String("request_id", pc.RequestID))
+	}
+	if pc.RequesterID != "" {
+		fields = append(fields, logging.String("requester_id", pc.RequesterID))
+	}
+	if pc.Connection != nil && pc.Connection.ID != "" {
+		fields = append(fields, logging.String("connection_id", pc.Connection.ID))
+	}
+	if pc.ResourceContext != nil && pc.ResourceContext.Key != "" {
+		fields = append(fields, logging.String("resource_key", pc.ResourceContext.Key))
+	}
+	return fields
+}
 
 const (
 	DefaultTimeout         = 10 * time.Second
@@ -44,6 +70,11 @@ type PluginContext struct {
 
 	// The ID of the requester
 	RequesterID string `json:"requester_id"`
+
+	// Logger is a request-scoped logger injected by the SDK manager.
+	// Handlers can use this instead of capturing a logger via closure.
+	// nil when the manager does not inject one (callers should check).
+	Logger logging.Logger `json:"-"`
 }
 
 func WithPluginContext(ctx context.Context, pluginContext *PluginContext) context.Context {

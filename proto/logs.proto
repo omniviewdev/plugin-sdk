@@ -24,6 +24,7 @@ enum LogStreamEventType {
   LOG_STREAM_EVENT_RECONNECTING = 3;
   LOG_STREAM_EVENT_RECONNECTED = 4;
   LOG_STREAM_EVENT_STREAM_ENDED = 5;
+  LOG_STREAM_EVENT_SESSION_READY = 6;
 }
 
 enum LogStreamCommand {
@@ -37,6 +38,18 @@ enum LogSessionStatus {
   LOG_SESSION_STATUS_PAUSED = 1;
   LOG_SESSION_STATUS_CLOSED = 2;
   LOG_SESSION_STATUS_ERROR = 3;
+  LOG_SESSION_STATUS_CONNECTING = 4;
+  LOG_SESSION_STATUS_INITIALIZING = 5;
+}
+
+enum LogLevel {
+  LOG_LEVEL_UNSPECIFIED = 0;
+  LOG_LEVEL_TRACE = 1;
+  LOG_LEVEL_DEBUG = 2;
+  LOG_LEVEL_INFO = 3;
+  LOG_LEVEL_WARN = 4;
+  LOG_LEVEL_ERROR = 5;
+  LOG_LEVEL_FATAL = 6;
 }
 
 // ===================== CORE TYPES ===================== //
@@ -48,6 +61,7 @@ message LogLine {
   google.protobuf.Timestamp timestamp = 4;
   bytes content = 5;
   LogLineOrigin origin = 6;
+  LogLevel level = 7;
 }
 
 message LogSource {

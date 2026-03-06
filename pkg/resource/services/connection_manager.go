@@ -3,12 +3,12 @@ package services
 import (
 	"errors"
 	"fmt"
-	"log"
 	"maps"
 	"slices"
 	"sync"
 	"time"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	rt "github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
@@ -79,6 +79,7 @@ func NewConnectionManager[ClientT any](
 		checker:         checker,
 		connections:     make(map[string]types.Connection),
 		clients:         make(map[string]*ClientT),
+		log:             logging.Default().Named("resource.connection_manager"),
 	}
 }
 
@@ -93,6 +94,7 @@ type connectionManager[ClientT any] struct {
 	checker         func(*types.PluginContext, *types.Connection, *ClientT) (types.ConnectionStatus, error)
 	connections     map[string]types.Connection
 	clients         map[string]*ClientT
+	log             logging.Logger
 	sync.RWMutex
 }
 
@@ -103,13 +105,13 @@ func (r *connectionManager[ClientT]) WatchConnections(
 ) error {
 	if r.watcher == nil {
 		// nothing to do here, no watcher provided
-		log.Printf("no watcher provided\n")
+		r.log.Debug(ctx.Context, "no watcher provided")
 		return nil
 	}
 
 	watchChan, err := r.watcher(ctx)
 	if err != nil {
-		log.Printf("got error in watcher function: %v\n", err)
+		r.log.Error(ctx.Context, "watcher function failed", logging.Error(err))
 		return err
 	}
 
@@ -118,7 +120,7 @@ func (r *connectionManager[ClientT]) WatchConnections(
 		case <-ctx.Context.Done():
 			return nil
 		case <-watchChan:
-			log.Println("ConnectionManager: connection update recieved")
+			r.log.Debug(ctx.Context, "connection update received")
 			conns, err := r.LoadConnections(ctx)
 			if err != nil {
 				continue
@@ -229,7 +231,10 @@ func (r *connectionManager[ClientT]) LoadConnections(
 			}
 		} else if r.refreshClient != nil {
 			if err := r.refreshClient(ctx, r.clients[conn.ID]); err != nil {
-				log.Printf("failed to refresh client for connection %s: %v", conn.ID, err)
+				r.log.Error(ctx.Context, "failed to refresh client for connection",
+					logging.String("connection_id", conn.ID),
+					logging.Error(err),
+				)
 			}
 		}
 	}

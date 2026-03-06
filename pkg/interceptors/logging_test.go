@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -16,7 +17,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestUnaryLogging_SuccessPassthrough(t *testing.T) {
-	interceptor := UnaryLogging()
+	interceptor := UnaryLogging(logging.NewNop())
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/LogOK"}
 
 	expected := "result"
@@ -31,7 +32,7 @@ func TestUnaryLogging_SuccessPassthrough(t *testing.T) {
 }
 
 func TestUnaryLogging_ErrorPassthrough(t *testing.T) {
-	interceptor := UnaryLogging()
+	interceptor := UnaryLogging(logging.NewNop())
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/LogFail"}
 
 	handlerErr := status.Error(codes.InvalidArgument, "bad arg")
@@ -50,7 +51,7 @@ func TestUnaryLogging_ErrorPassthrough(t *testing.T) {
 }
 
 func TestUnaryLogging_HandlerIsCalled(t *testing.T) {
-	interceptor := UnaryLogging()
+	interceptor := UnaryLogging(logging.NewNop())
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Called"}
 
 	called := false
@@ -68,7 +69,7 @@ func TestUnaryLogging_HandlerIsCalled(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestStreamLogging_SuccessPassthrough(t *testing.T) {
-	interceptor := StreamLogging()
+	interceptor := StreamLogging(logging.NewNop())
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamLogOK"}
 
 	handler := func(_ interface{}, _ grpc.ServerStream) error {
@@ -80,7 +81,7 @@ func TestStreamLogging_SuccessPassthrough(t *testing.T) {
 }
 
 func TestStreamLogging_ErrorPassthrough(t *testing.T) {
-	interceptor := StreamLogging()
+	interceptor := StreamLogging(logging.NewNop())
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamLogFail"}
 
 	handlerErr := status.Error(codes.Unavailable, "unavailable")
@@ -95,7 +96,7 @@ func TestStreamLogging_ErrorPassthrough(t *testing.T) {
 }
 
 func TestStreamLogging_HandlerIsCalled(t *testing.T) {
-	interceptor := StreamLogging()
+	interceptor := StreamLogging(logging.NewNop())
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamCalled"}
 
 	called := false
