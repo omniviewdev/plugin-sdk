@@ -183,10 +183,10 @@ func (e *sessionEntry) transition(to SessionState) error {
 // snapshot returns a deep copy of the session for safe reads.
 func (e *sessionEntry) snapshot() PortForwardSession {
 	e.mu.RLock()
+	defer e.mu.RUnlock()
 	cp := e.session
 	cp.Labels = maps.Clone(e.session.Labels)
 	cp.Connection = cloneConnection(e.session.Connection)
-	e.mu.RUnlock()
 	return cp
 }
 

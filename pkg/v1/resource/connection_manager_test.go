@@ -432,6 +432,58 @@ func TestCM_UpdateConnectionNormalizedNoOp(t *testing.T) {
 	}
 }
 
+// --- CM-016c: UpdateConnection does not no-op when active runtime is stale ---
+func TestCM_UpdateConnectionStaleRuntimeRecreates(t *testing.T) {
+	ctx := context.Background()
+	currentConn := types.Connection{ID: "conn-1", Name: "Old"}
+	cp := &resourcetest.StubConnectionProvider[string]{
+		LoadConnectionsFunc: func(_ context.Context) ([]types.Connection, error) {
+			return []types.Connection{currentConn}, nil
+		},
+	}
+	mgr := resource.NewConnectionManagerForTest(ctx, cp)
+
+	if _, err := mgr.LoadConnections(ctx); err != nil {
+		t.Fatalf("LoadConnections initial: %v", err)
+	}
+	if _, err := mgr.StartConnection(ctx, "conn-1"); err != nil {
+		t.Fatalf("StartConnection: %v", err)
+	}
+
+	// Refresh loaded metadata while active runtime still holds the old snapshot.
+	currentConn = types.Connection{ID: "conn-1", Name: "New"}
+	if _, err := mgr.LoadConnections(ctx); err != nil {
+		t.Fatalf("LoadConnections refresh: %v", err)
+	}
+
+	before, err := mgr.GetConnection("conn-1")
+	if err != nil {
+		t.Fatalf("GetConnection before update: %v", err)
+	}
+	if before.Name != "Old" {
+		t.Fatalf("expected active runtime to still have old metadata, got %q", before.Name)
+	}
+
+	updated, err := mgr.UpdateConnection(ctx, currentConn)
+	if errors.Is(err, resource.ErrConnectionUnchanged) {
+		t.Fatalf("expected recreate, got ErrConnectionUnchanged")
+	}
+	if err != nil {
+		t.Fatalf("UpdateConnection: %v", err)
+	}
+	if updated.Name != "New" {
+		t.Fatalf("expected returned connection to be New, got %q", updated.Name)
+	}
+
+	after, err := mgr.GetConnection("conn-1")
+	if err != nil {
+		t.Fatalf("GetConnection after update: %v", err)
+	}
+	if after.Name != "New" {
+		t.Fatalf("expected runtime metadata to be New, got %q", after.Name)
+	}
+}
+
 // --- CM-019: DeleteConnection not running, just removes ---
 func TestCM_DeleteConnectionNotRunning(t *testing.T) {
 	ctx := context.Background()

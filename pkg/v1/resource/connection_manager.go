@@ -421,16 +421,20 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 	normalizedConn := cloneConnection(conn)
 
 	m.mu.Lock()
+	state, isActive := m.conns[conn.ID]
 
 	// Check whether the connection data actually changed.
 	if old, ok := m.loaded[conn.ID]; ok && connectionEqual(old, normalizedConn) {
-		m.mu.Unlock()
-		return conn, ErrConnectionUnchanged
+		// If there is no active runtime state, or the active runtime state already
+		// matches the normalized desired state, this update is a no-op.
+		if !isActive || connectionEqual(state.conn, normalizedConn) {
+			m.mu.Unlock()
+			return conn, ErrConnectionUnchanged
+		}
 	}
 
 	stored := normalizedConn
 
-	state, isActive := m.conns[conn.ID]
 	if !isActive {
 		// Not active — update loaded config immediately.
 		m.loaded[conn.ID] = stored
