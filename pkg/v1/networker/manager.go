@@ -26,6 +26,12 @@ var (
 	ErrManagerStopped = errors.New("manager stopped")
 )
 
+// isIntentionalStop returns true if err is a sentinel indicating a
+// deliberate session/manager shutdown rather than an unexpected failure.
+func isIntentionalStop(err error) bool {
+	return err != nil && (errors.Is(err, ErrSessionClosed) || errors.Is(err, ErrManagerStopped))
+}
+
 // Manager manages the lifecycle of networker actions, such as port forwarding sessions.
 type Manager struct {
 	log              logging.Logger
@@ -402,6 +408,15 @@ func (m *Manager) monitorSession(entry *sessionEntry, errCh <-chan error) {
 	case err, ok := <-errCh:
 		if !ok || err == nil {
 			// Channel closed or nil error — clean stop.
+			if transErr := entry.transition(SessionStateStopped); transErr != nil {
+				m.log.Debugw(entry.ctx, "monitor: transition to STOPPED failed", "session_id", entry.session.ID, "error", transErr)
+			}
+			return
+		}
+
+		// Intentional shutdown sentinels — treat as clean stop, not failure.
+		if isIntentionalStop(err) || isIntentionalStop(context.Cause(entry.ctx)) {
+			m.log.Debugw(entry.ctx, "monitor: intentional stop", "session_id", entry.session.ID, "cause", err)
 			if transErr := entry.transition(SessionStateStopped); transErr != nil {
 				m.log.Debugw(entry.ctx, "monitor: transition to STOPPED failed", "session_id", entry.session.ID, "error", transErr)
 			}
