@@ -18,6 +18,7 @@ import (
 // resourceController wires all internal services together and satisfies the Provider interface.
 // This is the gRPC-boundary implementation on the plugin side.
 type resourceController[ClientT any] struct {
+	log         logging.Logger
 	registry    *resourcerRegistry[ClientT]
 	connMgr     *connectionManager[ClientT]
 	watchMgr    *watchManager[ClientT]
@@ -78,6 +79,7 @@ func buildResourceController[ClientT any](ctx context.Context, cfg ResourcePlugi
 	}
 
 	return &resourceController[ClientT]{
+		log:              log.Named("controller"),
 		registry:         registry,
 		connMgr:          connMgr,
 		watchMgr:         watchMgr,
@@ -92,8 +94,12 @@ func buildResourceController[ClientT any](ctx context.Context, cfg ResourcePlugi
 func (c *resourceController[ClientT]) Close() {
 	c.closed.Store(true)
 	for _, id := range c.connMgr.ActiveConnectionIDs() {
-		_ = c.watchMgr.StopConnectionWatch(context.Background(), id)
-		_, _ = c.connMgr.StopConnection(context.Background(), id)
+		if err := c.watchMgr.StopConnectionWatch(context.Background(), id); err != nil {
+			c.log.Warnw(context.Background(), "failed to stop connection watch during close", "connection_id", id, "error", err)
+		}
+		if _, err := c.connMgr.StopConnection(context.Background(), id); err != nil {
+			c.log.Warnw(context.Background(), "failed to stop connection during close", "connection_id", id, "error", err)
+		}
 	}
 	c.watchMgr.Wait()
 }
@@ -442,8 +448,10 @@ func (c *resourceController[ClientT]) StartConnection(ctx context.Context, conne
 }
 
 func (c *resourceController[ClientT]) StopConnection(ctx context.Context, connectionID string) (types.Connection, error) {
-	// Stop watches first.
-	_ = c.watchMgr.StopConnectionWatch(ctx, connectionID)
+	// Stop watches first (best-effort).
+	if err := c.watchMgr.StopConnectionWatch(ctx, connectionID); err != nil {
+		c.log.Warnw(ctx, "failed to stop connection watch", "connection_id", connectionID, "error", err)
+	}
 
 	conn, err := c.connMgr.StopConnection(ctx, connectionID)
 	return conn, err
@@ -486,7 +494,9 @@ func (c *resourceController[ClientT]) UpdateConnection(ctx context.Context, conn
 	// If the connection was active, the client was restarted — re-discover and
 	// restart watches.
 	if wasActive && c.connMgr.IsStarted(conn.ID) {
-		_ = c.watchMgr.StopConnectionWatch(ctx, conn.ID) // best-effort: clean up before restart
+		if err := c.watchMgr.StopConnectionWatch(ctx, conn.ID); err != nil {
+			c.log.Warnw(ctx, "failed to stop connection watch before restart", "connection_id", conn.ID, "error", err)
+		}
 
 		updated, err := c.connMgr.GetConnection(conn.ID)
 		if err != nil {
@@ -516,7 +526,9 @@ func (c *resourceController[ClientT]) UpdateConnection(ctx context.Context, conn
 func (c *resourceController[ClientT]) DeleteConnection(ctx context.Context, id string) error {
 	// Stop watches first if running.
 	if c.watchMgr.HasWatch(id) {
-		_ = c.watchMgr.StopConnectionWatch(ctx, id)
+		if err := c.watchMgr.StopConnectionWatch(ctx, id); err != nil {
+			c.log.Warnw(ctx, "failed to stop connection watch before delete", "connection_id", id, "error", err)
+		}
 	}
 
 	// Retrieve connection data before deletion for OnConnectionRemoved.
@@ -529,9 +541,9 @@ func (c *resourceController[ClientT]) DeleteConnection(ctx context.Context, id s
 	// Post-deletion cleanup: evict caches and notify type manager.
 	c.evictFilterFieldCache(id)
 	if connErr == nil {
-		// Best-effort: deletion succeeded, so we don't fail the call if
-		// type manager cleanup encounters an error.
-		_ = c.typeMgr.OnConnectionRemoved(ctx, &conn)
+		if err := c.typeMgr.OnConnectionRemoved(ctx, &conn); err != nil {
+			c.log.Warnw(ctx, "failed to clean up type manager after connection delete", "connection_id", id, "error", err)
+		}
 	}
 	return nil
 }
@@ -558,8 +570,12 @@ func (c *resourceController[ClientT]) WatchConnections(ctx context.Context, stre
 			// Clean up stale runtimes for connections that disappeared
 			// from the snapshot, using the normal teardown paths.
 			for _, id := range removed {
-				_ = c.watchMgr.StopConnectionWatch(ctx, id)
-				_, _ = c.connMgr.StopConnection(ctx, id)
+				if err := c.watchMgr.StopConnectionWatch(ctx, id); err != nil {
+					c.log.Warnw(ctx, "failed to stop connection watch during reconcile", "connection_id", id, "error", err)
+				}
+				if _, err := c.connMgr.StopConnection(ctx, id); err != nil {
+					c.log.Warnw(ctx, "failed to stop connection during reconcile", "connection_id", id, "error", err)
+				}
 				c.evictFilterFieldCache(id)
 			}
 			select {

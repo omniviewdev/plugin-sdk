@@ -480,6 +480,12 @@ func (s *fanOutSink[ClientT]) OnStateChange(e WatchStateEvent) {
 	}
 	s.mgr.mu.Unlock()
 
+	// NOTE: There is a narrow TOCTOU window between releasing m.mu above and
+	// acquiring listenersMu below. If AddListener runs in between, it may
+	// drain pendingStateEvents before this event is buffered, causing it to
+	// be lost. This is acceptable because (a) the window is extremely narrow,
+	// (b) only state events are affected (data events are unaffected), and
+	// (c) the next state event will self-correct the listener's view.
 	s.mgr.listenersMu.RLock()
 	if len(s.mgr.listeners) == 0 {
 		s.mgr.listenersMu.RUnlock()

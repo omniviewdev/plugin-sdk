@@ -512,7 +512,7 @@ func pluginContextOr(fallback context.Context, pluginctx *types.PluginContext) c
 	if fallback != nil {
 		return fallback
 	}
-	return context.TODO()
+	return context.Background()
 }
 
 // ResizeSession resizes a session.

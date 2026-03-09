@@ -435,6 +435,8 @@ func (m *Manager) ClosePortForwardSession(
 	_ *types.PluginContext,
 	sessionID string,
 ) (*PortForwardSession, error) {
+	m.log.Debugw(context.Background(), "closing port forward session", "session_id", sessionID)
+
 	m.mu.Lock()
 	entry, ok := m.sessions[sessionID]
 	if !ok {
@@ -455,6 +457,7 @@ func (m *Manager) ClosePortForwardSession(
 // to complete within the configured timeout.
 func (m *Manager) StopAll() {
 	m.mu.Lock()
+	m.log.Debugw(context.Background(), "stopping all port forward sessions", "session_count", len(m.sessions))
 	m.stopped = true
 	for id, entry := range m.sessions {
 		entry.cancel(ErrManagerStopped)
@@ -472,6 +475,6 @@ func (m *Manager) StopAll() {
 	select {
 	case <-done:
 	case <-m.clock.After(m.closeTimeout):
-		m.log.Warn(context.TODO(), "StopAll timed out waiting for monitor goroutines")
+		m.log.Warn(context.Background(), "StopAll timed out waiting for monitor goroutines")
 	}
 }

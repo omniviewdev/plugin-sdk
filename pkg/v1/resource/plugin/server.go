@@ -85,6 +85,7 @@ func (s *server) LoadConnections(ctx context.Context, _ *resourcepb.LoadConnecti
 }
 
 func (s *server) StartConnection(ctx context.Context, req *resourcepb.ConnectionRequest) (*resourcepb.ConnectionStatusResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	status, err := s.provider.StartConnection(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, err
@@ -110,6 +111,7 @@ func (s *server) CheckConnection(ctx context.Context, req *resourcepb.CheckConne
 }
 
 func (s *server) StopConnection(ctx context.Context, req *resourcepb.ConnectionRequest) (*resourcepb.ConnectionResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	conn, err := s.provider.StopConnection(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, err
