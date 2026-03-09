@@ -551,6 +551,21 @@ func TestWM_GetWatchState(t *testing.T) {
 	wm.Wait()
 }
 
+// --- WM-047b: GetWatchState returns error for unknown connection ---
+func TestWM_GetWatchState_UnknownConnection(t *testing.T) {
+	wm, _, _ := setupWatchTest(t,
+		resource.ResourceRegistration[string]{
+			Meta:      resourcetest.PodMeta,
+			Resourcer: &resourcetest.WatchableResourcer[string]{},
+		},
+	)
+
+	_, err := wm.GetWatchState("conn-unknown")
+	if err == nil {
+		t.Fatal("expected error for unknown connection")
+	}
+}
+
 // --- WM-003: StartConnectionWatch skips SyncNever ---
 func TestWM_SkipsSyncNever(t *testing.T) {
 	syncNever := resource.SyncNever

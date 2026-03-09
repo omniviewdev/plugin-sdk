@@ -2659,11 +2659,12 @@ const file_proto_v1_resource_resource_proto_rawDesc = "" +
 	"\x18ACTION_SCOPE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15ACTION_SCOPE_INSTANCE\x10\x01\x12\x1b\n" +
 	"\x17ACTION_SCOPE_COLLECTION\x10\x02\x12\x17\n" +
-	"\x13ACTION_SCOPE_GLOBAL\x10\x032\xaf\x18\n" +
+	"\x13ACTION_SCOPE_GLOBAL\x10\x032\xa3\x19\n" +
 	"\x0eResourcePlugin\x12v\n" +
 	"\x0fLoadConnections\x120.omniview.sdk.resource.v1.LoadConnectionsRequest\x1a1.omniview.sdk.resource.v1.LoadConnectionsResponse\x12r\n" +
 	"\x0fStartConnection\x12+.omniview.sdk.resource.v1.ConnectionRequest\x1a2.omniview.sdk.resource.v1.ConnectionStatusResponse\x12k\n" +
-	"\x0eStopConnection\x12+.omniview.sdk.resource.v1.ConnectionRequest\x1a,.omniview.sdk.resource.v1.ConnectionResponse\x12t\n" +
+	"\x0eStopConnection\x12+.omniview.sdk.resource.v1.ConnectionRequest\x1a,.omniview.sdk.resource.v1.ConnectionResponse\x12r\n" +
+	"\x0fCheckConnection\x12+.omniview.sdk.resource.v1.ConnectionRequest\x1a2.omniview.sdk.resource.v1.ConnectionStatusResponse\x12t\n" +
 	"\x17GetConnectionNamespaces\x12+.omniview.sdk.resource.v1.ConnectionRequest\x1a,.omniview.sdk.resource.v1.NamespacesResponse\x12R\n" +
 	"\x03Get\x12$.omniview.sdk.resource.v1.GetRequest\x1a%.omniview.sdk.resource.v1.GetResponse\x12U\n" +
 	"\x04List\x12%.omniview.sdk.resource.v1.ListRequest\x1a&.omniview.sdk.resource.v1.ListResponse\x12U\n" +
@@ -2813,61 +2814,63 @@ var file_proto_v1_resource_resource_proto_depIdxs = []int32{
 	2,  // 31: omniview.sdk.resource.v1.ResourcePlugin.LoadConnections:input_type -> omniview.sdk.resource.v1.LoadConnectionsRequest
 	4,  // 32: omniview.sdk.resource.v1.ResourcePlugin.StartConnection:input_type -> omniview.sdk.resource.v1.ConnectionRequest
 	4,  // 33: omniview.sdk.resource.v1.ResourcePlugin.StopConnection:input_type -> omniview.sdk.resource.v1.ConnectionRequest
-	4,  // 34: omniview.sdk.resource.v1.ResourcePlugin.GetConnectionNamespaces:input_type -> omniview.sdk.resource.v1.ConnectionRequest
-	8,  // 35: omniview.sdk.resource.v1.ResourcePlugin.Get:input_type -> omniview.sdk.resource.v1.GetRequest
-	10, // 36: omniview.sdk.resource.v1.ResourcePlugin.List:input_type -> omniview.sdk.resource.v1.ListRequest
-	12, // 37: omniview.sdk.resource.v1.ResourcePlugin.Find:input_type -> omniview.sdk.resource.v1.FindRequest
-	14, // 38: omniview.sdk.resource.v1.ResourcePlugin.Create:input_type -> omniview.sdk.resource.v1.CreateRequest
-	16, // 39: omniview.sdk.resource.v1.ResourcePlugin.Update:input_type -> omniview.sdk.resource.v1.UpdateRequest
-	18, // 40: omniview.sdk.resource.v1.ResourcePlugin.Delete:input_type -> omniview.sdk.resource.v1.DeleteRequest
-	20, // 41: omniview.sdk.resource.v1.ResourcePlugin.GetResourceGroups:input_type -> omniview.sdk.resource.v1.ResourceGroupsRequest
-	22, // 42: omniview.sdk.resource.v1.ResourcePlugin.GetResourceTypes:input_type -> omniview.sdk.resource.v1.ResourceTypesRequest
-	24, // 43: omniview.sdk.resource.v1.ResourcePlugin.GetResourceCapabilities:input_type -> omniview.sdk.resource.v1.ResourceCapabilitiesRequest
-	28, // 44: omniview.sdk.resource.v1.ResourcePlugin.GetFilterFields:input_type -> omniview.sdk.resource.v1.FilterFieldsRequest
-	30, // 45: omniview.sdk.resource.v1.ResourcePlugin.GetResourceSchema:input_type -> omniview.sdk.resource.v1.ResourceSchemaRequest
-	32, // 46: omniview.sdk.resource.v1.ResourcePlugin.GetEditorSchemas:input_type -> omniview.sdk.resource.v1.EditorSchemasRequest
-	34, // 47: omniview.sdk.resource.v1.ResourcePlugin.GetActions:input_type -> omniview.sdk.resource.v1.GetActionsRequest
-	37, // 48: omniview.sdk.resource.v1.ResourcePlugin.ExecuteAction:input_type -> omniview.sdk.resource.v1.ExecuteActionRequest
-	37, // 49: omniview.sdk.resource.v1.ResourcePlugin.StreamAction:input_type -> omniview.sdk.resource.v1.ExecuteActionRequest
-	55, // 50: omniview.sdk.resource.v1.ResourcePlugin.ListenForEvents:input_type -> omniview.sdk.resource.v1.ListenRequest
-	56, // 51: omniview.sdk.resource.v1.ResourcePlugin.EnsureResourceWatch:input_type -> omniview.sdk.resource.v1.WatchResourceRequest
-	56, // 52: omniview.sdk.resource.v1.ResourcePlugin.StopResourceWatch:input_type -> omniview.sdk.resource.v1.WatchResourceRequest
-	57, // 53: omniview.sdk.resource.v1.ResourcePlugin.WatchConnections:input_type -> omniview.sdk.resource.v1.WatchConnectionsRequest
-	58, // 54: omniview.sdk.resource.v1.ResourcePlugin.GetWatchState:input_type -> omniview.sdk.resource.v1.GetWatchStateRequest
-	59, // 55: omniview.sdk.resource.v1.ResourcePlugin.GetRelationships:input_type -> omniview.sdk.resource.v1.RelationshipsRequest
-	60, // 56: omniview.sdk.resource.v1.ResourcePlugin.ResolveRelationships:input_type -> omniview.sdk.resource.v1.ResolveRelationshipsRequest
-	61, // 57: omniview.sdk.resource.v1.ResourcePlugin.GetHealth:input_type -> omniview.sdk.resource.v1.HealthRequest
-	62, // 58: omniview.sdk.resource.v1.ResourcePlugin.GetResourceEvents:input_type -> omniview.sdk.resource.v1.ResourceEventsRequest
-	3,  // 59: omniview.sdk.resource.v1.ResourcePlugin.LoadConnections:output_type -> omniview.sdk.resource.v1.LoadConnectionsResponse
-	5,  // 60: omniview.sdk.resource.v1.ResourcePlugin.StartConnection:output_type -> omniview.sdk.resource.v1.ConnectionStatusResponse
-	6,  // 61: omniview.sdk.resource.v1.ResourcePlugin.StopConnection:output_type -> omniview.sdk.resource.v1.ConnectionResponse
-	7,  // 62: omniview.sdk.resource.v1.ResourcePlugin.GetConnectionNamespaces:output_type -> omniview.sdk.resource.v1.NamespacesResponse
-	9,  // 63: omniview.sdk.resource.v1.ResourcePlugin.Get:output_type -> omniview.sdk.resource.v1.GetResponse
-	11, // 64: omniview.sdk.resource.v1.ResourcePlugin.List:output_type -> omniview.sdk.resource.v1.ListResponse
-	13, // 65: omniview.sdk.resource.v1.ResourcePlugin.Find:output_type -> omniview.sdk.resource.v1.FindResponse
-	15, // 66: omniview.sdk.resource.v1.ResourcePlugin.Create:output_type -> omniview.sdk.resource.v1.CreateResponse
-	17, // 67: omniview.sdk.resource.v1.ResourcePlugin.Update:output_type -> omniview.sdk.resource.v1.UpdateResponse
-	19, // 68: omniview.sdk.resource.v1.ResourcePlugin.Delete:output_type -> omniview.sdk.resource.v1.DeleteResponse
-	21, // 69: omniview.sdk.resource.v1.ResourcePlugin.GetResourceGroups:output_type -> omniview.sdk.resource.v1.ResourceGroupsResponse
-	23, // 70: omniview.sdk.resource.v1.ResourcePlugin.GetResourceTypes:output_type -> omniview.sdk.resource.v1.ResourceTypesResponse
-	25, // 71: omniview.sdk.resource.v1.ResourcePlugin.GetResourceCapabilities:output_type -> omniview.sdk.resource.v1.ResourceCapabilitiesResponse
-	29, // 72: omniview.sdk.resource.v1.ResourcePlugin.GetFilterFields:output_type -> omniview.sdk.resource.v1.FilterFieldsResponse
-	31, // 73: omniview.sdk.resource.v1.ResourcePlugin.GetResourceSchema:output_type -> omniview.sdk.resource.v1.ResourceSchemaResponse
-	33, // 74: omniview.sdk.resource.v1.ResourcePlugin.GetEditorSchemas:output_type -> omniview.sdk.resource.v1.EditorSchemasResponse
-	35, // 75: omniview.sdk.resource.v1.ResourcePlugin.GetActions:output_type -> omniview.sdk.resource.v1.GetActionsResponse
-	39, // 76: omniview.sdk.resource.v1.ResourcePlugin.ExecuteAction:output_type -> omniview.sdk.resource.v1.ExecuteActionResponse
-	41, // 77: omniview.sdk.resource.v1.ResourcePlugin.StreamAction:output_type -> omniview.sdk.resource.v1.StreamActionEvent
-	63, // 78: omniview.sdk.resource.v1.ResourcePlugin.ListenForEvents:output_type -> omniview.sdk.resource.v1.WatchEvent
-	64, // 79: omniview.sdk.resource.v1.ResourcePlugin.EnsureResourceWatch:output_type -> omniview.sdk.resource.v1.WatchResourceResponse
-	64, // 80: omniview.sdk.resource.v1.ResourcePlugin.StopResourceWatch:output_type -> omniview.sdk.resource.v1.WatchResourceResponse
-	65, // 81: omniview.sdk.resource.v1.ResourcePlugin.WatchConnections:output_type -> omniview.sdk.resource.v1.WatchConnectionsResponse
-	66, // 82: omniview.sdk.resource.v1.ResourcePlugin.GetWatchState:output_type -> omniview.sdk.resource.v1.GetWatchStateResponse
-	67, // 83: omniview.sdk.resource.v1.ResourcePlugin.GetRelationships:output_type -> omniview.sdk.resource.v1.RelationshipsResponse
-	68, // 84: omniview.sdk.resource.v1.ResourcePlugin.ResolveRelationships:output_type -> omniview.sdk.resource.v1.ResolveRelationshipsResponse
-	69, // 85: omniview.sdk.resource.v1.ResourcePlugin.GetHealth:output_type -> omniview.sdk.resource.v1.HealthResponse
-	70, // 86: omniview.sdk.resource.v1.ResourcePlugin.GetResourceEvents:output_type -> omniview.sdk.resource.v1.ResourceEventsResponse
-	59, // [59:87] is the sub-list for method output_type
-	31, // [31:59] is the sub-list for method input_type
+	4,  // 34: omniview.sdk.resource.v1.ResourcePlugin.CheckConnection:input_type -> omniview.sdk.resource.v1.ConnectionRequest
+	4,  // 35: omniview.sdk.resource.v1.ResourcePlugin.GetConnectionNamespaces:input_type -> omniview.sdk.resource.v1.ConnectionRequest
+	8,  // 36: omniview.sdk.resource.v1.ResourcePlugin.Get:input_type -> omniview.sdk.resource.v1.GetRequest
+	10, // 37: omniview.sdk.resource.v1.ResourcePlugin.List:input_type -> omniview.sdk.resource.v1.ListRequest
+	12, // 38: omniview.sdk.resource.v1.ResourcePlugin.Find:input_type -> omniview.sdk.resource.v1.FindRequest
+	14, // 39: omniview.sdk.resource.v1.ResourcePlugin.Create:input_type -> omniview.sdk.resource.v1.CreateRequest
+	16, // 40: omniview.sdk.resource.v1.ResourcePlugin.Update:input_type -> omniview.sdk.resource.v1.UpdateRequest
+	18, // 41: omniview.sdk.resource.v1.ResourcePlugin.Delete:input_type -> omniview.sdk.resource.v1.DeleteRequest
+	20, // 42: omniview.sdk.resource.v1.ResourcePlugin.GetResourceGroups:input_type -> omniview.sdk.resource.v1.ResourceGroupsRequest
+	22, // 43: omniview.sdk.resource.v1.ResourcePlugin.GetResourceTypes:input_type -> omniview.sdk.resource.v1.ResourceTypesRequest
+	24, // 44: omniview.sdk.resource.v1.ResourcePlugin.GetResourceCapabilities:input_type -> omniview.sdk.resource.v1.ResourceCapabilitiesRequest
+	28, // 45: omniview.sdk.resource.v1.ResourcePlugin.GetFilterFields:input_type -> omniview.sdk.resource.v1.FilterFieldsRequest
+	30, // 46: omniview.sdk.resource.v1.ResourcePlugin.GetResourceSchema:input_type -> omniview.sdk.resource.v1.ResourceSchemaRequest
+	32, // 47: omniview.sdk.resource.v1.ResourcePlugin.GetEditorSchemas:input_type -> omniview.sdk.resource.v1.EditorSchemasRequest
+	34, // 48: omniview.sdk.resource.v1.ResourcePlugin.GetActions:input_type -> omniview.sdk.resource.v1.GetActionsRequest
+	37, // 49: omniview.sdk.resource.v1.ResourcePlugin.ExecuteAction:input_type -> omniview.sdk.resource.v1.ExecuteActionRequest
+	37, // 50: omniview.sdk.resource.v1.ResourcePlugin.StreamAction:input_type -> omniview.sdk.resource.v1.ExecuteActionRequest
+	55, // 51: omniview.sdk.resource.v1.ResourcePlugin.ListenForEvents:input_type -> omniview.sdk.resource.v1.ListenRequest
+	56, // 52: omniview.sdk.resource.v1.ResourcePlugin.EnsureResourceWatch:input_type -> omniview.sdk.resource.v1.WatchResourceRequest
+	56, // 53: omniview.sdk.resource.v1.ResourcePlugin.StopResourceWatch:input_type -> omniview.sdk.resource.v1.WatchResourceRequest
+	57, // 54: omniview.sdk.resource.v1.ResourcePlugin.WatchConnections:input_type -> omniview.sdk.resource.v1.WatchConnectionsRequest
+	58, // 55: omniview.sdk.resource.v1.ResourcePlugin.GetWatchState:input_type -> omniview.sdk.resource.v1.GetWatchStateRequest
+	59, // 56: omniview.sdk.resource.v1.ResourcePlugin.GetRelationships:input_type -> omniview.sdk.resource.v1.RelationshipsRequest
+	60, // 57: omniview.sdk.resource.v1.ResourcePlugin.ResolveRelationships:input_type -> omniview.sdk.resource.v1.ResolveRelationshipsRequest
+	61, // 58: omniview.sdk.resource.v1.ResourcePlugin.GetHealth:input_type -> omniview.sdk.resource.v1.HealthRequest
+	62, // 59: omniview.sdk.resource.v1.ResourcePlugin.GetResourceEvents:input_type -> omniview.sdk.resource.v1.ResourceEventsRequest
+	3,  // 60: omniview.sdk.resource.v1.ResourcePlugin.LoadConnections:output_type -> omniview.sdk.resource.v1.LoadConnectionsResponse
+	5,  // 61: omniview.sdk.resource.v1.ResourcePlugin.StartConnection:output_type -> omniview.sdk.resource.v1.ConnectionStatusResponse
+	6,  // 62: omniview.sdk.resource.v1.ResourcePlugin.StopConnection:output_type -> omniview.sdk.resource.v1.ConnectionResponse
+	5,  // 63: omniview.sdk.resource.v1.ResourcePlugin.CheckConnection:output_type -> omniview.sdk.resource.v1.ConnectionStatusResponse
+	7,  // 64: omniview.sdk.resource.v1.ResourcePlugin.GetConnectionNamespaces:output_type -> omniview.sdk.resource.v1.NamespacesResponse
+	9,  // 65: omniview.sdk.resource.v1.ResourcePlugin.Get:output_type -> omniview.sdk.resource.v1.GetResponse
+	11, // 66: omniview.sdk.resource.v1.ResourcePlugin.List:output_type -> omniview.sdk.resource.v1.ListResponse
+	13, // 67: omniview.sdk.resource.v1.ResourcePlugin.Find:output_type -> omniview.sdk.resource.v1.FindResponse
+	15, // 68: omniview.sdk.resource.v1.ResourcePlugin.Create:output_type -> omniview.sdk.resource.v1.CreateResponse
+	17, // 69: omniview.sdk.resource.v1.ResourcePlugin.Update:output_type -> omniview.sdk.resource.v1.UpdateResponse
+	19, // 70: omniview.sdk.resource.v1.ResourcePlugin.Delete:output_type -> omniview.sdk.resource.v1.DeleteResponse
+	21, // 71: omniview.sdk.resource.v1.ResourcePlugin.GetResourceGroups:output_type -> omniview.sdk.resource.v1.ResourceGroupsResponse
+	23, // 72: omniview.sdk.resource.v1.ResourcePlugin.GetResourceTypes:output_type -> omniview.sdk.resource.v1.ResourceTypesResponse
+	25, // 73: omniview.sdk.resource.v1.ResourcePlugin.GetResourceCapabilities:output_type -> omniview.sdk.resource.v1.ResourceCapabilitiesResponse
+	29, // 74: omniview.sdk.resource.v1.ResourcePlugin.GetFilterFields:output_type -> omniview.sdk.resource.v1.FilterFieldsResponse
+	31, // 75: omniview.sdk.resource.v1.ResourcePlugin.GetResourceSchema:output_type -> omniview.sdk.resource.v1.ResourceSchemaResponse
+	33, // 76: omniview.sdk.resource.v1.ResourcePlugin.GetEditorSchemas:output_type -> omniview.sdk.resource.v1.EditorSchemasResponse
+	35, // 77: omniview.sdk.resource.v1.ResourcePlugin.GetActions:output_type -> omniview.sdk.resource.v1.GetActionsResponse
+	39, // 78: omniview.sdk.resource.v1.ResourcePlugin.ExecuteAction:output_type -> omniview.sdk.resource.v1.ExecuteActionResponse
+	41, // 79: omniview.sdk.resource.v1.ResourcePlugin.StreamAction:output_type -> omniview.sdk.resource.v1.StreamActionEvent
+	63, // 80: omniview.sdk.resource.v1.ResourcePlugin.ListenForEvents:output_type -> omniview.sdk.resource.v1.WatchEvent
+	64, // 81: omniview.sdk.resource.v1.ResourcePlugin.EnsureResourceWatch:output_type -> omniview.sdk.resource.v1.WatchResourceResponse
+	64, // 82: omniview.sdk.resource.v1.ResourcePlugin.StopResourceWatch:output_type -> omniview.sdk.resource.v1.WatchResourceResponse
+	65, // 83: omniview.sdk.resource.v1.ResourcePlugin.WatchConnections:output_type -> omniview.sdk.resource.v1.WatchConnectionsResponse
+	66, // 84: omniview.sdk.resource.v1.ResourcePlugin.GetWatchState:output_type -> omniview.sdk.resource.v1.GetWatchStateResponse
+	67, // 85: omniview.sdk.resource.v1.ResourcePlugin.GetRelationships:output_type -> omniview.sdk.resource.v1.RelationshipsResponse
+	68, // 86: omniview.sdk.resource.v1.ResourcePlugin.ResolveRelationships:output_type -> omniview.sdk.resource.v1.ResolveRelationshipsResponse
+	69, // 87: omniview.sdk.resource.v1.ResourcePlugin.GetHealth:output_type -> omniview.sdk.resource.v1.HealthResponse
+	70, // 88: omniview.sdk.resource.v1.ResourcePlugin.GetResourceEvents:output_type -> omniview.sdk.resource.v1.ResourceEventsResponse
+	60, // [60:89] is the sub-list for method output_type
+	31, // [31:60] is the sub-list for method input_type
 	31, // [31:31] is the sub-list for extension type_name
 	31, // [31:31] is the sub-list for extension extendee
 	0,  // [0:31] is the sub-list for field type_name

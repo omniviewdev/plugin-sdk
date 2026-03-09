@@ -51,6 +51,14 @@ func (c *client) StartConnection(ctx context.Context, id string) (types.Connecti
 	return connectionStatusFromProto(resp.GetStatus()), nil
 }
 
+func (c *client) CheckConnection(ctx context.Context, id string) (types.ConnectionStatus, error) {
+	resp, err := c.stub.CheckConnection(ctx, &resourcepb.ConnectionRequest{ConnectionId: id})
+	if err != nil {
+		return types.ConnectionStatus{}, err
+	}
+	return connectionStatusFromProto(resp.GetStatus()), nil
+}
+
 func (c *client) StopConnection(ctx context.Context, id string) (types.Connection, error) {
 	resp, err := c.stub.StopConnection(ctx, &resourcepb.ConnectionRequest{ConnectionId: id})
 	if err != nil {

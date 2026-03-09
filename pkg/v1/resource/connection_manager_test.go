@@ -1070,6 +1070,108 @@ func TestCM_StopDuringSlowCreate(t *testing.T) {
 	_ = err // either error or nil — just no panic
 }
 
+// --- CM-046: StartConnection validates health when already active ---
+func TestCM_StartConnection_ValidatesHealthWhenActive(t *testing.T) {
+	ctx := context.Background()
+	cp := &resourcetest.StubConnectionProvider[string]{
+		CheckConnectionFunc: func(_ context.Context, conn *types.Connection, _ *string) (types.ConnectionStatus, error) {
+			return types.ConnectionStatus{
+				Connection: conn,
+				Status:     types.ConnectionStatusConnected,
+			}, nil
+		},
+	}
+	mgr := resource.NewConnectionManagerForTest(ctx, cp)
+	loadAndStart(t, mgr, ctx)
+
+	// Second start should health-check and return CONNECTED without creating a new client.
+	status, err := mgr.StartConnection(ctx, "conn-1")
+	if err != nil {
+		t.Fatalf("StartConnection (second): %v", err)
+	}
+	if status.Status != types.ConnectionStatusConnected {
+		t.Fatalf("expected CONNECTED, got %s", status.Status)
+	}
+	// CreateClient should only be called once (initial start).
+	if cp.CreateClientCalls.Load() != 1 {
+		t.Fatalf("expected 1 CreateClient call, got %d", cp.CreateClientCalls.Load())
+	}
+}
+
+// --- CM-047: StartConnection tears down unhealthy connection and reconnects ---
+func TestCM_StartConnection_TearsDownUnhealthyConnection(t *testing.T) {
+	ctx := context.Background()
+	checkCalls := 0
+	cp := &resourcetest.StubConnectionProvider[string]{
+		CheckConnectionFunc: func(_ context.Context, conn *types.Connection, _ *string) (types.ConnectionStatus, error) {
+			checkCalls++
+			if checkCalls == 1 {
+				// First check (on second StartConnection call): unhealthy.
+				return types.ConnectionStatus{
+					Connection: conn,
+					Status:     types.ConnectionStatusError,
+				}, nil
+			}
+			// After reconnect: healthy.
+			return types.ConnectionStatus{
+				Connection: conn,
+				Status:     types.ConnectionStatusConnected,
+			}, nil
+		},
+	}
+	mgr := resource.NewConnectionManagerForTest(ctx, cp)
+	loadAndStart(t, mgr, ctx)
+
+	// Second start should detect unhealthy, tear down, and reconnect.
+	status, err := mgr.StartConnection(ctx, "conn-1")
+	if err != nil {
+		t.Fatalf("StartConnection (reconnect): %v", err)
+	}
+	if status.Status != types.ConnectionStatusConnected {
+		t.Fatalf("expected CONNECTED after reconnect, got %s", status.Status)
+	}
+	// CreateClient called twice: initial + reconnect.
+	if cp.CreateClientCalls.Load() != 2 {
+		t.Fatalf("expected 2 CreateClient calls, got %d", cp.CreateClientCalls.Load())
+	}
+	// DestroyClient called once (teardown of stale connection).
+	if cp.DestroyClientCalls.Load() != 1 {
+		t.Fatalf("expected 1 DestroyClient call, got %d", cp.DestroyClientCalls.Load())
+	}
+}
+
+// --- CM-048: StartConnection CheckConnection returns error, tears down and reconnects ---
+func TestCM_StartConnection_CheckConnectionError(t *testing.T) {
+	ctx := context.Background()
+	checkCalls := 0
+	cp := &resourcetest.StubConnectionProvider[string]{
+		CheckConnectionFunc: func(_ context.Context, conn *types.Connection, _ *string) (types.ConnectionStatus, error) {
+			checkCalls++
+			if checkCalls == 1 {
+				return types.ConnectionStatus{}, errors.New("health check failed")
+			}
+			return types.ConnectionStatus{
+				Connection: conn,
+				Status:     types.ConnectionStatusConnected,
+			}, nil
+		},
+	}
+	mgr := resource.NewConnectionManagerForTest(ctx, cp)
+	loadAndStart(t, mgr, ctx)
+
+	// Second start: CheckConnection errors → tear down → reconnect.
+	status, err := mgr.StartConnection(ctx, "conn-1")
+	if err != nil {
+		t.Fatalf("StartConnection (reconnect after check error): %v", err)
+	}
+	if status.Status != types.ConnectionStatusConnected {
+		t.Fatalf("expected CONNECTED after reconnect, got %s", status.Status)
+	}
+	if cp.CreateClientCalls.Load() != 2 {
+		t.Fatalf("expected 2 CreateClient calls, got %d", cp.CreateClientCalls.Load())
+	}
+}
+
 // --- CM-023: WatchConnections detected when ConnectionProvider implements ConnectionWatcher ---
 func TestCM_WatchConnectionsDetected(t *testing.T) {
 	ctx := context.Background()
@@ -1193,4 +1295,73 @@ func TestCM_WatchConnectionsChannelClosed(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("WatchConnections did not return after channel close")
 	}
+}
+
+// --- CM-043: Watched connection becomes startable ---
+// Verifies that connections discovered via WatchConnections are added to the
+// plugin-side loaded map, making them available for StartConnection.
+func TestCM_WatchedConnectionBecomesStartable(t *testing.T) {
+	ctx := context.Background()
+
+	watchCh := make(chan []types.Connection, 1)
+	wp := &resourcetest.WatchingConnectionProvider[string]{
+		StubConnectionProvider: resourcetest.StubConnectionProvider[string]{
+			// LoadConnections returns only conn-1 initially.
+			LoadConnectionsFunc: func(ctx context.Context) ([]types.Connection, error) {
+				return []types.Connection{{ID: "conn-1", Name: "Initial"}}, nil
+			},
+		},
+		WatchConnectionsFunc: func(ctx context.Context) (<-chan []types.Connection, error) {
+			return watchCh, nil
+		},
+	}
+
+	cfg := resource.ResourcePluginConfig[string]{
+		Connections: wp,
+		Resources:   []resource.ResourceRegistration[string]{},
+	}
+	ctrl, err := resource.BuildResourceControllerForTest(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ctrl.Close()
+
+	// Load initial connections (only conn-1).
+	if _, err := ctrl.LoadConnections(ctx); err != nil {
+		t.Fatalf("LoadConnections: %v", err)
+	}
+
+	// Start watching in the background.
+	watchCtx, watchCancel := context.WithCancel(ctx)
+	defer watchCancel()
+	stream := make(chan []types.Connection, 10)
+	done := make(chan error, 1)
+	go func() {
+		done <- ctrl.WatchConnections(watchCtx, stream)
+	}()
+
+	// Simulate discovering a new connection via kubeconfig change.
+	watchCh <- []types.Connection{
+		{ID: "conn-1", Name: "Initial"},
+		{ID: "conn-new", Name: "Discovered"},
+	}
+
+	// Wait for the event to propagate.
+	select {
+	case <-stream:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for watch event")
+	}
+
+	// conn-new should now be startable — this was the bug.
+	status, err := ctrl.StartConnection(ctx, "conn-new")
+	if err != nil {
+		t.Fatalf("StartConnection for watched connection: %v", err)
+	}
+	if status.Status != types.ConnectionStatusConnected {
+		t.Fatalf("expected Connected, got %v", status.Status)
+	}
+
+	watchCancel()
+	<-done
 }

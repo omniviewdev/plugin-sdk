@@ -19,6 +19,7 @@ service ResourcePlugin {
     rpc LoadConnections(LoadConnectionsRequest) returns (LoadConnectionsResponse);
     rpc StartConnection(ConnectionRequest) returns (ConnectionStatusResponse);
     rpc StopConnection(ConnectionRequest) returns (ConnectionResponse);
+    rpc CheckConnection(ConnectionRequest) returns (ConnectionStatusResponse);
     rpc GetConnectionNamespaces(ConnectionRequest) returns (NamespacesResponse);
 
     // CRUD

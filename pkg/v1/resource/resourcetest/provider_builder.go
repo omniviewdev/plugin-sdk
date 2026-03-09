@@ -25,6 +25,7 @@ type TestProvider struct {
 	// Connection handlers.
 	StartConnectionFunc      func(ctx context.Context, id string) (types.ConnectionStatus, error)
 	StopConnectionFunc       func(ctx context.Context, id string) (types.Connection, error)
+	CheckConnectionFunc      func(ctx context.Context, id string) (types.ConnectionStatus, error)
 	LoadConnectionsFunc      func(ctx context.Context) ([]types.Connection, error)
 	ListConnectionsFunc      func(ctx context.Context) ([]types.Connection, error)
 	GetConnectionFunc        func(ctx context.Context, id string) (types.Connection, error)
@@ -166,6 +167,13 @@ func (p *TestProvider) StopConnection(ctx context.Context, id string) (types.Con
 		return p.StopConnectionFunc(ctx, id)
 	}
 	return types.Connection{ID: id}, nil
+}
+
+func (p *TestProvider) CheckConnection(ctx context.Context, id string) (types.ConnectionStatus, error) {
+	if p.CheckConnectionFunc != nil {
+		return p.CheckConnectionFunc(ctx, id)
+	}
+	return types.ConnectionStatus{Status: types.ConnectionStatusConnected}, nil
 }
 
 func (p *TestProvider) LoadConnections(ctx context.Context) ([]types.Connection, error) {

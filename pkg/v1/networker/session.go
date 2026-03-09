@@ -2,6 +2,8 @@ package networker
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"maps"
 	"sync"
@@ -517,6 +519,40 @@ type PortForwardSessionOptions struct {
 	Encryption     PortForwardSessionEncryption `json:"encryption"`
 	LocalPort      int32                        `json:"local_port"`
 	RemotePort     int32                        `json:"remote_port"`
+}
+
+func (o *PortForwardSessionOptions) UnmarshalJSON(data []byte) error {
+	type Alias PortForwardSessionOptions
+	aux := &struct {
+		*Alias
+		Connection json.RawMessage `json:"connection"`
+	}{
+		Alias: (*Alias)(o),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	if len(aux.Connection) == 0 {
+		return nil
+	}
+
+	switch o.ConnectionType {
+	case PortForwardConnectionTypeResource:
+		var m map[string]any
+		if err := json.Unmarshal(aux.Connection, &m); err != nil {
+			return fmt.Errorf("unmarshal resource connection: %w", err)
+		}
+		o.Connection = PortForwardResourceConnectionFromJson(m)
+	case PortForwardConnectionTypeStatic:
+		var m map[string]any
+		if err := json.Unmarshal(aux.Connection, &m); err != nil {
+			return fmt.Errorf("unmarshal static connection: %w", err)
+		}
+		o.Connection = PortForwardStaticConnectionFromJson(m)
+	}
+
+	return nil
 }
 
 type ResourcePortForwardHandlerOpts struct {

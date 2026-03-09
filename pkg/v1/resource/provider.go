@@ -59,6 +59,9 @@ type ConnectionLifecycleProvider interface {
 	// StopConnection stops a connection and returns its final state.
 	StopConnection(ctx context.Context, connectionID string) (types.Connection, error)
 
+	// CheckConnection validates that an active connection is still healthy.
+	CheckConnection(ctx context.Context, connectionID string) (types.ConnectionStatus, error)
+
 	// LoadConnections reads connections from plugin configuration (e.g., kubeconfig files).
 	// Called on plugin start and when config changes.
 	LoadConnections(ctx context.Context) ([]types.Connection, error)

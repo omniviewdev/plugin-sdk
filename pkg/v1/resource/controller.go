@@ -449,6 +449,10 @@ func (c *resourceController[ClientT]) StopConnection(ctx context.Context, connec
 	return conn, err
 }
 
+func (c *resourceController[ClientT]) CheckConnection(ctx context.Context, connectionID string) (types.ConnectionStatus, error) {
+	return c.connMgr.CheckConnection(ctx, connectionID)
+}
+
 func (c *resourceController[ClientT]) LoadConnections(ctx context.Context) ([]types.Connection, error) {
 	return c.connMgr.LoadConnections(ctx)
 }
@@ -550,6 +554,7 @@ func (c *resourceController[ClientT]) WatchConnections(ctx context.Context, stre
 			if !ok {
 				return nil
 			}
+			c.connMgr.reconcileLoaded(conns)
 			select {
 			case stream <- conns:
 			case <-ctx.Done():

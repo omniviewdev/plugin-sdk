@@ -221,18 +221,61 @@ func (m *connectionManager[ClientT]) LoadConnections(ctx context.Context) ([]typ
 	return conns, nil
 }
 
+// reconcileLoaded merges discovered connections into the loaded map.
+// New connections are added, existing ones are updated, and connections
+// absent from the fresh set are removed (matching LoadConnections semantics).
+// Called by WatchConnections to keep the plugin-side state in sync with
+// externally discovered connections.
+func (m *connectionManager[ClientT]) reconcileLoaded(conns []types.Connection) {
+	fresh := make(map[string]types.Connection, len(conns))
+	for _, c := range conns {
+		fresh[c.ID] = cloneConnection(c)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id := range m.loaded {
+		if _, ok := fresh[id]; !ok {
+			delete(m.loaded, id)
+		}
+	}
+	for id, c := range fresh {
+		m.loaded[id] = c
+	}
+}
+
 // StartConnection creates a client for the connection and stores it.
 // Returns Connected status. No-op if already started.
 func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connectionID string) (types.ConnectionStatus, error) {
 	m.mu.Lock()
-	// Already started?
+	// Already started? Validate health before returning CONNECTED.
 	if state, ok := m.conns[connectionID]; ok {
-		connCopy := cloneConnection(state.conn)
+		client := state.client
+		conn := cloneConnection(state.conn)
 		m.mu.Unlock()
-		return types.ConnectionStatus{
-			Connection: &connCopy,
-			Status:     types.ConnectionStatusConnected,
-		}, nil
+
+		// Verify the existing connection is still healthy.
+		checkStatus, checkErr := m.provider.CheckConnection(ctx, &conn, client)
+		if checkErr == nil && checkStatus.Status == types.ConnectionStatusConnected {
+			return types.ConnectionStatus{
+				Connection: &conn,
+				Status:     types.ConnectionStatusConnected,
+			}, nil
+		}
+
+		// Stale connection — tear down and attempt reconnect.
+		_, _ = m.StopConnection(ctx, connectionID)
+
+		// If the connection was removed from loaded while we tore down,
+		// return the failed status instead of trying to reconnect.
+		m.mu.Lock()
+		if _, stillLoaded := m.loaded[connectionID]; !stillLoaded {
+			m.mu.Unlock()
+			if checkErr != nil {
+				return types.ConnectionStatus{}, checkErr
+			}
+			return checkStatus, nil
+		}
+		// Fall through to fresh connection below (lock held).
 	}
 
 	// Must be a known connection.
