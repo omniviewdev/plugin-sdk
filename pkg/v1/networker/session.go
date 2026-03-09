@@ -166,7 +166,7 @@ type sessionEntry struct {
 	mu      sync.RWMutex
 	session PortForwardSession
 	ctx     context.Context
-	cancel  func()
+	cancel  context.CancelCauseFunc
 }
 
 // transition performs a validated state transition. Returns an error if

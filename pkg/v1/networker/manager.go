@@ -19,6 +19,13 @@ import (
 const defaultCloseTimeout = 10 * time.Second
 const readyTimeout = 30 * time.Second
 
+// Sentinel causes for context cancellation — forwarders can inspect these
+// via context.Cause(ctx) to distinguish intentional stops from failures.
+var (
+	ErrSessionClosed  = errors.New("session closed")
+	ErrManagerStopped = errors.New("manager stopped")
+)
+
 // Manager manages the lifecycle of networker actions, such as port forwarding sessions.
 type Manager struct {
 	log              logging.Logger
@@ -160,10 +167,10 @@ func (m *Manager) StartPortForwardSession(
 	if pluginctx == nil {
 		pluginctx = &types.PluginContext{}
 	}
-	baseCtx := pluginctx.Context
-	if baseCtx == nil {
-		baseCtx = context.Background()
-	}
+	// Port-forward sessions are long-lived and must outlive the initiating
+	// RPC call. Use context.Background() — session lifecycle is managed
+	// entirely through the cancel function stored in sessionEntry.
+	baseCtx := context.Background()
 
 	logger := m.log.With(logging.String("connection_type", string(opts.ConnectionType)))
 
@@ -186,7 +193,7 @@ func (m *Manager) StartPortForwardSession(
 
 	// Shallow-copy PluginContext — never mutate the caller's instance.
 	pctxCopy := *pluginctx
-	ctx, cancel := context.WithCancel(baseCtx)
+	ctx, cancel := context.WithCancelCause(baseCtx)
 	pctxCopy.Context = ctx
 	if m.settingsProvider != nil {
 		pctxCopy.SetSettingsProvider(m.settingsProvider)
@@ -203,7 +210,7 @@ func (m *Manager) StartPortForwardSession(
 	shuttingDown := m.stopped
 	m.mu.RUnlock()
 	if shuttingDown {
-		cancel()
+		cancel(nil)
 		return nil, NewManagerShuttingDownError(sessionID)
 	}
 
@@ -215,12 +222,12 @@ func (m *Manager) StartPortForwardSession(
 	case PortForwardConnectionTypeStatic:
 		result, err = m.handleStaticForward(ctx, &pctxCopy, opts)
 	default:
-		cancel()
+		cancel(nil)
 		return nil, NewInvalidConnectionTypeError(string(opts.ConnectionType))
 	}
 
 	if err != nil {
-		cancel()
+		cancel(nil)
 		// Preserve already-typed NetworkerErrors; wrap others.
 		var nerr *NetworkerError
 		if errors.As(err, &nerr) {
@@ -230,7 +237,7 @@ func (m *Manager) StartPortForwardSession(
 	}
 
 	if result == nil {
-		cancel()
+		cancel(nil)
 		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("forwarder returned nil result"))
 	}
 
@@ -252,7 +259,7 @@ func (m *Manager) StartPortForwardSession(
 			case <-result.Ready:
 				// tunnel established
 			case err, ok := <-result.ErrCh:
-				cancel()
+				cancel(nil)
 				if !ok {
 					return nil, NewForwarderFailedError(sessionID, fmt.Errorf("forwarder error channel closed before ready"))
 				}
@@ -261,10 +268,10 @@ func (m *Manager) StartPortForwardSession(
 				}
 				return nil, NewForwarderFailedError(sessionID, err)
 			case <-ctx.Done():
-				cancel()
+				cancel(nil)
 				return nil, NewForwarderFailedError(sessionID, ctx.Err())
 			case <-m.clock.After(readyTimeout):
-				cancel()
+				cancel(nil)
 				return nil, NewForwarderFailedError(sessionID, fmt.Errorf("timed out waiting for tunnel to be ready"))
 			}
 		}
@@ -297,12 +304,12 @@ func (m *Manager) StartPortForwardSession(
 	m.mu.Lock()
 	if m.stopped {
 		m.mu.Unlock()
-		cancel()
+		cancel(nil)
 		return nil, NewManagerShuttingDownError(sessionID)
 	}
 	if _, exists := m.sessions[sessionID]; exists {
 		m.mu.Unlock()
-		cancel()
+		cancel(nil)
 		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("duplicate session ID %q", sessionID))
 	}
 	m.sessions[sessionID] = entry
@@ -422,7 +429,7 @@ func (m *Manager) ClosePortForwardSession(
 	delete(m.sessions, sessionID)
 	m.mu.Unlock()
 
-	entry.cancel()
+	entry.cancel(ErrSessionClosed)
 	_ = entry.transition(SessionStateStopped)
 
 	snap := entry.snapshot()
@@ -435,7 +442,7 @@ func (m *Manager) StopAll() {
 	m.mu.Lock()
 	m.stopped = true
 	for id, entry := range m.sessions {
-		entry.cancel()
+		entry.cancel(ErrManagerStopped)
 		_ = entry.transition(SessionStateStopped)
 		delete(m.sessions, id)
 	}
