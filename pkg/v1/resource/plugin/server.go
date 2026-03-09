@@ -97,6 +97,7 @@ func (s *server) StartConnection(ctx context.Context, req *resourcepb.Connection
 }
 
 func (s *server) CheckConnection(ctx context.Context, req *resourcepb.CheckConnectionRequest) (*resourcepb.CheckConnectionResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	status, err := s.provider.CheckConnection(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, err
