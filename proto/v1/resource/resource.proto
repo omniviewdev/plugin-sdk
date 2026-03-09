@@ -19,7 +19,7 @@ service ResourcePlugin {
     rpc LoadConnections(LoadConnectionsRequest) returns (LoadConnectionsResponse);
     rpc StartConnection(ConnectionRequest) returns (ConnectionStatusResponse);
     rpc StopConnection(ConnectionRequest) returns (ConnectionResponse);
-    rpc CheckConnection(ConnectionRequest) returns (ConnectionStatusResponse);
+    rpc CheckConnection(CheckConnectionRequest) returns (CheckConnectionResponse);
     rpc GetConnectionNamespaces(ConnectionRequest) returns (NamespacesResponse);
 
     // CRUD
@@ -79,6 +79,14 @@ message ConnectionStatusResponse {
 
 message ConnectionResponse {
     omniview.sdk.common.v1.Connection connection = 1;
+}
+
+message CheckConnectionRequest {
+    string connection_id = 1;
+}
+
+message CheckConnectionResponse {
+    omniview.sdk.common.v1.ConnectionStatus status = 1;
 }
 
 message NamespacesResponse {

@@ -537,11 +537,19 @@ func (o *PortForwardSessionOptions) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
+	// Reject JSON null payloads early.
+	if string(aux.Connection) == "null" {
+		return fmt.Errorf("connection payload is null")
+	}
+
 	switch o.ConnectionType {
 	case PortForwardConnectionTypeResource:
 		var m map[string]any
 		if err := json.Unmarshal(aux.Connection, &m); err != nil {
 			return fmt.Errorf("unmarshal resource connection: %w", err)
+		}
+		if m == nil {
+			return fmt.Errorf("resource connection payload decoded to nil")
 		}
 		o.Connection = PortForwardResourceConnectionFromJson(m)
 	case PortForwardConnectionTypeStatic:
@@ -549,7 +557,14 @@ func (o *PortForwardSessionOptions) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(aux.Connection, &m); err != nil {
 			return fmt.Errorf("unmarshal static connection: %w", err)
 		}
+		if m == nil {
+			return fmt.Errorf("static connection payload decoded to nil")
+		}
 		o.Connection = PortForwardStaticConnectionFromJson(m)
+	case "":
+		return fmt.Errorf("connection_type is empty but connection payload is present")
+	default:
+		return fmt.Errorf("unknown connection_type %q", o.ConnectionType)
 	}
 
 	return nil

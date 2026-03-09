@@ -554,7 +554,14 @@ func (c *resourceController[ClientT]) WatchConnections(ctx context.Context, stre
 			if !ok {
 				return nil
 			}
-			c.connMgr.reconcileLoaded(conns)
+			removed := c.connMgr.reconcileLoaded(conns)
+			// Clean up stale runtimes for connections that disappeared
+			// from the snapshot, using the normal teardown paths.
+			for _, id := range removed {
+				_ = c.watchMgr.StopConnectionWatch(ctx, id)
+				_, _ = c.connMgr.StopConnection(ctx, id)
+				c.evictFilterFieldCache(id)
+			}
 			select {
 			case stream <- conns:
 			case <-ctx.Done():

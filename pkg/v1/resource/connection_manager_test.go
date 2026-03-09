@@ -1096,6 +1096,10 @@ func TestCM_StartConnection_ValidatesHealthWhenActive(t *testing.T) {
 	if cp.CreateClientCalls.Load() != 1 {
 		t.Fatalf("expected 1 CreateClient call, got %d", cp.CreateClientCalls.Load())
 	}
+	// CheckConnection should have been invoked exactly once (on the second StartConnection).
+	if cp.CheckConnectionCalls.Load() != 1 {
+		t.Fatalf("expected 1 CheckConnection call, got %d", cp.CheckConnectionCalls.Load())
+	}
 }
 
 // --- CM-047: StartConnection tears down unhealthy connection and reconnects ---
@@ -1169,6 +1173,10 @@ func TestCM_StartConnection_CheckConnectionError(t *testing.T) {
 	}
 	if cp.CreateClientCalls.Load() != 2 {
 		t.Fatalf("expected 2 CreateClient calls, got %d", cp.CreateClientCalls.Load())
+	}
+	// DestroyClient should be called once (teardown of stale connection before reconnect).
+	if cp.DestroyClientCalls.Load() != 1 {
+		t.Fatalf("expected 1 DestroyClient call, got %d", cp.DestroyClientCalls.Load())
 	}
 }
 

@@ -96,7 +96,7 @@ func (s *server) StartConnection(ctx context.Context, req *resourcepb.Connection
 	return &resourcepb.ConnectionStatusResponse{Status: pbStatus}, nil
 }
 
-func (s *server) CheckConnection(ctx context.Context, req *resourcepb.ConnectionRequest) (*resourcepb.ConnectionStatusResponse, error) {
+func (s *server) CheckConnection(ctx context.Context, req *resourcepb.CheckConnectionRequest) (*resourcepb.CheckConnectionResponse, error) {
 	status, err := s.provider.CheckConnection(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (s *server) CheckConnection(ctx context.Context, req *resourcepb.Connection
 	if err != nil {
 		return nil, err
 	}
-	return &resourcepb.ConnectionStatusResponse{Status: pbStatus}, nil
+	return &resourcepb.CheckConnectionResponse{Status: pbStatus}, nil
 }
 
 func (s *server) StopConnection(ctx context.Context, req *resourcepb.ConnectionRequest) (*resourcepb.ConnectionResponse, error) {

@@ -52,7 +52,7 @@ func (c *client) StartConnection(ctx context.Context, id string) (types.Connecti
 }
 
 func (c *client) CheckConnection(ctx context.Context, id string) (types.ConnectionStatus, error) {
-	resp, err := c.stub.CheckConnection(ctx, &resourcepb.ConnectionRequest{ConnectionId: id})
+	resp, err := c.stub.CheckConnection(ctx, &resourcepb.CheckConnectionRequest{ConnectionId: id})
 	if err != nil {
 		return types.ConnectionStatus{}, err
 	}

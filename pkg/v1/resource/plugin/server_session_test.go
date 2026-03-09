@@ -37,12 +37,13 @@ func TestServer_SessionInjection(t *testing.T) {
 		name string
 		call func(s resourcepb.ResourcePluginServer) error
 		// setup returns a TestProvider option that records whether the session
-		// was injected.
-		setup func(called *bool) resourcetest.Option
+		// was injected. The *testing.T parameter is the subtest's T so that
+		// assertion failures are reported on the correct subtest.
+		setup func(t *testing.T, called *bool) resourcetest.Option
 	}{
 		{
 			name: "GetEditorSchemas",
-			setup: func(called *bool) resourcetest.Option {
+			setup: func(t *testing.T, called *bool) resourcetest.Option {
 				return func(p *resourcetest.TestProvider) {
 					p.GetEditorSchemasFunc = func(ctx context.Context, cid string) ([]resource.EditorSchema, error) {
 						requireSession(t, ctx, connID)
@@ -58,7 +59,7 @@ func TestServer_SessionInjection(t *testing.T) {
 		},
 		{
 			name: "GetResourceGroups",
-			setup: func(called *bool) resourcetest.Option {
+			setup: func(t *testing.T, called *bool) resourcetest.Option {
 				return func(p *resourcetest.TestProvider) {
 					p.GetResourceGroupsFunc = func(ctx context.Context, cid string) map[string]resource.ResourceGroup {
 						requireSession(t, ctx, connID)
@@ -74,7 +75,7 @@ func TestServer_SessionInjection(t *testing.T) {
 		},
 		{
 			name: "GetResourceTypes",
-			setup: func(called *bool) resourcetest.Option {
+			setup: func(t *testing.T, called *bool) resourcetest.Option {
 				return func(p *resourcetest.TestProvider) {
 					p.GetResourceTypesFunc = func(ctx context.Context, cid string) map[string]resource.ResourceMeta {
 						requireSession(t, ctx, connID)
@@ -90,7 +91,7 @@ func TestServer_SessionInjection(t *testing.T) {
 		},
 		{
 			name: "GetFilterFields",
-			setup: func(called *bool) resourcetest.Option {
+			setup: func(t *testing.T, called *bool) resourcetest.Option {
 				return func(p *resourcetest.TestProvider) {
 					p.GetFilterFieldsFunc = func(ctx context.Context, cid, key string) ([]resource.FilterField, error) {
 						requireSession(t, ctx, connID)
@@ -106,7 +107,7 @@ func TestServer_SessionInjection(t *testing.T) {
 		},
 		{
 			name: "GetResourceSchema",
-			setup: func(called *bool) resourcetest.Option {
+			setup: func(t *testing.T, called *bool) resourcetest.Option {
 				return func(p *resourcetest.TestProvider) {
 					p.GetResourceSchemaFunc = func(ctx context.Context, cid, key string) (json.RawMessage, error) {
 						requireSession(t, ctx, connID)
@@ -122,7 +123,7 @@ func TestServer_SessionInjection(t *testing.T) {
 		},
 		{
 			name: "ResolveRelationships",
-			setup: func(called *bool) resourcetest.Option {
+			setup: func(t *testing.T, called *bool) resourcetest.Option {
 				return func(p *resourcetest.TestProvider) {
 					p.ResolveRelationshipsFunc = func(ctx context.Context, cid, key, id, ns string) ([]resource.ResolvedRelationship, error) {
 						requireSession(t, ctx, connID)
@@ -140,7 +141,7 @@ func TestServer_SessionInjection(t *testing.T) {
 		},
 		{
 			name: "GetHealth",
-			setup: func(called *bool) resourcetest.Option {
+			setup: func(t *testing.T, called *bool) resourcetest.Option {
 				return func(p *resourcetest.TestProvider) {
 					p.GetHealthFunc = func(ctx context.Context, cid, key string, data json.RawMessage) (*resource.ResourceHealth, error) {
 						requireSession(t, ctx, connID)
@@ -158,7 +159,7 @@ func TestServer_SessionInjection(t *testing.T) {
 		},
 		{
 			name: "GetResourceEvents",
-			setup: func(called *bool) resourcetest.Option {
+			setup: func(t *testing.T, called *bool) resourcetest.Option {
 				return func(p *resourcetest.TestProvider) {
 					p.GetResourceEventsFunc = func(ctx context.Context, cid, key, id, ns string, limit int32) ([]resource.ResourceEvent, error) {
 						requireSession(t, ctx, connID)
@@ -179,7 +180,7 @@ func TestServer_SessionInjection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var called bool
-			tp := resourcetest.NewTestProvider(t, tt.setup(&called))
+			tp := resourcetest.NewTestProvider(t, tt.setup(t, &called))
 			srv := NewServer(tp, nil)
 			if err := tt.call(srv); err != nil {
 				t.Fatalf("unexpected error: %v", err)

@@ -339,6 +339,94 @@ func (x *ConnectionResponse) GetConnection() *common.Connection {
 	return nil
 }
 
+type CheckConnectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ConnectionId  string                 `protobuf:"bytes,1,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckConnectionRequest) Reset() {
+	*x = CheckConnectionRequest{}
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckConnectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckConnectionRequest) ProtoMessage() {}
+
+func (x *CheckConnectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckConnectionRequest.ProtoReflect.Descriptor instead.
+func (*CheckConnectionRequest) Descriptor() ([]byte, []int) {
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CheckConnectionRequest) GetConnectionId() string {
+	if x != nil {
+		return x.ConnectionId
+	}
+	return ""
+}
+
+type CheckConnectionResponse struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Status        *common.ConnectionStatus `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CheckConnectionResponse) Reset() {
+	*x = CheckConnectionResponse{}
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CheckConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CheckConnectionResponse) ProtoMessage() {}
+
+func (x *CheckConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CheckConnectionResponse.ProtoReflect.Descriptor instead.
+func (*CheckConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CheckConnectionResponse) GetStatus() *common.ConnectionStatus {
+	if x != nil {
+		return x.Status
+	}
+	return nil
+}
+
 type NamespacesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Namespaces    []string               `protobuf:"bytes,1,rep,name=namespaces,proto3" json:"namespaces,omitempty"`
@@ -348,7 +436,7 @@ type NamespacesResponse struct {
 
 func (x *NamespacesResponse) Reset() {
 	*x = NamespacesResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[5]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -360,7 +448,7 @@ func (x *NamespacesResponse) String() string {
 func (*NamespacesResponse) ProtoMessage() {}
 
 func (x *NamespacesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[5]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -373,7 +461,7 @@ func (x *NamespacesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NamespacesResponse.ProtoReflect.Descriptor instead.
 func (*NamespacesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{5}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *NamespacesResponse) GetNamespaces() []string {
@@ -395,7 +483,7 @@ type GetRequest struct {
 
 func (x *GetRequest) Reset() {
 	*x = GetRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[6]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -407,7 +495,7 @@ func (x *GetRequest) String() string {
 func (*GetRequest) ProtoMessage() {}
 
 func (x *GetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[6]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -420,7 +508,7 @@ func (x *GetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
 func (*GetRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{6}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetRequest) GetResourceKey() string {
@@ -461,7 +549,7 @@ type GetResponse struct {
 
 func (x *GetResponse) Reset() {
 	*x = GetResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[7]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -473,7 +561,7 @@ func (x *GetResponse) String() string {
 func (*GetResponse) ProtoMessage() {}
 
 func (x *GetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[7]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -486,7 +574,7 @@ func (x *GetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
 func (*GetResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{7}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetResponse) GetData() []byte {
@@ -516,7 +604,7 @@ type ListRequest struct {
 
 func (x *ListRequest) Reset() {
 	*x = ListRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[8]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -528,7 +616,7 @@ func (x *ListRequest) String() string {
 func (*ListRequest) ProtoMessage() {}
 
 func (x *ListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[8]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -541,7 +629,7 @@ func (x *ListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
 func (*ListRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{8}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListRequest) GetResourceKey() string {
@@ -591,7 +679,7 @@ type ListResponse struct {
 
 func (x *ListResponse) Reset() {
 	*x = ListResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[9]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -603,7 +691,7 @@ func (x *ListResponse) String() string {
 func (*ListResponse) ProtoMessage() {}
 
 func (x *ListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[9]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -616,7 +704,7 @@ func (x *ListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResponse.ProtoReflect.Descriptor instead.
 func (*ListResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{9}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListResponse) GetItems() [][]byte {
@@ -662,7 +750,7 @@ type FindRequest struct {
 
 func (x *FindRequest) Reset() {
 	*x = FindRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[10]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -674,7 +762,7 @@ func (x *FindRequest) String() string {
 func (*FindRequest) ProtoMessage() {}
 
 func (x *FindRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[10]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -687,7 +775,7 @@ func (x *FindRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FindRequest.ProtoReflect.Descriptor instead.
 func (*FindRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{10}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *FindRequest) GetResourceKey() string {
@@ -751,7 +839,7 @@ type FindResponse struct {
 
 func (x *FindResponse) Reset() {
 	*x = FindResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[11]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -763,7 +851,7 @@ func (x *FindResponse) String() string {
 func (*FindResponse) ProtoMessage() {}
 
 func (x *FindResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[11]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -776,7 +864,7 @@ func (x *FindResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FindResponse.ProtoReflect.Descriptor instead.
 func (*FindResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{11}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *FindResponse) GetItems() [][]byte {
@@ -819,7 +907,7 @@ type CreateRequest struct {
 
 func (x *CreateRequest) Reset() {
 	*x = CreateRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[12]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -831,7 +919,7 @@ func (x *CreateRequest) String() string {
 func (*CreateRequest) ProtoMessage() {}
 
 func (x *CreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[12]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -844,7 +932,7 @@ func (x *CreateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRequest.ProtoReflect.Descriptor instead.
 func (*CreateRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{12}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *CreateRequest) GetResourceKey() string {
@@ -885,7 +973,7 @@ type CreateResponse struct {
 
 func (x *CreateResponse) Reset() {
 	*x = CreateResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[13]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -897,7 +985,7 @@ func (x *CreateResponse) String() string {
 func (*CreateResponse) ProtoMessage() {}
 
 func (x *CreateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[13]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -910,7 +998,7 @@ func (x *CreateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateResponse.ProtoReflect.Descriptor instead.
 func (*CreateResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{13}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CreateResponse) GetData() []byte {
@@ -940,7 +1028,7 @@ type UpdateRequest struct {
 
 func (x *UpdateRequest) Reset() {
 	*x = UpdateRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[14]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -952,7 +1040,7 @@ func (x *UpdateRequest) String() string {
 func (*UpdateRequest) ProtoMessage() {}
 
 func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[14]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -965,7 +1053,7 @@ func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRequest.ProtoReflect.Descriptor instead.
 func (*UpdateRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{14}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UpdateRequest) GetResourceKey() string {
@@ -1013,7 +1101,7 @@ type UpdateResponse struct {
 
 func (x *UpdateResponse) Reset() {
 	*x = UpdateResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[15]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1025,7 +1113,7 @@ func (x *UpdateResponse) String() string {
 func (*UpdateResponse) ProtoMessage() {}
 
 func (x *UpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[15]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1038,7 +1126,7 @@ func (x *UpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateResponse.ProtoReflect.Descriptor instead.
 func (*UpdateResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{15}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UpdateResponse) GetData() []byte {
@@ -1068,7 +1156,7 @@ type DeleteRequest struct {
 
 func (x *DeleteRequest) Reset() {
 	*x = DeleteRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[16]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1080,7 +1168,7 @@ func (x *DeleteRequest) String() string {
 func (*DeleteRequest) ProtoMessage() {}
 
 func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[16]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1093,7 +1181,7 @@ func (x *DeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRequest.ProtoReflect.Descriptor instead.
 func (*DeleteRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{16}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *DeleteRequest) GetResourceKey() string {
@@ -1141,7 +1229,7 @@ type DeleteResponse struct {
 
 func (x *DeleteResponse) Reset() {
 	*x = DeleteResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[17]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1153,7 +1241,7 @@ func (x *DeleteResponse) String() string {
 func (*DeleteResponse) ProtoMessage() {}
 
 func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[17]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1166,7 +1254,7 @@ func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
 func (*DeleteResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{17}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *DeleteResponse) GetSuccess() bool {
@@ -1192,7 +1280,7 @@ type ResourceGroupsRequest struct {
 
 func (x *ResourceGroupsRequest) Reset() {
 	*x = ResourceGroupsRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[18]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1204,7 +1292,7 @@ func (x *ResourceGroupsRequest) String() string {
 func (*ResourceGroupsRequest) ProtoMessage() {}
 
 func (x *ResourceGroupsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[18]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1217,7 +1305,7 @@ func (x *ResourceGroupsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceGroupsRequest.ProtoReflect.Descriptor instead.
 func (*ResourceGroupsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{18}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ResourceGroupsRequest) GetConnectionId() string {
@@ -1236,7 +1324,7 @@ type ResourceGroupsResponse struct {
 
 func (x *ResourceGroupsResponse) Reset() {
 	*x = ResourceGroupsResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[19]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1248,7 +1336,7 @@ func (x *ResourceGroupsResponse) String() string {
 func (*ResourceGroupsResponse) ProtoMessage() {}
 
 func (x *ResourceGroupsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[19]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1261,7 +1349,7 @@ func (x *ResourceGroupsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceGroupsResponse.ProtoReflect.Descriptor instead.
 func (*ResourceGroupsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{19}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ResourceGroupsResponse) GetGroups() map[string]*common.ResourceGroup {
@@ -1280,7 +1368,7 @@ type ResourceTypesRequest struct {
 
 func (x *ResourceTypesRequest) Reset() {
 	*x = ResourceTypesRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[20]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1292,7 +1380,7 @@ func (x *ResourceTypesRequest) String() string {
 func (*ResourceTypesRequest) ProtoMessage() {}
 
 func (x *ResourceTypesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[20]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1305,7 +1393,7 @@ func (x *ResourceTypesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceTypesRequest.ProtoReflect.Descriptor instead.
 func (*ResourceTypesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{20}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ResourceTypesRequest) GetConnectionId() string {
@@ -1324,7 +1412,7 @@ type ResourceTypesResponse struct {
 
 func (x *ResourceTypesResponse) Reset() {
 	*x = ResourceTypesResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[21]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1336,7 +1424,7 @@ func (x *ResourceTypesResponse) String() string {
 func (*ResourceTypesResponse) ProtoMessage() {}
 
 func (x *ResourceTypesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[21]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1349,7 +1437,7 @@ func (x *ResourceTypesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceTypesResponse.ProtoReflect.Descriptor instead.
 func (*ResourceTypesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{21}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ResourceTypesResponse) GetTypes() map[string]*common.ResourceMeta {
@@ -1368,7 +1456,7 @@ type ResourceCapabilitiesRequest struct {
 
 func (x *ResourceCapabilitiesRequest) Reset() {
 	*x = ResourceCapabilitiesRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[22]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1380,7 +1468,7 @@ func (x *ResourceCapabilitiesRequest) String() string {
 func (*ResourceCapabilitiesRequest) ProtoMessage() {}
 
 func (x *ResourceCapabilitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[22]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1393,7 +1481,7 @@ func (x *ResourceCapabilitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceCapabilitiesRequest.ProtoReflect.Descriptor instead.
 func (*ResourceCapabilitiesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{22}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ResourceCapabilitiesRequest) GetResourceKey() string {
@@ -1412,7 +1500,7 @@ type ResourceCapabilitiesResponse struct {
 
 func (x *ResourceCapabilitiesResponse) Reset() {
 	*x = ResourceCapabilitiesResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[23]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1424,7 +1512,7 @@ func (x *ResourceCapabilitiesResponse) String() string {
 func (*ResourceCapabilitiesResponse) ProtoMessage() {}
 
 func (x *ResourceCapabilitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[23]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1437,7 +1525,7 @@ func (x *ResourceCapabilitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceCapabilitiesResponse.ProtoReflect.Descriptor instead.
 func (*ResourceCapabilitiesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{23}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ResourceCapabilitiesResponse) GetCapabilities() *ResourceCapabilities {
@@ -1471,7 +1559,7 @@ type ResourceCapabilities struct {
 
 func (x *ResourceCapabilities) Reset() {
 	*x = ResourceCapabilities{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[24]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1483,7 +1571,7 @@ func (x *ResourceCapabilities) String() string {
 func (*ResourceCapabilities) ProtoMessage() {}
 
 func (x *ResourceCapabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[24]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1496,7 +1584,7 @@ func (x *ResourceCapabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceCapabilities.ProtoReflect.Descriptor instead.
 func (*ResourceCapabilities) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{24}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ResourceCapabilities) GetCanGet() bool {
@@ -1621,7 +1709,7 @@ type ScaleHint struct {
 
 func (x *ScaleHint) Reset() {
 	*x = ScaleHint{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[25]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1633,7 +1721,7 @@ func (x *ScaleHint) String() string {
 func (*ScaleHint) ProtoMessage() {}
 
 func (x *ScaleHint) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[25]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1646,7 +1734,7 @@ func (x *ScaleHint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScaleHint.ProtoReflect.Descriptor instead.
 func (*ScaleHint) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{25}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ScaleHint) GetExpectedCount() ScaleCategory {
@@ -1673,7 +1761,7 @@ type FilterFieldsRequest struct {
 
 func (x *FilterFieldsRequest) Reset() {
 	*x = FilterFieldsRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[26]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1685,7 +1773,7 @@ func (x *FilterFieldsRequest) String() string {
 func (*FilterFieldsRequest) ProtoMessage() {}
 
 func (x *FilterFieldsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[26]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1698,7 +1786,7 @@ func (x *FilterFieldsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilterFieldsRequest.ProtoReflect.Descriptor instead.
 func (*FilterFieldsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{26}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *FilterFieldsRequest) GetConnectionId() string {
@@ -1724,7 +1812,7 @@ type FilterFieldsResponse struct {
 
 func (x *FilterFieldsResponse) Reset() {
 	*x = FilterFieldsResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[27]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1736,7 +1824,7 @@ func (x *FilterFieldsResponse) String() string {
 func (*FilterFieldsResponse) ProtoMessage() {}
 
 func (x *FilterFieldsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[27]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1749,7 +1837,7 @@ func (x *FilterFieldsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilterFieldsResponse.ProtoReflect.Descriptor instead.
 func (*FilterFieldsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{27}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *FilterFieldsResponse) GetFields() []*FilterField {
@@ -1769,7 +1857,7 @@ type ResourceSchemaRequest struct {
 
 func (x *ResourceSchemaRequest) Reset() {
 	*x = ResourceSchemaRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[28]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1781,7 +1869,7 @@ func (x *ResourceSchemaRequest) String() string {
 func (*ResourceSchemaRequest) ProtoMessage() {}
 
 func (x *ResourceSchemaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[28]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1794,7 +1882,7 @@ func (x *ResourceSchemaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceSchemaRequest.ProtoReflect.Descriptor instead.
 func (*ResourceSchemaRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{28}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ResourceSchemaRequest) GetConnectionId() string {
@@ -1820,7 +1908,7 @@ type ResourceSchemaResponse struct {
 
 func (x *ResourceSchemaResponse) Reset() {
 	*x = ResourceSchemaResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[29]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1832,7 +1920,7 @@ func (x *ResourceSchemaResponse) String() string {
 func (*ResourceSchemaResponse) ProtoMessage() {}
 
 func (x *ResourceSchemaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[29]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1845,7 +1933,7 @@ func (x *ResourceSchemaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceSchemaResponse.ProtoReflect.Descriptor instead.
 func (*ResourceSchemaResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{29}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ResourceSchemaResponse) GetSchema() []byte {
@@ -1864,7 +1952,7 @@ type EditorSchemasRequest struct {
 
 func (x *EditorSchemasRequest) Reset() {
 	*x = EditorSchemasRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[30]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1876,7 +1964,7 @@ func (x *EditorSchemasRequest) String() string {
 func (*EditorSchemasRequest) ProtoMessage() {}
 
 func (x *EditorSchemasRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[30]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1889,7 +1977,7 @@ func (x *EditorSchemasRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditorSchemasRequest.ProtoReflect.Descriptor instead.
 func (*EditorSchemasRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{30}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *EditorSchemasRequest) GetConnectionId() string {
@@ -1908,7 +1996,7 @@ type EditorSchemasResponse struct {
 
 func (x *EditorSchemasResponse) Reset() {
 	*x = EditorSchemasResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[31]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1920,7 +2008,7 @@ func (x *EditorSchemasResponse) String() string {
 func (*EditorSchemasResponse) ProtoMessage() {}
 
 func (x *EditorSchemasResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[31]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1933,7 +2021,7 @@ func (x *EditorSchemasResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EditorSchemasResponse.ProtoReflect.Descriptor instead.
 func (*EditorSchemasResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{31}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *EditorSchemasResponse) GetSchemas() []*common.EditorSchema {
@@ -1953,7 +2041,7 @@ type GetActionsRequest struct {
 
 func (x *GetActionsRequest) Reset() {
 	*x = GetActionsRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[32]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1965,7 +2053,7 @@ func (x *GetActionsRequest) String() string {
 func (*GetActionsRequest) ProtoMessage() {}
 
 func (x *GetActionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[32]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1978,7 +2066,7 @@ func (x *GetActionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetActionsRequest.ProtoReflect.Descriptor instead.
 func (*GetActionsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{32}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetActionsRequest) GetResourceKey() string {
@@ -2004,7 +2092,7 @@ type GetActionsResponse struct {
 
 func (x *GetActionsResponse) Reset() {
 	*x = GetActionsResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[33]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2016,7 +2104,7 @@ func (x *GetActionsResponse) String() string {
 func (*GetActionsResponse) ProtoMessage() {}
 
 func (x *GetActionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[33]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2029,7 +2117,7 @@ func (x *GetActionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetActionsResponse.ProtoReflect.Descriptor instead.
 func (*GetActionsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{33}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *GetActionsResponse) GetActions() []*ActionDescriptor {
@@ -2056,7 +2144,7 @@ type ActionDescriptor struct {
 
 func (x *ActionDescriptor) Reset() {
 	*x = ActionDescriptor{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[34]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2068,7 +2156,7 @@ func (x *ActionDescriptor) String() string {
 func (*ActionDescriptor) ProtoMessage() {}
 
 func (x *ActionDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[34]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2081,7 +2169,7 @@ func (x *ActionDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionDescriptor.ProtoReflect.Descriptor instead.
 func (*ActionDescriptor) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{34}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ActionDescriptor) GetId() string {
@@ -2159,7 +2247,7 @@ type ExecuteActionRequest struct {
 
 func (x *ExecuteActionRequest) Reset() {
 	*x = ExecuteActionRequest{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[35]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2171,7 +2259,7 @@ func (x *ExecuteActionRequest) String() string {
 func (*ExecuteActionRequest) ProtoMessage() {}
 
 func (x *ExecuteActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[35]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2184,7 +2272,7 @@ func (x *ExecuteActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteActionRequest.ProtoReflect.Descriptor instead.
 func (*ExecuteActionRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{35}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ExecuteActionRequest) GetResourceKey() string {
@@ -2226,7 +2314,7 @@ type ActionInput struct {
 
 func (x *ActionInput) Reset() {
 	*x = ActionInput{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[36]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2238,7 +2326,7 @@ func (x *ActionInput) String() string {
 func (*ActionInput) ProtoMessage() {}
 
 func (x *ActionInput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[36]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2251,7 +2339,7 @@ func (x *ActionInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionInput.ProtoReflect.Descriptor instead.
 func (*ActionInput) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{36}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ActionInput) GetResourceId() string {
@@ -2284,7 +2372,7 @@ type ExecuteActionResponse struct {
 
 func (x *ExecuteActionResponse) Reset() {
 	*x = ExecuteActionResponse{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[37]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2296,7 +2384,7 @@ func (x *ExecuteActionResponse) String() string {
 func (*ExecuteActionResponse) ProtoMessage() {}
 
 func (x *ExecuteActionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[37]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2309,7 +2397,7 @@ func (x *ExecuteActionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteActionResponse.ProtoReflect.Descriptor instead.
 func (*ExecuteActionResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{37}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ExecuteActionResponse) GetResult() *ActionResult {
@@ -2331,7 +2419,7 @@ type ActionResult struct {
 
 func (x *ActionResult) Reset() {
 	*x = ActionResult{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[38]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2343,7 +2431,7 @@ func (x *ActionResult) String() string {
 func (*ActionResult) ProtoMessage() {}
 
 func (x *ActionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[38]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2356,7 +2444,7 @@ func (x *ActionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionResult.ProtoReflect.Descriptor instead.
 func (*ActionResult) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{38}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ActionResult) GetSuccess() bool {
@@ -2400,7 +2488,7 @@ type StreamActionEvent struct {
 
 func (x *StreamActionEvent) Reset() {
 	*x = StreamActionEvent{}
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[39]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2412,7 +2500,7 @@ func (x *StreamActionEvent) String() string {
 func (*StreamActionEvent) ProtoMessage() {}
 
 func (x *StreamActionEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_resource_resource_proto_msgTypes[39]
+	mi := &file_proto_v1_resource_resource_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2425,7 +2513,7 @@ func (x *StreamActionEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamActionEvent.ProtoReflect.Descriptor instead.
 func (*StreamActionEvent) Descriptor() ([]byte, []int) {
-	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{39}
+	return file_proto_v1_resource_resource_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *StreamActionEvent) GetType() string {
@@ -2471,7 +2559,11 @@ const file_proto_v1_resource_resource_proto_rawDesc = "" +
 	"\x12ConnectionResponse\x12B\n" +
 	"\n" +
 	"connection\x18\x01 \x01(\v2\".omniview.sdk.common.v1.ConnectionR\n" +
-	"connection\"4\n" +
+	"connection\"=\n" +
+	"\x16CheckConnectionRequest\x12#\n" +
+	"\rconnection_id\x18\x01 \x01(\tR\fconnectionId\"[\n" +
+	"\x17CheckConnectionResponse\x12@\n" +
+	"\x06status\x18\x01 \x01(\v2(.omniview.sdk.common.v1.ConnectionStatusR\x06status\"4\n" +
 	"\x12NamespacesResponse\x12\x1e\n" +
 	"\n" +
 	"namespaces\x18\x01 \x03(\tR\n" +
@@ -2659,12 +2751,12 @@ const file_proto_v1_resource_resource_proto_rawDesc = "" +
 	"\x18ACTION_SCOPE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15ACTION_SCOPE_INSTANCE\x10\x01\x12\x1b\n" +
 	"\x17ACTION_SCOPE_COLLECTION\x10\x02\x12\x17\n" +
-	"\x13ACTION_SCOPE_GLOBAL\x10\x032\xa3\x19\n" +
+	"\x13ACTION_SCOPE_GLOBAL\x10\x032\xa7\x19\n" +
 	"\x0eResourcePlugin\x12v\n" +
 	"\x0fLoadConnections\x120.omniview.sdk.resource.v1.LoadConnectionsRequest\x1a1.omniview.sdk.resource.v1.LoadConnectionsResponse\x12r\n" +
 	"\x0fStartConnection\x12+.omniview.sdk.resource.v1.ConnectionRequest\x1a2.omniview.sdk.resource.v1.ConnectionStatusResponse\x12k\n" +
-	"\x0eStopConnection\x12+.omniview.sdk.resource.v1.ConnectionRequest\x1a,.omniview.sdk.resource.v1.ConnectionResponse\x12r\n" +
-	"\x0fCheckConnection\x12+.omniview.sdk.resource.v1.ConnectionRequest\x1a2.omniview.sdk.resource.v1.ConnectionStatusResponse\x12t\n" +
+	"\x0eStopConnection\x12+.omniview.sdk.resource.v1.ConnectionRequest\x1a,.omniview.sdk.resource.v1.ConnectionResponse\x12v\n" +
+	"\x0fCheckConnection\x120.omniview.sdk.resource.v1.CheckConnectionRequest\x1a1.omniview.sdk.resource.v1.CheckConnectionResponse\x12t\n" +
 	"\x17GetConnectionNamespaces\x12+.omniview.sdk.resource.v1.ConnectionRequest\x1a,.omniview.sdk.resource.v1.NamespacesResponse\x12R\n" +
 	"\x03Get\x12$.omniview.sdk.resource.v1.GetRequest\x1a%.omniview.sdk.resource.v1.GetResponse\x12U\n" +
 	"\x04List\x12%.omniview.sdk.resource.v1.ListRequest\x1a&.omniview.sdk.resource.v1.ListResponse\x12U\n" +
@@ -2705,7 +2797,7 @@ func file_proto_v1_resource_resource_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_v1_resource_resource_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_v1_resource_resource_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_proto_v1_resource_resource_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_proto_v1_resource_resource_proto_goTypes = []any{
 	(ScaleCategory)(0),                   // 0: omniview.sdk.resource.v1.ScaleCategory
 	(ActionScope)(0),                     // 1: omniview.sdk.resource.v1.ActionScope
@@ -2714,166 +2806,169 @@ var file_proto_v1_resource_resource_proto_goTypes = []any{
 	(*ConnectionRequest)(nil),            // 4: omniview.sdk.resource.v1.ConnectionRequest
 	(*ConnectionStatusResponse)(nil),     // 5: omniview.sdk.resource.v1.ConnectionStatusResponse
 	(*ConnectionResponse)(nil),           // 6: omniview.sdk.resource.v1.ConnectionResponse
-	(*NamespacesResponse)(nil),           // 7: omniview.sdk.resource.v1.NamespacesResponse
-	(*GetRequest)(nil),                   // 8: omniview.sdk.resource.v1.GetRequest
-	(*GetResponse)(nil),                  // 9: omniview.sdk.resource.v1.GetResponse
-	(*ListRequest)(nil),                  // 10: omniview.sdk.resource.v1.ListRequest
-	(*ListResponse)(nil),                 // 11: omniview.sdk.resource.v1.ListResponse
-	(*FindRequest)(nil),                  // 12: omniview.sdk.resource.v1.FindRequest
-	(*FindResponse)(nil),                 // 13: omniview.sdk.resource.v1.FindResponse
-	(*CreateRequest)(nil),                // 14: omniview.sdk.resource.v1.CreateRequest
-	(*CreateResponse)(nil),               // 15: omniview.sdk.resource.v1.CreateResponse
-	(*UpdateRequest)(nil),                // 16: omniview.sdk.resource.v1.UpdateRequest
-	(*UpdateResponse)(nil),               // 17: omniview.sdk.resource.v1.UpdateResponse
-	(*DeleteRequest)(nil),                // 18: omniview.sdk.resource.v1.DeleteRequest
-	(*DeleteResponse)(nil),               // 19: omniview.sdk.resource.v1.DeleteResponse
-	(*ResourceGroupsRequest)(nil),        // 20: omniview.sdk.resource.v1.ResourceGroupsRequest
-	(*ResourceGroupsResponse)(nil),       // 21: omniview.sdk.resource.v1.ResourceGroupsResponse
-	(*ResourceTypesRequest)(nil),         // 22: omniview.sdk.resource.v1.ResourceTypesRequest
-	(*ResourceTypesResponse)(nil),        // 23: omniview.sdk.resource.v1.ResourceTypesResponse
-	(*ResourceCapabilitiesRequest)(nil),  // 24: omniview.sdk.resource.v1.ResourceCapabilitiesRequest
-	(*ResourceCapabilitiesResponse)(nil), // 25: omniview.sdk.resource.v1.ResourceCapabilitiesResponse
-	(*ResourceCapabilities)(nil),         // 26: omniview.sdk.resource.v1.ResourceCapabilities
-	(*ScaleHint)(nil),                    // 27: omniview.sdk.resource.v1.ScaleHint
-	(*FilterFieldsRequest)(nil),          // 28: omniview.sdk.resource.v1.FilterFieldsRequest
-	(*FilterFieldsResponse)(nil),         // 29: omniview.sdk.resource.v1.FilterFieldsResponse
-	(*ResourceSchemaRequest)(nil),        // 30: omniview.sdk.resource.v1.ResourceSchemaRequest
-	(*ResourceSchemaResponse)(nil),       // 31: omniview.sdk.resource.v1.ResourceSchemaResponse
-	(*EditorSchemasRequest)(nil),         // 32: omniview.sdk.resource.v1.EditorSchemasRequest
-	(*EditorSchemasResponse)(nil),        // 33: omniview.sdk.resource.v1.EditorSchemasResponse
-	(*GetActionsRequest)(nil),            // 34: omniview.sdk.resource.v1.GetActionsRequest
-	(*GetActionsResponse)(nil),           // 35: omniview.sdk.resource.v1.GetActionsResponse
-	(*ActionDescriptor)(nil),             // 36: omniview.sdk.resource.v1.ActionDescriptor
-	(*ExecuteActionRequest)(nil),         // 37: omniview.sdk.resource.v1.ExecuteActionRequest
-	(*ActionInput)(nil),                  // 38: omniview.sdk.resource.v1.ActionInput
-	(*ExecuteActionResponse)(nil),        // 39: omniview.sdk.resource.v1.ExecuteActionResponse
-	(*ActionResult)(nil),                 // 40: omniview.sdk.resource.v1.ActionResult
-	(*StreamActionEvent)(nil),            // 41: omniview.sdk.resource.v1.StreamActionEvent
-	nil,                                  // 42: omniview.sdk.resource.v1.ResourceGroupsResponse.GroupsEntry
-	nil,                                  // 43: omniview.sdk.resource.v1.ResourceTypesResponse.TypesEntry
-	(*common.Connection)(nil),            // 44: omniview.sdk.common.v1.Connection
-	(*common.ConnectionStatus)(nil),      // 45: omniview.sdk.common.v1.ConnectionStatus
-	(*common.ResourceError)(nil),         // 46: omniview.sdk.common.v1.ResourceError
-	(*OrderField)(nil),                   // 47: omniview.sdk.resource.v1.OrderField
-	(*PaginationParams)(nil),             // 48: omniview.sdk.resource.v1.PaginationParams
-	(*FilterExpression)(nil),             // 49: omniview.sdk.resource.v1.FilterExpression
-	(*FilterField)(nil),                  // 50: omniview.sdk.resource.v1.FilterField
-	(*common.EditorSchema)(nil),          // 51: omniview.sdk.common.v1.EditorSchema
-	(*structpb.Struct)(nil),              // 52: google.protobuf.Struct
-	(*common.ResourceGroup)(nil),         // 53: omniview.sdk.common.v1.ResourceGroup
-	(*common.ResourceMeta)(nil),          // 54: omniview.sdk.common.v1.ResourceMeta
-	(*ListenRequest)(nil),                // 55: omniview.sdk.resource.v1.ListenRequest
-	(*WatchResourceRequest)(nil),         // 56: omniview.sdk.resource.v1.WatchResourceRequest
-	(*WatchConnectionsRequest)(nil),      // 57: omniview.sdk.resource.v1.WatchConnectionsRequest
-	(*GetWatchStateRequest)(nil),         // 58: omniview.sdk.resource.v1.GetWatchStateRequest
-	(*RelationshipsRequest)(nil),         // 59: omniview.sdk.resource.v1.RelationshipsRequest
-	(*ResolveRelationshipsRequest)(nil),  // 60: omniview.sdk.resource.v1.ResolveRelationshipsRequest
-	(*HealthRequest)(nil),                // 61: omniview.sdk.resource.v1.HealthRequest
-	(*ResourceEventsRequest)(nil),        // 62: omniview.sdk.resource.v1.ResourceEventsRequest
-	(*WatchEvent)(nil),                   // 63: omniview.sdk.resource.v1.WatchEvent
-	(*WatchResourceResponse)(nil),        // 64: omniview.sdk.resource.v1.WatchResourceResponse
-	(*WatchConnectionsResponse)(nil),     // 65: omniview.sdk.resource.v1.WatchConnectionsResponse
-	(*GetWatchStateResponse)(nil),        // 66: omniview.sdk.resource.v1.GetWatchStateResponse
-	(*RelationshipsResponse)(nil),        // 67: omniview.sdk.resource.v1.RelationshipsResponse
-	(*ResolveRelationshipsResponse)(nil), // 68: omniview.sdk.resource.v1.ResolveRelationshipsResponse
-	(*HealthResponse)(nil),               // 69: omniview.sdk.resource.v1.HealthResponse
-	(*ResourceEventsResponse)(nil),       // 70: omniview.sdk.resource.v1.ResourceEventsResponse
+	(*CheckConnectionRequest)(nil),       // 7: omniview.sdk.resource.v1.CheckConnectionRequest
+	(*CheckConnectionResponse)(nil),      // 8: omniview.sdk.resource.v1.CheckConnectionResponse
+	(*NamespacesResponse)(nil),           // 9: omniview.sdk.resource.v1.NamespacesResponse
+	(*GetRequest)(nil),                   // 10: omniview.sdk.resource.v1.GetRequest
+	(*GetResponse)(nil),                  // 11: omniview.sdk.resource.v1.GetResponse
+	(*ListRequest)(nil),                  // 12: omniview.sdk.resource.v1.ListRequest
+	(*ListResponse)(nil),                 // 13: omniview.sdk.resource.v1.ListResponse
+	(*FindRequest)(nil),                  // 14: omniview.sdk.resource.v1.FindRequest
+	(*FindResponse)(nil),                 // 15: omniview.sdk.resource.v1.FindResponse
+	(*CreateRequest)(nil),                // 16: omniview.sdk.resource.v1.CreateRequest
+	(*CreateResponse)(nil),               // 17: omniview.sdk.resource.v1.CreateResponse
+	(*UpdateRequest)(nil),                // 18: omniview.sdk.resource.v1.UpdateRequest
+	(*UpdateResponse)(nil),               // 19: omniview.sdk.resource.v1.UpdateResponse
+	(*DeleteRequest)(nil),                // 20: omniview.sdk.resource.v1.DeleteRequest
+	(*DeleteResponse)(nil),               // 21: omniview.sdk.resource.v1.DeleteResponse
+	(*ResourceGroupsRequest)(nil),        // 22: omniview.sdk.resource.v1.ResourceGroupsRequest
+	(*ResourceGroupsResponse)(nil),       // 23: omniview.sdk.resource.v1.ResourceGroupsResponse
+	(*ResourceTypesRequest)(nil),         // 24: omniview.sdk.resource.v1.ResourceTypesRequest
+	(*ResourceTypesResponse)(nil),        // 25: omniview.sdk.resource.v1.ResourceTypesResponse
+	(*ResourceCapabilitiesRequest)(nil),  // 26: omniview.sdk.resource.v1.ResourceCapabilitiesRequest
+	(*ResourceCapabilitiesResponse)(nil), // 27: omniview.sdk.resource.v1.ResourceCapabilitiesResponse
+	(*ResourceCapabilities)(nil),         // 28: omniview.sdk.resource.v1.ResourceCapabilities
+	(*ScaleHint)(nil),                    // 29: omniview.sdk.resource.v1.ScaleHint
+	(*FilterFieldsRequest)(nil),          // 30: omniview.sdk.resource.v1.FilterFieldsRequest
+	(*FilterFieldsResponse)(nil),         // 31: omniview.sdk.resource.v1.FilterFieldsResponse
+	(*ResourceSchemaRequest)(nil),        // 32: omniview.sdk.resource.v1.ResourceSchemaRequest
+	(*ResourceSchemaResponse)(nil),       // 33: omniview.sdk.resource.v1.ResourceSchemaResponse
+	(*EditorSchemasRequest)(nil),         // 34: omniview.sdk.resource.v1.EditorSchemasRequest
+	(*EditorSchemasResponse)(nil),        // 35: omniview.sdk.resource.v1.EditorSchemasResponse
+	(*GetActionsRequest)(nil),            // 36: omniview.sdk.resource.v1.GetActionsRequest
+	(*GetActionsResponse)(nil),           // 37: omniview.sdk.resource.v1.GetActionsResponse
+	(*ActionDescriptor)(nil),             // 38: omniview.sdk.resource.v1.ActionDescriptor
+	(*ExecuteActionRequest)(nil),         // 39: omniview.sdk.resource.v1.ExecuteActionRequest
+	(*ActionInput)(nil),                  // 40: omniview.sdk.resource.v1.ActionInput
+	(*ExecuteActionResponse)(nil),        // 41: omniview.sdk.resource.v1.ExecuteActionResponse
+	(*ActionResult)(nil),                 // 42: omniview.sdk.resource.v1.ActionResult
+	(*StreamActionEvent)(nil),            // 43: omniview.sdk.resource.v1.StreamActionEvent
+	nil,                                  // 44: omniview.sdk.resource.v1.ResourceGroupsResponse.GroupsEntry
+	nil,                                  // 45: omniview.sdk.resource.v1.ResourceTypesResponse.TypesEntry
+	(*common.Connection)(nil),            // 46: omniview.sdk.common.v1.Connection
+	(*common.ConnectionStatus)(nil),      // 47: omniview.sdk.common.v1.ConnectionStatus
+	(*common.ResourceError)(nil),         // 48: omniview.sdk.common.v1.ResourceError
+	(*OrderField)(nil),                   // 49: omniview.sdk.resource.v1.OrderField
+	(*PaginationParams)(nil),             // 50: omniview.sdk.resource.v1.PaginationParams
+	(*FilterExpression)(nil),             // 51: omniview.sdk.resource.v1.FilterExpression
+	(*FilterField)(nil),                  // 52: omniview.sdk.resource.v1.FilterField
+	(*common.EditorSchema)(nil),          // 53: omniview.sdk.common.v1.EditorSchema
+	(*structpb.Struct)(nil),              // 54: google.protobuf.Struct
+	(*common.ResourceGroup)(nil),         // 55: omniview.sdk.common.v1.ResourceGroup
+	(*common.ResourceMeta)(nil),          // 56: omniview.sdk.common.v1.ResourceMeta
+	(*ListenRequest)(nil),                // 57: omniview.sdk.resource.v1.ListenRequest
+	(*WatchResourceRequest)(nil),         // 58: omniview.sdk.resource.v1.WatchResourceRequest
+	(*WatchConnectionsRequest)(nil),      // 59: omniview.sdk.resource.v1.WatchConnectionsRequest
+	(*GetWatchStateRequest)(nil),         // 60: omniview.sdk.resource.v1.GetWatchStateRequest
+	(*RelationshipsRequest)(nil),         // 61: omniview.sdk.resource.v1.RelationshipsRequest
+	(*ResolveRelationshipsRequest)(nil),  // 62: omniview.sdk.resource.v1.ResolveRelationshipsRequest
+	(*HealthRequest)(nil),                // 63: omniview.sdk.resource.v1.HealthRequest
+	(*ResourceEventsRequest)(nil),        // 64: omniview.sdk.resource.v1.ResourceEventsRequest
+	(*WatchEvent)(nil),                   // 65: omniview.sdk.resource.v1.WatchEvent
+	(*WatchResourceResponse)(nil),        // 66: omniview.sdk.resource.v1.WatchResourceResponse
+	(*WatchConnectionsResponse)(nil),     // 67: omniview.sdk.resource.v1.WatchConnectionsResponse
+	(*GetWatchStateResponse)(nil),        // 68: omniview.sdk.resource.v1.GetWatchStateResponse
+	(*RelationshipsResponse)(nil),        // 69: omniview.sdk.resource.v1.RelationshipsResponse
+	(*ResolveRelationshipsResponse)(nil), // 70: omniview.sdk.resource.v1.ResolveRelationshipsResponse
+	(*HealthResponse)(nil),               // 71: omniview.sdk.resource.v1.HealthResponse
+	(*ResourceEventsResponse)(nil),       // 72: omniview.sdk.resource.v1.ResourceEventsResponse
 }
 var file_proto_v1_resource_resource_proto_depIdxs = []int32{
-	44, // 0: omniview.sdk.resource.v1.LoadConnectionsResponse.connections:type_name -> omniview.sdk.common.v1.Connection
-	45, // 1: omniview.sdk.resource.v1.ConnectionStatusResponse.status:type_name -> omniview.sdk.common.v1.ConnectionStatus
-	44, // 2: omniview.sdk.resource.v1.ConnectionResponse.connection:type_name -> omniview.sdk.common.v1.Connection
-	46, // 3: omniview.sdk.resource.v1.GetResponse.error:type_name -> omniview.sdk.common.v1.ResourceError
-	47, // 4: omniview.sdk.resource.v1.ListRequest.order:type_name -> omniview.sdk.resource.v1.OrderField
-	48, // 5: omniview.sdk.resource.v1.ListRequest.pagination:type_name -> omniview.sdk.resource.v1.PaginationParams
-	46, // 6: omniview.sdk.resource.v1.ListResponse.error:type_name -> omniview.sdk.common.v1.ResourceError
-	49, // 7: omniview.sdk.resource.v1.FindRequest.filters:type_name -> omniview.sdk.resource.v1.FilterExpression
-	47, // 8: omniview.sdk.resource.v1.FindRequest.order:type_name -> omniview.sdk.resource.v1.OrderField
-	48, // 9: omniview.sdk.resource.v1.FindRequest.pagination:type_name -> omniview.sdk.resource.v1.PaginationParams
-	46, // 10: omniview.sdk.resource.v1.FindResponse.error:type_name -> omniview.sdk.common.v1.ResourceError
-	46, // 11: omniview.sdk.resource.v1.CreateResponse.error:type_name -> omniview.sdk.common.v1.ResourceError
-	46, // 12: omniview.sdk.resource.v1.UpdateResponse.error:type_name -> omniview.sdk.common.v1.ResourceError
-	46, // 13: omniview.sdk.resource.v1.DeleteResponse.error:type_name -> omniview.sdk.common.v1.ResourceError
-	42, // 14: omniview.sdk.resource.v1.ResourceGroupsResponse.groups:type_name -> omniview.sdk.resource.v1.ResourceGroupsResponse.GroupsEntry
-	43, // 15: omniview.sdk.resource.v1.ResourceTypesResponse.types:type_name -> omniview.sdk.resource.v1.ResourceTypesResponse.TypesEntry
-	26, // 16: omniview.sdk.resource.v1.ResourceCapabilitiesResponse.capabilities:type_name -> omniview.sdk.resource.v1.ResourceCapabilities
-	27, // 17: omniview.sdk.resource.v1.ResourceCapabilities.scale_hint:type_name -> omniview.sdk.resource.v1.ScaleHint
-	0,  // 18: omniview.sdk.resource.v1.ScaleHint.expected_count:type_name -> omniview.sdk.resource.v1.ScaleCategory
-	50, // 19: omniview.sdk.resource.v1.FilterFieldsResponse.fields:type_name -> omniview.sdk.resource.v1.FilterField
-	51, // 20: omniview.sdk.resource.v1.EditorSchemasResponse.schemas:type_name -> omniview.sdk.common.v1.EditorSchema
-	36, // 21: omniview.sdk.resource.v1.GetActionsResponse.actions:type_name -> omniview.sdk.resource.v1.ActionDescriptor
-	1,  // 22: omniview.sdk.resource.v1.ActionDescriptor.scope:type_name -> omniview.sdk.resource.v1.ActionScope
-	38, // 23: omniview.sdk.resource.v1.ExecuteActionRequest.input:type_name -> omniview.sdk.resource.v1.ActionInput
-	52, // 24: omniview.sdk.resource.v1.ActionInput.params:type_name -> google.protobuf.Struct
-	40, // 25: omniview.sdk.resource.v1.ExecuteActionResponse.result:type_name -> omniview.sdk.resource.v1.ActionResult
-	52, // 26: omniview.sdk.resource.v1.ActionResult.data:type_name -> google.protobuf.Struct
-	46, // 27: omniview.sdk.resource.v1.ActionResult.error:type_name -> omniview.sdk.common.v1.ResourceError
-	52, // 28: omniview.sdk.resource.v1.StreamActionEvent.data:type_name -> google.protobuf.Struct
-	53, // 29: omniview.sdk.resource.v1.ResourceGroupsResponse.GroupsEntry.value:type_name -> omniview.sdk.common.v1.ResourceGroup
-	54, // 30: omniview.sdk.resource.v1.ResourceTypesResponse.TypesEntry.value:type_name -> omniview.sdk.common.v1.ResourceMeta
-	2,  // 31: omniview.sdk.resource.v1.ResourcePlugin.LoadConnections:input_type -> omniview.sdk.resource.v1.LoadConnectionsRequest
-	4,  // 32: omniview.sdk.resource.v1.ResourcePlugin.StartConnection:input_type -> omniview.sdk.resource.v1.ConnectionRequest
-	4,  // 33: omniview.sdk.resource.v1.ResourcePlugin.StopConnection:input_type -> omniview.sdk.resource.v1.ConnectionRequest
-	4,  // 34: omniview.sdk.resource.v1.ResourcePlugin.CheckConnection:input_type -> omniview.sdk.resource.v1.ConnectionRequest
-	4,  // 35: omniview.sdk.resource.v1.ResourcePlugin.GetConnectionNamespaces:input_type -> omniview.sdk.resource.v1.ConnectionRequest
-	8,  // 36: omniview.sdk.resource.v1.ResourcePlugin.Get:input_type -> omniview.sdk.resource.v1.GetRequest
-	10, // 37: omniview.sdk.resource.v1.ResourcePlugin.List:input_type -> omniview.sdk.resource.v1.ListRequest
-	12, // 38: omniview.sdk.resource.v1.ResourcePlugin.Find:input_type -> omniview.sdk.resource.v1.FindRequest
-	14, // 39: omniview.sdk.resource.v1.ResourcePlugin.Create:input_type -> omniview.sdk.resource.v1.CreateRequest
-	16, // 40: omniview.sdk.resource.v1.ResourcePlugin.Update:input_type -> omniview.sdk.resource.v1.UpdateRequest
-	18, // 41: omniview.sdk.resource.v1.ResourcePlugin.Delete:input_type -> omniview.sdk.resource.v1.DeleteRequest
-	20, // 42: omniview.sdk.resource.v1.ResourcePlugin.GetResourceGroups:input_type -> omniview.sdk.resource.v1.ResourceGroupsRequest
-	22, // 43: omniview.sdk.resource.v1.ResourcePlugin.GetResourceTypes:input_type -> omniview.sdk.resource.v1.ResourceTypesRequest
-	24, // 44: omniview.sdk.resource.v1.ResourcePlugin.GetResourceCapabilities:input_type -> omniview.sdk.resource.v1.ResourceCapabilitiesRequest
-	28, // 45: omniview.sdk.resource.v1.ResourcePlugin.GetFilterFields:input_type -> omniview.sdk.resource.v1.FilterFieldsRequest
-	30, // 46: omniview.sdk.resource.v1.ResourcePlugin.GetResourceSchema:input_type -> omniview.sdk.resource.v1.ResourceSchemaRequest
-	32, // 47: omniview.sdk.resource.v1.ResourcePlugin.GetEditorSchemas:input_type -> omniview.sdk.resource.v1.EditorSchemasRequest
-	34, // 48: omniview.sdk.resource.v1.ResourcePlugin.GetActions:input_type -> omniview.sdk.resource.v1.GetActionsRequest
-	37, // 49: omniview.sdk.resource.v1.ResourcePlugin.ExecuteAction:input_type -> omniview.sdk.resource.v1.ExecuteActionRequest
-	37, // 50: omniview.sdk.resource.v1.ResourcePlugin.StreamAction:input_type -> omniview.sdk.resource.v1.ExecuteActionRequest
-	55, // 51: omniview.sdk.resource.v1.ResourcePlugin.ListenForEvents:input_type -> omniview.sdk.resource.v1.ListenRequest
-	56, // 52: omniview.sdk.resource.v1.ResourcePlugin.EnsureResourceWatch:input_type -> omniview.sdk.resource.v1.WatchResourceRequest
-	56, // 53: omniview.sdk.resource.v1.ResourcePlugin.StopResourceWatch:input_type -> omniview.sdk.resource.v1.WatchResourceRequest
-	57, // 54: omniview.sdk.resource.v1.ResourcePlugin.WatchConnections:input_type -> omniview.sdk.resource.v1.WatchConnectionsRequest
-	58, // 55: omniview.sdk.resource.v1.ResourcePlugin.GetWatchState:input_type -> omniview.sdk.resource.v1.GetWatchStateRequest
-	59, // 56: omniview.sdk.resource.v1.ResourcePlugin.GetRelationships:input_type -> omniview.sdk.resource.v1.RelationshipsRequest
-	60, // 57: omniview.sdk.resource.v1.ResourcePlugin.ResolveRelationships:input_type -> omniview.sdk.resource.v1.ResolveRelationshipsRequest
-	61, // 58: omniview.sdk.resource.v1.ResourcePlugin.GetHealth:input_type -> omniview.sdk.resource.v1.HealthRequest
-	62, // 59: omniview.sdk.resource.v1.ResourcePlugin.GetResourceEvents:input_type -> omniview.sdk.resource.v1.ResourceEventsRequest
-	3,  // 60: omniview.sdk.resource.v1.ResourcePlugin.LoadConnections:output_type -> omniview.sdk.resource.v1.LoadConnectionsResponse
-	5,  // 61: omniview.sdk.resource.v1.ResourcePlugin.StartConnection:output_type -> omniview.sdk.resource.v1.ConnectionStatusResponse
-	6,  // 62: omniview.sdk.resource.v1.ResourcePlugin.StopConnection:output_type -> omniview.sdk.resource.v1.ConnectionResponse
-	5,  // 63: omniview.sdk.resource.v1.ResourcePlugin.CheckConnection:output_type -> omniview.sdk.resource.v1.ConnectionStatusResponse
-	7,  // 64: omniview.sdk.resource.v1.ResourcePlugin.GetConnectionNamespaces:output_type -> omniview.sdk.resource.v1.NamespacesResponse
-	9,  // 65: omniview.sdk.resource.v1.ResourcePlugin.Get:output_type -> omniview.sdk.resource.v1.GetResponse
-	11, // 66: omniview.sdk.resource.v1.ResourcePlugin.List:output_type -> omniview.sdk.resource.v1.ListResponse
-	13, // 67: omniview.sdk.resource.v1.ResourcePlugin.Find:output_type -> omniview.sdk.resource.v1.FindResponse
-	15, // 68: omniview.sdk.resource.v1.ResourcePlugin.Create:output_type -> omniview.sdk.resource.v1.CreateResponse
-	17, // 69: omniview.sdk.resource.v1.ResourcePlugin.Update:output_type -> omniview.sdk.resource.v1.UpdateResponse
-	19, // 70: omniview.sdk.resource.v1.ResourcePlugin.Delete:output_type -> omniview.sdk.resource.v1.DeleteResponse
-	21, // 71: omniview.sdk.resource.v1.ResourcePlugin.GetResourceGroups:output_type -> omniview.sdk.resource.v1.ResourceGroupsResponse
-	23, // 72: omniview.sdk.resource.v1.ResourcePlugin.GetResourceTypes:output_type -> omniview.sdk.resource.v1.ResourceTypesResponse
-	25, // 73: omniview.sdk.resource.v1.ResourcePlugin.GetResourceCapabilities:output_type -> omniview.sdk.resource.v1.ResourceCapabilitiesResponse
-	29, // 74: omniview.sdk.resource.v1.ResourcePlugin.GetFilterFields:output_type -> omniview.sdk.resource.v1.FilterFieldsResponse
-	31, // 75: omniview.sdk.resource.v1.ResourcePlugin.GetResourceSchema:output_type -> omniview.sdk.resource.v1.ResourceSchemaResponse
-	33, // 76: omniview.sdk.resource.v1.ResourcePlugin.GetEditorSchemas:output_type -> omniview.sdk.resource.v1.EditorSchemasResponse
-	35, // 77: omniview.sdk.resource.v1.ResourcePlugin.GetActions:output_type -> omniview.sdk.resource.v1.GetActionsResponse
-	39, // 78: omniview.sdk.resource.v1.ResourcePlugin.ExecuteAction:output_type -> omniview.sdk.resource.v1.ExecuteActionResponse
-	41, // 79: omniview.sdk.resource.v1.ResourcePlugin.StreamAction:output_type -> omniview.sdk.resource.v1.StreamActionEvent
-	63, // 80: omniview.sdk.resource.v1.ResourcePlugin.ListenForEvents:output_type -> omniview.sdk.resource.v1.WatchEvent
-	64, // 81: omniview.sdk.resource.v1.ResourcePlugin.EnsureResourceWatch:output_type -> omniview.sdk.resource.v1.WatchResourceResponse
-	64, // 82: omniview.sdk.resource.v1.ResourcePlugin.StopResourceWatch:output_type -> omniview.sdk.resource.v1.WatchResourceResponse
-	65, // 83: omniview.sdk.resource.v1.ResourcePlugin.WatchConnections:output_type -> omniview.sdk.resource.v1.WatchConnectionsResponse
-	66, // 84: omniview.sdk.resource.v1.ResourcePlugin.GetWatchState:output_type -> omniview.sdk.resource.v1.GetWatchStateResponse
-	67, // 85: omniview.sdk.resource.v1.ResourcePlugin.GetRelationships:output_type -> omniview.sdk.resource.v1.RelationshipsResponse
-	68, // 86: omniview.sdk.resource.v1.ResourcePlugin.ResolveRelationships:output_type -> omniview.sdk.resource.v1.ResolveRelationshipsResponse
-	69, // 87: omniview.sdk.resource.v1.ResourcePlugin.GetHealth:output_type -> omniview.sdk.resource.v1.HealthResponse
-	70, // 88: omniview.sdk.resource.v1.ResourcePlugin.GetResourceEvents:output_type -> omniview.sdk.resource.v1.ResourceEventsResponse
-	60, // [60:89] is the sub-list for method output_type
-	31, // [31:60] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	46, // 0: omniview.sdk.resource.v1.LoadConnectionsResponse.connections:type_name -> omniview.sdk.common.v1.Connection
+	47, // 1: omniview.sdk.resource.v1.ConnectionStatusResponse.status:type_name -> omniview.sdk.common.v1.ConnectionStatus
+	46, // 2: omniview.sdk.resource.v1.ConnectionResponse.connection:type_name -> omniview.sdk.common.v1.Connection
+	47, // 3: omniview.sdk.resource.v1.CheckConnectionResponse.status:type_name -> omniview.sdk.common.v1.ConnectionStatus
+	48, // 4: omniview.sdk.resource.v1.GetResponse.error:type_name -> omniview.sdk.common.v1.ResourceError
+	49, // 5: omniview.sdk.resource.v1.ListRequest.order:type_name -> omniview.sdk.resource.v1.OrderField
+	50, // 6: omniview.sdk.resource.v1.ListRequest.pagination:type_name -> omniview.sdk.resource.v1.PaginationParams
+	48, // 7: omniview.sdk.resource.v1.ListResponse.error:type_name -> omniview.sdk.common.v1.ResourceError
+	51, // 8: omniview.sdk.resource.v1.FindRequest.filters:type_name -> omniview.sdk.resource.v1.FilterExpression
+	49, // 9: omniview.sdk.resource.v1.FindRequest.order:type_name -> omniview.sdk.resource.v1.OrderField
+	50, // 10: omniview.sdk.resource.v1.FindRequest.pagination:type_name -> omniview.sdk.resource.v1.PaginationParams
+	48, // 11: omniview.sdk.resource.v1.FindResponse.error:type_name -> omniview.sdk.common.v1.ResourceError
+	48, // 12: omniview.sdk.resource.v1.CreateResponse.error:type_name -> omniview.sdk.common.v1.ResourceError
+	48, // 13: omniview.sdk.resource.v1.UpdateResponse.error:type_name -> omniview.sdk.common.v1.ResourceError
+	48, // 14: omniview.sdk.resource.v1.DeleteResponse.error:type_name -> omniview.sdk.common.v1.ResourceError
+	44, // 15: omniview.sdk.resource.v1.ResourceGroupsResponse.groups:type_name -> omniview.sdk.resource.v1.ResourceGroupsResponse.GroupsEntry
+	45, // 16: omniview.sdk.resource.v1.ResourceTypesResponse.types:type_name -> omniview.sdk.resource.v1.ResourceTypesResponse.TypesEntry
+	28, // 17: omniview.sdk.resource.v1.ResourceCapabilitiesResponse.capabilities:type_name -> omniview.sdk.resource.v1.ResourceCapabilities
+	29, // 18: omniview.sdk.resource.v1.ResourceCapabilities.scale_hint:type_name -> omniview.sdk.resource.v1.ScaleHint
+	0,  // 19: omniview.sdk.resource.v1.ScaleHint.expected_count:type_name -> omniview.sdk.resource.v1.ScaleCategory
+	52, // 20: omniview.sdk.resource.v1.FilterFieldsResponse.fields:type_name -> omniview.sdk.resource.v1.FilterField
+	53, // 21: omniview.sdk.resource.v1.EditorSchemasResponse.schemas:type_name -> omniview.sdk.common.v1.EditorSchema
+	38, // 22: omniview.sdk.resource.v1.GetActionsResponse.actions:type_name -> omniview.sdk.resource.v1.ActionDescriptor
+	1,  // 23: omniview.sdk.resource.v1.ActionDescriptor.scope:type_name -> omniview.sdk.resource.v1.ActionScope
+	40, // 24: omniview.sdk.resource.v1.ExecuteActionRequest.input:type_name -> omniview.sdk.resource.v1.ActionInput
+	54, // 25: omniview.sdk.resource.v1.ActionInput.params:type_name -> google.protobuf.Struct
+	42, // 26: omniview.sdk.resource.v1.ExecuteActionResponse.result:type_name -> omniview.sdk.resource.v1.ActionResult
+	54, // 27: omniview.sdk.resource.v1.ActionResult.data:type_name -> google.protobuf.Struct
+	48, // 28: omniview.sdk.resource.v1.ActionResult.error:type_name -> omniview.sdk.common.v1.ResourceError
+	54, // 29: omniview.sdk.resource.v1.StreamActionEvent.data:type_name -> google.protobuf.Struct
+	55, // 30: omniview.sdk.resource.v1.ResourceGroupsResponse.GroupsEntry.value:type_name -> omniview.sdk.common.v1.ResourceGroup
+	56, // 31: omniview.sdk.resource.v1.ResourceTypesResponse.TypesEntry.value:type_name -> omniview.sdk.common.v1.ResourceMeta
+	2,  // 32: omniview.sdk.resource.v1.ResourcePlugin.LoadConnections:input_type -> omniview.sdk.resource.v1.LoadConnectionsRequest
+	4,  // 33: omniview.sdk.resource.v1.ResourcePlugin.StartConnection:input_type -> omniview.sdk.resource.v1.ConnectionRequest
+	4,  // 34: omniview.sdk.resource.v1.ResourcePlugin.StopConnection:input_type -> omniview.sdk.resource.v1.ConnectionRequest
+	7,  // 35: omniview.sdk.resource.v1.ResourcePlugin.CheckConnection:input_type -> omniview.sdk.resource.v1.CheckConnectionRequest
+	4,  // 36: omniview.sdk.resource.v1.ResourcePlugin.GetConnectionNamespaces:input_type -> omniview.sdk.resource.v1.ConnectionRequest
+	10, // 37: omniview.sdk.resource.v1.ResourcePlugin.Get:input_type -> omniview.sdk.resource.v1.GetRequest
+	12, // 38: omniview.sdk.resource.v1.ResourcePlugin.List:input_type -> omniview.sdk.resource.v1.ListRequest
+	14, // 39: omniview.sdk.resource.v1.ResourcePlugin.Find:input_type -> omniview.sdk.resource.v1.FindRequest
+	16, // 40: omniview.sdk.resource.v1.ResourcePlugin.Create:input_type -> omniview.sdk.resource.v1.CreateRequest
+	18, // 41: omniview.sdk.resource.v1.ResourcePlugin.Update:input_type -> omniview.sdk.resource.v1.UpdateRequest
+	20, // 42: omniview.sdk.resource.v1.ResourcePlugin.Delete:input_type -> omniview.sdk.resource.v1.DeleteRequest
+	22, // 43: omniview.sdk.resource.v1.ResourcePlugin.GetResourceGroups:input_type -> omniview.sdk.resource.v1.ResourceGroupsRequest
+	24, // 44: omniview.sdk.resource.v1.ResourcePlugin.GetResourceTypes:input_type -> omniview.sdk.resource.v1.ResourceTypesRequest
+	26, // 45: omniview.sdk.resource.v1.ResourcePlugin.GetResourceCapabilities:input_type -> omniview.sdk.resource.v1.ResourceCapabilitiesRequest
+	30, // 46: omniview.sdk.resource.v1.ResourcePlugin.GetFilterFields:input_type -> omniview.sdk.resource.v1.FilterFieldsRequest
+	32, // 47: omniview.sdk.resource.v1.ResourcePlugin.GetResourceSchema:input_type -> omniview.sdk.resource.v1.ResourceSchemaRequest
+	34, // 48: omniview.sdk.resource.v1.ResourcePlugin.GetEditorSchemas:input_type -> omniview.sdk.resource.v1.EditorSchemasRequest
+	36, // 49: omniview.sdk.resource.v1.ResourcePlugin.GetActions:input_type -> omniview.sdk.resource.v1.GetActionsRequest
+	39, // 50: omniview.sdk.resource.v1.ResourcePlugin.ExecuteAction:input_type -> omniview.sdk.resource.v1.ExecuteActionRequest
+	39, // 51: omniview.sdk.resource.v1.ResourcePlugin.StreamAction:input_type -> omniview.sdk.resource.v1.ExecuteActionRequest
+	57, // 52: omniview.sdk.resource.v1.ResourcePlugin.ListenForEvents:input_type -> omniview.sdk.resource.v1.ListenRequest
+	58, // 53: omniview.sdk.resource.v1.ResourcePlugin.EnsureResourceWatch:input_type -> omniview.sdk.resource.v1.WatchResourceRequest
+	58, // 54: omniview.sdk.resource.v1.ResourcePlugin.StopResourceWatch:input_type -> omniview.sdk.resource.v1.WatchResourceRequest
+	59, // 55: omniview.sdk.resource.v1.ResourcePlugin.WatchConnections:input_type -> omniview.sdk.resource.v1.WatchConnectionsRequest
+	60, // 56: omniview.sdk.resource.v1.ResourcePlugin.GetWatchState:input_type -> omniview.sdk.resource.v1.GetWatchStateRequest
+	61, // 57: omniview.sdk.resource.v1.ResourcePlugin.GetRelationships:input_type -> omniview.sdk.resource.v1.RelationshipsRequest
+	62, // 58: omniview.sdk.resource.v1.ResourcePlugin.ResolveRelationships:input_type -> omniview.sdk.resource.v1.ResolveRelationshipsRequest
+	63, // 59: omniview.sdk.resource.v1.ResourcePlugin.GetHealth:input_type -> omniview.sdk.resource.v1.HealthRequest
+	64, // 60: omniview.sdk.resource.v1.ResourcePlugin.GetResourceEvents:input_type -> omniview.sdk.resource.v1.ResourceEventsRequest
+	3,  // 61: omniview.sdk.resource.v1.ResourcePlugin.LoadConnections:output_type -> omniview.sdk.resource.v1.LoadConnectionsResponse
+	5,  // 62: omniview.sdk.resource.v1.ResourcePlugin.StartConnection:output_type -> omniview.sdk.resource.v1.ConnectionStatusResponse
+	6,  // 63: omniview.sdk.resource.v1.ResourcePlugin.StopConnection:output_type -> omniview.sdk.resource.v1.ConnectionResponse
+	8,  // 64: omniview.sdk.resource.v1.ResourcePlugin.CheckConnection:output_type -> omniview.sdk.resource.v1.CheckConnectionResponse
+	9,  // 65: omniview.sdk.resource.v1.ResourcePlugin.GetConnectionNamespaces:output_type -> omniview.sdk.resource.v1.NamespacesResponse
+	11, // 66: omniview.sdk.resource.v1.ResourcePlugin.Get:output_type -> omniview.sdk.resource.v1.GetResponse
+	13, // 67: omniview.sdk.resource.v1.ResourcePlugin.List:output_type -> omniview.sdk.resource.v1.ListResponse
+	15, // 68: omniview.sdk.resource.v1.ResourcePlugin.Find:output_type -> omniview.sdk.resource.v1.FindResponse
+	17, // 69: omniview.sdk.resource.v1.ResourcePlugin.Create:output_type -> omniview.sdk.resource.v1.CreateResponse
+	19, // 70: omniview.sdk.resource.v1.ResourcePlugin.Update:output_type -> omniview.sdk.resource.v1.UpdateResponse
+	21, // 71: omniview.sdk.resource.v1.ResourcePlugin.Delete:output_type -> omniview.sdk.resource.v1.DeleteResponse
+	23, // 72: omniview.sdk.resource.v1.ResourcePlugin.GetResourceGroups:output_type -> omniview.sdk.resource.v1.ResourceGroupsResponse
+	25, // 73: omniview.sdk.resource.v1.ResourcePlugin.GetResourceTypes:output_type -> omniview.sdk.resource.v1.ResourceTypesResponse
+	27, // 74: omniview.sdk.resource.v1.ResourcePlugin.GetResourceCapabilities:output_type -> omniview.sdk.resource.v1.ResourceCapabilitiesResponse
+	31, // 75: omniview.sdk.resource.v1.ResourcePlugin.GetFilterFields:output_type -> omniview.sdk.resource.v1.FilterFieldsResponse
+	33, // 76: omniview.sdk.resource.v1.ResourcePlugin.GetResourceSchema:output_type -> omniview.sdk.resource.v1.ResourceSchemaResponse
+	35, // 77: omniview.sdk.resource.v1.ResourcePlugin.GetEditorSchemas:output_type -> omniview.sdk.resource.v1.EditorSchemasResponse
+	37, // 78: omniview.sdk.resource.v1.ResourcePlugin.GetActions:output_type -> omniview.sdk.resource.v1.GetActionsResponse
+	41, // 79: omniview.sdk.resource.v1.ResourcePlugin.ExecuteAction:output_type -> omniview.sdk.resource.v1.ExecuteActionResponse
+	43, // 80: omniview.sdk.resource.v1.ResourcePlugin.StreamAction:output_type -> omniview.sdk.resource.v1.StreamActionEvent
+	65, // 81: omniview.sdk.resource.v1.ResourcePlugin.ListenForEvents:output_type -> omniview.sdk.resource.v1.WatchEvent
+	66, // 82: omniview.sdk.resource.v1.ResourcePlugin.EnsureResourceWatch:output_type -> omniview.sdk.resource.v1.WatchResourceResponse
+	66, // 83: omniview.sdk.resource.v1.ResourcePlugin.StopResourceWatch:output_type -> omniview.sdk.resource.v1.WatchResourceResponse
+	67, // 84: omniview.sdk.resource.v1.ResourcePlugin.WatchConnections:output_type -> omniview.sdk.resource.v1.WatchConnectionsResponse
+	68, // 85: omniview.sdk.resource.v1.ResourcePlugin.GetWatchState:output_type -> omniview.sdk.resource.v1.GetWatchStateResponse
+	69, // 86: omniview.sdk.resource.v1.ResourcePlugin.GetRelationships:output_type -> omniview.sdk.resource.v1.RelationshipsResponse
+	70, // 87: omniview.sdk.resource.v1.ResourcePlugin.ResolveRelationships:output_type -> omniview.sdk.resource.v1.ResolveRelationshipsResponse
+	71, // 88: omniview.sdk.resource.v1.ResourcePlugin.GetHealth:output_type -> omniview.sdk.resource.v1.HealthResponse
+	72, // 89: omniview.sdk.resource.v1.ResourcePlugin.GetResourceEvents:output_type -> omniview.sdk.resource.v1.ResourceEventsResponse
+	61, // [61:90] is the sub-list for method output_type
+	32, // [32:61] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_resource_resource_proto_init() }
@@ -2885,14 +2980,14 @@ func file_proto_v1_resource_resource_proto_init() {
 	file_proto_v1_resource_watch_proto_init()
 	file_proto_v1_resource_relationship_proto_init()
 	file_proto_v1_resource_health_proto_init()
-	file_proto_v1_resource_resource_proto_msgTypes[16].OneofWrappers = []any{}
+	file_proto_v1_resource_resource_proto_msgTypes[18].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_resource_resource_proto_rawDesc), len(file_proto_v1_resource_resource_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   42,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
