@@ -392,16 +392,19 @@ func (m *watchManager[ClientT]) WaitForConnectionReady(ctx context.Context, conn
 // AddListener registers a WatchEventSink for event fan-out.
 // Any state events buffered before the first listener registered are replayed.
 func (m *watchManager[ClientT]) AddListener(sink WatchEventSink) {
+	// Lock ordering: listenersMu → pendingMu (same as OnStateChange).
+	// Hold both while adding the listener and draining the buffer so that
+	// OnStateChange cannot append between the drain and the listener being
+	// visible.
 	m.listenersMu.Lock()
 	m.listeners = append(m.listeners, sink)
-	m.listenersMu.Unlock()
-
-	// Replay buffered state events so the engine gets the full sync progress.
 	m.pendingMu.Lock()
 	pending := m.pendingStateEvents
 	m.pendingStateEvents = nil
 	m.pendingMu.Unlock()
+	m.listenersMu.Unlock()
 
+	// Replay buffered state events so the engine gets the full sync progress.
 	m.log.Debugw(context.Background(), "replaying buffered watch state events", "count", len(pending))
 	for _, evt := range pending {
 		m.log.Debugw(context.Background(), "replay watch state event",
@@ -480,15 +483,12 @@ func (s *fanOutSink[ClientT]) OnStateChange(e WatchStateEvent) {
 	}
 	s.mgr.mu.Unlock()
 
-	// NOTE: There is a narrow TOCTOU window between releasing m.mu above and
-	// acquiring listenersMu below. If AddListener runs in between, it may
-	// drain pendingStateEvents before this event is buffered, causing it to
-	// be lost. This is acceptable because (a) the window is extremely narrow,
-	// (b) only state events are affected (data events are unaffected), and
-	// (c) the next state event will self-correct the listener's view.
+	// Lock ordering: listenersMu → pendingMu (same as AddListener).
+	// Hold listenersMu.RLock while checking listeners AND while appending to
+	// pending so that AddListener (which takes listenersMu.Lock) cannot drain
+	// the buffer between our empty-check and the append.
 	s.mgr.listenersMu.RLock()
 	if len(s.mgr.listeners) == 0 {
-		s.mgr.listenersMu.RUnlock()
 		s.mgr.log.Debugw(context.Background(), "watch state buffered (no listeners)",
 			"connection_id", s.connectionID,
 			"resource_key", e.ResourceKey,
@@ -499,6 +499,7 @@ func (s *fanOutSink[ClientT]) OnStateChange(e WatchStateEvent) {
 			s.mgr.pendingStateEvents = append(s.mgr.pendingStateEvents, e)
 		}
 		s.mgr.pendingMu.Unlock()
+		s.mgr.listenersMu.RUnlock()
 		return
 	}
 	s.mgr.log.Debugw(context.Background(), "watch state fan-out",

@@ -573,10 +573,18 @@ func (c *resourceController[ClientT]) WatchConnections(ctx context.Context, stre
 				if err := c.watchMgr.StopConnectionWatch(ctx, id); err != nil {
 					c.log.Warnw(ctx, "failed to stop connection watch during reconcile", "connection_id", id, "error", err)
 				}
-				if _, err := c.connMgr.StopConnection(ctx, id); err != nil {
-					c.log.Warnw(ctx, "failed to stop connection during reconcile", "connection_id", id, "error", err)
+				conn, stopErr := c.connMgr.StopConnection(ctx, id)
+				if stopErr != nil {
+					c.log.Warnw(ctx, "failed to stop connection during reconcile", "connection_id", id, "error", stopErr)
 				}
 				c.evictFilterFieldCache(id)
+				// Clean up type manager state so GetResourceTypes/GetResourceGroups
+				// don't serve stale data for removed connections.
+				if stopErr == nil {
+					if err := c.typeMgr.OnConnectionRemoved(ctx, &conn); err != nil {
+						c.log.Warnw(ctx, "failed to clean up type manager during reconcile", "connection_id", id, "error", err)
+					}
+				}
 			}
 			select {
 			case stream <- conns:

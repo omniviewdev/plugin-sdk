@@ -174,9 +174,12 @@ func (m *Manager) StartPortForwardSession(
 		pluginctx = &types.PluginContext{}
 	}
 	// Port-forward sessions are long-lived and must outlive the initiating
-	// RPC call. Use context.Background() — session lifecycle is managed
-	// entirely through the cancel function stored in sessionEntry.
+	// RPC call. Use WithoutCancel to detach from the RPC deadline while
+	// preserving any request-scoped values (e.g. middleware metadata).
 	baseCtx := context.Background()
+	if pluginctx.Context != nil {
+		baseCtx = context.WithoutCancel(pluginctx.Context)
+	}
 
 	logger := m.log.With(logging.String("connection_type", string(opts.ConnectionType)))
 
