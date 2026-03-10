@@ -85,6 +85,7 @@ func (s *server) LoadConnections(ctx context.Context, _ *resourcepb.LoadConnecti
 }
 
 func (s *server) StartConnection(ctx context.Context, req *resourcepb.ConnectionRequest) (*resourcepb.ConnectionStatusResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	status, err := s.provider.StartConnection(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, err
@@ -96,7 +97,21 @@ func (s *server) StartConnection(ctx context.Context, req *resourcepb.Connection
 	return &resourcepb.ConnectionStatusResponse{Status: pbStatus}, nil
 }
 
+func (s *server) CheckConnection(ctx context.Context, req *resourcepb.CheckConnectionRequest) (*resourcepb.CheckConnectionResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
+	status, err := s.provider.CheckConnection(ctx, req.GetConnectionId())
+	if err != nil {
+		return nil, err
+	}
+	pbStatus, err := connectionStatusToProto(status)
+	if err != nil {
+		return nil, err
+	}
+	return &resourcepb.CheckConnectionResponse{Status: pbStatus}, nil
+}
+
 func (s *server) StopConnection(ctx context.Context, req *resourcepb.ConnectionRequest) (*resourcepb.ConnectionResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	conn, err := s.provider.StopConnection(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, err
@@ -252,6 +267,7 @@ func (s *server) Delete(ctx context.Context, req *resourcepb.DeleteRequest) (*re
 // ============================================================================
 
 func (s *server) GetResourceGroups(ctx context.Context, req *resourcepb.ResourceGroupsRequest) (*resourcepb.ResourceGroupsResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	groups := s.provider.GetResourceGroups(ctx, req.GetConnectionId())
 	pbGroups := make(map[string]*commonpb.ResourceGroup, len(groups))
 	for k, g := range groups {
@@ -261,6 +277,7 @@ func (s *server) GetResourceGroups(ctx context.Context, req *resourcepb.Resource
 }
 
 func (s *server) GetResourceTypes(ctx context.Context, req *resourcepb.ResourceTypesRequest) (*resourcepb.ResourceTypesResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	types := s.provider.GetResourceTypes(ctx, req.GetConnectionId())
 	pbTypes := make(map[string]*commonpb.ResourceMeta, len(types))
 	for k, m := range types {
@@ -278,6 +295,7 @@ func (s *server) GetResourceCapabilities(ctx context.Context, req *resourcepb.Re
 }
 
 func (s *server) GetFilterFields(ctx context.Context, req *resourcepb.FilterFieldsRequest) (*resourcepb.FilterFieldsResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	fields, err := s.provider.GetFilterFields(ctx, req.GetConnectionId(), req.GetResourceKey())
 	if err != nil {
 		return nil, err
@@ -290,6 +308,7 @@ func (s *server) GetFilterFields(ctx context.Context, req *resourcepb.FilterFiel
 }
 
 func (s *server) GetResourceSchema(ctx context.Context, req *resourcepb.ResourceSchemaRequest) (*resourcepb.ResourceSchemaResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	schema, err := s.provider.GetResourceSchema(ctx, req.GetConnectionId(), req.GetResourceKey())
 	if err != nil {
 		return nil, err
@@ -298,6 +317,7 @@ func (s *server) GetResourceSchema(ctx context.Context, req *resourcepb.Resource
 }
 
 func (s *server) GetEditorSchemas(ctx context.Context, req *resourcepb.EditorSchemasRequest) (*resourcepb.EditorSchemasResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	schemas, err := s.provider.GetEditorSchemas(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, err
@@ -578,6 +598,7 @@ func (s *server) GetRelationships(ctx context.Context, req *resourcepb.Relations
 }
 
 func (s *server) ResolveRelationships(ctx context.Context, req *resourcepb.ResolveRelationshipsRequest) (*resourcepb.ResolveRelationshipsResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	resolved, err := s.provider.ResolveRelationships(ctx, req.GetConnectionId(), req.GetResourceKey(), req.GetId(), req.GetNamespace())
 	if err != nil {
 		return nil, err
@@ -594,6 +615,7 @@ func (s *server) ResolveRelationships(ctx context.Context, req *resourcepb.Resol
 // ============================================================================
 
 func (s *server) GetHealth(ctx context.Context, req *resourcepb.HealthRequest) (*resourcepb.HealthResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	health, err := s.provider.GetHealth(ctx, req.GetConnectionId(), req.GetResourceKey(), json.RawMessage(req.GetData()))
 	if err != nil {
 		return nil, err
@@ -602,6 +624,7 @@ func (s *server) GetHealth(ctx context.Context, req *resourcepb.HealthRequest) (
 }
 
 func (s *server) GetResourceEvents(ctx context.Context, req *resourcepb.ResourceEventsRequest) (*resourcepb.ResourceEventsResponse, error) {
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	events, err := s.provider.GetResourceEvents(ctx, req.GetConnectionId(), req.GetResourceKey(), req.GetId(), req.GetNamespace(), req.GetLimit())
 	if err != nil {
 		return nil, err

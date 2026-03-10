@@ -2,6 +2,8 @@ package networker
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"maps"
 	"sync"
@@ -164,7 +166,7 @@ type sessionEntry struct {
 	mu      sync.RWMutex
 	session PortForwardSession
 	ctx     context.Context
-	cancel  func()
+	cancel  context.CancelCauseFunc
 }
 
 // transition performs a validated state transition. Returns an error if
@@ -517,6 +519,55 @@ type PortForwardSessionOptions struct {
 	Encryption     PortForwardSessionEncryption `json:"encryption"`
 	LocalPort      int32                        `json:"local_port"`
 	RemotePort     int32                        `json:"remote_port"`
+}
+
+func (o *PortForwardSessionOptions) UnmarshalJSON(data []byte) error {
+	type Alias PortForwardSessionOptions
+	aux := &struct {
+		*Alias
+		Connection json.RawMessage `json:"connection"`
+	}{
+		Alias: (*Alias)(o),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	if len(aux.Connection) == 0 {
+		return nil
+	}
+
+	// Reject JSON null payloads early.
+	if string(aux.Connection) == "null" {
+		return fmt.Errorf("connection payload is null")
+	}
+
+	switch o.ConnectionType {
+	case PortForwardConnectionTypeResource:
+		var m map[string]any
+		if err := json.Unmarshal(aux.Connection, &m); err != nil {
+			return fmt.Errorf("unmarshal resource connection: %w", err)
+		}
+		if m == nil {
+			return fmt.Errorf("resource connection payload decoded to nil")
+		}
+		o.Connection = PortForwardResourceConnectionFromJson(m)
+	case PortForwardConnectionTypeStatic:
+		var m map[string]any
+		if err := json.Unmarshal(aux.Connection, &m); err != nil {
+			return fmt.Errorf("unmarshal static connection: %w", err)
+		}
+		if m == nil {
+			return fmt.Errorf("static connection payload decoded to nil")
+		}
+		o.Connection = PortForwardStaticConnectionFromJson(m)
+	case "":
+		return fmt.Errorf("connection_type is empty but connection payload is present")
+	default:
+		return fmt.Errorf("unknown connection_type %q", o.ConnectionType)
+	}
+
+	return nil
 }
 
 type ResourcePortForwardHandlerOpts struct {

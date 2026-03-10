@@ -22,6 +22,7 @@ const (
 	ResourcePlugin_LoadConnections_FullMethodName         = "/omniview.sdk.resource.v1.ResourcePlugin/LoadConnections"
 	ResourcePlugin_StartConnection_FullMethodName         = "/omniview.sdk.resource.v1.ResourcePlugin/StartConnection"
 	ResourcePlugin_StopConnection_FullMethodName          = "/omniview.sdk.resource.v1.ResourcePlugin/StopConnection"
+	ResourcePlugin_CheckConnection_FullMethodName         = "/omniview.sdk.resource.v1.ResourcePlugin/CheckConnection"
 	ResourcePlugin_GetConnectionNamespaces_FullMethodName = "/omniview.sdk.resource.v1.ResourcePlugin/GetConnectionNamespaces"
 	ResourcePlugin_Get_FullMethodName                     = "/omniview.sdk.resource.v1.ResourcePlugin/Get"
 	ResourcePlugin_List_FullMethodName                    = "/omniview.sdk.resource.v1.ResourcePlugin/List"
@@ -57,6 +58,7 @@ type ResourcePluginClient interface {
 	LoadConnections(ctx context.Context, in *LoadConnectionsRequest, opts ...grpc.CallOption) (*LoadConnectionsResponse, error)
 	StartConnection(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*ConnectionStatusResponse, error)
 	StopConnection(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*ConnectionResponse, error)
+	CheckConnection(ctx context.Context, in *CheckConnectionRequest, opts ...grpc.CallOption) (*CheckConnectionResponse, error)
 	GetConnectionNamespaces(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*NamespacesResponse, error)
 	// CRUD
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
@@ -119,6 +121,15 @@ func (c *resourcePluginClient) StartConnection(ctx context.Context, in *Connecti
 func (c *resourcePluginClient) StopConnection(ctx context.Context, in *ConnectionRequest, opts ...grpc.CallOption) (*ConnectionResponse, error) {
 	out := new(ConnectionResponse)
 	err := c.cc.Invoke(ctx, ResourcePlugin_StopConnection_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *resourcePluginClient) CheckConnection(ctx context.Context, in *CheckConnectionRequest, opts ...grpc.CallOption) (*CheckConnectionResponse, error) {
+	out := new(CheckConnectionResponse)
+	err := c.cc.Invoke(ctx, ResourcePlugin_CheckConnection_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -427,6 +438,7 @@ type ResourcePluginServer interface {
 	LoadConnections(context.Context, *LoadConnectionsRequest) (*LoadConnectionsResponse, error)
 	StartConnection(context.Context, *ConnectionRequest) (*ConnectionStatusResponse, error)
 	StopConnection(context.Context, *ConnectionRequest) (*ConnectionResponse, error)
+	CheckConnection(context.Context, *CheckConnectionRequest) (*CheckConnectionResponse, error)
 	GetConnectionNamespaces(context.Context, *ConnectionRequest) (*NamespacesResponse, error)
 	// CRUD
 	Get(context.Context, *GetRequest) (*GetResponse, error)
@@ -472,6 +484,9 @@ func (UnimplementedResourcePluginServer) StartConnection(context.Context, *Conne
 }
 func (UnimplementedResourcePluginServer) StopConnection(context.Context, *ConnectionRequest) (*ConnectionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StopConnection not implemented")
+}
+func (UnimplementedResourcePluginServer) CheckConnection(context.Context, *CheckConnectionRequest) (*CheckConnectionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckConnection not implemented")
 }
 func (UnimplementedResourcePluginServer) GetConnectionNamespaces(context.Context, *ConnectionRequest) (*NamespacesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetConnectionNamespaces not implemented")
@@ -610,6 +625,24 @@ func _ResourcePlugin_StopConnection_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ResourcePluginServer).StopConnection(ctx, req.(*ConnectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ResourcePlugin_CheckConnection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckConnectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ResourcePluginServer).CheckConnection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ResourcePlugin_CheckConnection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ResourcePluginServer).CheckConnection(ctx, req.(*CheckConnectionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1091,6 +1124,10 @@ var ResourcePlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StopConnection",
 			Handler:    _ResourcePlugin_StopConnection_Handler,
+		},
+		{
+			MethodName: "CheckConnection",
+			Handler:    _ResourcePlugin_CheckConnection_Handler,
 		},
 		{
 			MethodName: "GetConnectionNamespaces",

@@ -19,6 +19,19 @@ import (
 const defaultCloseTimeout = 10 * time.Second
 const readyTimeout = 30 * time.Second
 
+// Sentinel causes for context cancellation — forwarders can inspect these
+// via context.Cause(ctx) to distinguish intentional stops from failures.
+var (
+	ErrSessionClosed  = errors.New("session closed")
+	ErrManagerStopped = errors.New("manager stopped")
+)
+
+// isIntentionalStop returns true if err is a sentinel indicating a
+// deliberate session/manager shutdown rather than an unexpected failure.
+func isIntentionalStop(err error) bool {
+	return err != nil && (errors.Is(err, ErrSessionClosed) || errors.Is(err, ErrManagerStopped))
+}
+
 // Manager manages the lifecycle of networker actions, such as port forwarding sessions.
 type Manager struct {
 	log              logging.Logger
@@ -160,9 +173,12 @@ func (m *Manager) StartPortForwardSession(
 	if pluginctx == nil {
 		pluginctx = &types.PluginContext{}
 	}
-	baseCtx := pluginctx.Context
-	if baseCtx == nil {
-		baseCtx = context.Background()
+	// Port-forward sessions are long-lived and must outlive the initiating
+	// RPC call. Use WithoutCancel to detach from the RPC deadline while
+	// preserving any request-scoped values (e.g. middleware metadata).
+	baseCtx := context.Background()
+	if pluginctx.Context != nil {
+		baseCtx = context.WithoutCancel(pluginctx.Context)
 	}
 
 	logger := m.log.With(logging.String("connection_type", string(opts.ConnectionType)))
@@ -186,7 +202,7 @@ func (m *Manager) StartPortForwardSession(
 
 	// Shallow-copy PluginContext — never mutate the caller's instance.
 	pctxCopy := *pluginctx
-	ctx, cancel := context.WithCancel(baseCtx)
+	ctx, cancel := context.WithCancelCause(baseCtx)
 	pctxCopy.Context = ctx
 	if m.settingsProvider != nil {
 		pctxCopy.SetSettingsProvider(m.settingsProvider)
@@ -203,7 +219,7 @@ func (m *Manager) StartPortForwardSession(
 	shuttingDown := m.stopped
 	m.mu.RUnlock()
 	if shuttingDown {
-		cancel()
+		cancel(nil)
 		return nil, NewManagerShuttingDownError(sessionID)
 	}
 
@@ -215,12 +231,12 @@ func (m *Manager) StartPortForwardSession(
 	case PortForwardConnectionTypeStatic:
 		result, err = m.handleStaticForward(ctx, &pctxCopy, opts)
 	default:
-		cancel()
+		cancel(nil)
 		return nil, NewInvalidConnectionTypeError(string(opts.ConnectionType))
 	}
 
 	if err != nil {
-		cancel()
+		cancel(nil)
 		// Preserve already-typed NetworkerErrors; wrap others.
 		var nerr *NetworkerError
 		if errors.As(err, &nerr) {
@@ -230,7 +246,7 @@ func (m *Manager) StartPortForwardSession(
 	}
 
 	if result == nil {
-		cancel()
+		cancel(nil)
 		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("forwarder returned nil result"))
 	}
 
@@ -252,7 +268,7 @@ func (m *Manager) StartPortForwardSession(
 			case <-result.Ready:
 				// tunnel established
 			case err, ok := <-result.ErrCh:
-				cancel()
+				cancel(nil)
 				if !ok {
 					return nil, NewForwarderFailedError(sessionID, fmt.Errorf("forwarder error channel closed before ready"))
 				}
@@ -261,10 +277,10 @@ func (m *Manager) StartPortForwardSession(
 				}
 				return nil, NewForwarderFailedError(sessionID, err)
 			case <-ctx.Done():
-				cancel()
+				cancel(nil)
 				return nil, NewForwarderFailedError(sessionID, ctx.Err())
 			case <-m.clock.After(readyTimeout):
-				cancel()
+				cancel(nil)
 				return nil, NewForwarderFailedError(sessionID, fmt.Errorf("timed out waiting for tunnel to be ready"))
 			}
 		}
@@ -297,12 +313,12 @@ func (m *Manager) StartPortForwardSession(
 	m.mu.Lock()
 	if m.stopped {
 		m.mu.Unlock()
-		cancel()
+		cancel(nil)
 		return nil, NewManagerShuttingDownError(sessionID)
 	}
 	if _, exists := m.sessions[sessionID]; exists {
 		m.mu.Unlock()
-		cancel()
+		cancel(nil)
 		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("duplicate session ID %q", sessionID))
 	}
 	m.sessions[sessionID] = entry
@@ -401,6 +417,15 @@ func (m *Manager) monitorSession(entry *sessionEntry, errCh <-chan error) {
 			return
 		}
 
+		// Intentional shutdown sentinels — treat as clean stop, not failure.
+		if isIntentionalStop(err) || isIntentionalStop(context.Cause(entry.ctx)) {
+			m.log.Debugw(entry.ctx, "monitor: intentional stop", "session_id", entry.session.ID, "cause", err)
+			if transErr := entry.transition(SessionStateStopped); transErr != nil {
+				m.log.Debugw(entry.ctx, "monitor: transition to STOPPED failed", "session_id", entry.session.ID, "error", transErr)
+			}
+			return
+		}
+
 		// Fatal error — transition to FAILED.
 		m.log.Errorw(entry.ctx, "port forward session failed", "session_id", entry.session.ID, "error", err)
 		if transErr := entry.transition(SessionStateFailed); transErr != nil {
@@ -413,6 +438,8 @@ func (m *Manager) ClosePortForwardSession(
 	_ *types.PluginContext,
 	sessionID string,
 ) (*PortForwardSession, error) {
+	m.log.Debugw(context.Background(), "closing port forward session", "session_id", sessionID)
+
 	m.mu.Lock()
 	entry, ok := m.sessions[sessionID]
 	if !ok {
@@ -422,7 +449,7 @@ func (m *Manager) ClosePortForwardSession(
 	delete(m.sessions, sessionID)
 	m.mu.Unlock()
 
-	entry.cancel()
+	entry.cancel(ErrSessionClosed)
 	_ = entry.transition(SessionStateStopped)
 
 	snap := entry.snapshot()
@@ -433,9 +460,10 @@ func (m *Manager) ClosePortForwardSession(
 // to complete within the configured timeout.
 func (m *Manager) StopAll() {
 	m.mu.Lock()
+	m.log.Debugw(context.Background(), "stopping all port forward sessions", "session_count", len(m.sessions))
 	m.stopped = true
 	for id, entry := range m.sessions {
-		entry.cancel()
+		entry.cancel(ErrManagerStopped)
 		_ = entry.transition(SessionStateStopped)
 		delete(m.sessions, id)
 	}
@@ -450,6 +478,6 @@ func (m *Manager) StopAll() {
 	select {
 	case <-done:
 	case <-m.clock.After(m.closeTimeout):
-		m.log.Warn(context.TODO(), "StopAll timed out waiting for monitor goroutines")
+		m.log.Warn(context.Background(), "StopAll timed out waiting for monitor goroutines")
 	}
 }

@@ -13,6 +13,9 @@ func TestNewConnection_Defaults(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, ConnectionDefaultExpiryTime, conn.ExpiryTime)
+	require.NotNil(t, conn.Data)
+	require.NotNil(t, conn.Labels)
+	require.NotNil(t, conn.GetSensitiveData())
 	require.Nil(t, conn.Lifecycle.AutoConnect)
 }
 
@@ -62,4 +65,34 @@ func TestNewConnection_InvalidLifecycleValues(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
+}
+
+func TestNewConnection_ExplicitNilAutoConnect(t *testing.T) {
+	conn, err := NewConnection(ConnectionOpts{
+		ID:   "conn-1",
+		Name: "Connection 1",
+		Lifecycle: ConnectionLifecycle{
+			AutoConnect: nil,
+		},
+	})
+	require.NoError(t, err)
+	require.Nil(t, conn.Lifecycle.AutoConnect)
+}
+
+func TestNewConnection_NilTriggersAndEmptyRetry(t *testing.T) {
+	conn, err := NewConnection(ConnectionOpts{
+		ID:   "conn-1",
+		Name: "Connection 1",
+		Lifecycle: ConnectionLifecycle{
+			AutoConnect: &ConnectionAutoConnect{
+				Enabled:  true,
+				Triggers: nil,
+				Retry:    "",
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, conn.Lifecycle.AutoConnect)
+	require.Nil(t, conn.Lifecycle.AutoConnect.Triggers)
+	require.Equal(t, ConnectionAutoConnectRetryNone, conn.Lifecycle.AutoConnect.Retry)
 }

@@ -17,8 +17,9 @@ type StubConnectionProvider[ClientT any] struct {
 	GetNamespacesFunc   func(ctx context.Context, client *ClientT) ([]string, error)
 
 	// Call counters for assertions (atomic for concurrent safety).
-	CreateClientCalls  atomic.Int32
-	DestroyClientCalls atomic.Int32
+	CreateClientCalls     atomic.Int32
+	DestroyClientCalls    atomic.Int32
+	CheckConnectionCalls  atomic.Int32
 }
 
 func (s *StubConnectionProvider[ClientT]) CreateClient(ctx context.Context) (*ClientT, error) {
@@ -46,6 +47,7 @@ func (s *StubConnectionProvider[ClientT]) LoadConnections(ctx context.Context) (
 }
 
 func (s *StubConnectionProvider[ClientT]) CheckConnection(ctx context.Context, conn *types.Connection, client *ClientT) (types.ConnectionStatus, error) {
+	s.CheckConnectionCalls.Add(1)
 	if s.CheckConnectionFunc != nil {
 		return s.CheckConnectionFunc(ctx, conn, client)
 	}
