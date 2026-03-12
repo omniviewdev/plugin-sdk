@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/metadata"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	grpcMetadata "google.golang.org/grpc/metadata"
 
@@ -90,7 +91,8 @@ func withClientOpts(opts []grpc.DialOption, log logging.Logger) []grpc.DialOptio
 	if opts == nil {
 		opts = make([]grpc.DialOption, 0)
 	}
-	opts = append(opts, grpc.WithUnaryInterceptor(ClientPluginContextInterceptor(log)))
+	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
+	opts = append(opts, grpc.WithChainUnaryInterceptor(ClientPluginContextInterceptor(log)))
 	return opts
 }
 

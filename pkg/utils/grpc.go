@@ -2,6 +2,7 @@ package utils
 
 import (
 	logging "github.com/omniviewdev/plugin-sdk/log"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/interceptors"
@@ -12,6 +13,7 @@ import (
 func RegisterServerOpts(opts []grpc.ServerOption, log logging.Logger) []grpc.ServerOption {
 	unaryinterceptors, streaminterceptors := NewServerInterceptors(log)
 
+	opts = append(opts, grpc.StatsHandler(otelgrpc.NewServerHandler()))
 	opts = append(opts, grpc.ChainUnaryInterceptor(unaryinterceptors...))
 	opts = append(opts, grpc.ChainStreamInterceptor(streaminterceptors...))
 
