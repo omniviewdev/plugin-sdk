@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 
 	otelpyroscope "github.com/grafana/otel-profiling-go"
@@ -39,13 +40,15 @@ type Provider struct {
 
 // configFromEnv reads telemetry config from environment variables.
 func configFromEnv() Config {
+	enabled, _ := strconv.ParseBool(os.Getenv("OMNIVIEW_TELEMETRY_ENABLED"))
+	profiling, _ := strconv.ParseBool(os.Getenv("OMNIVIEW_TELEMETRY_PROFILING"))
 	return Config{
-		Enabled:           os.Getenv("OMNIVIEW_TELEMETRY_ENABLED") == "true",
+		Enabled:           enabled,
 		OTLPEndpoint:      os.Getenv("OMNIVIEW_TELEMETRY_OTLP_ENDPOINT"),
 		AuthHeader:        os.Getenv("OMNIVIEW_TELEMETRY_AUTH_HEADER"),
 		AuthValue:         os.Getenv("OMNIVIEW_TELEMETRY_AUTH_VALUE"),
 		PluginID:          os.Getenv("OMNIVIEW_PLUGIN_ID"),
-		Profiling:         os.Getenv("OMNIVIEW_TELEMETRY_PROFILING") == "true",
+		Profiling:         profiling,
 		PyroscopeEndpoint: os.Getenv("OMNIVIEW_TELEMETRY_PYROSCOPE_ENDPOINT"),
 	}
 }
