@@ -3,6 +3,7 @@ package settingstest
 
 import (
 	"context"
+	"sync"
 
 	"github.com/omniviewdev/plugin-sdk/settings"
 )
@@ -25,6 +26,9 @@ type StubProvider struct {
 	FloatSlices  map[string][]float64
 	Bools        map[string]bool
 	Values_      map[string]any
+
+	mu       sync.Mutex
+	handlers map[string]settings.CategoryChangeFunc
 }
 
 func (s *StubProvider) Initialize(_ context.Context, _ ...settings.Category) error { return nil }
@@ -44,6 +48,25 @@ func (s *StubProvider) RegisterSettings(_ string, _ ...settings.Setting) error  
 func (s *StubProvider) GetCategories() []settings.Category                         { return nil }
 func (s *StubProvider) GetCategory(_ string) (settings.Category, error) {
 	return settings.Category{}, nil
+}
+func (s *StubProvider) RegisterChangeHandler(categoryID string, fn settings.CategoryChangeFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.handlers == nil {
+		s.handlers = make(map[string]settings.CategoryChangeFunc)
+	}
+	s.handlers[categoryID] = fn
+}
+
+// TriggerChange invokes the registered change handler for the given category
+// with the provided values. Safe for concurrent use.
+func (s *StubProvider) TriggerChange(categoryID string, vals map[string]any) {
+	s.mu.Lock()
+	fn := s.handlers[categoryID]
+	s.mu.Unlock()
+	if fn != nil {
+		fn(vals)
+	}
 }
 func (s *StubProvider) GetCategoryValues(_ string) (map[string]interface{}, error) { return nil, nil }
 

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/hashicorp/go-plugin"
 	logging "github.com/omniviewdev/plugin-sdk/log"
@@ -21,6 +22,7 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource"
 	rp "github.com/omniviewdev/plugin-sdk/pkg/resource/plugin"
+	"github.com/omniviewdev/plugin-sdk/pkg/telemetry"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -217,6 +219,16 @@ func (p *Plugin) SetLogLevel(level logging.Level) {
 //   - Write a .devinfo file so the IDE can connect via ReattachConfig
 //   - Register a signal handler to clean up .devinfo on graceful shutdown
 func (p *Plugin) Serve() {
+	// Init telemetry before anything else — before the serveNormal/dev-mode branch.
+	telemetryProvider, err := telemetry.InitFromEnv()
+	if err != nil {
+		p.Log.Warn(context.Background(), "telemetry init failed, continuing without",
+			logging.Error(err))
+	}
+	if telemetryProvider != nil {
+		defer telemetryProvider.Shutdown(context.Background())
+	}
+
 	startupCtx := p.startupContext()
 
 	// Auto-register the lifecycle service from the current plugin map.
@@ -234,6 +246,14 @@ func (p *Plugin) Serve() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
+		// os.Exit bypasses defers, so drain telemetry explicitly.
+		if telemetryProvider != nil {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if shutErr := telemetryProvider.Shutdown(shutCtx); shutErr != nil {
+				p.Log.Warn(shutCtx, "telemetry shutdown on signal failed", logging.Error(shutErr))
+			}
+		}
 		_ = CleanupDevInfo(p.meta.ID)
 		os.Exit(0)
 	}()
