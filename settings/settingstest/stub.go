@@ -45,6 +45,7 @@ func (s *StubProvider) GetCategories() []settings.Category                      
 func (s *StubProvider) GetCategory(_ string) (settings.Category, error) {
 	return settings.Category{}, nil
 }
+func (s *StubProvider) RegisterChangeHandler(_ string, _ settings.CategoryChangeFunc) {}
 func (s *StubProvider) GetCategoryValues(_ string) (map[string]interface{}, error) { return nil, nil }
 
 func (s *StubProvider) GetString(id string) (string, error) {
