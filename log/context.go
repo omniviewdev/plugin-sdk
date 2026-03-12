@@ -83,7 +83,7 @@ func extractTraceIDs(ctx context.Context) (string, string) {
 func traceFromMD(md grpcmetadata.MD) (string, string) {
 	if tp := firstMD(md, "traceparent"); tp != "" {
 		parts := strings.Split(tp, "-")
-		if len(parts) == 4 {
+		if len(parts) == 4 && len(parts[1]) == 32 && len(parts[2]) == 16 {
 			return parts[1], parts[2]
 		}
 	}

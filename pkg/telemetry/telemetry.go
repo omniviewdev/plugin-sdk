@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -122,7 +123,7 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 			shutdownErr = p.tracerProvider.Shutdown(ctx)
 		}
 		if p.profiler != nil {
-			_ = p.profiler.Stop()
+			shutdownErr = errors.Join(shutdownErr, p.profiler.Stop())
 		}
 	})
 	return shutdownErr

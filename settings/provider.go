@@ -362,16 +362,36 @@ func (p *provider) GetSettingValue(id string) (any, error) {
 }
 
 func (p *provider) SetSettings(settings map[string]any) error {
+	// Validate all entries before mutating any state.
+	type validated struct {
+		category string
+		settingID string
+		setting  Setting
+	}
+	entries := make([]validated, 0, len(settings))
 	changedCategories := make(map[string]struct{})
+
 	for id, value := range settings {
-		err := p.setSetting(id, value)
+		s, err := p.GetSetting(id)
 		if err != nil {
 			return err
 		}
-		if cat, _, err := p.parseSettingID(id); err == nil {
-			changedCategories[cat] = struct{}{}
+		if err = s.SetValue(value); err != nil {
+			return err
 		}
+		cat, sid, err := p.parseSettingID(id)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, validated{category: cat, settingID: sid, setting: s})
+		changedCategories[cat] = struct{}{}
 	}
+
+	// Apply all validated mutations.
+	for _, e := range entries {
+		p.store[e.category].Settings[e.settingID] = e.setting
+	}
+
 	if err := p.SaveSettings(); err != nil {
 		return err
 	}
