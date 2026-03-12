@@ -21,6 +21,7 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource"
 	rp "github.com/omniviewdev/plugin-sdk/pkg/resource/plugin"
+	"github.com/omniviewdev/plugin-sdk/pkg/telemetry"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
 	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -217,6 +218,16 @@ func (p *Plugin) SetLogLevel(level logging.Level) {
 //   - Write a .devinfo file so the IDE can connect via ReattachConfig
 //   - Register a signal handler to clean up .devinfo on graceful shutdown
 func (p *Plugin) Serve() {
+	// Init telemetry before anything else — before the serveNormal/dev-mode branch.
+	telemetryProvider, err := telemetry.InitFromEnv()
+	if err != nil {
+		p.Log.Warn(context.Background(), "telemetry init failed, continuing without",
+			logging.Error(err))
+	}
+	if telemetryProvider != nil {
+		defer telemetryProvider.Shutdown(context.Background())
+	}
+
 	startupCtx := p.startupContext()
 
 	// Auto-register the lifecycle service from the current plugin map.
