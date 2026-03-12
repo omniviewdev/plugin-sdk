@@ -102,8 +102,9 @@ func InitFromEnv() (*Provider, error) {
 			},
 		})
 		if profErr != nil {
-			// Profiling failure is not fatal — continue without it, but
-			// surface the error so operators can diagnose misconfiguration.
+			// Profiling failure is not fatal — install tracing without the
+			// profiling wrapper and surface the error for diagnostics.
+			otel.SetTracerProvider(tp)
 			return p, fmt.Errorf("pyroscope start failed (continuing without profiling): %w", profErr)
 		}
 		p.profiler = profiler
