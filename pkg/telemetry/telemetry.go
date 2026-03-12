@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"sync"
 
@@ -70,8 +71,7 @@ func InitFromEnv() (*Provider, error) {
 	}
 
 	opts := []otlptracehttp.Option{
-		otlptracehttp.WithEndpoint(cfg.OTLPEndpoint),
-		otlptracehttp.WithInsecure(),
+		otlptracehttp.WithEndpointURL(cfg.OTLPEndpoint),
 	}
 	if cfg.AuthHeader != "" && cfg.AuthValue != "" {
 		opts = append(opts, otlptracehttp.WithHeaders(map[string]string{cfg.AuthHeader: cfg.AuthValue}))
@@ -91,23 +91,23 @@ func InitFromEnv() (*Provider, error) {
 	p := &Provider{tracerProvider: tp}
 
 	if cfg.Profiling && cfg.PyroscopeEndpoint != "" {
-		profiler, err := pyroscope.Start(pyroscope.Config{
+		profiler, profErr := pyroscope.Start(pyroscope.Config{
 			ApplicationName: "omniview.plugin." + cfg.PluginID,
-			ServerAddress:   "http://" + cfg.PyroscopeEndpoint,
+			ServerAddress:   cfg.PyroscopeEndpoint,
 			ProfileTypes: []pyroscope.ProfileType{
 				pyroscope.ProfileCPU,
 				pyroscope.ProfileAllocSpace,
 				pyroscope.ProfileGoroutines,
 			},
 		})
-		if err != nil {
-			// Profiling failure is not fatal — continue without it.
-			_ = err
-		} else {
-			p.profiler = profiler
-			otel.SetTracerProvider(otelpyroscope.NewTracerProvider(tp))
-			return p, nil
+		if profErr != nil {
+			// Profiling failure is not fatal — continue without it, but
+			// surface the error so operators can diagnose misconfiguration.
+			return p, fmt.Errorf("pyroscope start failed (continuing without profiling): %w", profErr)
 		}
+		p.profiler = profiler
+		otel.SetTracerProvider(otelpyroscope.NewTracerProvider(tp))
+		return p, nil
 	}
 
 	otel.SetTracerProvider(tp)

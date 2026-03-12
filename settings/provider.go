@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"go.uber.org/zap"
 )
@@ -135,8 +136,9 @@ type ProviderOpts struct {
 
 func NewProvider(opts ProviderOpts) Provider {
 	provider := &provider{
-		logger:   opts.Logger,
-		pluginID: opts.PluginID,
+		logger:         opts.Logger,
+		pluginID:       opts.PluginID,
+		changeHandlers: make(map[string]CategoryChangeFunc),
 	}
 
 	if len(opts.PluginSettings) > 0 {
@@ -154,7 +156,8 @@ type provider struct {
 	pluginID       string
 	logger         *zap.SugaredLogger
 	store          Store
-	changeHandlers map[string]CategoryChangeFunc
+	changeHandlersMu sync.RWMutex
+	changeHandlers   map[string]CategoryChangeFunc
 }
 
 // define custom merge behavior to make sure we don't overwrite any existing settings,
@@ -420,6 +423,9 @@ func (p *provider) ResetSetting(id string) error {
 	}
 	setting.ResetValue()
 	p.store[category].Settings[settingKey] = setting
+	if err := p.SaveSettings(); err != nil {
+		return err
+	}
 	p.notifyChangeHandlers(map[string]struct{}{category: {}})
 	return nil
 }
@@ -449,15 +455,22 @@ func (p *provider) RegisterSettings(category string, settings ...Setting) error 
 }
 
 func (p *provider) RegisterChangeHandler(categoryID string, fn CategoryChangeFunc) {
-	if p.changeHandlers == nil {
-		p.changeHandlers = make(map[string]CategoryChangeFunc)
-	}
+	p.changeHandlersMu.Lock()
+	defer p.changeHandlersMu.Unlock()
 	p.changeHandlers[categoryID] = fn
 }
 
 func (p *provider) notifyChangeHandlers(changedCategories map[string]struct{}) {
+	p.changeHandlersMu.RLock()
+	// Snapshot the handlers to release the lock before calling them.
+	handlers := make(map[string]CategoryChangeFunc, len(p.changeHandlers))
+	for k, v := range p.changeHandlers {
+		handlers[k] = v
+	}
+	p.changeHandlersMu.RUnlock()
+
 	for cat := range changedCategories {
-		fn, ok := p.changeHandlers[cat]
+		fn, ok := handlers[cat]
 		if !ok {
 			continue
 		}
@@ -466,7 +479,14 @@ func (p *provider) notifyChangeHandlers(changedCategories map[string]struct{}) {
 			p.logger.Warnw("failed to get category values for change handler", "category", cat, "error", err)
 			continue
 		}
-		fn(vals)
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					p.logger.Warnw("change handler panicked", "category", cat, "recovered", r)
+				}
+			}()
+			fn(vals)
+		}()
 	}
 }
 

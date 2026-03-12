@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/hashicorp/go-plugin"
 	logging "github.com/omniviewdev/plugin-sdk/log"
@@ -245,6 +246,14 @@ func (p *Plugin) Serve() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
+		// os.Exit bypasses defers, so drain telemetry explicitly.
+		if telemetryProvider != nil {
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if shutErr := telemetryProvider.Shutdown(shutCtx); shutErr != nil {
+				p.Log.Warn(shutCtx, "telemetry shutdown on signal failed", logging.Error(shutErr))
+			}
+		}
 		_ = CleanupDevInfo(p.meta.ID)
 		os.Exit(0)
 	}()

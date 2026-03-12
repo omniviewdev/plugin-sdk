@@ -45,6 +45,15 @@ func dedupeFields(in []Field) []Field {
 	return out
 }
 
+// extractTraceIDs returns a (traceID, spanID) pair from ctx using the
+// following precedence:
+//
+//  1. OTel span context — used when a real (non-noop) TracerProvider is
+//     configured. A zero/noop SpanContext is ignored.
+//  2. gRPC incoming metadata — checked via traceFromMD.
+//  3. gRPC outgoing metadata — same check, covers client-side contexts.
+//
+// Returns ("", "") when no trace information is available.
 func extractTraceIDs(ctx context.Context) (string, string) {
 	// Prefer OTel span context (active when TracerProvider is configured).
 	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
@@ -65,6 +74,12 @@ func extractTraceIDs(ctx context.Context) (string, string) {
 	return "", ""
 }
 
+// traceFromMD extracts trace and span IDs from gRPC metadata headers.
+// Supported formats in precedence order:
+//
+//  1. W3C "traceparent" header (e.g. "00-<traceID>-<spanID>-<flags>")
+//  2. Custom "x-trace-id" / "x-span-id" headers
+//  3. Fallback "trace_id" / "span_id" headers
 func traceFromMD(md grpcmetadata.MD) (string, string) {
 	if tp := firstMD(md, "traceparent"); tp != "" {
 		parts := strings.Split(tp, "-")

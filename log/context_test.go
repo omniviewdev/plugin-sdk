@@ -13,10 +13,18 @@ import (
 )
 
 func TestExtractTraceIDs_PrefersOTelSpanContext(t *testing.T) {
+	// Save and restore global OTel state to avoid flaky parallel tests.
+	origTP := otel.GetTracerProvider()
+	origProp := otel.GetTextMapPropagator()
+
 	tp := sdktrace.NewTracerProvider()
-	defer tp.Shutdown(context.Background())
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
+	defer func() {
+		_ = tp.Shutdown(context.Background())
+		otel.SetTracerProvider(origTP)
+		otel.SetTextMapPropagator(origProp)
+	}()
 
 	ctx, span := tp.Tracer("test").Start(context.Background(), "test-op")
 	defer span.End()

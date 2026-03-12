@@ -12,7 +12,8 @@ import (
 func newTestProvider(t *testing.T, categories ...Category) *provider {
 	t.Helper()
 	p := &provider{
-		logger: zap.NewNop().Sugar(),
+		logger:         zap.NewNop().Sugar(),
+		changeHandlers: make(map[string]CategoryChangeFunc),
 	}
 	require.NoError(t, p.Initialize(context.Background(), categories...))
 	return p
