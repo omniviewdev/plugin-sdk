@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"go.opentelemetry.io/otel/trace"
 	grpcmetadata "google.golang.org/grpc/metadata"
 )
 
@@ -45,6 +46,12 @@ func dedupeFields(in []Field) []Field {
 }
 
 func extractTraceIDs(ctx context.Context) (string, string) {
+	// Prefer OTel span context (active when TracerProvider is configured).
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		return sc.TraceID().String(), sc.SpanID().String()
+	}
+
+	// Fall back to gRPC metadata (existing behavior).
 	if md, ok := grpcmetadata.FromIncomingContext(ctx); ok {
 		if traceID, spanID := traceFromMD(md); traceID != "" || spanID != "" {
 			return traceID, spanID
