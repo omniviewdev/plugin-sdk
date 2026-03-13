@@ -998,7 +998,6 @@ func relationshipExtractorToProto(e *resource.RelationshipExtractor) *resourcepb
 	return &resourcepb.RelationshipExtractor{
 		Method:        e.Method,
 		FieldPath:     e.FieldPath,
-		OwnerRefKind:  e.OwnerRefKind,
 		LabelSelector: e.LabelSelector,
 	}
 }
@@ -1010,7 +1009,6 @@ func relationshipExtractorFromProto(pb *resourcepb.RelationshipExtractor) *resou
 	return &resource.RelationshipExtractor{
 		Method:        pb.GetMethod(),
 		FieldPath:     pb.GetFieldPath(),
-		OwnerRefKind:  pb.GetOwnerRefKind(),
 		LabelSelector: pb.GetLabelSelector(),
 	}
 }

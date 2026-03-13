@@ -3,6 +3,7 @@ package resource
 import (
 	"context"
 	"encoding/json"
+	"time"
 )
 
 // SyncPolicy controls when watches start for a resource type.
@@ -153,6 +154,14 @@ type WatchEventSink interface {
 	OnStateChange(event WatchStateEvent)
 }
 
+// ResourceMetadata carries structured metadata extracted by the plugin from its
+// typed objects. The engine stores this in the registry without parsing raw JSON.
+type ResourceMetadata struct {
+	UID       string            `json:"uid"`
+	Labels    map[string]string `json:"labels,omitempty"`
+	CreatedAt time.Time         `json:"createdAt,omitempty"`
+}
+
 // WatchAddPayload represents a resource addition event.
 type WatchAddPayload struct {
 	// Data is the resource data as pre-serialized JSON.
@@ -172,6 +181,9 @@ type WatchAddPayload struct {
 
 	// Namespace is the resource namespace (empty for cluster-scoped resources).
 	Namespace string `json:"namespace"`
+
+	// Metadata contains structured metadata extracted by the plugin.
+	Metadata ResourceMetadata `json:"metadata"`
 }
 
 // WatchUpdatePayload represents a resource update event.
@@ -194,6 +206,9 @@ type WatchUpdatePayload struct {
 
 	// Namespace is the resource namespace.
 	Namespace string `json:"namespace"`
+
+	// Metadata contains structured metadata extracted by the plugin.
+	Metadata ResourceMetadata `json:"metadata"`
 }
 
 // WatchDeletePayload represents a resource deletion event.

@@ -16,23 +16,37 @@ const (
 	RelExposes  RelationshipType = "exposes"
 	RelManages  RelationshipType = "manages"
 	RelMemberOf RelationshipType = "member_of"
+	RelSelects  RelationshipType = "selects"
+)
+
+// EdgeDirection controls whether an extracted edge points from the declaring
+// resource to the target (outgoing) or from the target back to the declaring
+// resource (incoming). Incoming is used for ownership edges where the child
+// declares its parent (e.g., Pod ownerRef → ReplicaSet).
+type EdgeDirection string
+
+const (
+	// EdgeOutgoing is the default: declaring resource → extracted target.
+	EdgeOutgoing EdgeDirection = ""
+	// EdgeIncoming reverses the edge: extracted target → declaring resource.
+	EdgeIncoming EdgeDirection = "incoming"
 )
 
 // RelationshipExtractor defines how to find related resource IDs from source data.
 type RelationshipExtractor struct {
 	Method        string            `json:"method"`
 	FieldPath     string            `json:"fieldPath,omitempty"`
-	OwnerRefKind  string            `json:"ownerRefKind,omitempty"`
 	LabelSelector map[string]string `json:"labelSelector,omitempty"`
 }
 
 // RelationshipDescriptor declares a relationship from one resource type to another.
 type RelationshipDescriptor struct {
-	Type              RelationshipType      `json:"type"`
-	TargetResourceKey string                `json:"targetResourceKey"`
-	Label             string                `json:"label"`
-	InverseLabel      string                `json:"inverseLabel,omitempty"`
-	Cardinality       string                `json:"cardinality,omitempty"`
+	Type              RelationshipType       `json:"type"`
+	TargetResourceKey string                 `json:"targetResourceKey"`
+	Label             string                 `json:"label"`
+	InverseLabel      string                 `json:"inverseLabel,omitempty"`
+	Cardinality       string                 `json:"cardinality,omitempty"`
+	Direction         EdgeDirection          `json:"direction,omitempty"`
 	Extractor         *RelationshipExtractor `json:"extractor,omitempty"`
 }
 
