@@ -980,6 +980,7 @@ var relTypeToProto = map[resource.RelationshipType]resourcepb.RelationshipType{
 	resource.RelExposes:  resourcepb.RelationshipType_RELATIONSHIP_TYPE_EXPOSES,
 	resource.RelManages:  resourcepb.RelationshipType_RELATIONSHIP_TYPE_MANAGES,
 	resource.RelMemberOf: resourcepb.RelationshipType_RELATIONSHIP_TYPE_MEMBER_OF,
+	resource.RelSelects:  resourcepb.RelationshipType_RELATIONSHIP_TYPE_SELECTS,
 }
 
 var relTypeFromProto = map[resourcepb.RelationshipType]resource.RelationshipType{
@@ -989,6 +990,7 @@ var relTypeFromProto = map[resourcepb.RelationshipType]resource.RelationshipType
 	resourcepb.RelationshipType_RELATIONSHIP_TYPE_EXPOSES:   resource.RelExposes,
 	resourcepb.RelationshipType_RELATIONSHIP_TYPE_MANAGES:   resource.RelManages,
 	resourcepb.RelationshipType_RELATIONSHIP_TYPE_MEMBER_OF: resource.RelMemberOf,
+	resourcepb.RelationshipType_RELATIONSHIP_TYPE_SELECTS:   resource.RelSelects,
 }
 
 func relationshipExtractorToProto(e *resource.RelationshipExtractor) *resourcepb.RelationshipExtractor {
@@ -1021,6 +1023,7 @@ func relationshipDescriptorToProto(d resource.RelationshipDescriptor) *resourcep
 		InverseLabel:      d.InverseLabel,
 		Cardinality:       d.Cardinality,
 		Extractor:         relationshipExtractorToProto(d.Extractor),
+		Direction:         string(d.Direction),
 	}
 }
 
@@ -1034,6 +1037,7 @@ func relationshipDescriptorFromProto(pb *resourcepb.RelationshipDescriptor) reso
 		Label:             pb.GetLabel(),
 		InverseLabel:      pb.GetInverseLabel(),
 		Cardinality:       pb.GetCardinality(),
+		Direction:         resource.EdgeDirection(pb.GetDirection()),
 		Extractor:         relationshipExtractorFromProto(pb.GetExtractor()),
 	}
 }

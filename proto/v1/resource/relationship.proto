@@ -15,6 +15,7 @@ enum RelationshipType {
     RELATIONSHIP_TYPE_EXPOSES = 4;
     RELATIONSHIP_TYPE_MANAGES = 5;
     RELATIONSHIP_TYPE_MEMBER_OF = 6;
+    RELATIONSHIP_TYPE_SELECTS = 7;
 }
 
 // RelationshipDescriptor declares a relationship from one resource type to another.
@@ -25,6 +26,7 @@ message RelationshipDescriptor {
     string inverse_label = 4;
     string cardinality = 5;
     RelationshipExtractor extractor = 6;
+    string direction = 7;
 }
 
 // RelationshipExtractor defines how to find related resource IDs from source data.

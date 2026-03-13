@@ -159,7 +159,7 @@ type WatchEventSink interface {
 type ResourceMetadata struct {
 	UID       string            `json:"uid"`
 	Labels    map[string]string `json:"labels,omitempty"`
-	CreatedAt time.Time         `json:"createdAt,omitempty"`
+	CreatedAt *time.Time        `json:"createdAt,omitempty"`
 }
 
 // WatchAddPayload represents a resource addition event.
