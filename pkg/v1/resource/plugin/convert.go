@@ -980,6 +980,7 @@ var relTypeToProto = map[resource.RelationshipType]resourcepb.RelationshipType{
 	resource.RelExposes:  resourcepb.RelationshipType_RELATIONSHIP_TYPE_EXPOSES,
 	resource.RelManages:  resourcepb.RelationshipType_RELATIONSHIP_TYPE_MANAGES,
 	resource.RelMemberOf: resourcepb.RelationshipType_RELATIONSHIP_TYPE_MEMBER_OF,
+	resource.RelSelects:  resourcepb.RelationshipType_RELATIONSHIP_TYPE_SELECTS,
 }
 
 var relTypeFromProto = map[resourcepb.RelationshipType]resource.RelationshipType{
@@ -989,6 +990,7 @@ var relTypeFromProto = map[resourcepb.RelationshipType]resource.RelationshipType
 	resourcepb.RelationshipType_RELATIONSHIP_TYPE_EXPOSES:   resource.RelExposes,
 	resourcepb.RelationshipType_RELATIONSHIP_TYPE_MANAGES:   resource.RelManages,
 	resourcepb.RelationshipType_RELATIONSHIP_TYPE_MEMBER_OF: resource.RelMemberOf,
+	resourcepb.RelationshipType_RELATIONSHIP_TYPE_SELECTS:   resource.RelSelects,
 }
 
 func relationshipExtractorToProto(e *resource.RelationshipExtractor) *resourcepb.RelationshipExtractor {
@@ -998,7 +1000,6 @@ func relationshipExtractorToProto(e *resource.RelationshipExtractor) *resourcepb
 	return &resourcepb.RelationshipExtractor{
 		Method:        e.Method,
 		FieldPath:     e.FieldPath,
-		OwnerRefKind:  e.OwnerRefKind,
 		LabelSelector: e.LabelSelector,
 	}
 }
@@ -1010,12 +1011,15 @@ func relationshipExtractorFromProto(pb *resourcepb.RelationshipExtractor) *resou
 	return &resource.RelationshipExtractor{
 		Method:        pb.GetMethod(),
 		FieldPath:     pb.GetFieldPath(),
-		OwnerRefKind:  pb.GetOwnerRefKind(),
 		LabelSelector: pb.GetLabelSelector(),
 	}
 }
 
-func relationshipDescriptorToProto(d resource.RelationshipDescriptor) *resourcepb.RelationshipDescriptor {
+func relationshipDescriptorToProto(d resource.RelationshipDescriptor) (*resourcepb.RelationshipDescriptor, error) {
+	dir, err := canonicalEdgeDirection(string(d.Direction))
+	if err != nil {
+		return nil, fmt.Errorf("relationshipDescriptorToProto: %w", err)
+	}
 	return &resourcepb.RelationshipDescriptor{
 		Type:              relTypeToProto[d.Type],
 		TargetResourceKey: d.TargetResourceKey,
@@ -1023,12 +1027,17 @@ func relationshipDescriptorToProto(d resource.RelationshipDescriptor) *resourcep
 		InverseLabel:      d.InverseLabel,
 		Cardinality:       d.Cardinality,
 		Extractor:         relationshipExtractorToProto(d.Extractor),
-	}
+		Direction:         string(dir),
+	}, nil
 }
 
-func relationshipDescriptorFromProto(pb *resourcepb.RelationshipDescriptor) resource.RelationshipDescriptor {
+func relationshipDescriptorFromProto(pb *resourcepb.RelationshipDescriptor) (resource.RelationshipDescriptor, error) {
 	if pb == nil {
-		return resource.RelationshipDescriptor{}
+		return resource.RelationshipDescriptor{}, nil
+	}
+	dir, err := canonicalEdgeDirection(pb.GetDirection())
+	if err != nil {
+		return resource.RelationshipDescriptor{}, fmt.Errorf("relationshipDescriptorFromProto: %w", err)
 	}
 	return resource.RelationshipDescriptor{
 		Type:              relTypeFromProto[pb.GetType()],
@@ -1036,7 +1045,22 @@ func relationshipDescriptorFromProto(pb *resourcepb.RelationshipDescriptor) reso
 		Label:             pb.GetLabel(),
 		InverseLabel:      pb.GetInverseLabel(),
 		Cardinality:       pb.GetCardinality(),
+		Direction:         dir,
 		Extractor:         relationshipExtractorFromProto(pb.GetExtractor()),
+	}, nil
+}
+
+// canonicalEdgeDirection maps a wire string to a valid EdgeDirection.
+// Only "" (the zero value / EdgeOutgoing) and "incoming" are valid.
+// Unknown non-empty values return an error rather than silently coercing.
+func canonicalEdgeDirection(s string) (resource.EdgeDirection, error) {
+	switch s {
+	case string(resource.EdgeIncoming):
+		return resource.EdgeIncoming, nil
+	case string(resource.EdgeOutgoing):
+		return resource.EdgeOutgoing, nil
+	default:
+		return "", fmt.Errorf("unknown EdgeDirection %q", s)
 	}
 }
 
@@ -1065,30 +1089,37 @@ func resourceRefFromProto(pb *resourcepb.ResourceRef) resource.ResourceRef {
 	}
 }
 
-func resolvedRelationshipToProto(r resource.ResolvedRelationship) *resourcepb.ResolvedRelationship {
+func resolvedRelationshipToProto(r resource.ResolvedRelationship) (*resourcepb.ResolvedRelationship, error) {
 	targets := make([]*resourcepb.ResourceRef, len(r.Targets))
 	for i, t := range r.Targets {
 		targets[i] = resourceRefToProto(t)
 	}
-	desc := relationshipDescriptorToProto(r.Descriptor)
+	desc, err := relationshipDescriptorToProto(r.Descriptor)
+	if err != nil {
+		return nil, err
+	}
 	return &resourcepb.ResolvedRelationship{
 		Descriptor_: desc,
 		Targets:     targets,
-	}
+	}, nil
 }
 
-func resolvedRelationshipFromProto(pb *resourcepb.ResolvedRelationship) resource.ResolvedRelationship {
+func resolvedRelationshipFromProto(pb *resourcepb.ResolvedRelationship) (resource.ResolvedRelationship, error) {
 	if pb == nil {
-		return resource.ResolvedRelationship{}
+		return resource.ResolvedRelationship{}, nil
+	}
+	desc, err := relationshipDescriptorFromProto(pb.GetDescriptor_())
+	if err != nil {
+		return resource.ResolvedRelationship{}, err
 	}
 	targets := make([]resource.ResourceRef, len(pb.GetTargets()))
 	for i, t := range pb.GetTargets() {
 		targets[i] = resourceRefFromProto(t)
 	}
 	return resource.ResolvedRelationship{
-		Descriptor: relationshipDescriptorFromProto(pb.GetDescriptor_()),
+		Descriptor: desc,
 		Targets:    targets,
-	}
+	}, nil
 }
 
 // ============================================================================

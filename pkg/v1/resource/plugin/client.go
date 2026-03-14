@@ -613,7 +613,11 @@ func (c *client) GetRelationships(ctx context.Context, key string) ([]resource.R
 	}
 	rels := make([]resource.RelationshipDescriptor, len(resp.GetRelationships()))
 	for i, r := range resp.GetRelationships() {
-		rels[i] = relationshipDescriptorFromProto(r)
+		rel, err := relationshipDescriptorFromProto(r)
+		if err != nil {
+			return nil, err
+		}
+		rels[i] = rel
 	}
 	return rels, nil
 }
@@ -630,7 +634,11 @@ func (c *client) ResolveRelationships(ctx context.Context, connectionID string, 
 	}
 	resolved := make([]resource.ResolvedRelationship, len(resp.GetRelationships()))
 	for i, r := range resp.GetRelationships() {
-		resolved[i] = resolvedRelationshipFromProto(r)
+		rr, err := resolvedRelationshipFromProto(r)
+		if err != nil {
+			return nil, err
+		}
+		resolved[i] = rr
 	}
 	return resolved, nil
 }

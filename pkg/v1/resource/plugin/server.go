@@ -592,7 +592,11 @@ func (s *server) GetRelationships(ctx context.Context, req *resourcepb.Relations
 	}
 	pbRels := make([]*resourcepb.RelationshipDescriptor, len(rels))
 	for i, r := range rels {
-		pbRels[i] = relationshipDescriptorToProto(r)
+		pb, err := relationshipDescriptorToProto(r)
+		if err != nil {
+			return nil, err
+		}
+		pbRels[i] = pb
 	}
 	return &resourcepb.RelationshipsResponse{Relationships: pbRels}, nil
 }
@@ -605,7 +609,11 @@ func (s *server) ResolveRelationships(ctx context.Context, req *resourcepb.Resol
 	}
 	pbResolved := make([]*resourcepb.ResolvedRelationship, len(resolved))
 	for i, r := range resolved {
-		pbResolved[i] = resolvedRelationshipToProto(r)
+		pb, err := resolvedRelationshipToProto(r)
+		if err != nil {
+			return nil, err
+		}
+		pbResolved[i] = pb
 	}
 	return &resourcepb.ResolveRelationshipsResponse{Relationships: pbResolved}, nil
 }
