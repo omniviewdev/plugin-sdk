@@ -34,7 +34,7 @@ message RelationshipExtractor {
     string method = 1;
     string field_path = 2;
     // Deprecated: retained for wire compatibility; not used by current conversion logic.
-    string owner_ref_kind = 3;
+    string owner_ref_kind = 3 [deprecated = true];
     map<string, string> label_selector = 4;
 }
 

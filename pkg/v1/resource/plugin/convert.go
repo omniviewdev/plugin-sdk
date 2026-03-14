@@ -1023,7 +1023,7 @@ func relationshipDescriptorToProto(d resource.RelationshipDescriptor) *resourcep
 		InverseLabel:      d.InverseLabel,
 		Cardinality:       d.Cardinality,
 		Extractor:         relationshipExtractorToProto(d.Extractor),
-		Direction:         string(d.Direction),
+		Direction:         string(canonicalEdgeDirection(string(d.Direction))),
 	}
 }
 
@@ -1037,12 +1037,12 @@ func relationshipDescriptorFromProto(pb *resourcepb.RelationshipDescriptor) reso
 		Label:             pb.GetLabel(),
 		InverseLabel:      pb.GetInverseLabel(),
 		Cardinality:       pb.GetCardinality(),
-		Direction:         edgeDirectionFromProto(pb.GetDirection()),
+		Direction:         canonicalEdgeDirection(pb.GetDirection()),
 		Extractor:         relationshipExtractorFromProto(pb.GetExtractor()),
 	}
 }
 
-func edgeDirectionFromProto(s string) resource.EdgeDirection {
+func canonicalEdgeDirection(s string) resource.EdgeDirection {
 	switch s {
 	case string(resource.EdgeIncoming):
 		return resource.EdgeIncoming
