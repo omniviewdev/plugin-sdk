@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"time"
 
@@ -1042,11 +1043,18 @@ func relationshipDescriptorFromProto(pb *resourcepb.RelationshipDescriptor) reso
 	}
 }
 
+// canonicalEdgeDirection maps a wire string to a valid EdgeDirection.
+// Only "" (the zero value / EdgeOutgoing) and "incoming" are valid.
+// Unknown non-empty values are logged and treated as EdgeOutgoing to
+// avoid silently flipping edge semantics on decode errors.
 func canonicalEdgeDirection(s string) resource.EdgeDirection {
 	switch s {
 	case string(resource.EdgeIncoming):
 		return resource.EdgeIncoming
+	case string(resource.EdgeOutgoing):
+		return resource.EdgeOutgoing
 	default:
+		log.Printf("convert: unknown EdgeDirection %q, defaulting to outgoing", s)
 		return resource.EdgeOutgoing
 	}
 }
