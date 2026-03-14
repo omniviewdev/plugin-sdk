@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"time"
 
@@ -1016,7 +1015,11 @@ func relationshipExtractorFromProto(pb *resourcepb.RelationshipExtractor) *resou
 	}
 }
 
-func relationshipDescriptorToProto(d resource.RelationshipDescriptor) *resourcepb.RelationshipDescriptor {
+func relationshipDescriptorToProto(d resource.RelationshipDescriptor) (*resourcepb.RelationshipDescriptor, error) {
+	dir, err := canonicalEdgeDirection(string(d.Direction))
+	if err != nil {
+		return nil, fmt.Errorf("relationshipDescriptorToProto: %w", err)
+	}
 	return &resourcepb.RelationshipDescriptor{
 		Type:              relTypeToProto[d.Type],
 		TargetResourceKey: d.TargetResourceKey,
@@ -1024,13 +1027,17 @@ func relationshipDescriptorToProto(d resource.RelationshipDescriptor) *resourcep
 		InverseLabel:      d.InverseLabel,
 		Cardinality:       d.Cardinality,
 		Extractor:         relationshipExtractorToProto(d.Extractor),
-		Direction:         string(canonicalEdgeDirection(string(d.Direction))),
-	}
+		Direction:         string(dir),
+	}, nil
 }
 
-func relationshipDescriptorFromProto(pb *resourcepb.RelationshipDescriptor) resource.RelationshipDescriptor {
+func relationshipDescriptorFromProto(pb *resourcepb.RelationshipDescriptor) (resource.RelationshipDescriptor, error) {
 	if pb == nil {
-		return resource.RelationshipDescriptor{}
+		return resource.RelationshipDescriptor{}, nil
+	}
+	dir, err := canonicalEdgeDirection(pb.GetDirection())
+	if err != nil {
+		return resource.RelationshipDescriptor{}, fmt.Errorf("relationshipDescriptorFromProto: %w", err)
 	}
 	return resource.RelationshipDescriptor{
 		Type:              relTypeFromProto[pb.GetType()],
@@ -1038,24 +1045,22 @@ func relationshipDescriptorFromProto(pb *resourcepb.RelationshipDescriptor) reso
 		Label:             pb.GetLabel(),
 		InverseLabel:      pb.GetInverseLabel(),
 		Cardinality:       pb.GetCardinality(),
-		Direction:         canonicalEdgeDirection(pb.GetDirection()),
+		Direction:         dir,
 		Extractor:         relationshipExtractorFromProto(pb.GetExtractor()),
-	}
+	}, nil
 }
 
 // canonicalEdgeDirection maps a wire string to a valid EdgeDirection.
 // Only "" (the zero value / EdgeOutgoing) and "incoming" are valid.
-// Unknown non-empty values are logged and treated as EdgeOutgoing to
-// avoid silently flipping edge semantics on decode errors.
-func canonicalEdgeDirection(s string) resource.EdgeDirection {
+// Unknown non-empty values return an error rather than silently coercing.
+func canonicalEdgeDirection(s string) (resource.EdgeDirection, error) {
 	switch s {
 	case string(resource.EdgeIncoming):
-		return resource.EdgeIncoming
+		return resource.EdgeIncoming, nil
 	case string(resource.EdgeOutgoing):
-		return resource.EdgeOutgoing
+		return resource.EdgeOutgoing, nil
 	default:
-		log.Printf("convert: unknown EdgeDirection %q, defaulting to outgoing", s)
-		return resource.EdgeOutgoing
+		return "", fmt.Errorf("unknown EdgeDirection %q", s)
 	}
 }
 
@@ -1084,30 +1089,37 @@ func resourceRefFromProto(pb *resourcepb.ResourceRef) resource.ResourceRef {
 	}
 }
 
-func resolvedRelationshipToProto(r resource.ResolvedRelationship) *resourcepb.ResolvedRelationship {
+func resolvedRelationshipToProto(r resource.ResolvedRelationship) (*resourcepb.ResolvedRelationship, error) {
 	targets := make([]*resourcepb.ResourceRef, len(r.Targets))
 	for i, t := range r.Targets {
 		targets[i] = resourceRefToProto(t)
 	}
-	desc := relationshipDescriptorToProto(r.Descriptor)
+	desc, err := relationshipDescriptorToProto(r.Descriptor)
+	if err != nil {
+		return nil, err
+	}
 	return &resourcepb.ResolvedRelationship{
 		Descriptor_: desc,
 		Targets:     targets,
-	}
+	}, nil
 }
 
-func resolvedRelationshipFromProto(pb *resourcepb.ResolvedRelationship) resource.ResolvedRelationship {
+func resolvedRelationshipFromProto(pb *resourcepb.ResolvedRelationship) (resource.ResolvedRelationship, error) {
 	if pb == nil {
-		return resource.ResolvedRelationship{}
+		return resource.ResolvedRelationship{}, nil
+	}
+	desc, err := relationshipDescriptorFromProto(pb.GetDescriptor_())
+	if err != nil {
+		return resource.ResolvedRelationship{}, err
 	}
 	targets := make([]resource.ResourceRef, len(pb.GetTargets()))
 	for i, t := range pb.GetTargets() {
 		targets[i] = resourceRefFromProto(t)
 	}
 	return resource.ResolvedRelationship{
-		Descriptor: relationshipDescriptorFromProto(pb.GetDescriptor_()),
+		Descriptor: desc,
 		Targets:    targets,
-	}
+	}, nil
 }
 
 // ============================================================================
