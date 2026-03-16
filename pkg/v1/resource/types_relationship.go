@@ -48,6 +48,7 @@ type RelationshipDescriptor struct {
 	Cardinality       string                 `json:"cardinality,omitempty"`
 	Direction         EdgeDirection          `json:"direction,omitempty"`
 	Extractor         *RelationshipExtractor `json:"extractor,omitempty"`
+	TargetNamespaced  *bool                  `json:"targetNamespaced,omitempty"`
 }
 
 // ResourceRef is a reference to a specific resource instance.
