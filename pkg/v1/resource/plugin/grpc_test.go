@@ -937,6 +937,56 @@ func TestGR031_ResolveRelationshipsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestTargetNamespacedConversionRoundTrip(t *testing.T) {
+	boolPtr := func(v bool) *bool { return &v }
+
+	tests := []struct {
+		name             string
+		targetNamespaced *bool
+	}{
+		{"nil (default namespaced)", nil},
+		{"true (explicitly namespaced)", boolPtr(true)},
+		{"false (cluster-scoped)", boolPtr(false)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			desc := resource.RelationshipDescriptor{
+				Type:              resource.RelRunsOn,
+				TargetResourceKey: "core::v1::Node",
+				Label:             "runs on",
+				TargetNamespaced:  tc.targetNamespaced,
+				Extractor: &resource.RelationshipExtractor{
+					Method:    "fieldPath",
+					FieldPath: "spec.nodeName",
+				},
+			}
+
+			pb, err := relationshipDescriptorToProto(desc)
+			if err != nil {
+				t.Fatalf("toProto: %v", err)
+			}
+			got, err := relationshipDescriptorFromProto(pb)
+			if err != nil {
+				t.Fatalf("fromProto: %v", err)
+			}
+
+			if tc.targetNamespaced == nil {
+				if got.TargetNamespaced != nil {
+					t.Fatalf("expected nil, got %v", *got.TargetNamespaced)
+				}
+			} else {
+				if got.TargetNamespaced == nil {
+					t.Fatalf("expected %v, got nil", *tc.targetNamespaced)
+				}
+				if *got.TargetNamespaced != *tc.targetNamespaced {
+					t.Fatalf("expected %v, got %v", *tc.targetNamespaced, *got.TargetNamespaced)
+				}
+			}
+		})
+	}
+}
+
 func TestGR032_GetHealthRoundTrip(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second) // Truncate for timestamp precision.
 	probe := now.Add(-5 * time.Minute)
