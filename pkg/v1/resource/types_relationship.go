@@ -47,8 +47,12 @@ type RelationshipDescriptor struct {
 	InverseLabel      string                 `json:"inverseLabel,omitempty"`
 	Cardinality       string                 `json:"cardinality,omitempty"`
 	Direction         EdgeDirection          `json:"direction,omitempty"`
-	Extractor         *RelationshipExtractor `json:"extractor,omitempty"`
-	TargetNamespaced  *bool                  `json:"targetNamespaced,omitempty"`
+	Extractor *RelationshipExtractor `json:"extractor,omitempty"`
+	// TargetNamespaced is a tri-state flag: nil = default to namespaced (common case),
+	// true = explicitly namespaced, false = cluster-scoped target (e.g., Node, PV,
+	// StorageClass). Pointer type distinguishes "unspecified" from explicit values;
+	// callers must check for nil before dereferencing.
+	TargetNamespaced *bool `json:"targetNamespaced,omitempty"`
 }
 
 // ResourceRef is a reference to a specific resource instance.
