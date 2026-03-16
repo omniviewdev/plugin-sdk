@@ -15,6 +15,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	wrapperspb "google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 // ============================================================================
@@ -1020,7 +1021,7 @@ func relationshipDescriptorToProto(d resource.RelationshipDescriptor) (*resource
 	if err != nil {
 		return nil, fmt.Errorf("relationshipDescriptorToProto: %w", err)
 	}
-	return &resourcepb.RelationshipDescriptor{
+	pb := &resourcepb.RelationshipDescriptor{
 		Type:              relTypeToProto[d.Type],
 		TargetResourceKey: d.TargetResourceKey,
 		Label:             d.Label,
@@ -1028,7 +1029,11 @@ func relationshipDescriptorToProto(d resource.RelationshipDescriptor) (*resource
 		Cardinality:       d.Cardinality,
 		Extractor:         relationshipExtractorToProto(d.Extractor),
 		Direction:         string(dir),
-	}, nil
+	}
+	if d.TargetNamespaced != nil {
+		pb.TargetNamespaced = wrapperspb.Bool(*d.TargetNamespaced)
+	}
+	return pb, nil
 }
 
 func relationshipDescriptorFromProto(pb *resourcepb.RelationshipDescriptor) (resource.RelationshipDescriptor, error) {
@@ -1039,7 +1044,7 @@ func relationshipDescriptorFromProto(pb *resourcepb.RelationshipDescriptor) (res
 	if err != nil {
 		return resource.RelationshipDescriptor{}, fmt.Errorf("relationshipDescriptorFromProto: %w", err)
 	}
-	return resource.RelationshipDescriptor{
+	d := resource.RelationshipDescriptor{
 		Type:              relTypeFromProto[pb.GetType()],
 		TargetResourceKey: pb.GetTargetResourceKey(),
 		Label:             pb.GetLabel(),
@@ -1047,7 +1052,12 @@ func relationshipDescriptorFromProto(pb *resourcepb.RelationshipDescriptor) (res
 		Cardinality:       pb.GetCardinality(),
 		Direction:         dir,
 		Extractor:         relationshipExtractorFromProto(pb.GetExtractor()),
-	}, nil
+	}
+	if pb.TargetNamespaced != nil {
+		v := pb.TargetNamespaced.Value
+		d.TargetNamespaced = &v
+	}
+	return d, nil
 }
 
 // canonicalEdgeDirection maps a wire string to a valid EdgeDirection.

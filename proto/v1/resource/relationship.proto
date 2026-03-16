@@ -1,6 +1,8 @@
 syntax = "proto3";
 package omniview.sdk.resource.v1;
 
+import "google/protobuf/wrappers.proto";
+
 option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/resource;resourcepb";
 
 // ─────────────────────────────────────────────────────────────────────
@@ -27,6 +29,7 @@ message RelationshipDescriptor {
     string cardinality = 5;
     RelationshipExtractor extractor = 6;
     string direction = 7;
+    google.protobuf.BoolValue target_namespaced = 8;
 }
 
 // RelationshipExtractor defines how to find related resource IDs from source data.
