@@ -28,6 +28,8 @@ type Setting struct {
 	// Sensitive is a flag to indicate if the setting is sensitive and should not be
 	// shown in the UI, nor allowed to be used by any other plugin.
 	Sensitive bool `json:"sensitive"`
+	// DevOnly indicates the setting should only be visible when dev mode is active.
+	DevOnly bool `json:"devOnly"`
 }
 
 // Validate checks if the value of the setting is valid using an optional
