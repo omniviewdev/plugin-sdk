@@ -141,6 +141,7 @@ func ToProtoSetting(s settings.Setting) *settingspb.Setting {
 		Value:         value,
 		Options:       options,
 		FileSelection: ToProtoSettingFileSelection(s.FileSelection),
+		DevOnly:       s.DevOnly,
 	}
 }
 
@@ -169,5 +170,6 @@ func FromProtoSetting(s *settingspb.Setting) settings.Setting {
 		Value:         value,
 		Options:       options,
 		FileSelection: FromProtoSettingFileSelection(s.GetFileSelection()),
+		DevOnly:       s.GetDevOnly(),
 	}
 }

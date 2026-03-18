@@ -35,6 +35,7 @@ message Setting {
   google.protobuf.Any default = 6;
   repeated SettingOption options = 7;
   optional SettingFileSelection file_selection = 8;
+  bool dev_only = 9;
 }
 
 message SettingOption {

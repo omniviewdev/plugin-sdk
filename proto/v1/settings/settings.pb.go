@@ -228,6 +228,7 @@ type Setting struct {
 	Default       *anypb.Any             `protobuf:"bytes,6,opt,name=default,proto3" json:"default,omitempty"`
 	Options       []*SettingOption       `protobuf:"bytes,7,rep,name=options,proto3" json:"options,omitempty"`
 	FileSelection *SettingFileSelection  `protobuf:"bytes,8,opt,name=file_selection,json=fileSelection,proto3,oneof" json:"file_selection,omitempty"`
+	DevOnly       bool                   `protobuf:"varint,9,opt,name=dev_only,json=devOnly,proto3" json:"dev_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -316,6 +317,13 @@ func (x *Setting) GetFileSelection() *SettingFileSelection {
 		return x.FileSelection
 	}
 	return nil
+}
+
+func (x *Setting) GetDevOnly() bool {
+	if x != nil {
+		return x.DevOnly
+	}
+	return false
 }
 
 type SettingOption struct {
@@ -867,7 +875,7 @@ const file_proto_v1_settings_settings_proto_rawDesc = "" +
 	"\bsettings\x18\x05 \x03(\v28.omniview.sdk.settings.v1.SettingsCategory.SettingsEntryR\bsettings\x1a^\n" +
 	"\rSettingsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x127\n" +
-	"\x05value\x18\x02 \x01(\v2!.omniview.sdk.settings.v1.SettingR\x05value:\x028\x01\"\x9a\x03\n" +
+	"\x05value\x18\x02 \x01(\v2!.omniview.sdk.settings.v1.SettingR\x05value:\x028\x01\"\xb5\x03\n" +
 	"\aSetting\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12 \n" +
@@ -876,7 +884,8 @@ const file_proto_v1_settings_settings_proto_rawDesc = "" +
 	"\x05value\x18\x05 \x01(\v2\x14.google.protobuf.AnyR\x05value\x12.\n" +
 	"\adefault\x18\x06 \x01(\v2\x14.google.protobuf.AnyR\adefault\x12A\n" +
 	"\aoptions\x18\a \x03(\v2'.omniview.sdk.settings.v1.SettingOptionR\aoptions\x12Z\n" +
-	"\x0efile_selection\x18\b \x01(\v2..omniview.sdk.settings.v1.SettingFileSelectionH\x00R\rfileSelection\x88\x01\x01B\x11\n" +
+	"\x0efile_selection\x18\b \x01(\v2..omniview.sdk.settings.v1.SettingFileSelectionH\x00R\rfileSelection\x88\x01\x01\x12\x19\n" +
+	"\bdev_only\x18\t \x01(\bR\adevOnlyB\x11\n" +
 	"\x0f_file_selection\"s\n" +
 	"\rSettingOption\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12 \n" +
