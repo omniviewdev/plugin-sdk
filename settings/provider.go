@@ -284,7 +284,7 @@ func (p *provider) valuesLocked() map[string]any {
 	m := make(map[string]any, len(p.store))
 	for categoryID, category := range p.store {
 		for settingID, setting := range category.Settings {
-			m[fmt.Sprintf("%s.%s", categoryID, settingID)] = setting.Value
+			m[fmt.Sprintf("%s.%s", categoryID, settingID)] = cloneValue(setting.Value)
 		}
 	}
 

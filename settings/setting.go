@@ -38,7 +38,13 @@ func (s Setting) clone() Setting {
 	s.Default = cloneValue(s.Default)
 	if s.Options != nil {
 		opts := make([]SettingOption, len(s.Options))
-		copy(opts, s.Options)
+		for i, opt := range s.Options {
+			opts[i] = SettingOption{
+				Label:       opt.Label,
+				Description: opt.Description,
+				Value:       cloneValue(opt.Value),
+			}
+		}
 		s.Options = opts
 	}
 	if s.FileSelection != nil {
