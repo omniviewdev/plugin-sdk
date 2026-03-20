@@ -34,6 +34,18 @@ type Category struct {
 	Icon        string             `json:"icon"`
 }
 
+// clone returns a shallow copy of the Category with a cloned Settings map.
+func (c Category) clone() Category {
+	cp := c
+	if c.Settings != nil {
+		cp.Settings = make(map[string]Setting, len(c.Settings))
+		for k, v := range c.Settings {
+			cp.Settings[k] = v
+		}
+	}
+	return cp
+}
+
 // Provider manages the settings for the application as a pure in-memory store.
 type Provider interface {
 	// ListSettings returns the settings store
@@ -174,13 +186,13 @@ func (p *provider) mergeSettingsLocked(categories ...Category) {
 			// if there's a type mismatch, don't fail, but log an error
 			// TODO - we should probably do some behavior here to try to convert the value to the
 			// correct type, but for now, we'll just log an error
-			if reflect.TypeOf(setting.Type) != reflect.TypeOf(current.Type) {
+			if setting.Type != current.Type {
 				// log an error and continue
 				p.logger.Errorf(
-					"setting type mismatch: %s. currently has %s, tried to assign %s",
+					"setting type mismatch: %s. currently has %q, tried to assign %q",
 					id,
-					reflect.TypeOf(current.Type),
-					reflect.TypeOf(setting.Type),
+					current.Type,
+					setting.Type,
 				)
 				continue
 			}
@@ -219,7 +231,11 @@ func (p *provider) mergeSettingsLocked(categories ...Category) {
 func (p *provider) ListSettings() Store {
 	p.storeMu.RLock()
 	defer p.storeMu.RUnlock()
-	return p.store
+	clone := make(Store, len(p.store))
+	for id, cat := range p.store {
+		clone[id] = cat.clone()
+	}
+	return clone
 }
 
 // Values returns all of the values in the store as a map.
@@ -390,6 +406,11 @@ func (p *provider) RegisterSetting(category string, setting Setting) error {
 	if found.Settings == nil {
 		found.Settings = make(map[string]Setting)
 	}
+	if existing, exists := found.Settings[setting.ID]; !exists {
+		setting.Value = setting.Default
+	} else {
+		setting.Value = existing.Value
+	}
 	found.Settings[setting.ID] = setting
 	p.store[category] = found
 	return nil
@@ -398,20 +419,25 @@ func (p *provider) RegisterSetting(category string, setting Setting) error {
 func (p *provider) RegisterSettings(category string, settings ...Setting) error {
 	p.storeMu.Lock()
 	defer p.storeMu.Unlock()
+	if p.store == nil {
+		p.store = make(Store)
+	}
+	found, ok := p.store[category]
+	if !ok {
+		found = Category{ID: category, Settings: make(map[string]Setting)}
+	}
+	if found.Settings == nil {
+		found.Settings = make(map[string]Setting)
+	}
 	for _, setting := range settings {
-		if p.store == nil {
-			p.store = make(Store)
-		}
-		found, ok := p.store[category]
-		if !ok {
-			found = Category{ID: category, Settings: make(map[string]Setting)}
-		}
-		if found.Settings == nil {
-			found.Settings = make(map[string]Setting)
+		if existing, exists := found.Settings[setting.ID]; !exists {
+			setting.Value = setting.Default
+		} else {
+			setting.Value = existing.Value
 		}
 		found.Settings[setting.ID] = setting
-		p.store[category] = found
 	}
+	p.store[category] = found
 	return nil
 }
 
@@ -477,11 +503,11 @@ func (p *provider) GetCategory(category string) (Category, error) {
 }
 
 func (p *provider) getCategoryLocked(category string) (Category, error) {
-	settings, ok := p.store[category]
+	cat, ok := p.store[category]
 	if !ok {
 		return Category{}, ErrSettingCategoryNotFound
 	}
-	return settings, nil
+	return cat.clone(), nil
 }
 
 // GetCategoryValues returns a map of the values of the settings by category.

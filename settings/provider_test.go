@@ -430,12 +430,11 @@ func TestRegisterSetting_DuplicateID(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// RegisterSetting overwrites the schema entry. The stored value comes from
-	// the new registration (which has no Value set, so Value will be nil/zero).
-	// This is expected — RegisterSetting replaces the whole Setting struct.
+	// RegisterSetting updates the schema but preserves the existing user value.
 	s, err := p.GetSetting("dup.item")
 	require.NoError(t, err)
 	assert.Equal(t, "Updated Label", s.Label)
+	assert.Equal(t, "user-set", s.Value, "existing user value must be preserved on re-register")
 }
 
 // ---------------------------------------------------------------------------
@@ -524,7 +523,7 @@ func TestChangeHandler_MultipleCategories(t *testing.T) {
 	assert.True(t, firedB, "handler for category 'b' should have fired")
 }
 
-func TestChangeHandler_NotFiredOnNoChange(t *testing.T) {
+func TestChangeHandler_FiresOnNoOpSet(t *testing.T) {
 	p := newTestProvider(t, testCategory())
 
 	callCount := 0
