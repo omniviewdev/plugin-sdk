@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,7 +14,7 @@ func newTestProvider(t *testing.T, categories ...Category) *provider {
 		logger:         zap.NewNop().Sugar(),
 		changeHandlers: make(map[string]CategoryChangeFunc),
 	}
-	require.NoError(t, p.Initialize(context.Background(), categories...))
+	p.mergeSettings(categories...)
 	return p
 }
 

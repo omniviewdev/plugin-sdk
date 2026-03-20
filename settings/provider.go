@@ -1,8 +1,6 @@
 package settings
 
 import (
-	"context"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"reflect"
@@ -36,24 +34,16 @@ type Category struct {
 	Icon        string             `json:"icon"`
 }
 
-// Provider manages the settings for the application. This is used to load and save settings
-// to and from local storage.
+// Provider manages the settings for the application as a pure in-memory store.
 type Provider interface {
-	// Initialize initializes the settings provider with a set of base settings. Add the wails
-	// context so we can eventually dispatch events when settings change.
-	Initialize(ctx context.Context, categories ...Category) error
-
-	// LoadSettings loads the settings from local storage
-	LoadSettings() error
-
-	// SaveSettings saves the settings to local storage
-	SaveSettings() error
-
 	// ListSettings returns the settings store
 	ListSettings() Store
 
-	// Values returns all of the values in the store as a map
-	Values() map[string]any
+	// RegisterSetting registers a setting with the provider
+	RegisterSetting(categoryID string, setting Setting) error
+
+	// RegisterSettings registers a list of settings with the provider to a category
+	RegisterSettings(categoryID string, settings ...Setting) error
 
 	// GetSetting returns the setting by ID. This ID should be in the form of a dot separated string
 	// that represents the path to the setting. For example, "appearance.theme"
@@ -62,62 +52,36 @@ type Provider interface {
 	// GetSettingValue returns the value of the setting by ID
 	GetSettingValue(id string) (any, error)
 
+	// GetString returns the value of the setting by ID as a string.
+	GetString(id string) (string, error)
+
+	// GetStringSlice returns the value of the setting by ID as a string slice.
+	GetStringSlice(id string) ([]string, error)
+
+	// GetInt returns the value of the setting by ID as an int.
+	GetInt(id string) (int, error)
+
+	// GetIntSlice returns the value of the setting by ID as an int slice.
+	GetIntSlice(id string) ([]int, error)
+
+	// GetFloat returns the value of the setting by ID as a float64.
+	GetFloat(id string) (float64, error)
+
+	// GetFloatSlice returns the value of the setting by ID as a float64 slice.
+	GetFloatSlice(id string) ([]float64, error)
+
+	// GetBool returns the value of the setting by ID as a bool.
+	GetBool(id string) (bool, error)
+
 	// SetSetting sets the value of the setting by ID
 	SetSetting(id string, value any) error
 
 	// SetSettings sets multiple settings at once
 	SetSettings(settings map[string]any) error
 
-	// ResetSetting resets the value of the setting by ID to the default value
-	ResetSetting(id string) error
-
-	// RegisterSetting registers a setting with the provider
-	RegisterSetting(categoryID string, setting Setting) error
-
-	// RegisterSettings registers a list of settings with the provider to a category
-	RegisterSettings(categoryID string, settings ...Setting) error
-
-	// GetCategories returns a list of all categories, with the settings removed. This
-	// is intended for use in the UI to display the categories menu.
-	GetCategories() []Category
-
-	// GetCategorySettings returns the settings by category
-	GetCategory(id string) (Category, error)
-
-	// GetCategoryValues returns a map of the values of the settings by category
-	GetCategoryValues(id string) (map[string]interface{}, error)
-
-	// GetString returns the value of the setting by ID as a string.
-	// This is a convenience method for getting a string setting.
-	GetString(id string) (string, error)
-
-	// GetStringSlice returns the value of the setting by ID as a string slice.
-	// This is a convenience method for getting a string slice setting.
-	GetStringSlice(id string) ([]string, error)
-
-	// GetInt returns the value of the setting by ID as an int.
-	// This is a convenience method for getting an int setting.
-	GetInt(id string) (int, error)
-
-	// GetIntSlice returns the value of the setting by ID as an int slice.
-	// This is a convenience method for getting an int slice setting.
-	GetIntSlice(id string) ([]int, error)
-
-	// GetFloat returns the value of the setting by ID as a float64.
-	// This is a convenience method for getting a float setting.
-	GetFloat(id string) (float64, error)
-
-	// GetFloatSlice returns the value of the setting by ID as a float64 slice.
-	// This is a convenience method for getting a float slice setting.
-	GetFloatSlice(id string) ([]float64, error)
-
 	// RegisterChangeHandler registers a callback that fires after settings in the
 	// given category are saved. Only one handler per category.
 	RegisterChangeHandler(categoryID string, fn CategoryChangeFunc)
-
-	// GetBool returns the value of the setting by ID as a bool.
-	// This is a convenience method for getting a bool setting.
-	GetBool(id string) (bool, error)
 }
 
 // CategoryChangeFunc is called after settings in a category are saved.
@@ -135,27 +99,21 @@ type ProviderOpts struct {
 }
 
 func NewProvider(opts ProviderOpts) Provider {
-	provider := &provider{
+	p := &provider{
 		logger:         opts.Logger,
 		pluginID:       opts.PluginID,
 		changeHandlers: make(map[string]CategoryChangeFunc),
 	}
-
 	if len(opts.PluginSettings) > 0 {
-		if err := provider.Initialize(context.Background(), opts.PluginSettings...); err != nil {
-			// if we can't initialize settings, don't start up
-			panic(err)
-		}
+		p.mergeSettings(opts.PluginSettings...)
 	}
-
-	return provider
+	return p
 }
 
 type provider struct {
-	ctx            context.Context
-	pluginID       string
-	logger         *zap.SugaredLogger
-	store          Store
+	pluginID         string
+	logger           *zap.SugaredLogger
+	store            Store
 	changeHandlersMu sync.RWMutex
 	changeHandlers   map[string]CategoryChangeFunc
 }
@@ -248,88 +206,12 @@ func (p *provider) mergeSettings(categories ...Category) {
 	}
 }
 
-func (p *provider) Initialize(ctx context.Context, categories ...Category) error {
-	if p.store != nil {
-		return errors.New("settings provider already initialized")
-	}
-
-	p.ctx = ctx
-
-	// load in, merge, and resave the settings to make sure we have the latest
-	// ready to go
-	if err := p.LoadSettings(); err != nil {
-		return err
-	}
-
-	if len(categories) == 0 {
-		// nothing to do
-		return nil
-	}
-
-	p.mergeSettings(categories...)
-	if err := p.SaveSettings(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (p *provider) SaveSettings() error {
-	gob.Register(Store{})
-	gob.Register(Setting{})
-	gob.Register(SettingOption{})
-	gob.Register(Category{})
-	gob.Register([]interface{}{})
-
-	store, err := GetStore(p.pluginID)
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-
-	encoder := gob.NewEncoder(store)
-	return encoder.Encode(p.store)
-}
-
-func (p *provider) LoadSettings() error {
-	gob.Register(Store{})
-	gob.Register(Setting{})
-	gob.Register(SettingOption{})
-	gob.Register(Category{})
-	gob.Register([]interface{}{})
-
-	store, err := GetStore(p.pluginID)
-	if err != nil {
-		return err
-	}
-	defer store.Close()
-
-	// if the file is empty, we'll initialize the state with an empty map
-	fileInfo, err := store.Stat()
-	if err != nil {
-		return err
-	}
-
-	// nothing to decode if the file is empty
-	if fileInfo.Size() == 0 {
-		p.logger.Debugw("settings store is empty, initializing")
-		encoder := gob.NewEncoder(store)
-		return encoder.Encode(p.store)
-	}
-
-	// proceed with decoding since the file is not empty
-	decoder := gob.NewDecoder(store)
-	err = decoder.Decode(&p.store)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (p *provider) ListSettings() Store {
 	return p.store
 }
 
+// Values returns all of the values in the store as a map.
+// Available on the concrete *provider via type assertion.
 func (p *provider) Values() map[string]any {
 	m := make(map[string]any, len(p.store))
 	for categoryID, category := range p.store {
@@ -364,9 +246,9 @@ func (p *provider) GetSettingValue(id string) (any, error) {
 func (p *provider) SetSettings(settings map[string]any) error {
 	// Validate all entries before mutating any state.
 	type validated struct {
-		category string
+		category  string
 		settingID string
-		setting  Setting
+		setting   Setting
 	}
 	entries := make([]validated, 0, len(settings))
 	changedCategories := make(map[string]struct{})
@@ -392,9 +274,6 @@ func (p *provider) SetSettings(settings map[string]any) error {
 		p.store[e.category].Settings[e.settingID] = e.setting
 	}
 
-	if err := p.SaveSettings(); err != nil {
-		return err
-	}
 	p.notifyChangeHandlers(changedCategories)
 	return nil
 }
@@ -422,15 +301,14 @@ func (p *provider) SetSetting(id string, value any) error {
 	if err := p.setSetting(id, value); err != nil {
 		return err
 	}
-	if err := p.SaveSettings(); err != nil {
-		return err
-	}
 	if cat, _, err := p.parseSettingID(id); err == nil {
 		p.notifyChangeHandlers(map[string]struct{}{cat: {}})
 	}
 	return nil
 }
 
+// ResetSetting resets the value of the setting by ID to the default value.
+// Available on the concrete *provider via type assertion.
 func (p *provider) ResetSetting(id string) error {
 	category, settingKey, err := p.parseSettingID(id)
 	if err != nil {
@@ -443,9 +321,6 @@ func (p *provider) ResetSetting(id string) error {
 	}
 	setting.ResetValue()
 	p.store[category].Settings[settingKey] = setting
-	if err := p.SaveSettings(); err != nil {
-		return err
-	}
 	p.notifyChangeHandlers(map[string]struct{}{category: {}})
 	return nil
 }
@@ -456,9 +331,15 @@ func (p *provider) HasSetting(id string) bool {
 }
 
 func (p *provider) RegisterSetting(category string, setting Setting) error {
+	if p.store == nil {
+		p.store = make(Store)
+	}
 	found, ok := p.store[category]
 	if !ok {
-		return ErrSettingCategoryNotFound
+		found = Category{ID: category, Settings: make(map[string]Setting)}
+	}
+	if found.Settings == nil {
+		found.Settings = make(map[string]Setting)
 	}
 	found.Settings[setting.ID] = setting
 	p.store[category] = found
@@ -494,7 +375,7 @@ func (p *provider) notifyChangeHandlers(changedCategories map[string]struct{}) {
 		if !ok {
 			continue
 		}
-		vals, err := p.GetCategoryValues(cat)
+		vals, err := p.getCategoryValues(cat)
 		if err != nil {
 			p.logger.Warnw("failed to get category values for change handler", "category", cat, "error", err)
 			continue
@@ -510,6 +391,8 @@ func (p *provider) notifyChangeHandlers(changedCategories map[string]struct{}) {
 	}
 }
 
+// GetCategories returns a list of all categories, with the settings removed.
+// Available on the concrete *provider via type assertion.
 func (p *provider) GetCategories() []Category {
 	categories := make([]Category, 0, len(p.store))
 	for category := range p.store {
@@ -521,6 +404,8 @@ func (p *provider) GetCategories() []Category {
 	return categories
 }
 
+// GetCategory returns the category by ID.
+// Available on the concrete *provider via type assertion.
 func (p *provider) GetCategory(category string) (Category, error) {
 	settings, ok := p.store[category]
 	if !ok {
@@ -529,7 +414,14 @@ func (p *provider) GetCategory(category string) (Category, error) {
 	return settings, nil
 }
 
+// GetCategoryValues returns a map of the values of the settings by category.
+// Available on the concrete *provider via type assertion.
 func (p *provider) GetCategoryValues(category string) (map[string]interface{}, error) {
+	return p.getCategoryValues(category)
+}
+
+// getCategoryValues is the private implementation used internally by notifyChangeHandlers.
+func (p *provider) getCategoryValues(category string) (map[string]interface{}, error) {
 	cat, err := p.GetCategory(category)
 	if err != nil {
 		return nil, err
