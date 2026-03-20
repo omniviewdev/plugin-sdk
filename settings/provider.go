@@ -46,17 +46,13 @@ func (c Category) clone() Category {
 	return cp
 }
 
-// cloneValue returns a shallow copy of slice-typed values so callers cannot
+// cloneValue returns a deep copy of slice/map-typed values so callers cannot
 // mutate the store. Primitives (string, int, float64, bool, etc.) are returned
 // as-is because they are inherently immutable.
 func cloneValue(v any) any {
 	switch val := v.(type) {
 	case []string:
 		cp := make([]string, len(val))
-		copy(cp, val)
-		return cp
-	case []interface{}:
-		cp := make([]interface{}, len(val))
 		copy(cp, val)
 		return cp
 	case []int:
@@ -67,8 +63,20 @@ func cloneValue(v any) any {
 		cp := make([]float64, len(val))
 		copy(cp, val)
 		return cp
+	case []interface{}:
+		cp := make([]interface{}, len(val))
+		for i, elem := range val {
+			cp[i] = cloneValue(elem)
+		}
+		return cp
+	case map[string]any:
+		cp := make(map[string]any, len(val))
+		for k, v := range val {
+			cp[k] = cloneValue(v)
+		}
+		return cp
 	default:
-		return v
+		return v // primitives are safe
 	}
 }
 
@@ -558,7 +566,7 @@ func (p *provider) getCategoryValuesLocked(category string) (map[string]interfac
 
 	values := make(map[string]interface{}, len(cat.Settings))
 	for id, setting := range cat.Settings {
-		values[id] = cloneValue(setting.Value)
+		values[id] = setting.Value
 	}
 	return values, nil
 }

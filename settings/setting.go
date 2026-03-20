@@ -34,14 +34,23 @@ type Setting struct {
 
 // clone returns a copy of the Setting with deep-copied mutable fields.
 func (s Setting) clone() Setting {
-	cp := s
-	cp.Value = cloneValue(s.Value)
-	cp.Default = cloneValue(s.Default)
+	s.Value = cloneValue(s.Value)
+	s.Default = cloneValue(s.Default)
 	if s.Options != nil {
-		cp.Options = make([]SettingOption, len(s.Options))
-		copy(cp.Options, s.Options)
+		opts := make([]SettingOption, len(s.Options))
+		copy(opts, s.Options)
+		s.Options = opts
 	}
-	return cp
+	if s.FileSelection != nil {
+		fsCopy := *s.FileSelection
+		if fsCopy.Extensions != nil {
+			exts := make([]string, len(fsCopy.Extensions))
+			copy(exts, fsCopy.Extensions)
+			fsCopy.Extensions = exts
+		}
+		s.FileSelection = &fsCopy
+	}
+	return s
 }
 
 // Validate checks if the value of the setting is valid using an optional
