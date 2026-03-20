@@ -32,6 +32,33 @@ type Setting struct {
 	DevOnly bool `json:"devOnly"`
 }
 
+// clone returns a copy of the Setting with deep-copied mutable fields.
+func (s Setting) clone() Setting {
+	s.Value = cloneValue(s.Value)
+	s.Default = cloneValue(s.Default)
+	if s.Options != nil {
+		opts := make([]SettingOption, len(s.Options))
+		for i, opt := range s.Options {
+			opts[i] = SettingOption{
+				Label:       opt.Label,
+				Description: opt.Description,
+				Value:       cloneValue(opt.Value),
+			}
+		}
+		s.Options = opts
+	}
+	if s.FileSelection != nil {
+		fsCopy := *s.FileSelection
+		if fsCopy.Extensions != nil {
+			exts := make([]string, len(fsCopy.Extensions))
+			copy(exts, fsCopy.Extensions)
+			fsCopy.Extensions = exts
+		}
+		s.FileSelection = &fsCopy
+	}
+	return s
+}
+
 // Validate checks if the value of the setting is valid using an optional
 // validation function. If no validation function is provided, it returns nil.
 func (s *Setting) Validate(value interface{}) error {

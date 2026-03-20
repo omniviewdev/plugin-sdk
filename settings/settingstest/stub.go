@@ -2,11 +2,13 @@
 package settingstest
 
 import (
-	"context"
 	"sync"
 
 	"github.com/omniviewdev/plugin-sdk/settings"
 )
+
+// Compile-time interface check.
+var _ settings.Provider = (*StubProvider)(nil)
 
 // StubProvider implements settings.Provider with canned return values.
 // All methods return zero values by default. Populate the map fields
@@ -31,24 +33,15 @@ type StubProvider struct {
 	handlers map[string]settings.CategoryChangeFunc
 }
 
-func (s *StubProvider) Initialize(_ context.Context, _ ...settings.Category) error { return nil }
-func (s *StubProvider) LoadSettings() error                                        { return nil }
-func (s *StubProvider) SaveSettings() error                                        { return nil }
 func (s *StubProvider) ListSettings() settings.Store                               { return nil }
-func (s *StubProvider) Values() map[string]any                                     { return s.Values_ }
 func (s *StubProvider) GetSetting(_ string) (settings.Setting, error) {
 	return settings.Setting{}, nil
 }
 func (s *StubProvider) GetSettingValue(_ string) (any, error)                      { return nil, nil }
 func (s *StubProvider) SetSetting(_ string, _ any) error                           { return nil }
 func (s *StubProvider) SetSettings(_ map[string]any) error                         { return nil }
-func (s *StubProvider) ResetSetting(_ string) error                                { return nil }
 func (s *StubProvider) RegisterSetting(_ string, _ settings.Setting) error         { return nil }
 func (s *StubProvider) RegisterSettings(_ string, _ ...settings.Setting) error     { return nil }
-func (s *StubProvider) GetCategories() []settings.Category                         { return nil }
-func (s *StubProvider) GetCategory(_ string) (settings.Category, error) {
-	return settings.Category{}, nil
-}
 func (s *StubProvider) RegisterChangeHandler(categoryID string, fn settings.CategoryChangeFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -68,7 +61,6 @@ func (s *StubProvider) TriggerChange(categoryID string, vals map[string]any) {
 		fn(vals)
 	}
 }
-func (s *StubProvider) GetCategoryValues(_ string) (map[string]interface{}, error) { return nil, nil }
 
 func (s *StubProvider) GetString(id string) (string, error) {
 	if s.Strings != nil {
