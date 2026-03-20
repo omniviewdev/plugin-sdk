@@ -2,7 +2,6 @@ package settings
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/omniviewdev/plugin-sdk/settings"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -16,26 +15,6 @@ type Client struct {
 }
 
 var _ Provider = (*Client)(nil)
-
-func (c *Client) Values() map[string]any {
-	resp, err := c.client.ListSettings(context.Background(), &emptypb.Empty{})
-	if err != nil {
-		// we should never error here since the receiver never emits one
-		return nil
-	}
-
-	m := make(map[string]any)
-	for k, v := range resp.GetSettings() {
-		value, err := ConvertAnyToInterface(v.GetValue())
-		if err != nil {
-			continue
-		}
-		key := fmt.Sprintf("%s.%s", k, v.GetId())
-		m[key] = value
-	}
-
-	return m
-}
 
 func (c *Client) ListSettings() map[string]settings.Setting {
 	resp, err := c.client.ListSettings(context.Background(), &emptypb.Empty{})
