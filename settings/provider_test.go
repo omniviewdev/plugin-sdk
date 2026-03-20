@@ -183,6 +183,27 @@ func TestNewProvider_EmptySettings(t *testing.T) {
 	assert.Empty(t, store)
 }
 
+func TestNewProvider_NilLogger(t *testing.T) {
+	// NewProvider must not panic when Logger is nil.
+	assert.NotPanics(t, func() {
+		p := NewProvider(ProviderOpts{
+			PluginSettings: []Category{
+				{
+					ID:    "cat",
+					Label: "Cat",
+					Settings: map[string]Setting{
+						"x": {ID: "x", Type: Text, Default: "v"},
+					},
+				},
+			},
+		})
+		// Should still be usable.
+		val, err := p.GetSettingValue("cat.x")
+		require.NoError(t, err)
+		assert.Equal(t, "v", val)
+	})
+}
+
 func TestSetSetting_Validates(t *testing.T) {
 	p := newTestProvider(t, Category{
 		ID:    "net",
@@ -604,7 +625,7 @@ func TestMergeSettings_NewSettingGetsDefault(t *testing.T) {
 	assert.Equal(t, 4, s.Value, "new setting should get its default value")
 }
 
-func TestMergeSettings_RemovedSettingDropped(t *testing.T) {
+func TestMergeSettings_RetainsRemovedSetting(t *testing.T) {
 	p := newTestProvider(t, Category{
 		ID: "old", Label: "Old",
 		Settings: map[string]Setting{

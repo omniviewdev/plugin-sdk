@@ -104,6 +104,9 @@ func NewProvider(opts ProviderOpts) Provider {
 		pluginID:       opts.PluginID,
 		changeHandlers: make(map[string]CategoryChangeFunc),
 	}
+	if p.logger == nil {
+		p.logger = zap.NewNop().Sugar()
+	}
 	if len(opts.PluginSettings) > 0 {
 		p.mergeSettings(opts.PluginSettings...)
 	}
@@ -113,6 +116,7 @@ func NewProvider(opts ProviderOpts) Provider {
 type provider struct {
 	pluginID         string
 	logger           *zap.SugaredLogger
+	storeMu          sync.RWMutex
 	store            Store
 	changeHandlersMu sync.RWMutex
 	changeHandlers   map[string]CategoryChangeFunc
@@ -125,6 +129,12 @@ type provider struct {
 // the new setting will overwrite the existing setting. We should probably throw an error
 // if this happens.
 func (p *provider) mergeSettings(categories ...Category) {
+	p.storeMu.Lock()
+	defer p.storeMu.Unlock()
+	p.mergeSettingsLocked(categories...)
+}
+
+func (p *provider) mergeSettingsLocked(categories ...Category) {
 	if p.store == nil {
 		p.store = make(Store)
 	}
@@ -207,12 +217,20 @@ func (p *provider) mergeSettings(categories ...Category) {
 }
 
 func (p *provider) ListSettings() Store {
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
 	return p.store
 }
 
 // Values returns all of the values in the store as a map.
 // Available on the concrete *provider via type assertion.
 func (p *provider) Values() map[string]any {
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	return p.valuesLocked()
+}
+
+func (p *provider) valuesLocked() map[string]any {
 	m := make(map[string]any, len(p.store))
 	for categoryID, category := range p.store {
 		for settingID, setting := range category.Settings {
@@ -224,7 +242,13 @@ func (p *provider) Values() map[string]any {
 }
 
 func (p *provider) GetSetting(id string) (Setting, error) {
-	category, id, err := p.parseSettingID(id)
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	return p.getSettingLocked(id)
+}
+
+func (p *provider) getSettingLocked(id string) (Setting, error) {
+	category, id, err := p.parseSettingIDLocked(id)
 	if err != nil {
 		return nilSetting, err
 	}
@@ -236,7 +260,9 @@ func (p *provider) GetSetting(id string) (Setting, error) {
 }
 
 func (p *provider) GetSettingValue(id string) (any, error) {
-	setting, err := p.GetSetting(id)
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	setting, err := p.getSettingLocked(id)
 	if err != nil {
 		return nil, err
 	}
@@ -244,6 +270,8 @@ func (p *provider) GetSettingValue(id string) (any, error) {
 }
 
 func (p *provider) SetSettings(settings map[string]any) error {
+	p.storeMu.Lock()
+
 	// Validate all entries before mutating any state.
 	type validated struct {
 		category  string
@@ -254,15 +282,18 @@ func (p *provider) SetSettings(settings map[string]any) error {
 	changedCategories := make(map[string]struct{})
 
 	for id, value := range settings {
-		s, err := p.GetSetting(id)
+		s, err := p.getSettingLocked(id)
 		if err != nil {
+			p.storeMu.Unlock()
 			return err
 		}
 		if err = s.SetValue(value); err != nil {
+			p.storeMu.Unlock()
 			return err
 		}
-		cat, sid, err := p.parseSettingID(id)
+		cat, sid, err := p.parseSettingIDLocked(id)
 		if err != nil {
+			p.storeMu.Unlock()
 			return err
 		}
 		entries = append(entries, validated{category: cat, settingID: sid, setting: s})
@@ -274,13 +305,15 @@ func (p *provider) SetSettings(settings map[string]any) error {
 		p.store[e.category].Settings[e.settingID] = e.setting
 	}
 
+	p.storeMu.Unlock()
+
 	p.notifyChangeHandlers(changedCategories)
 	return nil
 }
 
-// private method so we can save after a bulk vs individual setting change.
-func (p *provider) setSetting(id string, value any) error {
-	setting, err := p.GetSetting(id)
+// setSettingLocked sets a single setting value. Caller must hold storeMu write lock.
+func (p *provider) setSettingLocked(id string, value any) error {
+	setting, err := p.getSettingLocked(id)
 	if err != nil {
 		return err
 	}
@@ -288,7 +321,7 @@ func (p *provider) setSetting(id string, value any) error {
 		return err
 	}
 
-	category, id, err := p.parseSettingID(id)
+	category, id, err := p.parseSettingIDLocked(id)
 	if err != nil {
 		return err
 	}
@@ -298,39 +331,55 @@ func (p *provider) setSetting(id string, value any) error {
 }
 
 func (p *provider) SetSetting(id string, value any) error {
-	if err := p.setSetting(id, value); err != nil {
-		return err
+	p.storeMu.Lock()
+	err := p.setSettingLocked(id, value)
+	var changedCat string
+	if err == nil {
+		if cat, _, parseErr := p.parseSettingIDLocked(id); parseErr == nil {
+			changedCat = cat
+		}
 	}
-	if cat, _, err := p.parseSettingID(id); err == nil {
-		p.notifyChangeHandlers(map[string]struct{}{cat: {}})
+	p.storeMu.Unlock()
+
+	if err == nil && changedCat != "" {
+		p.notifyChangeHandlers(map[string]struct{}{changedCat: {}})
 	}
-	return nil
+	return err
 }
 
 // ResetSetting resets the value of the setting by ID to the default value.
 // Available on the concrete *provider via type assertion.
 func (p *provider) ResetSetting(id string) error {
-	category, settingKey, err := p.parseSettingID(id)
+	p.storeMu.Lock()
+	category, settingKey, err := p.parseSettingIDLocked(id)
 	if err != nil {
+		p.storeMu.Unlock()
 		return err
 	}
 
 	setting, ok := p.store[category].Settings[settingKey]
 	if !ok {
+		p.storeMu.Unlock()
 		return ErrSettingNotFound
 	}
 	setting.ResetValue()
 	p.store[category].Settings[settingKey] = setting
+	p.storeMu.Unlock()
+
 	p.notifyChangeHandlers(map[string]struct{}{category: {}})
 	return nil
 }
 
 func (p *provider) HasSetting(id string) bool {
-	_, err := p.GetSetting(id)
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	_, err := p.getSettingLocked(id)
 	return err == nil
 }
 
 func (p *provider) RegisterSetting(category string, setting Setting) error {
+	p.storeMu.Lock()
+	defer p.storeMu.Unlock()
 	if p.store == nil {
 		p.store = make(Store)
 	}
@@ -347,10 +396,21 @@ func (p *provider) RegisterSetting(category string, setting Setting) error {
 }
 
 func (p *provider) RegisterSettings(category string, settings ...Setting) error {
+	p.storeMu.Lock()
+	defer p.storeMu.Unlock()
 	for _, setting := range settings {
-		if err := p.RegisterSetting(category, setting); err != nil {
-			return err
+		if p.store == nil {
+			p.store = make(Store)
 		}
+		found, ok := p.store[category]
+		if !ok {
+			found = Category{ID: category, Settings: make(map[string]Setting)}
+		}
+		if found.Settings == nil {
+			found.Settings = make(map[string]Setting)
+		}
+		found.Settings[setting.ID] = setting
+		p.store[category] = found
 	}
 	return nil
 }
@@ -375,7 +435,9 @@ func (p *provider) notifyChangeHandlers(changedCategories map[string]struct{}) {
 		if !ok {
 			continue
 		}
-		vals, err := p.getCategoryValues(cat)
+		p.storeMu.RLock()
+		vals, err := p.getCategoryValuesLocked(cat)
+		p.storeMu.RUnlock()
 		if err != nil {
 			p.logger.Warnw("failed to get category values for change handler", "category", cat, "error", err)
 			continue
@@ -394,6 +456,8 @@ func (p *provider) notifyChangeHandlers(changedCategories map[string]struct{}) {
 // GetCategories returns a list of all categories, with the settings removed.
 // Available on the concrete *provider via type assertion.
 func (p *provider) GetCategories() []Category {
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
 	categories := make([]Category, 0, len(p.store))
 	for category := range p.store {
 		// copy and remove the settings so we don't expose them
@@ -407,6 +471,12 @@ func (p *provider) GetCategories() []Category {
 // GetCategory returns the category by ID.
 // Available on the concrete *provider via type assertion.
 func (p *provider) GetCategory(category string) (Category, error) {
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	return p.getCategoryLocked(category)
+}
+
+func (p *provider) getCategoryLocked(category string) (Category, error) {
 	settings, ok := p.store[category]
 	if !ok {
 		return Category{}, ErrSettingCategoryNotFound
@@ -417,12 +487,14 @@ func (p *provider) GetCategory(category string) (Category, error) {
 // GetCategoryValues returns a map of the values of the settings by category.
 // Available on the concrete *provider via type assertion.
 func (p *provider) GetCategoryValues(category string) (map[string]interface{}, error) {
-	return p.getCategoryValues(category)
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	return p.getCategoryValuesLocked(category)
 }
 
-// getCategoryValues is the private implementation used internally by notifyChangeHandlers.
-func (p *provider) getCategoryValues(category string) (map[string]interface{}, error) {
-	cat, err := p.GetCategory(category)
+// getCategoryValuesLocked is the private implementation. Caller must hold storeMu (read or write).
+func (p *provider) getCategoryValuesLocked(category string) (map[string]interface{}, error) {
+	cat, err := p.getCategoryLocked(category)
 	if err != nil {
 		return nil, err
 	}
@@ -435,6 +507,14 @@ func (p *provider) getCategoryValues(category string) (map[string]interface{}, e
 }
 
 func (p *provider) parseSettingID(id string) (string, string, error) {
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	return p.parseSettingIDLocked(id)
+}
+
+// parseSettingIDLocked does not access the store, but is marked Locked for consistency
+// since callers that hold the lock need a non-locking variant.
+func (p *provider) parseSettingIDLocked(id string) (string, string, error) {
 	// if we have a pluginID on the provider, the category will always be "plugin"
 	if p.pluginID != "" {
 		return "plugin", id, nil
@@ -455,7 +535,9 @@ func (p *provider) parseSettingID(id string) (string, string, error) {
 
 // GetString returns the value of the setting by ID as a string.
 func (p *provider) GetString(id string) (string, error) {
-	setting, err := p.GetSetting(id)
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	setting, err := p.getSettingLocked(id)
 	if err != nil {
 		return "", err
 	}
@@ -471,7 +553,9 @@ func (p *provider) GetString(id string) (string, error) {
 
 // GetStringSlice returns the value of the setting by ID as a string slice.
 func (p *provider) GetStringSlice(id string) ([]string, error) {
-	setting, err := p.GetSetting(id)
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	setting, err := p.getSettingLocked(id)
 	if err != nil {
 		return nil, err
 	}
@@ -499,7 +583,9 @@ func (p *provider) GetStringSlice(id string) ([]string, error) {
 
 // GetInt returns the value of the setting by ID as an int.
 func (p *provider) GetInt(id string) (int, error) {
-	setting, err := p.GetSetting(id)
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	setting, err := p.getSettingLocked(id)
 	if err != nil {
 		return 0, err
 	}
@@ -515,7 +601,9 @@ func (p *provider) GetInt(id string) (int, error) {
 
 // GetIntSlice returns the value of the setting by ID as an int slice.
 func (p *provider) GetIntSlice(id string) ([]int, error) {
-	setting, err := p.GetSetting(id)
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	setting, err := p.getSettingLocked(id)
 	if err != nil {
 		return nil, err
 	}
@@ -552,7 +640,9 @@ func (p *provider) GetIntSlice(id string) ([]int, error) {
 
 // GetFloat returns the value of the setting by ID as a float64.
 func (p *provider) GetFloat(id string) (float64, error) {
-	setting, err := p.GetSetting(id)
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	setting, err := p.getSettingLocked(id)
 	if err != nil {
 		return 0, err
 	}
@@ -568,7 +658,9 @@ func (p *provider) GetFloat(id string) (float64, error) {
 
 // GetFloatSlice returns the value of the setting by ID as a float64 slice.
 func (p *provider) GetFloatSlice(id string) ([]float64, error) {
-	setting, err := p.GetSetting(id)
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	setting, err := p.getSettingLocked(id)
 	if err != nil {
 		return nil, err
 	}
@@ -597,7 +689,9 @@ func (p *provider) GetFloatSlice(id string) ([]float64, error) {
 
 // GetBool returns the value of the setting by ID as a bool.
 func (p *provider) GetBool(id string) (bool, error) {
-	setting, err := p.GetSetting(id)
+	p.storeMu.RLock()
+	defer p.storeMu.RUnlock()
+	setting, err := p.getSettingLocked(id)
 	if err != nil {
 		return false, err
 	}
