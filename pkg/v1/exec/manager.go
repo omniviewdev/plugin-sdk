@@ -249,7 +249,10 @@ func (m *Manager) CreateSession(
 	if baseCtx == nil {
 		baseCtx = context.Background()
 	}
-	ctx, cancel := context.WithCancel(baseCtx)
+	// Sessions outlive the RPC that created them. Detach from the parent's
+	// cancellation (e.g. the gRPC unary-call context) while keeping context
+	// values (logging, tracing) intact.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(baseCtx))
 	pctxCopy.Context = ctx
 	if m.settingsProvider != nil {
 		pctxCopy.SetSettingsProvider(m.settingsProvider)
