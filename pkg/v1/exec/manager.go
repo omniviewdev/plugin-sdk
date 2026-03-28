@@ -376,12 +376,15 @@ func (m *Manager) handleStream(ss *sessionState) {
 			ss.mu.Lock()
 			ss.buffer.Append(data)
 			attached := ss.session.Attached
+			seq := ss.nextSeq
+			ss.nextSeq++
 			ss.mu.Unlock()
 			if attached {
 				m.emitOutput(StreamOutput{
 					SessionID: ss.session.ID,
 					Target:    StreamTargetStdOut,
 					Data:      data,
+					Seq:       seq,
 				})
 			}
 		}
