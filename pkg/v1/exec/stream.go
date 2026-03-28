@@ -155,6 +155,7 @@ type StreamOutput struct {
 	Target    StreamTarget `json:"target"`
 	Signal    StreamSignal `json:"signal"`
 	Error     *StreamError `json:"error,omitempty"`
+	Seq       uint64       `json:"seq"`
 }
 
 func (e *StreamError) ToProto() *execpb.StreamError {
@@ -202,6 +203,7 @@ func (o *StreamOutput) ToProto() *execpb.StreamOutput {
 		Data:   o.Data,
 		Signal: o.Signal.ToProto(),
 		Error:  o.Error.ToProto(),
+		Seq:    o.Seq,
 	}
 }
 
@@ -224,6 +226,7 @@ func NewStreamOutputFromProto(p *execpb.StreamOutput) StreamOutput {
 		Data:      p.GetData(),
 		Signal:    NewStreamSignalFromProto(p.GetSignal()),
 		Error:     NewStreamErrorFromProto(p.GetError()),
+		Seq:       p.GetSeq(),
 	}
 }
 
