@@ -368,14 +368,22 @@ func (m *Manager) handleStream(ss *sessionState) {
 		}
 
 		if read > 0 {
-			if ss.isAttached() {
+			data := buf[:read]
+			// Buffer first, then check attached — under the same lock that
+			// AttachSession uses to set attached + read the buffer. This
+			// eliminates the race where data is appended after the attach
+			// reads the buffer but before handleStream emits it.
+			ss.mu.Lock()
+			ss.buffer.Append(data)
+			attached := ss.session.Attached
+			ss.mu.Unlock()
+			if attached {
 				m.emitOutput(StreamOutput{
 					SessionID: ss.session.ID,
 					Target:    StreamTargetStdOut,
-					Data:      buf[:read],
+					Data:      data,
 				})
 			}
-			ss.buffer.Append(buf[:read])
 		}
 	}
 }
@@ -460,11 +468,17 @@ func (m *Manager) AttachSession(
 		return nil, nil, NewSessionNotFoundError(sessionID)
 	}
 
-	ss.setAttached(true)
+	// Set attached and snapshot the buffer under the same lock that
+	// handleStream uses for append+attached-check, so no data is orphaned.
+	ss.mu.Lock()
+	ss.session.Attached = true
+	bufData := ss.getBufferData()
+	ss.mu.Unlock()
+
 	m.log.Debugw(pluginContextOr(ss.ctx, pluginctx), "session attached", "session", sessionID)
 
 	snap := ss.snapshot()
-	return &snap, ss.getBufferData(), nil
+	return &snap, bufData, nil
 }
 
 // DetachSession marks a session as not attached, stopping output broadcast.
