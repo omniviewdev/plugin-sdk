@@ -40,6 +40,9 @@ type PluginMeta struct {
 	Components         PluginComponents   `json:"components"            yaml:"components"`
 	SchemaVersion      int                `json:"schema_version"        yaml:"schema_version,omitempty"`
 	SDKProtocolVersion int                `json:"sdk_protocol_version"  yaml:"sdk_protocol_version,omitempty"`
+	// StateIsolation is inspectable before launch; only a trusted builder's
+	// attestation may authorize isolated startup, never self-asserted YAML.
+	StateIsolation *StateIsolationProvenance `json:"state_isolation,omitempty" yaml:"state_isolation,omitempty"`
 }
 
 // HasUICapabilities checks if the plugin has UI capabilities.

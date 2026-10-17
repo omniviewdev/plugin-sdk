@@ -1,59 +1,72 @@
 package utils
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/state"
 )
 
-// GetPluginStorePath returns the path to the plugin store for the given plugin.
+// GetPluginStorePath returns a validated store path for an installed plugin.
+// SDK operations use directory handles rather than reopening this advisory path.
 func GetPluginStorePath(pluginID string) (string, error) {
-	homeDir, err := os.UserHomeDir()
+	plugin, err := state.OpenPluginRoot(pluginID)
 	if err != nil {
 		return "", err
 	}
-
-	basePluginPath := filepath.Join(homeDir, ".omniview", "plugins", pluginID)
-
-	// check to make sure the plugin store directory exists
-	if _, err = os.Stat(basePluginPath); os.IsNotExist(err) {
-		return "", errors.New("failed to create plugin store: plugin is not installed")
+	defer plugin.Close()
+	if err := state.RejectSymlink(plugin, "store"); err != nil {
+		return "", err
 	}
-
-	return filepath.Join(homeDir, ".omniview", "plugins", pluginID, "store"), nil
+	return filepath.Join(plugin.Name(), "store"), nil
 }
 
-// initializeStore creates the store directory for the given plugin and capability.
+// InitializePluginStore creates the private store for an installed plugin.
 func InitializePluginStore(pluginID string) error {
-	storePath, err := GetPluginStorePath(pluginID)
+	store, err := openStore(pluginID, true)
 	if err != nil {
 		return err
 	}
-
-	return os.MkdirAll(storePath, 0700)
+	return store.Close()
 }
 
-// getStore returns a file handle to the store for the given plugin and capability.
-// If the store does not exist, it will be created.
-// Make sure to close the file handle after using it!
+func openStore(pluginID string, create bool) (*os.Root, error) {
+	plugin, err := state.OpenPluginRoot(pluginID)
+	if err != nil {
+		return nil, err
+	}
+	defer plugin.Close()
+	return state.OpenDirectory(plugin, "store", create)
+}
+
+// GetStore opens a capability store, creating it if needed. The caller closes it.
 func GetStore(capability, pluginID string) (*os.File, error) {
-	storePath, err := GetPluginStorePath(pluginID)
+	if err := state.ValidateComponent(capability); err != nil {
+		return nil, err
+	}
+	store, err := openStore(pluginID, true)
 	if err != nil {
 		return nil, err
 	}
-
-	if err = InitializePluginStore(pluginID); err != nil {
+	defer store.Close()
+	if err := state.RejectSymlink(store, capability); err != nil {
 		return nil, err
 	}
-
-	return os.OpenFile(filepath.Join(storePath, capability), os.O_CREATE|os.O_RDWR, 0600)
+	return store.OpenFile(capability, os.O_CREATE|os.O_RDWR, 0600)
 }
 
-// removeStore removes the store for the given plugin and capability.
+// RemoveStore removes only the selected plugin's capability store.
 func RemoveStore(capability, pluginID string) error {
-	storePath, err := GetPluginStorePath(pluginID)
+	if err := state.ValidateComponent(capability); err != nil {
+		return err
+	}
+	store, err := openStore(pluginID, false)
 	if err != nil {
 		return err
 	}
-	return os.Remove(filepath.Join(storePath, capability))
+	defer store.Close()
+	if err := state.RejectSymlink(store, capability); err != nil {
+		return err
+	}
+	return store.Remove(capability)
 }

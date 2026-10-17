@@ -36,6 +36,9 @@ message Setting {
   repeated SettingOption options = 7;
   optional SettingFileSelection file_selection = 8;
   bool dev_only = 9;
+  // Presence is required: absent legacy metadata is not evidence of public data.
+  // Password settings remain sensitive even when a sender explicitly sends false.
+  optional bool sensitive = 10;
 }
 
 message SettingOption {
