@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/omniviewdev/plugin-sdk/pkg/profilecontract"
 )
 
 const StateDirectoryEnvironment = "OMNIVIEW_STATE_DIR"
@@ -54,7 +55,7 @@ func ResolveRoot() (string, error) {
 		return "", fmt.Errorf("read workspace manifest: %w", err)
 	}
 	// Read only identity fields; the host owns validation of the full manifest.
-	var manifest workspaceIdentity
+	var manifest profilecontract.WorkspaceIdentity
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return "", fmt.Errorf("parse workspace manifest: %w", err)
 	}

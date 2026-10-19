@@ -47,6 +47,11 @@ and current target, clean absolute sibling old root, matching v1 UUID/developmen
 identity, and valid target slug. The old root remains a protected source boundary.
 Unrelated root mismatches remain errors; the host still performs full manifest
 validation and owns rename recovery.
+The native-independent `pkg/profilecontract` package owns these v1 binding,
+claim, and ownership-journal schemas and shared read-only identity validation.
+Both host and SDK consume that contract directly; only the host validates the
+complete portable manifest and publishes or repairs ownership metadata. Metadata
+decode failures use fixed diagnostics without including private JSON values.
 
 Plugin IDs and capability filenames must be single nonempty ASCII
 letter/digit/dot/underscore/hyphen components, not `.`/`..`, trailing-dot names,
