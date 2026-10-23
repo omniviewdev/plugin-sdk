@@ -271,6 +271,68 @@ func TestManager_ConcurrentSessions(t *testing.T) {
 	}
 }
 
+func TestManager_OutputSequenceOrdering(t *testing.T) {
+	ft, err := exectest.NewFakeTerminal()
+	if err != nil {
+		t.Fatalf("NewFakeTerminal: %v", err)
+	}
+
+	handler := exec.Handler{
+		Plugin:     "test",
+		Resource:   "pod",
+		TTYHandler: exectest.NoopTTYHandler(),
+	}
+	h := exectest.Mount(t,
+		exectest.WithHandler(handler),
+		exectest.WithTerminalFactory(exectest.FakeTerminalFactory(ft)),
+	)
+
+	sess, err := h.CreateSession(exec.SessionOptions{
+		ResourcePlugin: "test",
+		ResourceKey:    "pod",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	if _, _, err := h.AttachSession(sess.ID); err != nil {
+		t.Fatalf("AttachSession: %v", err)
+	}
+
+	// Inject multiple outputs through the fake terminal master write end,
+	// with a small sleep between to ensure separate reads.
+	ft.InjectOutput([]byte("hello\n"))
+	time.Sleep(50 * time.Millisecond)
+	ft.InjectOutput([]byte("world\n"))
+
+	// Wait for at least 2 data outputs.
+	outputs := h.Output.WaitForOutputs(2, 5*time.Second)
+
+	var dataOutputs []exec.StreamOutput
+	for _, o := range outputs {
+		if o.Signal == exec.StreamSignalNone && len(o.Data) > 0 {
+			dataOutputs = append(dataOutputs, o)
+		}
+	}
+
+	if len(dataOutputs) < 2 {
+		t.Fatalf("expected at least 2 data outputs, got %d", len(dataOutputs))
+	}
+
+	// Verify first sequence number starts at 0.
+	if dataOutputs[0].Seq != 0 {
+		t.Fatalf("expected first seq to be 0, got %d", dataOutputs[0].Seq)
+	}
+
+	// Verify sequence numbers are strictly monotonically increasing.
+	for i := 1; i < len(dataOutputs); i++ {
+		if dataOutputs[i].Seq <= dataOutputs[i-1].Seq {
+			t.Fatalf("output %d: seq %d is not greater than previous seq %d",
+				i, dataOutputs[i].Seq, dataOutputs[i-1].Seq)
+		}
+	}
+}
+
 func TestManager_ListSessions_Empty(t *testing.T) {
 	h := exectest.Mount(t, exectest.WithHandler(defaultHandler()))
 

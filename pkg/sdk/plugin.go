@@ -2,16 +2,8 @@ package sdk
 
 import (
 	"context"
-	"fmt"
 	"maps"
-	"os"
-	"os/signal"
-	"path/filepath"
 	"slices"
-	"strconv"
-	"strings"
-	"syscall"
-	"time"
 
 	"github.com/hashicorp/go-plugin"
 	logging "github.com/omniviewdev/plugin-sdk/log"
@@ -22,10 +14,10 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource"
 	rp "github.com/omniviewdev/plugin-sdk/pkg/resource/plugin"
-	"github.com/omniviewdev/plugin-sdk/pkg/telemetry"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
 	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
-	pkgtypes "github.com/omniviewdev/plugin-sdk/pkg/types"
+	"github.com/omniviewdev/plugin-sdk/pkg/state"
+	"github.com/omniviewdev/plugin-sdk/pkg/telemetry"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/lifecycle"
 	sdksettings "github.com/omniviewdev/plugin-sdk/pkg/v1/settings"
@@ -66,30 +58,27 @@ type Plugin struct {
 // within your main function for your plugin and passed to the Register* functions to add
 // capabilities to the plugin.
 func NewPlugin(opts PluginOpts) *Plugin {
-	if opts.ID == "" {
-		panic("plugin ID cannot be empty")
-	}
-
-	homeDir, err := os.UserHomeDir()
+	path, err := state.OpenPluginRoot(opts.ID)
 	if err != nil {
 		panic(err)
 	}
-	path := filepath.Join(homeDir, ".omniview", "plugins", opts.ID)
-
-	// plugin yaml will be in users home
-	// create io reader from the file
-	file, err := os.Open(filepath.Join(path, "plugin.yaml"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			panic("plugin.yaml not found")
-		}
+	defer path.Close()
+	if err := state.RejectSymlink(path, "plugin.yaml"); err != nil {
 		panic(err)
 	}
+	file, err := path.Open("plugin.yaml")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
 
 	// load in the plugin configuration
 	meta := config.PluginMeta{}
 	if err = meta.Load(file); err != nil {
 		panic(err)
+	}
+	if meta.ID != opts.ID {
+		panic("plugin.yaml ID differs from requested plugin ID")
 	}
 
 	// convert the plugin settings to a map
@@ -208,18 +197,11 @@ func (p *Plugin) SetLogLevel(level logging.Level) {
 	}
 }
 
-// Serve begins serving the plugin over the given RPC server. This should be called
-// after all capabilities have been registered.
-//
-// The lifecycle service is auto-registered before serving — it reads capabilities
-// from the plugin map so plugin authors never need to touch it.
-//
-// When the OMNIVIEW_DEV environment variable is set to "1", the function will:
-//   - Intercept the go-plugin handshake line from stdout to capture the listen address
-//   - Write a .devinfo file so the IDE can connect via ReattachConfig
-//   - Register a signal handler to clean up .devinfo on graceful shutdown
+// Serve begins serving the plugin after all capabilities have been registered.
+// It auto-registers lifecycle RPC and leaves handshake transport to go-plugin.
+// The host owns development process supervision; the SDK never advertises or
+// removes legacy .devinfo records.
 func (p *Plugin) Serve() {
-	// Init telemetry before anything else — before the serveNormal/dev-mode branch.
 	telemetryProvider, err := telemetry.InitFromEnv()
 	if err != nil {
 		p.Log.Warn(context.Background(), "telemetry init failed, continuing without",
@@ -229,97 +211,7 @@ func (p *Plugin) Serve() {
 		defer telemetryProvider.Shutdown(context.Background())
 	}
 
-	startupCtx := p.startupContext()
-
-	// Auto-register the lifecycle service from the current plugin map.
 	p.registerLifecycle()
-	isDev := os.Getenv("OMNIVIEW_DEV") == "1"
-	if !isDev {
-		p.serveNormal()
-		return
-	}
-
-	protoVersion := p.effectiveProtocolVersion()
-
-	// Register cleanup handler for graceful shutdown.
-	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		<-sigCh
-		// os.Exit bypasses defers, so drain telemetry explicitly.
-		if telemetryProvider != nil {
-			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if shutErr := telemetryProvider.Shutdown(shutCtx); shutErr != nil {
-				p.Log.Warn(shutCtx, "telemetry shutdown on signal failed", logging.Error(shutErr))
-			}
-		}
-		_ = CleanupDevInfo(p.meta.ID)
-		os.Exit(0)
-	}()
-
-	// Intercept stdout to capture the go-plugin handshake line.
-	origStdout := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		p.Log.Error(startupCtx, "failed to create pipe for dev info capture", logging.Error(err))
-		p.serveNormal()
-		return
-	}
-
-	os.Stdout = w
-
-	// Start serving in a goroutine.
-	done := make(chan struct{})
-	go func() {
-		plugin.Serve(&plugin.ServeConfig{
-			HandshakeConfig: p.meta.GenerateHandshakeConfig(),
-			VersionedPlugins: map[int]plugin.PluginSet{
-				protoVersion: p.pluginMap,
-			},
-			GRPCServer: func(opts []grpc.ServerOption) *grpc.Server {
-				return GRPCServerFactoryWithLogger(p.Log, opts)
-			},
-		})
-		close(done)
-	}()
-
-	// Read the handshake line from the pipe.
-	buf := make([]byte, 4096)
-	n, readErr := r.Read(buf)
-
-	// Restore stdout immediately.
-	os.Stdout = origStdout
-
-	if readErr != nil {
-		p.Log.Error(startupCtx, "failed to read handshake line", logging.Error(readErr))
-	} else {
-		handshakeLine := string(buf[:n])
-		// Write it to real stdout so go-plugin host can read it.
-		fmt.Print(handshakeLine)
-
-		// Parse vite port from env (set by CLI tool or manually).
-		vitePort := 0
-		if vp := os.Getenv("OMNIVIEW_VITE_PORT"); vp != "" {
-			vitePort, _ = strconv.Atoi(vp)
-		}
-
-		if err := WriteDevInfo(p.meta.ID, p.meta.Version, strings.TrimSpace(handshakeLine), vitePort); err != nil {
-			p.Log.Error(startupCtx, "failed to write devinfo", logging.Error(err))
-		} else {
-			p.Log.Infow(startupCtx, "wrote .devinfo file",
-				"plugin_id", p.meta.ID,
-				"handshake", strings.TrimSpace(handshakeLine),
-			)
-		}
-	}
-
-	// Wait for serve to complete.
-	<-done
-	_ = CleanupDevInfo(p.meta.ID)
-}
-
-func (p *Plugin) serveNormal() {
 	plugin.Serve(&plugin.ServeConfig{
 		HandshakeConfig: p.meta.GenerateHandshakeConfig(),
 		VersionedPlugins: map[int]plugin.PluginSet{
@@ -328,13 +220,6 @@ func (p *Plugin) serveNormal() {
 		GRPCServer: func(opts []grpc.ServerOption) *grpc.Server {
 			return GRPCServerFactoryWithLogger(p.Log, opts)
 		},
-	})
-}
-
-func (p *Plugin) startupContext() context.Context {
-	return pkgtypes.WithPluginContext(context.Background(), &pkgtypes.PluginContext{
-		RequestID:   "plugin-startup",
-		RequesterID: "plugin-sdk",
 	})
 }
 

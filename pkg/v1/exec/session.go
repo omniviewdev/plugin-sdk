@@ -75,6 +75,7 @@ type sessionState struct {
 	wg       sync.WaitGroup // tracks handleStream + handleSignals
 
 	ttyResize bool // if true, manager calls terminal.Resize(); else sends to resize chan
+	nextSeq   uint64
 }
 
 // snapshot returns a deep copy of the session for safe external reads.

@@ -117,6 +117,7 @@ message StreamOutput {
   bytes data = 3;
   StreamSignal signal = 4;
   StreamError error = 5;
+  uint64 seq = 6;
 }
 
 enum StreamSignal {

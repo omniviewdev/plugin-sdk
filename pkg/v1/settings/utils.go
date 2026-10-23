@@ -132,6 +132,10 @@ func ToProtoSetting(s settings.Setting) *settingspb.Setting {
 	if err != nil {
 		return nil
 	}
+	defaultValue, err := ConvertInterfaceToAny(s.Default)
+	if err != nil {
+		return nil
+	}
 
 	return &settingspb.Setting{
 		Id:            s.ID,
@@ -139,9 +143,11 @@ func ToProtoSetting(s settings.Setting) *settingspb.Setting {
 		Description:   s.Description,
 		Type:          SettingTypeToProtoType(s.Type),
 		Value:         value,
+		Default:       defaultValue,
 		Options:       options,
 		FileSelection: ToProtoSettingFileSelection(s.FileSelection),
 		DevOnly:       s.DevOnly,
+		Sensitive:     grpcproto.Bool(s.Sensitive || s.Type == settings.Password),
 	}
 }
 
@@ -150,7 +156,7 @@ func FromProtoSetting(s *settingspb.Setting) settings.Setting {
 	for _, o := range s.GetOptions() {
 		value, err := ConvertAnyToInterface(o.GetValue())
 		if err != nil {
-			return settings.Setting{}
+			return settings.Setting{Sensitive: true}
 		}
 		options = append(options, settings.SettingOption{
 			Label:       o.GetLabel(),
@@ -160,7 +166,14 @@ func FromProtoSetting(s *settingspb.Setting) settings.Setting {
 	}
 	value, err := ConvertAnyToInterface(s.GetValue())
 	if err != nil {
-		return settings.Setting{}
+		return settings.Setting{Sensitive: true}
+	}
+	var defaultValue interface{}
+	if s.GetDefault() != nil {
+		defaultValue, err = ConvertAnyToInterface(s.GetDefault())
+		if err != nil {
+			return settings.Setting{Sensitive: true}
+		}
 	}
 	return settings.Setting{
 		ID:            s.GetId(),
@@ -168,8 +181,11 @@ func FromProtoSetting(s *settingspb.Setting) settings.Setting {
 		Description:   s.GetDescription(),
 		Type:          ProtoTypeToSettingType(s.GetType()),
 		Value:         value,
+		Default:       defaultValue,
 		Options:       options,
 		FileSelection: FromProtoSettingFileSelection(s.GetFileSelection()),
 		DevOnly:       s.GetDevOnly(),
+		// Missing sensitivity metadata is legacy/unknown, never explicit public.
+		Sensitive: s.Sensitive == nil || s.GetSensitive() || s.GetType() == settingspb.SettingType_SETTING_TYPE_PASSWORD,
 	}
 }

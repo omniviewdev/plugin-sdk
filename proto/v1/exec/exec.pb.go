@@ -1103,6 +1103,7 @@ type StreamOutput struct {
 	Data          []byte                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
 	Signal        StreamSignal           `protobuf:"varint,4,opt,name=signal,proto3,enum=omniview.sdk.exec.v1.StreamSignal" json:"signal,omitempty"`
 	Error         *StreamError           `protobuf:"bytes,5,opt,name=error,proto3" json:"error,omitempty"`
+	Seq           uint64                 `protobuf:"varint,6,opt,name=seq,proto3" json:"seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1170,6 +1171,13 @@ func (x *StreamOutput) GetError() *StreamError {
 		return x.Error
 	}
 	return nil
+}
+
+func (x *StreamOutput) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 type StreamError struct {
@@ -1334,13 +1342,14 @@ const file_proto_v1_exec_exec_proto_rawDesc = "" +
 	"\x05error\x18\x02 \x01(\tR\x05error\"1\n" +
 	"\vStreamInput\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data\"\x8c\x02\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"\x9e\x02\n" +
 	"\fStreamOutput\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12A\n" +
 	"\x06target\x18\x02 \x01(\x0e2).omniview.sdk.exec.v1.StreamOutput.TargetR\x06target\x12\x12\n" +
 	"\x04data\x18\x03 \x01(\fR\x04data\x12:\n" +
 	"\x06signal\x18\x04 \x01(\x0e2\".omniview.sdk.exec.v1.StreamSignalR\x06signal\x127\n" +
-	"\x05error\x18\x05 \x01(\v2!.omniview.sdk.exec.v1.StreamErrorR\x05error\" \n" +
+	"\x05error\x18\x05 \x01(\v2!.omniview.sdk.exec.v1.StreamErrorR\x05error\x12\x10\n" +
+	"\x03seq\x18\x06 \x01(\x04R\x03seq\" \n" +
 	"\x06Target\x12\n" +
 	"\n" +
 	"\x06STDOUT\x10\x00\x12\n" +
