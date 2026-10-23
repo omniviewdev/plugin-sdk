@@ -92,7 +92,7 @@ func protectedCustomPaths(workspace, home string, manifest profilecontract.Works
 		}
 	}
 	for i, path := range paths {
-		canonical, err := canonicalPath(path)
+		canonical, err := profilecontract.CanonicalPath(path)
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +126,7 @@ func resolveCustomRoot(manifestPath, home string, manifest profilecontract.Works
 			return "", false, fmt.Errorf("custom profile overlaps protected application or source storage")
 		}
 	}
-	base, err := canonicalPath(filepath.Join(home, ".omniview-dev"))
+	base, err := profilecontract.CanonicalPath(filepath.Join(home, ".omniview-dev"))
 	if err != nil {
 		return "", false, err
 	}

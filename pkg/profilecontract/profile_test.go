@@ -85,3 +85,45 @@ func TestOwnershipJournalRetainsV1SerializedIdentity(t *testing.T) {
 		t.Fatalf("v1 wire representation changed: %s %v", encoded, err)
 	}
 }
+
+func TestCanonicalPathResolvesExistingPrefixWithoutCreatingMissingSuffix(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(base, "target")
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "alias")
+	if err := os.Symlink(target, alias); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	got, err := CanonicalPath(filepath.Join(alias, "missing", "state"))
+	want := filepath.Join(target, "missing", "state")
+	if err != nil || got != want {
+		t.Fatalf("expected canonical missing suffix %q, got %q: %v", want, got, err)
+	}
+	if _, err := os.Lstat(filepath.Join(target, "missing")); !os.IsNotExist(err) {
+		t.Fatalf("canonicalization created a missing directory: %v", err)
+	}
+}
+
+func TestCanonicalPathRejectsDanglingAndLoopingSymlinks(t *testing.T) {
+	for _, name := range []string{"dangling", "loop"} {
+		t.Run(name, func(t *testing.T) {
+			base := t.TempDir()
+			link := filepath.Join(base, "link")
+			target := filepath.Join(base, "absent")
+			if name == "loop" {
+				target = link
+			}
+			if err := os.Symlink(target, link); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+			if got, err := CanonicalPath(filepath.Join(link, "state")); err == nil {
+				t.Fatalf("redirected existing prefix must not become missing path %q", got)
+			}
+		})
+	}
+}

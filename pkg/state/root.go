@@ -33,7 +33,7 @@ func ResolveRoot() (string, error) {
 	if !filepath.IsAbs(selected) {
 		return "", fmt.Errorf("%s must be an absolute resolved path", StateDirectoryEnvironment)
 	}
-	root, err := canonicalPath(selected)
+	root, err := profilecontract.CanonicalPath(selected)
 	if err != nil {
 		return "", err
 	}
@@ -46,7 +46,7 @@ func ResolveRoot() (string, error) {
 	if !filepath.IsAbs(workspace) {
 		return "", fmt.Errorf("%s must be absolute", WorkspaceFileEnvironment)
 	}
-	workspace, err = canonicalPath(workspace)
+	workspace, err = profilecontract.CanonicalPath(workspace)
 	if err != nil {
 		return "", err
 	}
@@ -73,19 +73,19 @@ func ResolveRoot() (string, error) {
 		}
 		return root, nil
 	}
-	expected, err := canonicalPath(filepath.Join(home, ".omniview-dev", "profiles", manifest.WorkspaceID, "state"))
+	expected, err := profilecontract.CanonicalPath(filepath.Join(home, ".omniview-dev", "profiles", manifest.WorkspaceID, "state"))
 	if err != nil {
 		return "", err
 	}
 	if root != expected {
 		return "", fmt.Errorf("state root conflicts with workspace profile")
 	}
-	profiles, err := canonicalPath(filepath.Join(home, ".omniview-dev", "profiles"))
+	profiles, err := profilecontract.CanonicalPath(filepath.Join(home, ".omniview-dev", "profiles"))
 	if err != nil {
 		return "", err
 	}
 	expectedProfile := filepath.Join(profiles, manifest.WorkspaceID)
-	profile, err := canonicalPath(expectedProfile)
+	profile, err := profilecontract.CanonicalPath(expectedProfile)
 	if err != nil {
 		return "", err
 	}
@@ -93,7 +93,7 @@ func ResolveRoot() (string, error) {
 		return "", fmt.Errorf("workspace state must remain at its exact UUID/state namespace")
 	}
 	for _, name := range []string{".omniview", ".omniview-nightly"} {
-		protected, err := canonicalPath(filepath.Join(home, name))
+		protected, err := profilecontract.CanonicalPath(filepath.Join(home, name))
 		if err != nil {
 			return "", err
 		}
@@ -107,29 +107,6 @@ func ResolveRoot() (string, error) {
 func contained(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
-}
-
-func canonicalPath(path string) (string, error) {
-	probe := filepath.Clean(path)
-	var missing []string
-	for {
-		resolved, err := filepath.EvalSymlinks(probe)
-		if err == nil {
-			for i := len(missing) - 1; i >= 0; i-- {
-				resolved = filepath.Join(resolved, missing[i])
-			}
-			return resolved, nil
-		}
-		if !os.IsNotExist(err) || filepath.Dir(probe) == probe {
-			return "", err
-		}
-		// A dangling symlink is not a missing directory we may recreate.
-		if _, linkErr := os.Lstat(probe); linkErr == nil {
-			return "", err
-		}
-		missing = append(missing, filepath.Base(probe))
-		probe = filepath.Dir(probe)
-	}
 }
 
 // ValidateComponent rejects path syntax for plugin IDs and capability filenames.

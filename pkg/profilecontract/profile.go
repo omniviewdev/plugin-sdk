@@ -76,7 +76,7 @@ func conflict(message string) error {
 // ReadJSON distinguishes an absent file from dangling/redirected metadata. Only
 // a genuinely absent binding permits default selection. It writes nothing.
 func ReadJSON(path string, value any) error {
-	canonical, err := canonicalPath(path)
+	canonical, err := CanonicalPath(path)
 	if os.IsNotExist(err) {
 		return conflict("profile ownership metadata contains a dangling symlink")
 	}
@@ -108,7 +108,7 @@ func ValidateRecord(record Record) error {
 	if record.SchemaVersion != 1 || err != nil || id == uuid.Nil || id.String() != record.WorkspaceID || !filepath.IsAbs(record.StateRoot) || filepath.Clean(record.StateRoot) != record.StateRoot || filepath.Base(record.StateRoot) != "state" {
 		return invalid("invalid machine-local profile identity or state path")
 	}
-	canonical, err := canonicalPath(record.StateRoot)
+	canonical, err := CanonicalPath(record.StateRoot)
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func ValidateRecord(record Record) error {
 		return conflict("custom state container cannot be redirected through symlinks")
 	}
 	container := filepath.Dir(record.StateRoot)
-	canonical, err = canonicalPath(container)
+	canonical, err = CanonicalPath(container)
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,9 @@ func (j *OwnershipJournal[M]) ValidateBoundary(root, workspaceID string, intent 
 	return oldRoot, nil
 }
 
-func canonicalPath(path string) (string, error) {
+// CanonicalPath resolves symlinks in an existing prefix without creating the
+// missing suffix. Dangling symlinks and non-absence filesystem errors fail closed.
+func CanonicalPath(path string) (string, error) {
 	probe := filepath.Clean(path)
 	var missing []string
 	for {

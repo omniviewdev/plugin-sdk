@@ -129,3 +129,31 @@ and file-selection defaults, rather than exposing the raw RPC schema. Malformed
 value/default/option payloads fail closed as sensitive metadata. This transport
 fix does not change the provider's runtime accessors or itself authorize access
 to secret settings.
+
+## Releasing the Go module
+
+The module is `github.com/omniviewdev/plugin-sdk` at the repository root.
+Publish a new, previously unused root tag of the form `v0.MINOR.PATCH` on the
+reviewed commit after it has merged into `main`. The module has no source-code
+release-version constant, nested module, or publishing workflow; a pushed Git tag
+is the Go module release. A GitHub release can accompany that tag but is not
+required for Go module resolution. Never move or reuse an existing release tag:
+Go proxies and the checksum database treat published versions as immutable.
+
+Before tagging, run the SDK tests with `GOWORK=off GOFLAGS= go test ./... -count=1`
+and finish the coordinated host/plugin compatibility checks. After pushing the
+tag, confirm the version's `.info` and `.mod` endpoints at
+`https://proxy.golang.org/github.com/omniviewdev/plugin-sdk/@v/`, then resolve it
+with `GOWORK=off GOFLAGS= GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org go mod download -json github.com/omniviewdev/plugin-sdk@<release-tag>`.
+Consumers must pin the new version, update `go.sum`, and pass their own checks
+without a local SDK replacement before their releases are published.
+
+The workspace-isolation release is `v0.6.0`: it removes the standalone `.devinfo`
+APIs and requires rebuilding plugins against this SDK. It must not reuse the
+already published `v0.5.0`, `v0.5.1`, or `v0.5.2` tags. The added exec sequence and optional
+settings-sensitivity fields preserve their protobuf field numbers and wire
+compatibility. Their generated Go files are committed alongside the schemas;
+regenerate them with `make proto` only when changing those schemas. The module's
+release tag is independent of `sdk.CurrentProtocolVersion`, which remains `1`;
+these additive fields and the host-owned isolation metadata do not require a
+handshake/lifecycle protocol bump.
