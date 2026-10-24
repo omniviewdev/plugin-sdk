@@ -46,11 +46,11 @@ type TestProvider struct {
 	IsResourceWatchRunningFunc func(ctx context.Context, connID, key string) (bool, error)
 
 	// Type handlers.
-	GetResourceGroupsFunc       func(ctx context.Context, connID string) map[string]resource.ResourceGroup
+	GetResourceGroupsFunc       func(ctx context.Context, connID string) (map[string]resource.ResourceGroup, error)
 	GetResourceGroupFunc        func(ctx context.Context, id string) (resource.ResourceGroup, error)
-	GetResourceTypesFunc        func(ctx context.Context, connID string) map[string]resource.ResourceMeta
+	GetResourceTypesFunc        func(ctx context.Context, connID string) (map[string]resource.ResourceMeta, error)
 	GetResourceTypeFunc         func(ctx context.Context, id string) (*resource.ResourceMeta, error)
-	HasResourceTypeFunc         func(ctx context.Context, id string) bool
+	HasResourceTypeFunc         func(ctx context.Context, id string) (bool, error)
 	GetResourceDefinitionFunc   func(ctx context.Context, id string) (resource.ResourceDefinition, error)
 	GetResourceCapabilitiesFunc func(ctx context.Context, key string) (*resource.ResourceCapabilities, error)
 	GetResourceSchemaFunc       func(ctx context.Context, connID, key string) (json.RawMessage, error)
@@ -294,11 +294,11 @@ func (p *TestProvider) IsResourceWatchRunning(ctx context.Context, connID string
 
 // --- TypeProvider ---
 
-func (p *TestProvider) GetResourceGroups(ctx context.Context, connID string) map[string]resource.ResourceGroup {
+func (p *TestProvider) GetResourceGroups(ctx context.Context, connID string) (map[string]resource.ResourceGroup, error) {
 	if p.GetResourceGroupsFunc != nil {
 		return p.GetResourceGroupsFunc(ctx, connID)
 	}
-	return map[string]resource.ResourceGroup{}
+	return map[string]resource.ResourceGroup{}, nil
 }
 
 func (p *TestProvider) GetResourceGroup(ctx context.Context, id string) (resource.ResourceGroup, error) {
@@ -308,11 +308,11 @@ func (p *TestProvider) GetResourceGroup(ctx context.Context, id string) (resourc
 	return resource.ResourceGroup{}, nil
 }
 
-func (p *TestProvider) GetResourceTypes(ctx context.Context, connID string) map[string]resource.ResourceMeta {
+func (p *TestProvider) GetResourceTypes(ctx context.Context, connID string) (map[string]resource.ResourceMeta, error) {
 	if p.GetResourceTypesFunc != nil {
 		return p.GetResourceTypesFunc(ctx, connID)
 	}
-	return map[string]resource.ResourceMeta{}
+	return map[string]resource.ResourceMeta{}, nil
 }
 
 func (p *TestProvider) GetResourceType(ctx context.Context, id string) (*resource.ResourceMeta, error) {
@@ -322,11 +322,11 @@ func (p *TestProvider) GetResourceType(ctx context.Context, id string) (*resourc
 	return nil, nil
 }
 
-func (p *TestProvider) HasResourceType(ctx context.Context, id string) bool {
+func (p *TestProvider) HasResourceType(ctx context.Context, id string) (bool, error) {
 	if p.HasResourceTypeFunc != nil {
 		return p.HasResourceTypeFunc(ctx, id)
 	}
-	return false
+	return false, nil
 }
 
 func (p *TestProvider) GetResourceDefinition(ctx context.Context, id string) (resource.ResourceDefinition, error) {

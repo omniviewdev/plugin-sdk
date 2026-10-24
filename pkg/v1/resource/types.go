@@ -492,10 +492,13 @@ type ActionResult struct {
 	Message string                 `json:"message"`
 }
 
-// ActionEvent represents a streaming event from a long-running action.
+// ActionEvent begins with exactly one concrete-provider "ready" after native
+// admission/establishment. Returning before ready fails the open. Error events
+// carry Error; Data must never contain raw failure diagnostics.
 type ActionEvent struct {
-	Type string                 `json:"type"` // "progress", "output", "error", "complete"
+	Type string                 `json:"type"` // "ready", "progress", "output", "error", "complete"
 	Data map[string]interface{} `json:"data"`
+	Error *ResourceOperationError `json:"error,omitempty"`
 }
 
 // ============================================================================

@@ -25,16 +25,16 @@ func NewClient(stub resourcepb.ResourcePluginClient) resource.Provider {
 }
 
 // errNotAvailable is returned for Provider methods that have no gRPC RPC.
-var errNotAvailable = fmt.Errorf("not available over gRPC")
+var errNotAvailable = &resource.ResourceOperationError{Code: "UNSUPPORTED", Title: "Unsupported operation", Message: "This operation is not available over the resource transport."}
 
 // ============================================================================
 // Connection Lifecycle
 // ============================================================================
 
 func (c *client) LoadConnections(ctx context.Context) ([]types.Connection, error) {
-	resp, err := c.stub.LoadConnections(ctx, &resourcepb.LoadConnectionsRequest{})
+	resp, err := c.stub.LoadConnections(outgoingSession(ctx), &resourcepb.LoadConnectionsRequest{})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	conns := make([]types.Connection, len(resp.GetConnections()))
 	for i, pb := range resp.GetConnections() {
@@ -44,33 +44,33 @@ func (c *client) LoadConnections(ctx context.Context) ([]types.Connection, error
 }
 
 func (c *client) StartConnection(ctx context.Context, id string) (types.ConnectionStatus, error) {
-	resp, err := c.stub.StartConnection(ctx, &resourcepb.ConnectionRequest{ConnectionId: id})
+	resp, err := c.stub.StartConnection(outgoingSession(ctx), &resourcepb.ConnectionRequest{ConnectionId: id})
 	if err != nil {
-		return types.ConnectionStatus{}, err
+		return types.ConnectionStatus{}, decodeRPCError(err)
 	}
 	return connectionStatusFromProto(resp.GetStatus()), nil
 }
 
 func (c *client) CheckConnection(ctx context.Context, id string) (types.ConnectionStatus, error) {
-	resp, err := c.stub.CheckConnection(ctx, &resourcepb.CheckConnectionRequest{ConnectionId: id})
+	resp, err := c.stub.CheckConnection(outgoingSession(ctx), &resourcepb.CheckConnectionRequest{ConnectionId: id})
 	if err != nil {
-		return types.ConnectionStatus{}, err
+		return types.ConnectionStatus{}, decodeRPCError(err)
 	}
 	return connectionStatusFromProto(resp.GetStatus()), nil
 }
 
 func (c *client) StopConnection(ctx context.Context, id string) (types.Connection, error) {
-	resp, err := c.stub.StopConnection(ctx, &resourcepb.ConnectionRequest{ConnectionId: id})
+	resp, err := c.stub.StopConnection(outgoingSession(ctx), &resourcepb.ConnectionRequest{ConnectionId: id})
 	if err != nil {
-		return types.Connection{}, err
+		return types.Connection{}, decodeRPCError(err)
 	}
 	return connectionFromProto(resp.GetConnection()), nil
 }
 
 func (c *client) GetConnectionNamespaces(ctx context.Context, id string) ([]string, error) {
-	resp, err := c.stub.GetConnectionNamespaces(ctx, &resourcepb.ConnectionRequest{ConnectionId: id})
+	resp, err := c.stub.GetConnectionNamespaces(outgoingSession(ctx), &resourcepb.ConnectionRequest{ConnectionId: id})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	return resp.GetNamespaces(), nil
 }
@@ -92,9 +92,9 @@ func (c *client) DeleteConnection(_ context.Context, _ string) error {
 }
 
 func (c *client) WatchConnections(ctx context.Context, stream chan<- []types.Connection) error {
-	s, err := c.stub.WatchConnections(ctx, &resourcepb.WatchConnectionsRequest{})
+	s, err := c.stub.WatchConnections(outgoingSession(ctx), &resourcepb.WatchConnectionsRequest{})
 	if err != nil {
-		return err
+		return decodeRPCError(err)
 	}
 	defer close(stream)
 	for {
@@ -103,7 +103,7 @@ func (c *client) WatchConnections(ctx context.Context, stream chan<- []types.Con
 			return nil
 		}
 		if err != nil {
-			return err
+			return decodeRPCError(err)
 		}
 		conns := make([]types.Connection, len(resp.GetConnections()))
 		for i, pb := range resp.GetConnections() {
@@ -124,16 +124,16 @@ func (c *client) WatchConnections(ctx context.Context, stream chan<- []types.Con
 func (c *client) Get(ctx context.Context, key string, input resource.GetInput) (*resource.GetResult, error) {
 	connID, err := connectionIDFromCtx(ctx)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
-	resp, err := c.stub.Get(ctx, &resourcepb.GetRequest{
+	resp, err := c.stub.Get(outgoingSession(ctx), &resourcepb.GetRequest{
 		ConnectionId: connID,
 		ResourceKey:  key,
 		Id:           input.ID,
 		Namespace:    input.Namespace,
 	})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	if resp.GetError() != nil {
 		return nil, resourceErrorFromProto(resp.GetError())
@@ -147,7 +147,7 @@ func (c *client) Get(ctx context.Context, key string, input resource.GetInput) (
 func (c *client) List(ctx context.Context, key string, input resource.ListInput) (*resource.ListResult, error) {
 	connID, err := connectionIDFromCtx(ctx)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	req := &resourcepb.ListRequest{
 		ConnectionId: connID,
@@ -160,9 +160,9 @@ func (c *client) List(ctx context.Context, key string, input resource.ListInput)
 	if input.Pagination != (resource.PaginationParams{}) {
 		req.Pagination = paginationToProto(input.Pagination)
 	}
-	resp, err := c.stub.List(ctx, req)
+	resp, err := c.stub.List(outgoingSession(ctx), req)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	if resp.GetError() != nil {
 		return nil, resourceErrorFromProto(resp.GetError())
@@ -182,11 +182,11 @@ func (c *client) List(ctx context.Context, key string, input resource.ListInput)
 func (c *client) Find(ctx context.Context, key string, input resource.FindInput) (*resource.FindResult, error) {
 	connID, err := connectionIDFromCtx(ctx)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	filters, err := filterExpressionToProto(input.Filters)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	req := &resourcepb.FindRequest{
 		ConnectionId: connID,
@@ -201,9 +201,9 @@ func (c *client) Find(ctx context.Context, key string, input resource.FindInput)
 	if input.Pagination != (resource.PaginationParams{}) {
 		req.Pagination = paginationToProto(input.Pagination)
 	}
-	resp, err := c.stub.Find(ctx, req)
+	resp, err := c.stub.Find(outgoingSession(ctx), req)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	if resp.GetError() != nil {
 		return nil, resourceErrorFromProto(resp.GetError())
@@ -223,16 +223,16 @@ func (c *client) Find(ctx context.Context, key string, input resource.FindInput)
 func (c *client) Create(ctx context.Context, key string, input resource.CreateInput) (*resource.CreateResult, error) {
 	connID, err := connectionIDFromCtx(ctx)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
-	resp, err := c.stub.Create(ctx, &resourcepb.CreateRequest{
+	resp, err := c.stub.Create(outgoingSession(ctx), &resourcepb.CreateRequest{
 		ConnectionId: connID,
 		ResourceKey:  key,
 		Data:         input.Input,
 		Namespace:    input.Namespace,
 	})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	if resp.GetError() != nil {
 		return nil, resourceErrorFromProto(resp.GetError())
@@ -246,9 +246,9 @@ func (c *client) Create(ctx context.Context, key string, input resource.CreateIn
 func (c *client) Update(ctx context.Context, key string, input resource.UpdateInput) (*resource.UpdateResult, error) {
 	connID, err := connectionIDFromCtx(ctx)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
-	resp, err := c.stub.Update(ctx, &resourcepb.UpdateRequest{
+	resp, err := c.stub.Update(outgoingSession(ctx), &resourcepb.UpdateRequest{
 		ConnectionId: connID,
 		ResourceKey:  key,
 		Data:         input.Input,
@@ -256,7 +256,7 @@ func (c *client) Update(ctx context.Context, key string, input resource.UpdateIn
 		Namespace:    input.Namespace,
 	})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	if resp.GetError() != nil {
 		return nil, resourceErrorFromProto(resp.GetError())
@@ -270,7 +270,7 @@ func (c *client) Update(ctx context.Context, key string, input resource.UpdateIn
 func (c *client) Delete(ctx context.Context, key string, input resource.DeleteInput) (*resource.DeleteResult, error) {
 	connID, err := connectionIDFromCtx(ctx)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	req := &resourcepb.DeleteRequest{
 		ConnectionId: connID,
@@ -282,9 +282,9 @@ func (c *client) Delete(ctx context.Context, key string, input resource.DeleteIn
 		gp := int32(*input.GracePeriodSeconds)
 		req.GracePeriodSeconds = &gp
 	}
-	resp, err := c.stub.Delete(ctx, req)
+	resp, err := c.stub.Delete(outgoingSession(ctx), req)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	if resp.GetError() != nil {
 		return nil, resourceErrorFromProto(resp.GetError())
@@ -298,44 +298,42 @@ func (c *client) Delete(ctx context.Context, key string, input resource.DeleteIn
 // Type Information
 // ============================================================================
 
-func (c *client) GetResourceGroups(ctx context.Context, connectionID string) map[string]resource.ResourceGroup {
-	resp, err := c.stub.GetResourceGroups(ctx, &resourcepb.ResourceGroupsRequest{ConnectionId: connectionID})
+func (c *client) GetResourceGroups(ctx context.Context, connectionID string) (map[string]resource.ResourceGroup, error) {
+	resp, err := c.stub.GetResourceGroups(outgoingSession(ctx), &resourcepb.ResourceGroupsRequest{ConnectionId: connectionID})
 	if err != nil {
-		c.log.Error(ctx, "GetResourceGroups RPC failed", logging.Error(err))
-		return map[string]resource.ResourceGroup{}
+		return nil, decodeRPCError(err)
 	}
 	groups := make(map[string]resource.ResourceGroup, len(resp.GetGroups()))
 	for k, g := range resp.GetGroups() {
 		groups[k] = resourceGroupFromProto(g)
 	}
-	return groups
+	return groups, nil
 }
 
-func (c *client) GetResourceTypes(ctx context.Context, connectionID string) map[string]resource.ResourceMeta {
-	resp, err := c.stub.GetResourceTypes(ctx, &resourcepb.ResourceTypesRequest{ConnectionId: connectionID})
+func (c *client) GetResourceTypes(ctx context.Context, connectionID string) (map[string]resource.ResourceMeta, error) {
+	resp, err := c.stub.GetResourceTypes(outgoingSession(ctx), &resourcepb.ResourceTypesRequest{ConnectionId: connectionID})
 	if err != nil {
-		c.log.Error(ctx, "GetResourceTypes RPC failed", logging.Error(err))
-		return map[string]resource.ResourceMeta{}
+		return nil, decodeRPCError(err)
 	}
 	types := make(map[string]resource.ResourceMeta, len(resp.GetTypes()))
 	for k, m := range resp.GetTypes() {
 		types[k] = resourceMetaFromProto(m)
 	}
-	return types
+	return types, nil
 }
 
 func (c *client) GetResourceCapabilities(ctx context.Context, key string) (*resource.ResourceCapabilities, error) {
-	resp, err := c.stub.GetResourceCapabilities(ctx, &resourcepb.ResourceCapabilitiesRequest{ResourceKey: key})
+	resp, err := c.stub.GetResourceCapabilities(outgoingSession(ctx), &resourcepb.ResourceCapabilitiesRequest{ResourceKey: key})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	return capabilitiesFromProto(resp.GetCapabilities()), nil
 }
 
 func (c *client) GetFilterFields(ctx context.Context, connectionID string, key string) ([]resource.FilterField, error) {
-	resp, err := c.stub.GetFilterFields(ctx, &resourcepb.FilterFieldsRequest{ConnectionId: connectionID, ResourceKey: key})
+	resp, err := c.stub.GetFilterFields(outgoingSession(ctx), &resourcepb.FilterFieldsRequest{ConnectionId: connectionID, ResourceKey: key})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	fields := make([]resource.FilterField, len(resp.GetFields()))
 	for i, f := range resp.GetFields() {
@@ -345,17 +343,17 @@ func (c *client) GetFilterFields(ctx context.Context, connectionID string, key s
 }
 
 func (c *client) GetResourceSchema(ctx context.Context, connectionID string, key string) (json.RawMessage, error) {
-	resp, err := c.stub.GetResourceSchema(ctx, &resourcepb.ResourceSchemaRequest{ConnectionId: connectionID, ResourceKey: key})
+	resp, err := c.stub.GetResourceSchema(outgoingSession(ctx), &resourcepb.ResourceSchemaRequest{ConnectionId: connectionID, ResourceKey: key})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	return json.RawMessage(resp.GetSchema()), nil
 }
 
 func (c *client) GetEditorSchemas(ctx context.Context, connectionID string) ([]resource.EditorSchema, error) {
-	resp, err := c.stub.GetEditorSchemas(ctx, &resourcepb.EditorSchemasRequest{ConnectionId: connectionID})
+	resp, err := c.stub.GetEditorSchemas(outgoingSession(ctx), &resourcepb.EditorSchemasRequest{ConnectionId: connectionID})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	schemas := make([]resource.EditorSchema, len(resp.GetSchemas()))
 	for i, s := range resp.GetSchemas() {
@@ -372,10 +370,9 @@ func (c *client) GetResourceType(_ context.Context, _ string) (*resource.Resourc
 	return nil, errNotAvailable
 }
 
-// HasResourceType always returns false — the v1 resource proto does not define
-// a HasResourceType RPC, so there is no server-side implementation to call.
-func (c *client) HasResourceType(_ context.Context, _ string) bool {
-	return false
+// No HasResourceType RPC exists; unsupported is not authoritative absence.
+func (c *client) HasResourceType(_ context.Context, _ string) (bool, error) {
+	return false, errNotAvailable
 }
 
 func (c *client) GetResourceDefinition(_ context.Context, _ string) (resource.ResourceDefinition, error) {
@@ -389,20 +386,20 @@ func (c *client) GetResourceDefinition(_ context.Context, _ string) (resource.Re
 func (c *client) GetActions(ctx context.Context, key string) ([]resource.ActionDescriptor, error) {
 	connID, err := connectionIDFromCtx(ctx)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
-	resp, err := c.stub.GetActions(ctx, &resourcepb.GetActionsRequest{
+	resp, err := c.stub.GetActions(outgoingSession(ctx), &resourcepb.GetActionsRequest{
 		ConnectionId: connID,
 		ResourceKey:  key,
 	})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	actions := make([]resource.ActionDescriptor, len(resp.GetActions()))
 	for i, a := range resp.GetActions() {
 		ad, err := actionDescriptorFromProto(a)
 		if err != nil {
-			return nil, err
+			return nil, decodeRPCError(err)
 		}
 		actions[i] = ad
 	}
@@ -412,20 +409,20 @@ func (c *client) GetActions(ctx context.Context, key string) ([]resource.ActionD
 func (c *client) ExecuteAction(ctx context.Context, key string, actionID string, input resource.ActionInput) (*resource.ActionResult, error) {
 	connID, err := connectionIDFromCtx(ctx)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	pbInput, err := actionInputToProto(input)
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
-	resp, err := c.stub.ExecuteAction(ctx, &resourcepb.ExecuteActionRequest{
+	resp, err := c.stub.ExecuteAction(outgoingSession(ctx), &resourcepb.ExecuteActionRequest{
 		ConnectionId: connID,
 		ResourceKey:  key,
 		ActionId:     actionID,
 		Input:        pbInput,
 	})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	if resp.GetResult().GetError() != nil {
 		return nil, resourceErrorFromProto(resp.GetResult().GetError())
@@ -436,20 +433,20 @@ func (c *client) ExecuteAction(ctx context.Context, key string, actionID string,
 func (c *client) StreamAction(ctx context.Context, key string, actionID string, input resource.ActionInput, stream chan<- resource.ActionEvent) error {
 	connID, err := connectionIDFromCtx(ctx)
 	if err != nil {
-		return err
+		return decodeRPCError(err)
 	}
 	pbInput, err := actionInputToProto(input)
 	if err != nil {
-		return err
+		return decodeRPCError(err)
 	}
-	s, err := c.stub.StreamAction(ctx, &resourcepb.ExecuteActionRequest{
+	s, err := c.stub.StreamAction(outgoingSession(ctx), &resourcepb.ExecuteActionRequest{
 		ConnectionId: connID,
 		ResourceKey:  key,
 		ActionId:     actionID,
 		Input:        pbInput,
 	})
 	if err != nil {
-		return err
+		return decodeRPCError(err)
 	}
 	defer close(stream)
 	for {
@@ -458,7 +455,7 @@ func (c *client) StreamAction(ctx context.Context, key string, actionID string, 
 			return nil
 		}
 		if err != nil {
-			return err
+			return decodeRPCError(err)
 		}
 		select {
 		case stream <- actionEventFromProto(event):
@@ -473,9 +470,9 @@ func (c *client) StreamAction(ctx context.Context, key string, actionID string, 
 // ============================================================================
 
 func (c *client) ListenForEvents(ctx context.Context, sink resource.WatchEventSink) error {
-	s, err := c.stub.ListenForEvents(ctx, &resourcepb.ListenRequest{})
+	s, err := c.stub.ListenForEvents(outgoingSession(ctx), &resourcepb.ListenRequest{})
 	if err != nil {
-		return err
+		return decodeRPCError(err)
 	}
 	for {
 		event, err := s.Recv()
@@ -483,7 +480,7 @@ func (c *client) ListenForEvents(ctx context.Context, sink resource.WatchEventSi
 			return nil
 		}
 		if err != nil {
-			return err
+			return decodeRPCError(err)
 		}
 		dispatchWatchEvent(event, sink, c.log)
 	}
@@ -547,12 +544,12 @@ func dispatchWatchEvent(event *resourcepb.WatchEvent, sink resource.WatchEventSi
 }
 
 func (c *client) EnsureResourceWatch(ctx context.Context, connectionID string, key string) error {
-	resp, err := c.stub.EnsureResourceWatch(ctx, &resourcepb.WatchResourceRequest{
+	resp, err := c.stub.EnsureResourceWatch(outgoingSession(ctx), &resourcepb.WatchResourceRequest{
 		ConnectionId: connectionID,
 		ResourceKey:  key,
 	})
 	if err != nil {
-		return err
+		return decodeRPCError(err)
 	}
 	if !resp.GetSuccess() {
 		return fmt.Errorf("%s", resp.GetErrorMessage())
@@ -561,12 +558,12 @@ func (c *client) EnsureResourceWatch(ctx context.Context, connectionID string, k
 }
 
 func (c *client) StopResourceWatch(ctx context.Context, connectionID string, key string) error {
-	resp, err := c.stub.StopResourceWatch(ctx, &resourcepb.WatchResourceRequest{
+	resp, err := c.stub.StopResourceWatch(outgoingSession(ctx), &resourcepb.WatchResourceRequest{
 		ConnectionId: connectionID,
 		ResourceKey:  key,
 	})
 	if err != nil {
-		return err
+		return decodeRPCError(err)
 	}
 	if !resp.GetSuccess() {
 		return fmt.Errorf("%s", resp.GetErrorMessage())
@@ -575,9 +572,9 @@ func (c *client) StopResourceWatch(ctx context.Context, connectionID string, key
 }
 
 func (c *client) GetWatchState(ctx context.Context, connectionID string) (*resource.WatchConnectionSummary, error) {
-	resp, err := c.stub.GetWatchState(ctx, &resourcepb.GetWatchStateRequest{ConnectionId: connectionID})
+	resp, err := c.stub.GetWatchState(outgoingSession(ctx), &resourcepb.GetWatchStateRequest{ConnectionId: connectionID})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	return watchConnectionSummaryFromProto(resp), nil
 }
@@ -607,15 +604,15 @@ func (c *client) IsResourceWatchRunning(_ context.Context, _ string, _ string) (
 // ============================================================================
 
 func (c *client) GetRelationships(ctx context.Context, key string) ([]resource.RelationshipDescriptor, error) {
-	resp, err := c.stub.GetRelationships(ctx, &resourcepb.RelationshipsRequest{ResourceKey: key})
+	resp, err := c.stub.GetRelationships(outgoingSession(ctx), &resourcepb.RelationshipsRequest{ResourceKey: key})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	rels := make([]resource.RelationshipDescriptor, len(resp.GetRelationships()))
 	for i, r := range resp.GetRelationships() {
 		rel, err := relationshipDescriptorFromProto(r)
 		if err != nil {
-			return nil, err
+			return nil, decodeRPCError(err)
 		}
 		rels[i] = rel
 	}
@@ -623,20 +620,20 @@ func (c *client) GetRelationships(ctx context.Context, key string) ([]resource.R
 }
 
 func (c *client) ResolveRelationships(ctx context.Context, connectionID string, key string, id string, namespace string) ([]resource.ResolvedRelationship, error) {
-	resp, err := c.stub.ResolveRelationships(ctx, &resourcepb.ResolveRelationshipsRequest{
+	resp, err := c.stub.ResolveRelationships(outgoingSession(ctx), &resourcepb.ResolveRelationshipsRequest{
 		ConnectionId: connectionID,
 		ResourceKey:  key,
 		Id:           id,
 		Namespace:    namespace,
 	})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	resolved := make([]resource.ResolvedRelationship, len(resp.GetRelationships()))
 	for i, r := range resp.GetRelationships() {
 		rr, err := resolvedRelationshipFromProto(r)
 		if err != nil {
-			return nil, err
+			return nil, decodeRPCError(err)
 		}
 		resolved[i] = rr
 	}
@@ -648,19 +645,19 @@ func (c *client) ResolveRelationships(ctx context.Context, connectionID string, 
 // ============================================================================
 
 func (c *client) GetHealth(ctx context.Context, connectionID string, key string, data json.RawMessage) (*resource.ResourceHealth, error) {
-	resp, err := c.stub.GetHealth(ctx, &resourcepb.HealthRequest{
+	resp, err := c.stub.GetHealth(outgoingSession(ctx), &resourcepb.HealthRequest{
 		ConnectionId: connectionID,
 		ResourceKey:  key,
 		Data:         data,
 	})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	return resourceHealthFromProto(resp.GetHealth()), nil
 }
 
 func (c *client) GetResourceEvents(ctx context.Context, connectionID string, key string, id string, namespace string, limit int32) ([]resource.ResourceEvent, error) {
-	resp, err := c.stub.GetResourceEvents(ctx, &resourcepb.ResourceEventsRequest{
+	resp, err := c.stub.GetResourceEvents(outgoingSession(ctx), &resourcepb.ResourceEventsRequest{
 		ConnectionId: connectionID,
 		ResourceKey:  key,
 		Id:           id,
@@ -668,7 +665,7 @@ func (c *client) GetResourceEvents(ctx context.Context, connectionID string, key
 		Limit:        limit,
 	})
 	if err != nil {
-		return nil, err
+		return nil, decodeRPCError(err)
 	}
 	events := make([]resource.ResourceEvent, len(resp.GetEvents()))
 	for i, e := range resp.GetEvents() {

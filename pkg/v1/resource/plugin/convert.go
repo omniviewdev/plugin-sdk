@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -303,6 +302,14 @@ var errorCodeToProto = map[string]int32{
 	"UNAUTHORIZED":            12,
 	"CONNECTION_ERROR":        13,
 	"CERTIFICATE_ERROR":       14,
+	"INVALID_REQUEST": 15,
+	"UNSUPPORTED": 16,
+	"CANCELLED": 17,
+	"RESOURCE_LIMIT": 18,
+	"CONTINUATION_EXPIRED": 19,
+	"RESET_REQUIRED": 20,
+	"PARTIAL_RESULT": 21,
+	"PROVIDER_ERROR": 22,
 }
 
 var errorCodeFromProto = map[int32]string{
@@ -320,6 +327,14 @@ var errorCodeFromProto = map[int32]string{
 	12: "UNAUTHORIZED",
 	13: "CONNECTION_ERROR",
 	14: "CERTIFICATE_ERROR",
+	15: "INVALID_REQUEST",
+	16: "UNSUPPORTED",
+	17: "CANCELLED",
+	18: "RESOURCE_LIMIT",
+	19: "CONTINUATION_EXPIRED",
+	20: "RESET_REQUIRED",
+	21: "PARTIAL_RESULT",
+	22: "PROVIDER_ERROR",
 }
 
 func resourceErrorToProto(e *resource.ResourceOperationError) *commonpb.ResourceError {
@@ -361,15 +376,7 @@ func errorToProtoError(err error) *commonpb.ResourceError {
 	if err == nil {
 		return nil
 	}
-	var roe *resource.ResourceOperationError
-	if errors.As(err, &roe) {
-		return resourceErrorToProto(roe)
-	}
-	return &commonpb.ResourceError{
-		Code:    6, // INTERNAL
-		Title:   "Internal error",
-		Message: err.Error(),
-	}
+	return resourceErrorToProto(structuredError(err))
 }
 
 // ============================================================================
@@ -842,6 +849,7 @@ func actionEventToProto(e resource.ActionEvent) (*resourcepb.StreamActionEvent, 
 	return &resourcepb.StreamActionEvent{
 		Type: e.Type,
 		Data: data,
+		Error: resourceErrorToProto(e.Error),
 	}, nil
 }
 
@@ -856,6 +864,7 @@ func actionEventFromProto(pb *resourcepb.StreamActionEvent) resource.ActionEvent
 	return resource.ActionEvent{
 		Type: pb.GetType(),
 		Data: data,
+		Error: resourceErrorFromProto(pb.GetError()),
 	}
 }
 
