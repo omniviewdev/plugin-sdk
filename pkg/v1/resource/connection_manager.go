@@ -305,8 +305,7 @@ func (m *connectionManager[ClientT]) StartConnection(ctx context.Context, connec
 
 	// Clone before passing to provider — prevents mutation of manager-owned maps.
 	connForProvider := cloneConnection(connSnapshot)
-	session := &Session{Connection: &connForProvider}
-	clientCtx := WithSession(ctx, session)
+	clientCtx := withConnectionSession(ctx, &connForProvider)
 	client, err := m.provider.CreateClient(clientCtx)
 	if err != nil {
 		return types.ConnectionStatus{}, fmt.Errorf("create client for %q: %w", connectionID, err)
@@ -384,7 +383,7 @@ func (m *connectionManager[ClientT]) StopConnection(ctx context.Context, connect
 
 	// Best-effort client cleanup. Clone to prevent provider from mutating manager state.
 	connForDestroy := cloneConnection(state.conn)
-	destroyCtx := WithSession(ctx, &Session{Connection: &connForDestroy})
+	destroyCtx := withConnectionSession(ctx, &connForDestroy)
 	err := m.provider.DestroyClient(destroyCtx, state.client)
 	return cloneConnection(state.conn), err
 }
@@ -512,7 +511,7 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 	// Create a new client with the updated connection data.
 	// Clone to prevent provider from mutating manager-owned maps.
 	connForProvider := cloneConnection(stored)
-	clientCtx := WithSession(ctx, &Session{Connection: &connForProvider})
+	clientCtx := withConnectionSession(ctx, &connForProvider)
 	newClient, err := m.provider.CreateClient(clientCtx)
 	if err != nil {
 		// Don't update m.loaded so a retry with the same data won't be
@@ -550,7 +549,7 @@ func (m *connectionManager[ClientT]) UpdateConnection(ctx context.Context, conn 
 
 	// Clean up old resources after successful swap.
 	oldCancel()
-	oldDestroyCtx := WithSession(ctx, &Session{Connection: &oldConn})
+	oldDestroyCtx := withConnectionSession(ctx, &oldConn)
 	if err := m.provider.DestroyClient(oldDestroyCtx, oldClient); err != nil {
 		return conn, err
 	}
@@ -590,7 +589,7 @@ func (m *connectionManager[ClientT]) DeleteConnection(ctx context.Context, conne
 	if isActive {
 		state.cancel()
 		connForDestroy := cloneConnection(state.conn)
-		destroyCtx := WithSession(ctx, &Session{Connection: &connForDestroy})
+		destroyCtx := withConnectionSession(ctx, &connForDestroy)
 		if err := m.provider.DestroyClient(destroyCtx, state.client); err != nil {
 			return fmt.Errorf("destroy client for %q: %w", connectionID, err)
 		}

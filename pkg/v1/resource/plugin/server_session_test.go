@@ -61,10 +61,10 @@ func TestServer_SessionInjection(t *testing.T) {
 			name: "GetResourceGroups",
 			setup: func(t *testing.T, called *bool) resourcetest.Option {
 				return func(p *resourcetest.TestProvider) {
-					p.GetResourceGroupsFunc = func(ctx context.Context, cid string) map[string]resource.ResourceGroup {
+					p.GetResourceGroupsFunc = func(ctx context.Context, cid string) (map[string]resource.ResourceGroup, error) {
 						requireSession(t, ctx, connID)
 						*called = true
-						return nil
+						return nil, nil
 					}
 				}
 			},
@@ -77,10 +77,10 @@ func TestServer_SessionInjection(t *testing.T) {
 			name: "GetResourceTypes",
 			setup: func(t *testing.T, called *bool) resourcetest.Option {
 				return func(p *resourcetest.TestProvider) {
-					p.GetResourceTypesFunc = func(ctx context.Context, cid string) map[string]resource.ResourceMeta {
+					p.GetResourceTypesFunc = func(ctx context.Context, cid string) (map[string]resource.ResourceMeta, error) {
 						requireSession(t, ctx, connID)
 						*called = true
-						return nil
+						return nil, nil
 					}
 				}
 			},

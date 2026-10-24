@@ -23,43 +23,43 @@ type TestProvider struct {
 	DeleteFunc func(ctx context.Context, key string, input resource.DeleteInput) (*resource.DeleteResult, error)
 
 	// Connection handlers.
-	StartConnectionFunc      func(ctx context.Context, id string) (types.ConnectionStatus, error)
-	StopConnectionFunc       func(ctx context.Context, id string) (types.Connection, error)
-	CheckConnectionFunc      func(ctx context.Context, id string) (types.ConnectionStatus, error)
-	LoadConnectionsFunc      func(ctx context.Context) ([]types.Connection, error)
-	ListConnectionsFunc      func(ctx context.Context) ([]types.Connection, error)
-	GetConnectionFunc        func(ctx context.Context, id string) (types.Connection, error)
-	GetConnectionNSFunc      func(ctx context.Context, id string) ([]string, error)
-	UpdateConnectionFunc     func(ctx context.Context, conn types.Connection) (types.Connection, error)
-	DeleteConnectionFunc     func(ctx context.Context, id string) error
-	WatchConnectionsFunc     func(ctx context.Context, stream chan<- []types.Connection) error
+	StartConnectionFunc  func(ctx context.Context, id string) (types.ConnectionStatus, error)
+	StopConnectionFunc   func(ctx context.Context, id string) (types.Connection, error)
+	CheckConnectionFunc  func(ctx context.Context, id string) (types.ConnectionStatus, error)
+	LoadConnectionsFunc  func(ctx context.Context) ([]types.Connection, error)
+	ListConnectionsFunc  func(ctx context.Context) ([]types.Connection, error)
+	GetConnectionFunc    func(ctx context.Context, id string) (types.Connection, error)
+	GetConnectionNSFunc  func(ctx context.Context, id string) ([]string, error)
+	UpdateConnectionFunc func(ctx context.Context, conn types.Connection) (types.Connection, error)
+	DeleteConnectionFunc func(ctx context.Context, id string) error
+	WatchConnectionsFunc func(ctx context.Context, stream chan<- []types.Connection) error
 
 	// Watch handlers.
-	StartConnectionWatchFunc  func(ctx context.Context, connID string) error
-	StopConnectionWatchFunc   func(ctx context.Context, connID string) error
-	HasWatchFunc              func(ctx context.Context, connID string) bool
-	GetWatchStateFunc         func(ctx context.Context, connID string) (*resource.WatchConnectionSummary, error)
-	ListenForEventsFunc       func(ctx context.Context, sink resource.WatchEventSink) error
-	EnsureResourceWatchFunc   func(ctx context.Context, connID, key string) error
-	StopResourceWatchFunc     func(ctx context.Context, connID, key string) error
-	RestartResourceWatchFunc  func(ctx context.Context, connID, key string) error
+	StartConnectionWatchFunc   func(ctx context.Context, connID string) error
+	StopConnectionWatchFunc    func(ctx context.Context, connID string) error
+	HasWatchFunc               func(ctx context.Context, connID string) bool
+	GetWatchStateFunc          func(ctx context.Context, connID string) (*resource.WatchConnectionSummary, error)
+	ListenForEventsFunc        func(ctx context.Context, sink resource.WatchEventSink) error
+	EnsureResourceWatchFunc    func(ctx context.Context, connID, key string) error
+	StopResourceWatchFunc      func(ctx context.Context, connID, key string) error
+	RestartResourceWatchFunc   func(ctx context.Context, connID, key string) error
 	IsResourceWatchRunningFunc func(ctx context.Context, connID, key string) (bool, error)
 
 	// Type handlers.
-	GetResourceGroupsFunc       func(ctx context.Context, connID string) map[string]resource.ResourceGroup
+	GetResourceGroupsFunc       func(ctx context.Context, connID string) (map[string]resource.ResourceGroup, error)
 	GetResourceGroupFunc        func(ctx context.Context, id string) (resource.ResourceGroup, error)
-	GetResourceTypesFunc        func(ctx context.Context, connID string) map[string]resource.ResourceMeta
+	GetResourceTypesFunc        func(ctx context.Context, connID string) (map[string]resource.ResourceMeta, error)
 	GetResourceTypeFunc         func(ctx context.Context, id string) (*resource.ResourceMeta, error)
-	HasResourceTypeFunc         func(ctx context.Context, id string) bool
+	HasResourceTypeFunc         func(ctx context.Context, id string) (bool, error)
 	GetResourceDefinitionFunc   func(ctx context.Context, id string) (resource.ResourceDefinition, error)
 	GetResourceCapabilitiesFunc func(ctx context.Context, key string) (*resource.ResourceCapabilities, error)
 	GetResourceSchemaFunc       func(ctx context.Context, connID, key string) (json.RawMessage, error)
 	GetFilterFieldsFunc         func(ctx context.Context, connID, key string) ([]resource.FilterField, error)
 
 	// Action handlers.
-	GetActionsFunc     func(ctx context.Context, key string) ([]resource.ActionDescriptor, error)
-	ExecuteActionFunc  func(ctx context.Context, key, actionID string, input resource.ActionInput) (*resource.ActionResult, error)
-	StreamActionFunc   func(ctx context.Context, key, actionID string, input resource.ActionInput, stream chan<- resource.ActionEvent) error
+	GetActionsFunc    func(ctx context.Context, key string) ([]resource.ActionDescriptor, error)
+	ExecuteActionFunc func(ctx context.Context, key, actionID string, input resource.ActionInput) (*resource.ActionResult, error)
+	StreamActionFunc  func(ctx context.Context, key, actionID string, input resource.ActionInput, stream chan<- resource.ActionEvent) error
 
 	// Editor schema handler.
 	GetEditorSchemasFunc func(ctx context.Context, connID string) ([]resource.EditorSchema, error)
@@ -294,11 +294,11 @@ func (p *TestProvider) IsResourceWatchRunning(ctx context.Context, connID string
 
 // --- TypeProvider ---
 
-func (p *TestProvider) GetResourceGroups(ctx context.Context, connID string) map[string]resource.ResourceGroup {
+func (p *TestProvider) GetResourceGroups(ctx context.Context, connID string) (map[string]resource.ResourceGroup, error) {
 	if p.GetResourceGroupsFunc != nil {
 		return p.GetResourceGroupsFunc(ctx, connID)
 	}
-	return map[string]resource.ResourceGroup{}
+	return map[string]resource.ResourceGroup{}, nil
 }
 
 func (p *TestProvider) GetResourceGroup(ctx context.Context, id string) (resource.ResourceGroup, error) {
@@ -308,11 +308,11 @@ func (p *TestProvider) GetResourceGroup(ctx context.Context, id string) (resourc
 	return resource.ResourceGroup{}, nil
 }
 
-func (p *TestProvider) GetResourceTypes(ctx context.Context, connID string) map[string]resource.ResourceMeta {
+func (p *TestProvider) GetResourceTypes(ctx context.Context, connID string) (map[string]resource.ResourceMeta, error) {
 	if p.GetResourceTypesFunc != nil {
 		return p.GetResourceTypesFunc(ctx, connID)
 	}
-	return map[string]resource.ResourceMeta{}
+	return map[string]resource.ResourceMeta{}, nil
 }
 
 func (p *TestProvider) GetResourceType(ctx context.Context, id string) (*resource.ResourceMeta, error) {
@@ -322,11 +322,11 @@ func (p *TestProvider) GetResourceType(ctx context.Context, id string) (*resourc
 	return nil, nil
 }
 
-func (p *TestProvider) HasResourceType(ctx context.Context, id string) bool {
+func (p *TestProvider) HasResourceType(ctx context.Context, id string) (bool, error) {
 	if p.HasResourceTypeFunc != nil {
 		return p.HasResourceTypeFunc(ctx, id)
 	}
-	return false
+	return false, nil
 }
 
 func (p *TestProvider) GetResourceDefinition(ctx context.Context, id string) (resource.ResourceDefinition, error) {

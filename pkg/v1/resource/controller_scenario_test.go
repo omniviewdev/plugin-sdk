@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/resource/resourcetest"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
 // failedWatchTimeout is the maximum time to wait for watches to exhaust retries
@@ -641,7 +641,7 @@ func TestSC010_DiscoveryCRUDForDiscoveredType(t *testing.T) {
 	testCtx := resourcetest.NewTestContext()
 
 	// HasResourceType should find the discovered CRD.
-	if !ctrl.HasResourceType(testCtx, "custom.io::v1::Widget") {
+	if present, err := ctrl.HasResourceType(testCtx, "custom.io::v1::Widget"); err != nil || !present {
 		t.Fatal("expected HasResourceType to find discovered CRD")
 	}
 
@@ -882,10 +882,10 @@ func TestSC015_DiscoveryChangesBetweenConnectCycles(t *testing.T) {
 	// First connect — discovers only Alpha.
 	ctrl.StartConnection(ctx, "conn-1")
 	testCtx := resourcetest.NewTestContext()
-	if !ctrl.HasResourceType(testCtx, "custom.io::v1::Alpha") {
+	if present, err := ctrl.HasResourceType(testCtx, "custom.io::v1::Alpha"); err != nil || !present {
 		t.Fatal("expected Alpha after first connect")
 	}
-	if ctrl.HasResourceType(testCtx, "custom.io::v1::Beta") {
+	if present, err := ctrl.HasResourceType(testCtx, "custom.io::v1::Beta"); err != nil || present {
 		t.Fatal("Beta should not exist after first connect")
 	}
 
@@ -894,10 +894,10 @@ func TestSC015_DiscoveryChangesBetweenConnectCycles(t *testing.T) {
 
 	// Reconnect — discovers Alpha + Beta.
 	ctrl.StartConnection(ctx, "conn-1")
-	if !ctrl.HasResourceType(testCtx, "custom.io::v1::Alpha") {
+	if present, err := ctrl.HasResourceType(testCtx, "custom.io::v1::Alpha"); err != nil || !present {
 		t.Fatal("expected Alpha after second connect")
 	}
-	if !ctrl.HasResourceType(testCtx, "custom.io::v1::Beta") {
+	if present, err := ctrl.HasResourceType(testCtx, "custom.io::v1::Beta"); err != nil || !present {
 		t.Fatal("expected Beta after second connect")
 	}
 }

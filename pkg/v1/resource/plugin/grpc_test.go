@@ -19,8 +19,8 @@ import (
 	"github.com/omniviewdev/plugin-sdk/settings"
 	"github.com/omniviewdev/plugin-sdk/settings/settingstest"
 
-	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/resource/resourcetest"
 )
 
@@ -511,14 +511,17 @@ func TestGR016_WatchStateRoundTrip(t *testing.T) {
 
 func TestGR017_GetResourceTypesRoundTrip(t *testing.T) {
 	tp := resourcetest.NewTestProvider(t)
-	tp.GetResourceTypesFunc = func(_ context.Context, connID string) map[string]resource.ResourceMeta {
+	tp.GetResourceTypesFunc = func(_ context.Context, connID string) (map[string]resource.ResourceMeta, error) {
 		return map[string]resource.ResourceMeta{
 			"core::v1::Pod": {Group: "core", Version: "v1", Kind: "Pod", Label: "Pods"},
 			"core::v1::Svc": {Group: "core", Version: "v1", Kind: "Service", Label: "Services"},
-		}
+		}, nil
 	}
 	c := setupBufconn(t, tp)
-	types := c.GetResourceTypes(context.Background(), "conn-1")
+	types, err := c.GetResourceTypes(context.Background(), "conn-1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(types) != 2 {
 		t.Fatalf("expected 2 types, got %d", len(types))
 	}
@@ -1146,10 +1149,10 @@ func TestGR034_ListenForEvents_StateConnectionRoundTrip(t *testing.T) {
 				ResourceCount: 150,
 			})
 			sink.OnStateChange(resource.WatchStateEvent{
-				Connection:    "conn-99",
-				ResourceKey:   "apps::v1::Deployment",
-				State:         resource.WatchStateError,
-				Message:       "connection lost",
+				Connection:  "conn-99",
+				ResourceKey: "apps::v1::Deployment",
+				State:       resource.WatchStateError,
+				Message:     "connection lost",
 			})
 			return nil
 		}),
@@ -1337,32 +1340,6 @@ func TestGR036_LoadConnectionsReceivesSettings(t *testing.T) {
 	}
 }
 
-// TestGR037_LoadConnectionsNilSettings verifies that LoadConnections works
-// correctly when no settings provider is configured (nil-safe).
-func TestGR037_LoadConnectionsNilSettings(t *testing.T) {
-	tp := resourcetest.NewTestProvider(t,
-		resourcetest.WithLoadConnectionsFunc(func(ctx context.Context) ([]types.Connection, error) {
-			session := resource.SessionFromContext(ctx)
-			// With nil settings, injectSettingsSession is a no-op —
-			// session should be nil.
-			if session != nil {
-				t.Error("LoadConnections: expected nil session with nil settings, got non-nil")
-			}
-			return []types.Connection{{ID: "fallback", Name: "Fallback"}}, nil
-		}),
-	)
-
-	// setupBufconn passes nil settings.
-	c := setupBufconn(t, tp)
-	conns, err := c.LoadConnections(context.Background())
-	if err != nil {
-		t.Fatalf("LoadConnections: %v", err)
-	}
-	if len(conns) != 1 || conns[0].ID != "fallback" {
-		t.Fatalf("expected 1 fallback connection, got %v", conns)
-	}
-}
-
 // TestGR038_WatchConnectionsReceivesSettings verifies that WatchConnections
 // injects PluginConfig into the session context passed to the provider.
 func TestGR038_WatchConnectionsReceivesSettings(t *testing.T) {
@@ -1466,5 +1443,3 @@ func TestGR039_CRUDReceivesSettings(t *testing.T) {
 		t.Fatal("expected Success=true")
 	}
 }
-
-

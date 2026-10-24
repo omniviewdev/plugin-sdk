@@ -438,8 +438,8 @@ const (
 // FilterExpression combines predicates with a logical operator.
 // Supports one level of nesting (AND of ORs, or OR of ANDs).
 type FilterExpression struct {
-	Logic      FilterLogic       `json:"logic,omitempty"`
-	Predicates []FilterPredicate `json:"predicates,omitempty"`
+	Logic      FilterLogic        `json:"logic,omitempty"`
+	Predicates []FilterPredicate  `json:"predicates,omitempty"`
 	Groups     []FilterExpression `json:"groups,omitempty"`
 }
 
@@ -453,7 +453,7 @@ type ActionScope string
 
 const (
 	ActionScopeInstance ActionScope = "instance"
-	ActionScopeType    ActionScope = "type"
+	ActionScopeType     ActionScope = "type"
 )
 
 // ActionDescriptor describes an available action on a resource type.
@@ -492,10 +492,13 @@ type ActionResult struct {
 	Message string                 `json:"message"`
 }
 
-// ActionEvent represents a streaming event from a long-running action.
+// ActionEvent begins with exactly one concrete-provider "ready" after native
+// admission/establishment. Returning before ready fails the open. Error events
+// carry Error; Data must never contain raw failure diagnostics.
 type ActionEvent struct {
-	Type string                 `json:"type"` // "progress", "output", "error", "complete"
-	Data map[string]interface{} `json:"data"`
+	Type  string                  `json:"type"` // "ready", "progress", "output", "error", "complete"
+	Data  map[string]interface{}  `json:"data"`
+	Error *ResourceOperationError `json:"error,omitempty"`
 }
 
 // ============================================================================
@@ -515,15 +518,15 @@ type ResourceCapabilities struct {
 	CanDelete bool `json:"canDelete"`
 
 	// Extended capabilities.
-	Watchable       bool `json:"watchable"`
-	Filterable      bool `json:"filterable"`
-	Searchable      bool `json:"searchable"`
-	HasActions      bool `json:"hasActions"`
-	HasSchema       bool `json:"hasSchema"`
-	NamespaceScoped bool `json:"namespaceScoped"`
+	Watchable        bool `json:"watchable"`
+	Filterable       bool `json:"filterable"`
+	Searchable       bool `json:"searchable"`
+	HasActions       bool `json:"hasActions"`
+	HasSchema        bool `json:"hasSchema"`
+	NamespaceScoped  bool `json:"namespaceScoped"`
 	HasRelationships bool `json:"hasRelationships"`
-	HasHealth       bool `json:"hasHealth"`
-	HasEvents       bool `json:"hasEvents"`
+	HasHealth        bool `json:"hasHealth"`
+	HasEvents        bool `json:"hasEvents"`
 
 	// ScaleHint indicates expected cardinality.
 	Scale *ScaleHint `json:"scaleHint,omitempty"`
