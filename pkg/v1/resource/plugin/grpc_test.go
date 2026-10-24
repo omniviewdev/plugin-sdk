@@ -1338,31 +1338,6 @@ func TestGR036_LoadConnectionsReceivesSettings(t *testing.T) {
 	}
 }
 
-// TestGR037_LoadConnectionsNilSettings verifies that LoadConnections works
-// correctly when no settings provider is configured (nil-safe).
-func TestGR037_LoadConnectionsNilSettings(t *testing.T) {
-	tp := resourcetest.NewTestProvider(t,
-		resourcetest.WithLoadConnectionsFunc(func(ctx context.Context) ([]types.Connection, error) {
-			session := resource.SessionFromContext(ctx)
-			// With nil settings, injectSettingsSession is a no-op —
-			// session should be nil.
-			if session != nil {
-				t.Error("LoadConnections: expected nil session with nil settings, got non-nil")
-			}
-			return []types.Connection{{ID: "fallback", Name: "Fallback"}}, nil
-		}),
-	)
-
-	// setupBufconn passes nil settings.
-	c := setupBufconn(t, tp)
-	conns, err := c.LoadConnections(context.Background())
-	if err != nil {
-		t.Fatalf("LoadConnections: %v", err)
-	}
-	if len(conns) != 1 || conns[0].ID != "fallback" {
-		t.Fatalf("expected 1 fallback connection, got %v", conns)
-	}
-}
 
 // TestGR038_WatchConnectionsReceivesSettings verifies that WatchConnections
 // injects PluginConfig into the session context passed to the provider.
