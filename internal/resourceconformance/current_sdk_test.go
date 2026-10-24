@@ -210,7 +210,8 @@ func TestCurrentSDKNativeBoundary(t *testing.T) {
 			require.False(t, caps.Filterable)
 			require.False(t, caps.Searchable)
 			t.Logf("LIMIT legacy mandatory interface advertises unsupported operations: find=%v create=%v update=%v delete=%v", caps.CanFind, caps.CanCreate, caps.CanUpdate, caps.CanDelete)
-			catalog := provider.GetResourceTypes(session, s.Name)
+			catalog, err := provider.GetResourceTypes(session, s.Name)
+			require.NoError(t, err)
 			require.Empty(t, catalog, "native patterns must not invent GVK catalog entries")
 			if len(s.Updates) > 0 {
 				probeNativeEvents(t, provider, session, receipts, s, c)
@@ -245,21 +246,12 @@ func requireDeclaredOperation(t *testing.T, scenario Scenario, operation string,
 	case "supported":
 		require.NoError(t, err)
 	case "unsupported":
-		requireUnsupportedLimitation(t, err)
+		requireNativeError(t, err, "UNSUPPORTED")
 	default:
 		t.Fatalf("missing or invalid support expectation for %s", operation)
 	}
 }
 
-func requireUnsupportedLimitation(t *testing.T, err error) {
-	t.Helper()
-	require.Error(t, err)
-	var native *resource.ResourceOperationError
-	require.True(t, errors.As(err, &native))
-	// Current codec has no UNSUPPORTED mapping. Do not assert UNKNOWN_0 is
-	// correct semantics or enshrine this broken encoding as future acceptance.
-	t.Logf("LIMIT native unsupported operation transported as %s: %s", native.Code, native.Message)
-}
 
 func probeCancellation(t *testing.T, provider resource.Provider, session context.Context, receipts string, s Scenario) {
 	t.Helper()
@@ -274,7 +266,12 @@ func probeCancellation(t *testing.T, provider resource.Provider, session context
 	cancel()
 	select {
 	case err := <-done:
-		require.Equal(t, codes.Canceled, status.Code(err))
+		var operationError *resource.ResourceOperationError
+		if errors.As(err, &operationError) {
+			require.Equal(t, "CANCELLED", operationError.Code)
+		} else {
+			require.Equal(t, codes.Canceled, status.Code(err))
+		}
 	case <-session.Done():
 		t.Fatal("canceled service request did not finish")
 	}
