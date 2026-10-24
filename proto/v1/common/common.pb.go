@@ -378,6 +378,14 @@ const (
 	ResourceErrorCode_RESOURCE_ERROR_UNAUTHORIZED            ResourceErrorCode = 12
 	ResourceErrorCode_RESOURCE_ERROR_CONNECTION_ERROR        ResourceErrorCode = 13
 	ResourceErrorCode_RESOURCE_ERROR_CERTIFICATE_ERROR       ResourceErrorCode = 14
+	ResourceErrorCode_RESOURCE_ERROR_INVALID_REQUEST         ResourceErrorCode = 15
+	ResourceErrorCode_RESOURCE_ERROR_UNSUPPORTED             ResourceErrorCode = 16
+	ResourceErrorCode_RESOURCE_ERROR_CANCELLED               ResourceErrorCode = 17
+	ResourceErrorCode_RESOURCE_ERROR_RESOURCE_LIMIT          ResourceErrorCode = 18
+	ResourceErrorCode_RESOURCE_ERROR_CONTINUATION_EXPIRED    ResourceErrorCode = 19
+	ResourceErrorCode_RESOURCE_ERROR_RESET_REQUIRED          ResourceErrorCode = 20
+	ResourceErrorCode_RESOURCE_ERROR_PARTIAL_RESULT          ResourceErrorCode = 21
+	ResourceErrorCode_RESOURCE_ERROR_PROVIDER_ERROR          ResourceErrorCode = 22
 )
 
 // Enum value maps for ResourceErrorCode.
@@ -398,6 +406,14 @@ var (
 		12: "RESOURCE_ERROR_UNAUTHORIZED",
 		13: "RESOURCE_ERROR_CONNECTION_ERROR",
 		14: "RESOURCE_ERROR_CERTIFICATE_ERROR",
+		15: "RESOURCE_ERROR_INVALID_REQUEST",
+		16: "RESOURCE_ERROR_UNSUPPORTED",
+		17: "RESOURCE_ERROR_CANCELLED",
+		18: "RESOURCE_ERROR_RESOURCE_LIMIT",
+		19: "RESOURCE_ERROR_CONTINUATION_EXPIRED",
+		20: "RESOURCE_ERROR_RESET_REQUIRED",
+		21: "RESOURCE_ERROR_PARTIAL_RESULT",
+		22: "RESOURCE_ERROR_PROVIDER_ERROR",
 	}
 	ResourceErrorCode_value = map[string]int32{
 		"RESOURCE_ERROR_UNSPECIFIED":             0,
@@ -415,6 +431,14 @@ var (
 		"RESOURCE_ERROR_UNAUTHORIZED":            12,
 		"RESOURCE_ERROR_CONNECTION_ERROR":        13,
 		"RESOURCE_ERROR_CERTIFICATE_ERROR":       14,
+		"RESOURCE_ERROR_INVALID_REQUEST":         15,
+		"RESOURCE_ERROR_UNSUPPORTED":             16,
+		"RESOURCE_ERROR_CANCELLED":               17,
+		"RESOURCE_ERROR_RESOURCE_LIMIT":          18,
+		"RESOURCE_ERROR_CONTINUATION_EXPIRED":    19,
+		"RESOURCE_ERROR_RESET_REQUIRED":          20,
+		"RESOURCE_ERROR_PARTIAL_RESULT":          21,
+		"RESOURCE_ERROR_PROVIDER_ERROR":          22,
 	}
 )
 
@@ -1655,7 +1679,7 @@ const file_proto_v1_common_common_proto_rawDesc = "" +
 	"\x13OPERATION_TYPE_FIND\x10\x03\x12\x19\n" +
 	"\x15OPERATION_TYPE_CREATE\x10\x04\x12\x19\n" +
 	"\x15OPERATION_TYPE_UPDATE\x10\x05\x12\x19\n" +
-	"\x15OPERATION_TYPE_DELETE\x10\x06*\x91\x04\n" +
+	"\x15OPERATION_TYPE_DELETE\x10\x06*\xa8\x06\n" +
 	"\x11ResourceErrorCode\x12\x1e\n" +
 	"\x1aRESOURCE_ERROR_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18RESOURCE_ERROR_NOT_FOUND\x10\x01\x12!\n" +
@@ -1672,7 +1696,15 @@ const file_proto_v1_common_common_proto_rawDesc = "" +
 	"\x18RESOURCE_ERROR_FORBIDDEN\x10\v\x12\x1f\n" +
 	"\x1bRESOURCE_ERROR_UNAUTHORIZED\x10\f\x12#\n" +
 	"\x1fRESOURCE_ERROR_CONNECTION_ERROR\x10\r\x12$\n" +
-	" RESOURCE_ERROR_CERTIFICATE_ERROR\x10\x0eB<Z:github.com/omniviewdev/plugin-sdk/proto/v1/common;commonpbb\x06proto3"
+	" RESOURCE_ERROR_CERTIFICATE_ERROR\x10\x0e\x12\"\n" +
+	"\x1eRESOURCE_ERROR_INVALID_REQUEST\x10\x0f\x12\x1e\n" +
+	"\x1aRESOURCE_ERROR_UNSUPPORTED\x10\x10\x12\x1c\n" +
+	"\x18RESOURCE_ERROR_CANCELLED\x10\x11\x12!\n" +
+	"\x1dRESOURCE_ERROR_RESOURCE_LIMIT\x10\x12\x12'\n" +
+	"#RESOURCE_ERROR_CONTINUATION_EXPIRED\x10\x13\x12!\n" +
+	"\x1dRESOURCE_ERROR_RESET_REQUIRED\x10\x14\x12!\n" +
+	"\x1dRESOURCE_ERROR_PARTIAL_RESULT\x10\x15\x12!\n" +
+	"\x1dRESOURCE_ERROR_PROVIDER_ERROR\x10\x16B<Z:github.com/omniviewdev/plugin-sdk/proto/v1/common;commonpbb\x06proto3"
 
 var (
 	file_proto_v1_common_common_proto_rawDescOnce sync.Once
