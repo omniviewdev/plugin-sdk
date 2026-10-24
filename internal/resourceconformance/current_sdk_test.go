@@ -252,7 +252,6 @@ func requireDeclaredOperation(t *testing.T, scenario Scenario, operation string,
 	}
 }
 
-
 func probeCancellation(t *testing.T, provider resource.Provider, session context.Context, receipts string, s Scenario) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(session)

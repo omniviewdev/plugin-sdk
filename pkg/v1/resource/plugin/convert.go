@@ -302,14 +302,14 @@ var errorCodeToProto = map[string]int32{
 	"UNAUTHORIZED":            12,
 	"CONNECTION_ERROR":        13,
 	"CERTIFICATE_ERROR":       14,
-	"INVALID_REQUEST": 15,
-	"UNSUPPORTED": 16,
-	"CANCELLED": 17,
-	"RESOURCE_LIMIT": 18,
-	"CONTINUATION_EXPIRED": 19,
-	"RESET_REQUIRED": 20,
-	"PARTIAL_RESULT": 21,
-	"PROVIDER_ERROR": 22,
+	"INVALID_REQUEST":         15,
+	"UNSUPPORTED":             16,
+	"CANCELLED":               17,
+	"RESOURCE_LIMIT":          18,
+	"CONTINUATION_EXPIRED":    19,
+	"RESET_REQUIRED":          20,
+	"PARTIAL_RESULT":          21,
+	"PROVIDER_ERROR":          22,
 }
 
 var errorCodeFromProto = map[int32]string{
@@ -847,8 +847,8 @@ func actionEventToProto(e resource.ActionEvent) (*resourcepb.StreamActionEvent, 
 		}
 	}
 	return &resourcepb.StreamActionEvent{
-		Type: e.Type,
-		Data: data,
+		Type:  e.Type,
+		Data:  data,
 		Error: resourceErrorToProto(e.Error),
 	}, nil
 }
@@ -862,8 +862,8 @@ func actionEventFromProto(pb *resourcepb.StreamActionEvent) resource.ActionEvent
 		data = pb.GetData().AsMap()
 	}
 	return resource.ActionEvent{
-		Type: pb.GetType(),
-		Data: data,
+		Type:  pb.GetType(),
+		Data:  data,
 		Error: resourceErrorFromProto(pb.GetError()),
 	}
 }
