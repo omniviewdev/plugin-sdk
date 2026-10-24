@@ -162,6 +162,11 @@ inference is supported. Consumers must pin the reviewed publicly reachable SDK
 revision and finish coordinated source/transport/host checks before claiming the
 new semantics. Local replacements alone are not a consumable release receipt.
 
+`buf.gen.yaml` pins protoc-gen-go `v1.36.11` and protoc-gen-go-grpc `v1.3.0`.
+Use `make proto` for full regeneration; C02's scoped regeneration used
+`buf generate --path proto/v1/common/common.proto --path proto/v1/resource/resource.proto`.
+These remote Buf generators do not require an ambient native `protoc` binary.
+
 ## Releasing the Go module
 
 The module is `github.com/omniviewdev/plugin-sdk` at the repository root.
