@@ -30,6 +30,10 @@ func TestCurrentSDKChild(t *testing.T) {
 	if os.Getenv("P44_NATIVE_CHILD") != "1" {
 		return
 	}
+	for _, key := range []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "KUBECONFIG", "OMNIVIEW_WORKSPACE_FILE"} {
+		_, inherited := os.LookupEnv(key)
+		require.False(t, inherited, "disposable plugin must not inherit %s", key)
+	}
 	c := NativeCorpus()
 	state := os.Getenv("P44_NATIVE_RECEIPTS")
 	controller, err := resource.BuildResourceController(context.Background(), resource.ResourcePluginConfig[Scenario]{
@@ -47,6 +51,24 @@ func TestCurrentSDKChild(t *testing.T) {
 	p := sdk.NewPlugin(sdk.PluginOpts{ID: fixturePluginID})
 	p.RegisterCapability("resource", &resourceplugin.GRPCPlugin{Impl: controller, SettingsProvider: p.SettingsProvider})
 	p.Serve()
+}
+
+func TestCurrentSDKChildIsolation(t *testing.T) {
+	t.Setenv("P44_CLEAN_ENV_LAUNCHER", "")
+	for _, key := range []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "KUBECONFIG", "OMNIVIEW_WORKSPACE_FILE"} {
+		t.Setenv(key, "p44-unused-sentinel")
+	}
+	provider, _, stop := startNativeProcess(t)
+	defer stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	connections, err := provider.LoadConnections(ctx)
+	require.NoError(t, err)
+	ids := make([]string, len(connections))
+	for i, connection := range connections {
+		ids[i] = connection.ID
+	}
+	require.Contains(t, ids, "hypervisor-node-a-only")
 }
 
 func startNativeProcess(t *testing.T) (resource.Provider, string, func()) {
@@ -83,6 +105,7 @@ func startNativeProcess(t *testing.T) (resource.Provider, string, func()) {
 	}
 	client := goplugin.NewClient(&goplugin.ClientConfig{
 		HandshakeConfig: handshake,
+		SkipHostEnv:     true,
 		VersionedPlugins: map[int]goplugin.PluginSet{
 			sdk.CurrentProtocolVersion: {"resource": &resourceplugin.GRPCPlugin{}},
 		},

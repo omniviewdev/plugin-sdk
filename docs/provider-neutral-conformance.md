@@ -50,9 +50,11 @@ GOWORK=off go test ./internal/resourceconformance -count=1 -v
 GOWORK=off go test -race ./internal/resourceconformance -count=1
 ```
 
-For the isolated frontier run, launch each command through the coordinator-provided `baseline-env` and set `P44_CLEAN_ENV_LAUNCHER` to that launcher using `env`. The subprocess also re-enters that launcher, then supplies an explicit minimal environment, magic cookie and negotiated current protocol version. It cannot inherit cloud credentials, kubeconfig, installed plugin state or telemetry settings. Outside that run the helper still uses an explicit minimal child environment and temporary HOME, USERPROFILE, XDG and `OMNIVIEW_STATE_DIR` roots.
+For the isolated frontier run, launch each command through the coordinator-provided `baseline-env` and set `P44_CLEAN_ENV_LAUNCHER` to that launcher using `env`. The subprocess also re-enters that launcher, then supplies an explicit minimal environment, magic cookie and negotiated current protocol version. `SkipHostEnv: true` prevents go-plugin from appending the parent's environment in both launcher and ordinary reproduction paths. The child receives temporary HOME, USERPROFILE, XDG and `OMNIVIEW_STATE_DIR` roots, not cloud credentials, kubeconfig, ambient workspace selection or telemetry settings.
 
 Each test run creates unique `t.TempDir` roots for plugin metadata/state, home and lifecycle receipts. Plugin registration YAML, event-release barrier and waiting/cancelled/closed receipts are verification artifacts inside those roots. `StopConnection`, event cancellation and `client.Kill()` retire runtime resources; testing cleanup removes the directories. No checked-in binary, generated binding, `.devinfo`, standalone fixture provider, persistent receipt output, global link or profile seed is needed. Preserve the command output externally when attaching acceptance evidence.
+
+Independent review found that an explicit `cmd.Env` alone did not prevent the pinned go-plugin from appending `os.Environ()`. A real-subprocess regression disables the optional clean-child launcher, supplies harmless ambient credential/kubeconfig/workspace sentinels, rejects those variable names in the child before SDK initialization, and performs actual connection discovery. It failed before `SkipHostEnv` was enabled and passed afterward; the full conformance race run also passed. No credential values are asserted or printed. Earlier clean-launcher receipts alone did not establish the ordinary path's isolation.
 
 ## Explicit P45 port ownership
 
