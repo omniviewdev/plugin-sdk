@@ -23,26 +23,26 @@ type TestProvider struct {
 	DeleteFunc func(ctx context.Context, key string, input resource.DeleteInput) (*resource.DeleteResult, error)
 
 	// Connection handlers.
-	StartConnectionFunc      func(ctx context.Context, id string) (types.ConnectionStatus, error)
-	StopConnectionFunc       func(ctx context.Context, id string) (types.Connection, error)
-	CheckConnectionFunc      func(ctx context.Context, id string) (types.ConnectionStatus, error)
-	LoadConnectionsFunc      func(ctx context.Context) ([]types.Connection, error)
-	ListConnectionsFunc      func(ctx context.Context) ([]types.Connection, error)
-	GetConnectionFunc        func(ctx context.Context, id string) (types.Connection, error)
-	GetConnectionNSFunc      func(ctx context.Context, id string) ([]string, error)
-	UpdateConnectionFunc     func(ctx context.Context, conn types.Connection) (types.Connection, error)
-	DeleteConnectionFunc     func(ctx context.Context, id string) error
-	WatchConnectionsFunc     func(ctx context.Context, stream chan<- []types.Connection) error
+	StartConnectionFunc  func(ctx context.Context, id string) (types.ConnectionStatus, error)
+	StopConnectionFunc   func(ctx context.Context, id string) (types.Connection, error)
+	CheckConnectionFunc  func(ctx context.Context, id string) (types.ConnectionStatus, error)
+	LoadConnectionsFunc  func(ctx context.Context) ([]types.Connection, error)
+	ListConnectionsFunc  func(ctx context.Context) ([]types.Connection, error)
+	GetConnectionFunc    func(ctx context.Context, id string) (types.Connection, error)
+	GetConnectionNSFunc  func(ctx context.Context, id string) ([]string, error)
+	UpdateConnectionFunc func(ctx context.Context, conn types.Connection) (types.Connection, error)
+	DeleteConnectionFunc func(ctx context.Context, id string) error
+	WatchConnectionsFunc func(ctx context.Context, stream chan<- []types.Connection) error
 
 	// Watch handlers.
-	StartConnectionWatchFunc  func(ctx context.Context, connID string) error
-	StopConnectionWatchFunc   func(ctx context.Context, connID string) error
-	HasWatchFunc              func(ctx context.Context, connID string) bool
-	GetWatchStateFunc         func(ctx context.Context, connID string) (*resource.WatchConnectionSummary, error)
-	ListenForEventsFunc       func(ctx context.Context, sink resource.WatchEventSink) error
-	EnsureResourceWatchFunc   func(ctx context.Context, connID, key string) error
-	StopResourceWatchFunc     func(ctx context.Context, connID, key string) error
-	RestartResourceWatchFunc  func(ctx context.Context, connID, key string) error
+	StartConnectionWatchFunc   func(ctx context.Context, connID string) error
+	StopConnectionWatchFunc    func(ctx context.Context, connID string) error
+	HasWatchFunc               func(ctx context.Context, connID string) bool
+	GetWatchStateFunc          func(ctx context.Context, connID string) (*resource.WatchConnectionSummary, error)
+	ListenForEventsFunc        func(ctx context.Context, sink resource.WatchEventSink) error
+	EnsureResourceWatchFunc    func(ctx context.Context, connID, key string) error
+	StopResourceWatchFunc      func(ctx context.Context, connID, key string) error
+	RestartResourceWatchFunc   func(ctx context.Context, connID, key string) error
 	IsResourceWatchRunningFunc func(ctx context.Context, connID, key string) (bool, error)
 
 	// Type handlers.
@@ -57,9 +57,9 @@ type TestProvider struct {
 	GetFilterFieldsFunc         func(ctx context.Context, connID, key string) ([]resource.FilterField, error)
 
 	// Action handlers.
-	GetActionsFunc     func(ctx context.Context, key string) ([]resource.ActionDescriptor, error)
-	ExecuteActionFunc  func(ctx context.Context, key, actionID string, input resource.ActionInput) (*resource.ActionResult, error)
-	StreamActionFunc   func(ctx context.Context, key, actionID string, input resource.ActionInput, stream chan<- resource.ActionEvent) error
+	GetActionsFunc    func(ctx context.Context, key string) ([]resource.ActionDescriptor, error)
+	ExecuteActionFunc func(ctx context.Context, key, actionID string, input resource.ActionInput) (*resource.ActionResult, error)
+	StreamActionFunc  func(ctx context.Context, key, actionID string, input resource.ActionInput, stream chan<- resource.ActionEvent) error
 
 	// Editor schema handler.
 	GetEditorSchemasFunc func(ctx context.Context, connID string) ([]resource.EditorSchema, error)

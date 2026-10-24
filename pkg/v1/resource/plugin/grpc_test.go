@@ -19,8 +19,8 @@ import (
 	"github.com/omniviewdev/plugin-sdk/settings"
 	"github.com/omniviewdev/plugin-sdk/settings/settingstest"
 
-	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/resource/resourcetest"
 )
 
@@ -519,7 +519,9 @@ func TestGR017_GetResourceTypesRoundTrip(t *testing.T) {
 	}
 	c := setupBufconn(t, tp)
 	types, err := c.GetResourceTypes(context.Background(), "conn-1")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(types) != 2 {
 		t.Fatalf("expected 2 types, got %d", len(types))
 	}
@@ -1147,10 +1149,10 @@ func TestGR034_ListenForEvents_StateConnectionRoundTrip(t *testing.T) {
 				ResourceCount: 150,
 			})
 			sink.OnStateChange(resource.WatchStateEvent{
-				Connection:    "conn-99",
-				ResourceKey:   "apps::v1::Deployment",
-				State:         resource.WatchStateError,
-				Message:       "connection lost",
+				Connection:  "conn-99",
+				ResourceKey: "apps::v1::Deployment",
+				State:       resource.WatchStateError,
+				Message:     "connection lost",
 			})
 			return nil
 		}),
@@ -1338,7 +1340,6 @@ func TestGR036_LoadConnectionsReceivesSettings(t *testing.T) {
 	}
 }
 
-
 // TestGR038_WatchConnectionsReceivesSettings verifies that WatchConnections
 // injects PluginConfig into the session context passed to the provider.
 func TestGR038_WatchConnectionsReceivesSettings(t *testing.T) {
@@ -1442,5 +1443,3 @@ func TestGR039_CRUDReceivesSettings(t *testing.T) {
 		t.Fatal("expected Success=true")
 	}
 }
-
-

@@ -18,14 +18,14 @@ import (
 // resourceController wires all internal services together and satisfies the Provider interface.
 // This is the gRPC-boundary implementation on the plugin side.
 type resourceController[ClientT any] struct {
-	log         logging.Logger
-	registry    *resourcerRegistry[ClientT]
-	connMgr     *connectionManager[ClientT]
-	watchMgr    *watchManager[ClientT]
-	typeMgr     *typeManager[ClientT]
-	errorClass  ErrorClassifier // global error classifier (optional)
+	log            logging.Logger
+	registry       *resourcerRegistry[ClientT]
+	connMgr        *connectionManager[ClientT]
+	watchMgr       *watchManager[ClientT]
+	typeMgr        *typeManager[ClientT]
+	errorClass     ErrorClassifier         // global error classifier (optional)
 	schemaProvider SchemaProvider[ClientT] // auto-detected (optional)
-	closed      atomic.Bool // tracks whether Close() has been called
+	closed         atomic.Bool             // tracks whether Close() has been called
 
 	// filterFieldCache caches FilterFields results per "resourceKey::connID".
 	// Cardinality is bounded by (registered resource types) x (active connections),
@@ -649,7 +649,9 @@ func (c *resourceController[ClientT]) IsResourceWatchRunning(ctx context.Context
 // --- TypeProvider ---
 
 func (c *resourceController[ClientT]) GetResourceGroups(ctx context.Context, connectionID string) (map[string]ResourceGroup, error) {
-	if err := ctx.Err(); err != nil { return nil, err }
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return c.typeMgr.GetResourceGroups(ctx, connectionID), nil
 }
 
@@ -658,7 +660,9 @@ func (c *resourceController[ClientT]) GetResourceGroup(ctx context.Context, id s
 }
 
 func (c *resourceController[ClientT]) GetResourceTypes(ctx context.Context, connectionID string) (map[string]ResourceMeta, error) {
-	if err := ctx.Err(); err != nil { return nil, err }
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return c.typeMgr.GetResourceTypes(ctx, connectionID), nil
 }
 
@@ -667,7 +671,9 @@ func (c *resourceController[ClientT]) GetResourceType(ctx context.Context, id st
 }
 
 func (c *resourceController[ClientT]) HasResourceType(ctx context.Context, id string) (bool, error) {
-	if err := ctx.Err(); err != nil { return false, err }
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	return c.typeMgr.HasResourceType(ctx, id), nil
 }
 
@@ -717,14 +723,16 @@ func (c *resourceController[ClientT]) GetActions(ctx context.Context, key string
 	}
 	meta, _ := c.registry.LookupMeta(key)
 	result, err := ar.GetActions(ctx, client, meta)
-	if err != nil { return nil, c.classifyError(key, err) }
+	if err != nil {
+		return nil, c.classifyError(key, err)
+	}
 	return result, nil
 }
 
 func (c *resourceController[ClientT]) ExecuteAction(ctx context.Context, key string, actionID string, input ActionInput) (*ActionResult, error) {
 	ar, ok := c.registry.GetActionResourcer(key)
 	if !ok {
-		return nil, &ResourceOperationError{Code:"UNSUPPORTED", Title:"Unsupported operation", Message:"This resource does not support actions."}
+		return nil, &ResourceOperationError{Code: "UNSUPPORTED", Title: "Unsupported operation", Message: "This resource does not support actions."}
 	}
 	connID, err := c.resolveConnectionID(ctx)
 	if err != nil {
@@ -736,16 +744,20 @@ func (c *resourceController[ClientT]) ExecuteAction(ctx context.Context, key str
 	}
 	meta, _ := c.registry.LookupMeta(key)
 	result, err := ar.ExecuteAction(ctx, client, meta, actionID, input)
-	if err != nil { return nil, c.classifyError(key, err) }
+	if err != nil {
+		return nil, c.classifyError(key, err)
+	}
 	return result, nil
 }
 
 func (c *resourceController[ClientT]) StreamAction(ctx context.Context, key string, actionID string, input ActionInput, stream chan<- ActionEvent) error {
-	if stream==nil{return &ResourceOperationError{Code:"INVALID_REQUEST",Title:"Invalid request",Message:"An action event channel is required."}}
+	if stream == nil {
+		return &ResourceOperationError{Code: "INVALID_REQUEST", Title: "Invalid request", Message: "An action event channel is required."}
+	}
 	defer close(stream)
 	ar, ok := c.registry.GetActionResourcer(key)
 	if !ok {
-		return &ResourceOperationError{Code:"UNSUPPORTED", Title:"Unsupported operation", Message:"This resource does not support streaming actions."}
+		return &ResourceOperationError{Code: "UNSUPPORTED", Title: "Unsupported operation", Message: "This resource does not support streaming actions."}
 	}
 	connID, err := c.resolveConnectionID(ctx)
 	if err != nil {
@@ -763,28 +775,44 @@ func (c *resourceController[ClientT]) StreamAction(ctx context.Context, key stri
 	var resultErr error
 	for {
 		if completed && len(events) == 0 {
-			if resultErr != nil { return c.classifyError(key, resultErr) }
+			if resultErr != nil {
+				return c.classifyError(key, resultErr)
+			}
 			return nil
 		}
 		select {
-		case <-ctx.Done(): return ctx.Err()
+		case <-ctx.Done():
+			return ctx.Err()
 		case resultErr = <-result:
 			completed = true
 			result = nil
 		case event, ok := <-events:
-			if !ok { events = nil; continue }
+			if !ok {
+				events = nil
+				continue
+			}
 			if event.Type == "error" {
 				event.Data = nil
 				if event.Error == nil {
-					event.Error = &ResourceOperationError{Code:"PROVIDER_ERROR", Title:"Provider operation failed", Message:"The provider could not complete the operation."}
+					event.Error = &ResourceOperationError{Code: "PROVIDER_ERROR", Title: "Provider operation failed", Message: "The provider could not complete the operation."}
 				} else {
-					classified := c.classifyError(key,event.Error)
+					classified := c.classifyError(key, event.Error)
 					var typed *ResourceOperationError
-					if errors.As(classified,&typed) { event.Error = typed } else { event.Error = &ResourceOperationError{Err:classified,Code:"PROVIDER_ERROR",Title:"Provider operation failed",Message:"The provider could not complete the operation."} }
+					if errors.As(classified, &typed) {
+						event.Error = typed
+					} else {
+						event.Error = &ResourceOperationError{Err: classified, Code: "PROVIDER_ERROR", Title: "Provider operation failed", Message: "The provider could not complete the operation."}
+					}
 				}
 			}
-			select { case stream <- event: case <-ctx.Done(): return ctx.Err() }
-			if event.Type == "error" { return event.Error }
+			select {
+			case stream <- event:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			if event.Type == "error" {
+				return event.Error
+			}
 		}
 	}
 }

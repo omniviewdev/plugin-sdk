@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/resource/resourcetest"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
 // failedWatchTimeout is the maximum time to wait for watches to exhaust retries

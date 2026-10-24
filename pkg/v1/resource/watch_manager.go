@@ -196,7 +196,7 @@ func (m *watchManager[ClientT]) GetWatchState(connectionID string) (*WatchConnec
 	defer m.mu.RUnlock()
 	cws, ok := m.watches[connectionID]
 	if !ok {
-		return nil, fmt.Errorf("connection %q not found", connectionID)
+		return nil, &ResourceOperationError{Code: "NOT_FOUND", Title: "Watch not started", Message: "No watch has been started for this connection."}
 	}
 	summary := &WatchConnectionSummary{
 		ConnectionID:   connectionID,

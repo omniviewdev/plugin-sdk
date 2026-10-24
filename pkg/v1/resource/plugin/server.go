@@ -47,7 +47,9 @@ func clampInt32(v int) int32 {
 // injectSession creates a context with session info from a connection ID.
 func (s *server) injectSession(ctx context.Context, connectionID string) context.Context {
 	session := &resource.Session{}
-	if existing := resource.SessionFromContext(ctx); existing != nil { *session = *existing }
+	if existing := resource.SessionFromContext(ctx); existing != nil {
+		*session = *existing
+	}
 	session.Connection = &types.Connection{ID: connectionID}
 	session.PluginConfig = s.settings
 	return resource.WithSession(ctx, session)
@@ -58,15 +60,21 @@ func (s *server) injectSession(ctx context.Context, connectionID string) context
 // specific connection context.
 func (s *server) injectSettingsSession(ctx context.Context) context.Context {
 	session := &resource.Session{}
-	if existing := resource.SessionFromContext(ctx); existing != nil { *session = *existing }
+	if existing := resource.SessionFromContext(ctx); existing != nil {
+		*session = *existing
+	}
 	session.PluginConfig = s.settings
 	return resource.WithSession(ctx, session)
 }
 
 func (s *server) callContext(ctx context.Context) (context.Context, error) {
 	session, err := incomingSession(ctx)
-	if err != nil { return ctx, err }
-	if err := ctx.Err(); err != nil { return ctx, err }
+	if err != nil {
+		return ctx, err
+	}
+	if err := ctx.Err(); err != nil {
+		return ctx, err
+	}
 	session.PluginConfig = s.settings
 	return resource.WithSession(ctx, session), nil
 }
@@ -76,9 +84,11 @@ func (s *server) callContext(ctx context.Context) (context.Context, error) {
 // ============================================================================
 
 func (s *server) LoadConnections(ctx context.Context, _ *resourcepb.LoadConnectionsRequest) (*resourcepb.LoadConnectionsResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSettingsSession(ctx)
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSettingsSession(ctx)
 	conns, err := s.provider.LoadConnections(ctx)
 	if err != nil {
 		return nil, encodeRPCError(err)
@@ -96,9 +106,11 @@ ctx = s.injectSettingsSession(ctx)
 }
 
 func (s *server) StartConnection(ctx context.Context, req *resourcepb.ConnectionRequest) (*resourcepb.ConnectionStatusResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	status, err := s.provider.StartConnection(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, encodeRPCError(err)
@@ -112,9 +124,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) CheckConnection(ctx context.Context, req *resourcepb.CheckConnectionRequest) (*resourcepb.CheckConnectionResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	status, err := s.provider.CheckConnection(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, encodeRPCError(err)
@@ -128,9 +142,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) StopConnection(ctx context.Context, req *resourcepb.ConnectionRequest) (*resourcepb.ConnectionResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	conn, err := s.provider.StopConnection(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, encodeRPCError(err)
@@ -144,9 +160,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) GetConnectionNamespaces(ctx context.Context, req *resourcepb.ConnectionRequest) (*resourcepb.NamespacesResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ns, err := s.provider.GetConnectionNamespaces(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ns, err := s.provider.GetConnectionNamespaces(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, encodeRPCError(err)
 	}
@@ -159,9 +177,11 @@ ns, err := s.provider.GetConnectionNamespaces(ctx, req.GetConnectionId())
 // ============================================================================
 
 func (s *server) Get(ctx context.Context, req *resourcepb.GetRequest) (*resourcepb.GetResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := resource.GetInput{
 		ID:        req.GetId(),
 		Namespace: req.GetNamespace(),
@@ -179,9 +199,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) List(ctx context.Context, req *resourcepb.ListRequest) (*resourcepb.ListResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := resource.ListInput{
 		Namespaces: req.GetNamespaces(),
 	}
@@ -208,9 +230,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) Find(ctx context.Context, req *resourcepb.FindRequest) (*resourcepb.FindResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := resource.FindInput{
 		TextQuery:  req.GetTextQuery(),
 		Namespaces: req.GetNamespaces(),
@@ -239,9 +263,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) Create(ctx context.Context, req *resourcepb.CreateRequest) (*resourcepb.CreateResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := resource.CreateInput{
 		Input:     json.RawMessage(req.GetData()),
 		Namespace: req.GetNamespace(),
@@ -259,9 +285,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) Update(ctx context.Context, req *resourcepb.UpdateRequest) (*resourcepb.UpdateResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := resource.UpdateInput{
 		Input:     json.RawMessage(req.GetData()),
 		ID:        req.GetId(),
@@ -280,9 +308,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) Delete(ctx context.Context, req *resourcepb.DeleteRequest) (*resourcepb.DeleteResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := resource.DeleteInput{
 		ID:        req.GetId(),
 		Namespace: req.GetNamespace(),
@@ -308,11 +338,15 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 // ============================================================================
 
 func (s *server) GetResourceGroups(ctx context.Context, req *resourcepb.ResourceGroupsRequest) (*resourcepb.ResourceGroupsResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	groups, err := s.provider.GetResourceGroups(ctx, req.GetConnectionId())
-	if err != nil { return nil, encodeRPCError(err) }
+	if err != nil {
+		return nil, encodeRPCError(err)
+	}
 	pbGroups := make(map[string]*commonpb.ResourceGroup, len(groups))
 	for k, g := range groups {
 		pbGroups[k] = resourceGroupToProto(g)
@@ -322,11 +356,15 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) GetResourceTypes(ctx context.Context, req *resourcepb.ResourceTypesRequest) (*resourcepb.ResourceTypesResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	types, err := s.provider.GetResourceTypes(ctx, req.GetConnectionId())
-	if err != nil { return nil, encodeRPCError(err) }
+	if err != nil {
+		return nil, encodeRPCError(err)
+	}
 	pbTypes := make(map[string]*commonpb.ResourceMeta, len(types))
 	for k, m := range types {
 		pbTypes[k] = resourceMetaToProto(m)
@@ -336,9 +374,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) GetResourceCapabilities(ctx context.Context, req *resourcepb.ResourceCapabilitiesRequest) (*resourcepb.ResourceCapabilitiesResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-caps, err := s.provider.GetResourceCapabilities(ctx, req.GetResourceKey())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	caps, err := s.provider.GetResourceCapabilities(ctx, req.GetResourceKey())
 	if err != nil {
 		return nil, encodeRPCError(err)
 	}
@@ -347,9 +387,11 @@ caps, err := s.provider.GetResourceCapabilities(ctx, req.GetResourceKey())
 }
 
 func (s *server) GetFilterFields(ctx context.Context, req *resourcepb.FilterFieldsRequest) (*resourcepb.FilterFieldsResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	fields, err := s.provider.GetFilterFields(ctx, req.GetConnectionId(), req.GetResourceKey())
 	if err != nil {
 		return nil, encodeRPCError(err)
@@ -363,9 +405,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) GetResourceSchema(ctx context.Context, req *resourcepb.ResourceSchemaRequest) (*resourcepb.ResourceSchemaResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	schema, err := s.provider.GetResourceSchema(ctx, req.GetConnectionId(), req.GetResourceKey())
 	if err != nil {
 		return nil, encodeRPCError(err)
@@ -375,9 +419,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) GetEditorSchemas(ctx context.Context, req *resourcepb.EditorSchemasRequest) (*resourcepb.EditorSchemasResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	schemas, err := s.provider.GetEditorSchemas(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, encodeRPCError(err)
@@ -395,9 +441,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 // ============================================================================
 
 func (s *server) GetActions(ctx context.Context, req *resourcepb.GetActionsRequest) (*resourcepb.GetActionsResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	actions, err := s.provider.GetActions(ctx, req.GetResourceKey())
 	if err != nil {
 		return nil, encodeRPCError(err)
@@ -415,9 +463,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) ExecuteAction(ctx context.Context, req *resourcepb.ExecuteActionRequest) (*resourcepb.ExecuteActionResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	input := actionInputFromProto(req.GetInput())
 	result, err := s.provider.ExecuteAction(ctx, req.GetResourceKey(), req.GetActionId(), input)
 	if err != nil {
@@ -443,16 +493,22 @@ func safeClose[T any](ch chan T) {
 
 func (s *server) StreamAction(req *resourcepb.ExecuteActionRequest, stream resourcepb.ResourcePlugin_StreamActionServer) error {
 	base, err := s.callContext(stream.Context())
-	if err != nil { return encodeRPCError(err) }
+	if err != nil {
+		return encodeRPCError(err)
+	}
 	ctx, cancel := context.WithCancel(s.injectSession(base, req.GetConnectionId()))
 	defer cancel()
 	ch := make(chan resource.ActionEvent, 16)
 	result := make(chan error, 1)
-	go func() { result <- s.provider.StreamAction(ctx, req.GetResourceKey(), req.GetActionId(), actionInputFromProto(req.GetInput()), ch) }()
+	go func() {
+		result <- s.provider.StreamAction(ctx, req.GetResourceKey(), req.GetActionId(), actionInputFromProto(req.GetInput()), ch)
+	}()
 	var completed bool
 	var resultErr error
 	for {
-		if completed && len(ch) == 0 { return encodeRPCError(resultErr) }
+		if completed && len(ch) == 0 {
+			return encodeRPCError(resultErr)
+		}
 		select {
 		case <-ctx.Done():
 			return encodeRPCError(ctx.Err())
@@ -460,15 +516,26 @@ func (s *server) StreamAction(req *resourcepb.ExecuteActionRequest, stream resou
 			completed = true
 			result = nil
 		case event, ok := <-ch:
-			if !ok { ch = nil; continue }
+			if !ok {
+				ch = nil
+				continue
+			}
 			if event.Type == "error" {
-				if event.Error == nil { event.Error = structuredError(errors.New("unclassified action event")) }
+				if event.Error == nil {
+					event.Error = structuredError(errors.New("unclassified action event"))
+				}
 				event.Data = nil
 			}
 			pbEvent, err := actionEventToProto(event)
-			if err != nil { return encodeRPCError(err) }
-			if err := stream.Send(pbEvent); err != nil { return encodeRPCError(err) }
-			if event.Type == "error" { return encodeRPCError(event.Error) }
+			if err != nil {
+				return encodeRPCError(err)
+			}
+			if err := stream.Send(pbEvent); err != nil {
+				return encodeRPCError(err)
+			}
+			if event.Type == "error" {
+				return encodeRPCError(event.Error)
+			}
 		}
 	}
 }
@@ -596,15 +663,19 @@ func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
 
 func (s *server) ListenForEvents(_ *resourcepb.ListenRequest, stream resourcepb.ResourcePlugin_ListenForEventsServer) error {
 	ctx, err := s.callContext(stream.Context())
-	if err != nil { return encodeRPCError(err) }
+	if err != nil {
+		return encodeRPCError(err)
+	}
 	sink := &grpcWatchSink{stream: stream, log: s.log.Named("watch_sink")}
 	return encodeRPCError(s.provider.ListenForEvents(ctx, sink))
 }
 
 func (s *server) EnsureResourceWatch(ctx context.Context, req *resourcepb.WatchResourceRequest) (*resourcepb.WatchResourceResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-err := s.provider.EnsureResourceWatch(ctx, req.GetConnectionId(), req.GetResourceKey())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	err := s.provider.EnsureResourceWatch(ctx, req.GetConnectionId(), req.GetResourceKey())
 	if err != nil {
 		return nil, encodeRPCError(err)
 	}
@@ -613,9 +684,11 @@ err := s.provider.EnsureResourceWatch(ctx, req.GetConnectionId(), req.GetResourc
 }
 
 func (s *server) StopResourceWatch(ctx context.Context, req *resourcepb.WatchResourceRequest) (*resourcepb.WatchResourceResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-err := s.provider.StopResourceWatch(ctx, req.GetConnectionId(), req.GetResourceKey())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	err := s.provider.StopResourceWatch(ctx, req.GetConnectionId(), req.GetResourceKey())
 	if err != nil {
 		return nil, encodeRPCError(err)
 	}
@@ -625,7 +698,9 @@ err := s.provider.StopResourceWatch(ctx, req.GetConnectionId(), req.GetResourceK
 
 func (s *server) WatchConnections(_ *resourcepb.WatchConnectionsRequest, stream resourcepb.ResourcePlugin_WatchConnectionsServer) error {
 	base, err := s.callContext(stream.Context())
-	if err != nil { return encodeRPCError(err) }
+	if err != nil {
+		return encodeRPCError(err)
+	}
 	ctx, cancel := context.WithCancel(s.injectSettingsSession(base))
 	defer cancel()
 
@@ -656,9 +731,11 @@ func (s *server) WatchConnections(_ *resourcepb.WatchConnectionsRequest, stream 
 }
 
 func (s *server) GetWatchState(ctx context.Context, req *resourcepb.GetWatchStateRequest) (*resourcepb.GetWatchStateResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-summary, err := s.provider.GetWatchState(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	summary, err := s.provider.GetWatchState(ctx, req.GetConnectionId())
 	if err != nil {
 		return nil, encodeRPCError(err)
 	}
@@ -671,9 +748,11 @@ summary, err := s.provider.GetWatchState(ctx, req.GetConnectionId())
 // ============================================================================
 
 func (s *server) GetRelationships(ctx context.Context, req *resourcepb.RelationshipsRequest) (*resourcepb.RelationshipsResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-rels, err := s.provider.GetRelationships(ctx, req.GetResourceKey())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	rels, err := s.provider.GetRelationships(ctx, req.GetResourceKey())
 	if err != nil {
 		return nil, encodeRPCError(err)
 	}
@@ -690,9 +769,11 @@ rels, err := s.provider.GetRelationships(ctx, req.GetResourceKey())
 }
 
 func (s *server) ResolveRelationships(ctx context.Context, req *resourcepb.ResolveRelationshipsRequest) (*resourcepb.ResolveRelationshipsResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	resolved, err := s.provider.ResolveRelationships(ctx, req.GetConnectionId(), req.GetResourceKey(), req.GetId(), req.GetNamespace())
 	if err != nil {
 		return nil, encodeRPCError(err)
@@ -714,9 +795,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 // ============================================================================
 
 func (s *server) GetHealth(ctx context.Context, req *resourcepb.HealthRequest) (*resourcepb.HealthResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	health, err := s.provider.GetHealth(ctx, req.GetConnectionId(), req.GetResourceKey(), json.RawMessage(req.GetData()))
 	if err != nil {
 		return nil, encodeRPCError(err)
@@ -726,9 +809,11 @@ ctx = s.injectSession(ctx, req.GetConnectionId())
 }
 
 func (s *server) GetResourceEvents(ctx context.Context, req *resourcepb.ResourceEventsRequest) (*resourcepb.ResourceEventsResponse, error) {
-ctx, contextErr := s.callContext(ctx)
-if contextErr != nil { return nil, encodeRPCError(contextErr) }
-ctx = s.injectSession(ctx, req.GetConnectionId())
+	ctx, contextErr := s.callContext(ctx)
+	if contextErr != nil {
+		return nil, encodeRPCError(contextErr)
+	}
+	ctx = s.injectSession(ctx, req.GetConnectionId())
 	events, err := s.provider.GetResourceEvents(ctx, req.GetConnectionId(), req.GetResourceKey(), req.GetId(), req.GetNamespace(), req.GetLimit())
 	if err != nil {
 		return nil, encodeRPCError(err)

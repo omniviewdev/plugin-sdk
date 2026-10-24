@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/resource/resourcetest"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
 // buildController creates a test controller with a pod resourcer and starts conn-1.
@@ -333,7 +333,9 @@ func TestCtrl_GetResourceTypes(t *testing.T) {
 	ctrl := buildController(t)
 	ctx := resourcetest.NewTestContext()
 	types, err := ctrl.GetResourceTypes(ctx, "conn-1")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(types) != 1 {
 		t.Fatalf("expected 1 type, got %d", len(types))
 	}
@@ -1275,7 +1277,9 @@ func TestTP_GetResourceGroups(t *testing.T) {
 
 	ctx := resourcetest.NewTestContext()
 	groups, err := ctrl.GetResourceGroups(ctx, "conn-1")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := groups["workloads"]; !ok {
 		t.Fatal("expected workloads group")
 	}
@@ -1764,7 +1768,9 @@ func TestTP_GetResourceTypes(t *testing.T) {
 	ctx := resourcetest.NewTestContext()
 
 	rt, err := ctrl.GetResourceTypes(ctx, "conn-1")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(rt) == 0 {
 		t.Fatal("expected at least 1 resource type")
 	}
