@@ -130,6 +130,14 @@ value/default/option payloads fail closed as sensitive metadata. This transport
 fix does not change the provider's runtime accessors or itself authorize access
 to secret settings.
 
+## Settings value reads
+
+The v1 RPC client's `GetSettingValue` returns the decoded setting value, not a
+protobuf `Any` envelope. It uses the existing JSON-backed settings codec:
+numbers decode as `float64`, objects as `map[string]any`, arrays as `[]any`, and
+JSON null as `nil`. Malformed or unsupported wire payloads return decoding errors;
+RPC status errors propagate unchanged.
+
 ## Releasing the Go module
 
 The module is `github.com/omniviewdev/plugin-sdk` at the repository root.

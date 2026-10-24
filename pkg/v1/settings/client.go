@@ -47,7 +47,7 @@ func (c *Client) GetSettingValue(id string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return resp.GetValue(), nil
+	return ConvertAnyToInterface(resp.GetValue())
 }
 
 func (c *Client) SetSetting(id string, value any) error {
