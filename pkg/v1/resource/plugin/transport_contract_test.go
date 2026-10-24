@@ -108,7 +108,7 @@ func TestDiagnosticMetadataThroughActualGRPC(t *testing.T) {
 	}
 }
 
-func TestRegisteredLifecycleConsumesCorrelationThroughActualGRPC(t *testing.T) {
+func TestRegisteredLifecycleConsumesCorrelationThroughGRPCAndNative(t *testing.T) {
 	type observed struct { operation string; session resource.Session }
 	seen := make(chan observed, 16)
 	connections := &resourcetest.StubConnectionProvider[string]{
@@ -134,8 +134,9 @@ func TestRegisteredLifecycleConsumesCorrelationThroughActualGRPC(t *testing.T) {
 		if original.Connection.ID != "caller-owned" || original.RequestID != id { t.Fatal("caller session was mutated") }
 	}
 	call("start", []string{"create"}, func(ctx context.Context) error { _, err := client.StartConnection(ctx, "conn-1"); return err })
-	call("update", []string{"create", "destroy"}, func(ctx context.Context) error { _, err := client.UpdateConnection(ctx, types.Connection{ID: "conn-1", Name: "Changed"}); return err })
+	// Update and Delete intentionally have no RPC: exercise their registered native consumers.
+	call("update", []string{"create", "destroy"}, func(ctx context.Context) error { _, err := provider.UpdateConnection(ctx, types.Connection{ID: "conn-1", Name: "Changed"}); return err })
 	call("stop", []string{"destroy"}, func(ctx context.Context) error { _, err := client.StopConnection(ctx, "conn-1"); return err })
 	call("restart", []string{"create"}, func(ctx context.Context) error { _, err := client.StartConnection(ctx, "conn-1"); return err })
-	call("delete", []string{"destroy"}, func(ctx context.Context) error { return client.DeleteConnection(ctx, "conn-1") })
+	call("delete", []string{"destroy"}, func(ctx context.Context) error { return provider.DeleteConnection(ctx, "conn-1") })
 }
