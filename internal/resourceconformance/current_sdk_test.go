@@ -198,13 +198,13 @@ func TestCurrentSDKNativeBoundary(t *testing.T) {
 			_, err = provider.List(session, "unregistered/native/type", resource.ListInput{})
 			require.Error(t, err)
 			_, err = provider.Find(session, s.Type, resource.FindInput{TextQuery: "prod"})
-			requireUnsupportedLimitation(t, err)
+			requireDeclaredOperation(t, s, "server-filter", err)
 			_, err = provider.Create(session, s.Type, resource.CreateInput{})
-			requireUnsupportedLimitation(t, err)
+			requireDeclaredOperation(t, s, "create", err)
 			_, err = provider.Update(session, s.Type, resource.UpdateInput{ID: "x"})
-			requireUnsupportedLimitation(t, err)
+			requireDeclaredOperation(t, s, "update", err)
 			_, err = provider.Delete(session, s.Type, resource.DeleteInput{ID: "x"})
-			requireUnsupportedLimitation(t, err)
+			requireDeclaredOperation(t, s, "delete", err)
 			caps, err := provider.GetResourceCapabilities(session, s.Type)
 			require.NoError(t, err)
 			require.False(t, caps.Filterable)
@@ -237,6 +237,18 @@ func requireNativeError(t *testing.T, err error, code string) {
 	var native *resource.ResourceOperationError
 	require.True(t, errors.As(err, &native), "expected structured native error, got %v", err)
 	require.Equal(t, code, native.Code)
+}
+
+func requireDeclaredOperation(t *testing.T, scenario Scenario, operation string, err error) {
+	t.Helper()
+	switch scenario.Operations[operation] {
+	case "supported":
+		require.NoError(t, err)
+	case "unsupported":
+		requireUnsupportedLimitation(t, err)
+	default:
+		t.Fatalf("missing or invalid support expectation for %s", operation)
+	}
 }
 
 func requireUnsupportedLimitation(t *testing.T, err error) {

@@ -21,6 +21,8 @@ The accepted plan is deliberately confined to one internal package:
 
 Every scenario explicitly records operation support, effective finite native selection, coverage and freshness. All mutation/server-filter modes are unsupported. Exhausted means only the selected accessible listing was exhausted, not unrestricted inventory or point-in-time consistency. Partial last-page completion remains partial. Snapshot-only remains snapshot-only. Incarnation/revision absence stays absent; neither is filled with a UID.
 
+The server-filter/create/update/delete boundary checks consume each scenario's declared support expectation, rather than pinning all declarations to a hard-coded default. A disposable negative control changed the parent oracle to claim supported server filtering while the real child still rejected it; all affected scenarios failed at the operation-result assertion. The mutation was removed before verification. Unsupported machine-code loss remains separately logged, not treated as correct semantics.
+
 ## Actual current boundary and its limits
 
 The subprocess runs `sdk.NewPlugin(...).Serve()`, dispensing `resourceplugin.GRPCPlugin` backed by the real resource controller, connection manager and watch manager. The finite fixture source implements mandatory current `Resourcer` methods, returning explicit errors for unsupported operations; it is not a released product resourcer. Exact native type keys are registered as current pattern keys (`compute/instance`, `container`, `vm`, `host`, `disk`). No invented group/version/kind tuple is introduced. Consequently metadata is empty and no catalog types are advertised: that is a current SDK limitation, not successful neutral catalog support.
