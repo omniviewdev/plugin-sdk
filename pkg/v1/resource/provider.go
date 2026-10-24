@@ -175,19 +175,19 @@ type WatchProvider interface {
 // TypeProvider provides resource type metadata and introspection across the gRPC boundary.
 type TypeProvider interface {
 	// GetResourceGroups returns all resource groups for a connection.
-	GetResourceGroups(ctx context.Context, connectionID string) map[string]ResourceGroup
+	GetResourceGroups(ctx context.Context, connectionID string) (map[string]ResourceGroup, error)
 
 	// GetResourceGroup returns a single resource group by ID.
 	GetResourceGroup(ctx context.Context, id string) (ResourceGroup, error)
 
 	// GetResourceTypes returns all resource types for a connection.
-	GetResourceTypes(ctx context.Context, connectionID string) map[string]ResourceMeta
+	GetResourceTypes(ctx context.Context, connectionID string) (map[string]ResourceMeta, error)
 
 	// GetResourceType returns a single resource type by key.
 	GetResourceType(ctx context.Context, id string) (*ResourceMeta, error)
 
 	// HasResourceType checks whether a resource type exists.
-	HasResourceType(ctx context.Context, id string) bool
+	HasResourceType(ctx context.Context, id string) (bool, error)
 
 	// GetResourceDefinition returns the table rendering definition for a resource type.
 	GetResourceDefinition(ctx context.Context, id string) (ResourceDefinition, error)

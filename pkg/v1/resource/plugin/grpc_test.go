@@ -511,14 +511,15 @@ func TestGR016_WatchStateRoundTrip(t *testing.T) {
 
 func TestGR017_GetResourceTypesRoundTrip(t *testing.T) {
 	tp := resourcetest.NewTestProvider(t)
-	tp.GetResourceTypesFunc = func(_ context.Context, connID string) map[string]resource.ResourceMeta {
+	tp.GetResourceTypesFunc = func(_ context.Context, connID string) (map[string]resource.ResourceMeta, error) {
 		return map[string]resource.ResourceMeta{
 			"core::v1::Pod": {Group: "core", Version: "v1", Kind: "Pod", Label: "Pods"},
 			"core::v1::Svc": {Group: "core", Version: "v1", Kind: "Service", Label: "Services"},
-		}
+		}, nil
 	}
 	c := setupBufconn(t, tp)
-	types := c.GetResourceTypes(context.Background(), "conn-1")
+	types, err := c.GetResourceTypes(context.Background(), "conn-1")
+	if err != nil { t.Fatal(err) }
 	if len(types) != 2 {
 		t.Fatalf("expected 2 types, got %d", len(types))
 	}

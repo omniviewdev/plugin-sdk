@@ -332,7 +332,8 @@ func (c *testGlobalClassifier) ClassifyError(err error) error {
 func TestCtrl_GetResourceTypes(t *testing.T) {
 	ctrl := buildController(t)
 	ctx := resourcetest.NewTestContext()
-	types := ctrl.GetResourceTypes(ctx, "conn-1")
+	types, err := ctrl.GetResourceTypes(ctx, "conn-1")
+	if err != nil { t.Fatal(err) }
 	if len(types) != 1 {
 		t.Fatalf("expected 1 type, got %d", len(types))
 	}
@@ -1273,7 +1274,8 @@ func TestTP_GetResourceGroups(t *testing.T) {
 	})
 
 	ctx := resourcetest.NewTestContext()
-	groups := ctrl.GetResourceGroups(ctx, "conn-1")
+	groups, err := ctrl.GetResourceGroups(ctx, "conn-1")
+	if err != nil { t.Fatal(err) }
 	if _, ok := groups["workloads"]; !ok {
 		t.Fatal("expected workloads group")
 	}
@@ -1302,10 +1304,10 @@ func TestTP_HasResourceType(t *testing.T) {
 	ctrl := buildController(t)
 	ctx := resourcetest.NewTestContext()
 
-	if !ctrl.HasResourceType(ctx, "core::v1::Pod") {
+	if present, err := ctrl.HasResourceType(ctx, "core::v1::Pod"); err != nil || !present {
 		t.Fatal("expected true for Pod")
 	}
-	if ctrl.HasResourceType(ctx, "apps::v1::Deployment") {
+	if present, err := ctrl.HasResourceType(ctx, "apps::v1::Deployment"); err != nil || present {
 		t.Fatal("expected false for unregistered Deployment")
 	}
 }
@@ -1761,7 +1763,8 @@ func TestTP_GetResourceTypes(t *testing.T) {
 	ctrl := buildController(t)
 	ctx := resourcetest.NewTestContext()
 
-	rt := ctrl.GetResourceTypes(ctx, "conn-1")
+	rt, err := ctrl.GetResourceTypes(ctx, "conn-1")
+	if err != nil { t.Fatal(err) }
 	if len(rt) == 0 {
 		t.Fatal("expected at least 1 resource type")
 	}

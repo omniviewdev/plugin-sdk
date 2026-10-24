@@ -264,10 +264,11 @@ func (c *resourceController[ClientT]) resolveCRUD(ctx context.Context, key strin
 		return nil, nil, ResourceMeta{}, ctx, fmt.Errorf("get connection %q: %w", connID, err)
 	}
 	existing := SessionFromContext(ctx)
-	sess := &Session{Connection: &conn}
+	sess := &Session{}
 	if existing != nil {
-		sess.PluginConfig = existing.PluginConfig
+		*sess = *existing
 	}
+	sess.Connection = &conn
 	ctx = WithSession(ctx, sess)
 
 	return res, client, meta, ctx, nil
@@ -647,24 +648,27 @@ func (c *resourceController[ClientT]) IsResourceWatchRunning(ctx context.Context
 
 // --- TypeProvider ---
 
-func (c *resourceController[ClientT]) GetResourceGroups(ctx context.Context, connectionID string) map[string]ResourceGroup {
-	return c.typeMgr.GetResourceGroups(ctx, connectionID)
+func (c *resourceController[ClientT]) GetResourceGroups(ctx context.Context, connectionID string) (map[string]ResourceGroup, error) {
+	if err := ctx.Err(); err != nil { return nil, err }
+	return c.typeMgr.GetResourceGroups(ctx, connectionID), nil
 }
 
 func (c *resourceController[ClientT]) GetResourceGroup(ctx context.Context, id string) (ResourceGroup, error) {
 	return c.typeMgr.GetResourceGroup(ctx, id)
 }
 
-func (c *resourceController[ClientT]) GetResourceTypes(ctx context.Context, connectionID string) map[string]ResourceMeta {
-	return c.typeMgr.GetResourceTypes(ctx, connectionID)
+func (c *resourceController[ClientT]) GetResourceTypes(ctx context.Context, connectionID string) (map[string]ResourceMeta, error) {
+	if err := ctx.Err(); err != nil { return nil, err }
+	return c.typeMgr.GetResourceTypes(ctx, connectionID), nil
 }
 
 func (c *resourceController[ClientT]) GetResourceType(ctx context.Context, id string) (*ResourceMeta, error) {
 	return c.typeMgr.GetResourceType(ctx, id)
 }
 
-func (c *resourceController[ClientT]) HasResourceType(ctx context.Context, id string) bool {
-	return c.typeMgr.HasResourceType(ctx, id)
+func (c *resourceController[ClientT]) HasResourceType(ctx context.Context, id string) (bool, error) {
+	if err := ctx.Err(); err != nil { return false, err }
+	return c.typeMgr.HasResourceType(ctx, id), nil
 }
 
 func (c *resourceController[ClientT]) GetResourceDefinition(ctx context.Context, id string) (ResourceDefinition, error) {
@@ -712,13 +716,15 @@ func (c *resourceController[ClientT]) GetActions(ctx context.Context, key string
 		return nil, err
 	}
 	meta, _ := c.registry.LookupMeta(key)
-	return ar.GetActions(ctx, client, meta)
+	result, err := ar.GetActions(ctx, client, meta)
+	if err != nil { return nil, c.classifyError(key, err) }
+	return result, nil
 }
 
 func (c *resourceController[ClientT]) ExecuteAction(ctx context.Context, key string, actionID string, input ActionInput) (*ActionResult, error) {
 	ar, ok := c.registry.GetActionResourcer(key)
 	if !ok {
-		return nil, fmt.Errorf("resource %q does not support actions", key)
+		return nil, &ResourceOperationError{Code:"UNSUPPORTED", Title:"Unsupported operation", Message:"This resource does not support actions."}
 	}
 	connID, err := c.resolveConnectionID(ctx)
 	if err != nil {
@@ -729,13 +735,17 @@ func (c *resourceController[ClientT]) ExecuteAction(ctx context.Context, key str
 		return nil, err
 	}
 	meta, _ := c.registry.LookupMeta(key)
-	return ar.ExecuteAction(ctx, client, meta, actionID, input)
+	result, err := ar.ExecuteAction(ctx, client, meta, actionID, input)
+	if err != nil { return nil, c.classifyError(key, err) }
+	return result, nil
 }
 
 func (c *resourceController[ClientT]) StreamAction(ctx context.Context, key string, actionID string, input ActionInput, stream chan<- ActionEvent) error {
+	if stream==nil{return &ResourceOperationError{Code:"INVALID_REQUEST",Title:"Invalid request",Message:"An action event channel is required."}}
+	defer close(stream)
 	ar, ok := c.registry.GetActionResourcer(key)
 	if !ok {
-		return fmt.Errorf("resource %q does not support actions", key)
+		return &ResourceOperationError{Code:"UNSUPPORTED", Title:"Unsupported operation", Message:"This resource does not support streaming actions."}
 	}
 	connID, err := c.resolveConnectionID(ctx)
 	if err != nil {
@@ -746,7 +756,37 @@ func (c *resourceController[ClientT]) StreamAction(ctx context.Context, key stri
 		return err
 	}
 	meta, _ := c.registry.LookupMeta(key)
-	return ar.StreamAction(ctx, client, meta, actionID, input, stream)
+	events := make(chan ActionEvent, 16)
+	result := make(chan error, 1)
+	go func() { result <- ar.StreamAction(ctx, client, meta, actionID, input, events) }()
+	var completed bool
+	var resultErr error
+	for {
+		if completed && len(events) == 0 {
+			if resultErr != nil { return c.classifyError(key, resultErr) }
+			return nil
+		}
+		select {
+		case <-ctx.Done(): return ctx.Err()
+		case resultErr = <-result:
+			completed = true
+			result = nil
+		case event, ok := <-events:
+			if !ok { events = nil; continue }
+			if event.Type == "error" {
+				event.Data = nil
+				if event.Error == nil {
+					event.Error = &ResourceOperationError{Code:"PROVIDER_ERROR", Title:"Provider operation failed", Message:"The provider could not complete the operation."}
+				} else {
+					classified := c.classifyError(key,event.Error)
+					var typed *ResourceOperationError
+					if errors.As(classified,&typed) { event.Error = typed } else { event.Error = &ResourceOperationError{Err:classified,Code:"PROVIDER_ERROR",Title:"Provider operation failed",Message:"The provider could not complete the operation."} }
+				}
+			}
+			select { case stream <- event: case <-ctx.Done(): return ctx.Err() }
+			if event.Type == "error" { return event.Error }
+		}
+	}
 }
 
 // --- EditorSchemaProvider ---

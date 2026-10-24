@@ -130,6 +130,36 @@ value/default/option payloads fail closed as sensitive metadata. This transport
 fix does not change the provider's runtime accessors or itself authorize access
 to secret settings.
 
+## Resource invocation and action migration (C02)
+
+Resource `GetResourceGroups`/`GetResourceTypes` return `(map, error)`, and
+`HasResourceType` returns `(bool, error)`. Transport/discovery failure is not an
+empty successful catalog; missing RPC support is structured `UNSUPPORTED`.
+Diagnostic Session request/requester IDs survive metadata transport and resolved
+connection enrichment, but neither these labels nor connection IDs authenticate
+an actor or confer host authority.
+
+All resource RPC paths preserve typed `ResourceOperationError` meaning, including
+non-envelope RPCs and stream termination through typed gRPC status details.
+Cancellation/deadline remain cancellation/timeout. Existing error numbers1–14
+remain unchanged; additive codes15–22 cover invalid request, unsupported,
+cancelled, limit, expired continuation, reset, partial result and provider error.
+Raw diagnostics are not safe public error text; the host redacts provider denial,
+internal and unknown failures and owns public correlation.
+
+Streaming action resourcers must emit exactly one `ActionEvent{Type: "ready"}`
+only after authoritative native establishment/admission succeeds, before any
+progress/output/completion. Method entry or gRPC headers are not readiness.
+Return pre-establishment failures without emitting ready; error events carry
+typed `Error`, not raw diagnostic `Data`. The framework owns its outgoing stream
+channel and handles producer return independently of channel closure. Use the
+request context for native work and cancellation-aware event sends.
+
+Providers must rebuild for this contract; no progress-as-ready compatibility
+inference is supported. Consumers must pin the reviewed publicly reachable SDK
+revision and finish coordinated source/transport/host checks before claiming the
+new semantics. Local replacements alone are not a consumable release receipt.
+
 ## Releasing the Go module
 
 The module is `github.com/omniviewdev/plugin-sdk` at the repository root.
