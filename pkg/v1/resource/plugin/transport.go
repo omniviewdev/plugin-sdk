@@ -12,8 +12,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const requestIDKey = "omniview-request-id"
-const requesterIDKey = "omniview-requester-id"
+const requestIDKey = "omniview-request-id-bin"
+const requesterIDKey = "omniview-requester-id-bin"
 
 // Metadata is diagnostic only; it does not carry an authenticated host principal.
 func outgoingSession(ctx context.Context) context.Context {

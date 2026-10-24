@@ -135,9 +135,11 @@ to secret settings.
 Resource `GetResourceGroups`/`GetResourceTypes` return `(map, error)`, and
 `HasResourceType` returns `(bool, error)`. Transport/discovery failure is not an
 empty successful catalog; missing RPC support is structured `UNSUPPORTED`.
-Diagnostic Session request/requester IDs survive metadata transport and resolved
-connection enrichment, but neither these labels nor connection IDs authenticate
-an actor or confer host authority.
+Diagnostic Session request/requester labels are bounded to 256 UTF-8 bytes and
+transported using binary gRPC metadata. They survive CRUD and lifecycle
+connection enrichment, including recreation/deletion, without mutating the
+incoming Session. Neither these labels nor connection IDs authenticate an actor
+or confer host authority.
 
 All resource RPC paths preserve typed `ResourceOperationError` meaning, including
 non-envelope RPCs and stream termination through typed gRPC status details.

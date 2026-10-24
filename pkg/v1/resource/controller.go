@@ -755,6 +755,8 @@ func (c *resourceController[ClientT]) StreamAction(ctx context.Context, key stri
 		return &ResourceOperationError{Code: "INVALID_REQUEST", Title: "Invalid request", Message: "An action event channel is required."}
 	}
 	defer close(stream)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	ar, ok := c.registry.GetActionResourcer(key)
 	if !ok {
 		return &ResourceOperationError{Code: "UNSUPPORTED", Title: "Unsupported operation", Message: "This resource does not support streaming actions."}

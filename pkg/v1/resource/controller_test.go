@@ -3230,3 +3230,32 @@ func TestFQ_NoTextSearchProviderFallsThrough(t *testing.T) {
 		t.Fatalf("expected FindFunc called once, got %d", stub.FindCalls.Load())
 	}
 }
+
+type terminalTeardownResourcer struct {
+	testActionResourcer
+	stopped chan struct{}
+}
+
+func (r *terminalTeardownResourcer) StreamAction(ctx context.Context, _ *string, _ resource.ResourceMeta, _ string, _ resource.ActionInput, stream chan<- resource.ActionEvent) error {
+	defer close(r.stopped)
+	for _, event := range []resource.ActionEvent{{Type: "ready"}, {Type: "error", Error: &resource.ResourceOperationError{Code: "FORBIDDEN", Title: "Denied", Message: "Denied"}}} {
+		select { case stream <- event: case <-ctx.Done(): return ctx.Err() }
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestDirectActionTerminalErrorCancelsNativeProducer(t *testing.T) {
+	stopped := make(chan struct{})
+	ctrl := buildController(t, func(cfg *resource.ResourcePluginConfig[string]) {
+		cfg.Resources = []resource.ResourceRegistration[string]{{Meta: resourcetest.PodMeta, Resourcer: &terminalTeardownResourcer{stopped: stopped}}}
+	})
+	ctx, cancel := context.WithCancel(resourcetest.NewTestContext())
+	defer cancel()
+	events := make(chan resource.ActionEvent, 2)
+	err := ctrl.StreamAction(ctx, "core::v1::Pod", "start", resource.ActionInput{}, events)
+	var typed *resource.ResourceOperationError
+	if !errors.As(err, &typed) || typed.Code != "FORBIDDEN" { t.Fatalf("terminal error lost: %v", err) }
+	select { case <-stopped: case <-time.After(time.Second): t.Fatal("direct controller left its native producer running") }
+	if ctx.Err() != nil { t.Fatal("controller cancelled the caller instead of its child") }
+}
