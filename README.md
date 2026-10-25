@@ -169,6 +169,14 @@ Use `make proto` for full regeneration; C02's scoped regeneration used
 `buf generate --path proto/v1/common/common.proto --path proto/v1/resource/resource.proto`.
 These remote Buf generators do not require an ambient native `protoc` binary.
 
+## Settings value reads
+
+The v1 RPC client's `GetSettingValue` returns the decoded setting value, not a
+protobuf `Any` envelope. It uses the existing JSON-backed settings codec:
+numbers decode as `float64`, objects as `map[string]any`, arrays as `[]any`, and
+JSON null as `nil`. Malformed or unsupported wire payloads return decoding errors;
+RPC status errors propagate unchanged.
+
 ## Releasing the Go module
 
 The module is `github.com/omniviewdev/plugin-sdk` at the repository root.
