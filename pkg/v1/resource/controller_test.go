@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	resource "github.com/omniviewdev/plugin-sdk/pkg/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/resource/resourcetest"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
 // buildController creates a test controller with a pod resourcer and starts conn-1.
@@ -332,7 +332,10 @@ func (c *testGlobalClassifier) ClassifyError(err error) error {
 func TestCtrl_GetResourceTypes(t *testing.T) {
 	ctrl := buildController(t)
 	ctx := resourcetest.NewTestContext()
-	types := ctrl.GetResourceTypes(ctx, "conn-1")
+	types, err := ctrl.GetResourceTypes(ctx, "conn-1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(types) != 1 {
 		t.Fatalf("expected 1 type, got %d", len(types))
 	}
@@ -1273,7 +1276,10 @@ func TestTP_GetResourceGroups(t *testing.T) {
 	})
 
 	ctx := resourcetest.NewTestContext()
-	groups := ctrl.GetResourceGroups(ctx, "conn-1")
+	groups, err := ctrl.GetResourceGroups(ctx, "conn-1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := groups["workloads"]; !ok {
 		t.Fatal("expected workloads group")
 	}
@@ -1302,10 +1308,10 @@ func TestTP_HasResourceType(t *testing.T) {
 	ctrl := buildController(t)
 	ctx := resourcetest.NewTestContext()
 
-	if !ctrl.HasResourceType(ctx, "core::v1::Pod") {
+	if present, err := ctrl.HasResourceType(ctx, "core::v1::Pod"); err != nil || !present {
 		t.Fatal("expected true for Pod")
 	}
-	if ctrl.HasResourceType(ctx, "apps::v1::Deployment") {
+	if present, err := ctrl.HasResourceType(ctx, "apps::v1::Deployment"); err != nil || present {
 		t.Fatal("expected false for unregistered Deployment")
 	}
 }
@@ -1371,8 +1377,17 @@ func (r *testActionResourcer) ExecuteAction(_ context.Context, _ *string, _ reso
 	return nil, errors.New("unknown action")
 }
 func (r *testActionResourcer) StreamAction(ctx context.Context, _ *string, _ resource.ResourceMeta, _ string, _ resource.ActionInput, stream chan<- resource.ActionEvent) error {
-	stream <- resource.ActionEvent{Type: "progress", Data: map[string]interface{}{"pct": 50}}
-	stream <- resource.ActionEvent{Type: "complete", Data: map[string]interface{}{"pct": 100}}
+	for _, event := range []resource.ActionEvent{
+		{Type: "ready"},
+		{Type: "progress", Data: map[string]interface{}{"pct": 50}},
+		{Type: "complete", Data: map[string]interface{}{"pct": 100}},
+	} {
+		select {
+		case stream <- event:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	return nil
 }
 
@@ -1457,12 +1472,15 @@ func TestAP_StreamAction(t *testing.T) {
 	var events []resource.ActionEvent
 	for e := range stream {
 		events = append(events, e)
-		if len(events) >= 2 {
-			break
-		}
 	}
-	if len(events) != 2 {
-		t.Fatalf("expected 2 events, got %d", len(events))
+	if len(events) != 3 {
+		t.Fatalf("expected ready, progress and complete, got %+v", events)
+	}
+	if events[0].Type != "ready" || events[1].Type != "progress" || events[2].Type != "complete" {
+		t.Fatalf("unexpected action lifecycle: %+v", events)
+	}
+	if events[1].Data["pct"] != 50 || events[2].Data["pct"] != 100 {
+		t.Fatalf("action progress/completion payloads lost: %+v", events)
 	}
 }
 
@@ -1761,7 +1779,10 @@ func TestTP_GetResourceTypes(t *testing.T) {
 	ctrl := buildController(t)
 	ctx := resourcetest.NewTestContext()
 
-	rt := ctrl.GetResourceTypes(ctx, "conn-1")
+	rt, err := ctrl.GetResourceTypes(ctx, "conn-1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(rt) == 0 {
 		t.Fatal("expected at least 1 resource type")
 	}
@@ -3219,5 +3240,116 @@ func TestFQ_NoTextSearchProviderFallsThrough(t *testing.T) {
 	}
 	if stub.FindCalls.Load() != 1 {
 		t.Fatalf("expected FindFunc called once, got %d", stub.FindCalls.Load())
+	}
+}
+
+type terminalTeardownResourcer struct {
+	testActionResourcer
+	stopped chan struct{}
+}
+
+func (r *terminalTeardownResourcer) StreamAction(ctx context.Context, _ *string, _ resource.ResourceMeta, _ string, _ resource.ActionInput, stream chan<- resource.ActionEvent) error {
+	defer close(r.stopped)
+	for _, event := range []resource.ActionEvent{{Type: "ready"}, {Type: "error", Error: &resource.ResourceOperationError{Code: "FORBIDDEN", Title: "Denied", Message: "Denied"}}} {
+		select {
+		case stream <- event:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestDirectActionTerminalErrorCancelsNativeProducer(t *testing.T) {
+	stopped := make(chan struct{})
+	ctrl := buildController(t, func(cfg *resource.ResourcePluginConfig[string]) {
+		cfg.Resources = []resource.ResourceRegistration[string]{{Meta: resourcetest.PodMeta, Resourcer: &terminalTeardownResourcer{stopped: stopped}}}
+	})
+	ctx, cancel := context.WithCancel(resourcetest.NewTestContext())
+	defer cancel()
+	events := make(chan resource.ActionEvent, 2)
+	err := ctrl.StreamAction(ctx, "core::v1::Pod", "start", resource.ActionInput{}, events)
+	var typed *resource.ResourceOperationError
+	if !errors.As(err, &typed) || typed.Code != "FORBIDDEN" {
+		t.Fatalf("terminal error lost: %v", err)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("direct controller left its native producer running")
+	}
+	if ctx.Err() != nil {
+		t.Fatal("controller cancelled the caller instead of its child")
+	}
+}
+
+type readinessCompletionResourcer struct {
+	testActionResourcer
+	ready       bool
+	closeStream bool
+	resultErr   error
+}
+
+func (r *readinessCompletionResourcer) StreamAction(ctx context.Context, _ *string, _ resource.ResourceMeta, _ string, _ resource.ActionInput, stream chan<- resource.ActionEvent) error {
+	if r.ready {
+		select {
+		case stream <- resource.ActionEvent{Type: "ready"}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if r.closeStream {
+		close(stream)
+	}
+	return r.resultErr
+}
+
+func TestC02NativeStreamActionRequiresReadyBeforeSuccess(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		ready       bool
+		closeStream bool
+		resultErr   error
+		wantCode    string
+	}{
+		{name: "empty return", wantCode: "PROVIDER_ERROR"},
+		{name: "closed empty return", closeStream: true, wantCode: "PROVIDER_ERROR"},
+		{name: "ready return", ready: true},
+		{name: "closed ready return", ready: true, closeStream: true},
+		{name: "denied before ready", resultErr: &resource.ResourceOperationError{Code: "FORBIDDEN", Title: "Denied", Message: "Denied"}, wantCode: "FORBIDDEN"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := buildController(t, func(cfg *resource.ResourcePluginConfig[string]) {
+				cfg.Resources = []resource.ResourceRegistration[string]{{
+					Meta: resourcetest.PodMeta,
+					Resourcer: &readinessCompletionResourcer{
+						ready: tc.ready, closeStream: tc.closeStream, resultErr: tc.resultErr,
+					},
+				}}
+			})
+			events := make(chan resource.ActionEvent, 1)
+			err := ctrl.StreamAction(resourcetest.NewTestContext(), "core::v1::Pod", "start", resource.ActionInput{}, events)
+			if tc.wantCode == "" {
+				if err != nil {
+					t.Fatalf("accepted action failed: %v", err)
+				}
+			} else {
+				var typed *resource.ResourceOperationError
+				if !errors.As(err, &typed) || typed.Code != tc.wantCode {
+					t.Fatalf("expected %s, got %v", tc.wantCode, err)
+				}
+			}
+			ready := false
+			for event := range events {
+				if event.Type != "ready" || ready {
+					t.Fatalf("unexpected admission event: %+v", event)
+				}
+				ready = true
+			}
+			if ready != tc.ready {
+				t.Fatalf("observable readiness = %v, want %v", ready, tc.ready)
+			}
+		})
 	}
 }

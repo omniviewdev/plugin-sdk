@@ -33,6 +33,16 @@ func SessionFromContext(ctx context.Context) *Session {
 	return s
 }
 
+// withConnectionSession enriches an invocation without mutating its diagnostics.
+func withConnectionSession(ctx context.Context, connection *types.Connection) context.Context {
+	session := &Session{}
+	if existing := SessionFromContext(ctx); existing != nil {
+		*session = *existing
+	}
+	session.Connection = connection
+	return WithSession(ctx, session)
+}
+
 // ConnectionFromContext is a convenience helper that retrieves the Connection
 // from the Session stored in the context. Returns nil if no Session or no
 // Connection is present.

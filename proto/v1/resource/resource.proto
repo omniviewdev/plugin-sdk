@@ -320,10 +320,12 @@ message ActionResult {
     omniview.sdk.common.v1.ResourceError error = 4;
 }
 
-// StreamActionEvent is sent during streaming actions.
+// StreamActionEvent begins with a concrete-provider "ready" event only after
+// native establishment/admission. Error events carry typed error, never raw data.
 message StreamActionEvent {
     string type = 1;
     string message = 2;
     float progress = 3;
     google.protobuf.Struct data = 4;
+    omniview.sdk.common.v1.ResourceError error = 5;
 }
