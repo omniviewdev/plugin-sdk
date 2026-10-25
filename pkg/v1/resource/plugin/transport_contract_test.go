@@ -182,3 +182,59 @@ func TestRegisteredLifecycleConsumesCorrelationThroughGRPCAndNative(t *testing.T
 	call("restart", []string{"create"}, func(ctx context.Context) error { _, err := client.StartConnection(ctx, "conn-1"); return err })
 	call("delete", []string{"destroy"}, func(ctx context.Context) error { return provider.DeleteConnection(ctx, "conn-1") })
 }
+
+func TestC02GRPCStreamActionRequiresReadyBeforeSuccess(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		ready       bool
+		closeStream bool
+		resultErr   error
+		wantCode    string
+	}{
+		{name: "empty return", wantCode: "PROVIDER_ERROR"},
+		{name: "closed empty return", closeStream: true, wantCode: "PROVIDER_ERROR"},
+		{name: "ready return", ready: true},
+		{name: "closed ready return", ready: true, closeStream: true},
+		{name: "denied before ready", resultErr: &resource.ResourceOperationError{Code: "FORBIDDEN", Title: "Denied", Message: "Denied"}, wantCode: "FORBIDDEN"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := resourcetest.NewTestProvider(t)
+			provider.StreamActionFunc = func(ctx context.Context, _, _ string, _ resource.ActionInput, stream chan<- resource.ActionEvent) error {
+				if tc.ready {
+					select {
+					case stream <- resource.ActionEvent{Type: "ready"}:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+				}
+				if tc.closeStream {
+					close(stream)
+				}
+				return tc.resultErr
+			}
+			client := setupBufconn(t, provider)
+			events := make(chan resource.ActionEvent, 1)
+			err := client.StreamAction(resourcetest.NewTestContext(), "task", "start", resource.ActionInput{}, events)
+			if tc.wantCode == "" {
+				if err != nil {
+					t.Fatalf("accepted action failed: %v", err)
+				}
+			} else {
+				var typed *resource.ResourceOperationError
+				if !errors.As(err, &typed) || typed.Code != tc.wantCode {
+					t.Fatalf("expected %s, got %v", tc.wantCode, err)
+				}
+			}
+			ready := false
+			for event := range events {
+				if event.Type != "ready" || ready {
+					t.Fatalf("unexpected admission event: %+v", event)
+				}
+				ready = true
+			}
+			if ready != tc.ready {
+				t.Fatalf("observable readiness = %v, want %v", ready, tc.ready)
+			}
+		})
+	}
+}

@@ -504,9 +504,13 @@ func (s *server) StreamAction(req *resourcepb.ExecuteActionRequest, stream resou
 		result <- s.provider.StreamAction(ctx, req.GetResourceKey(), req.GetActionId(), actionInputFromProto(req.GetInput()), ch)
 	}()
 	var completed bool
+	var readySeen bool
 	var resultErr error
 	for {
 		if completed && len(ch) == 0 {
+			if resultErr == nil && !readySeen {
+				return encodeRPCError(&resource.ResourceOperationError{Code: "PROVIDER_ERROR", Title: "Provider operation failed", Message: "The provider completed the action before it became ready."})
+			}
 			return encodeRPCError(resultErr)
 		}
 		select {
@@ -532,6 +536,9 @@ func (s *server) StreamAction(req *resourcepb.ExecuteActionRequest, stream resou
 			}
 			if err := stream.Send(pbEvent); err != nil {
 				return encodeRPCError(err)
+			}
+			if event.Type == "ready" && event.Error == nil {
+				readySeen = true
 			}
 			if event.Type == "error" {
 				return encodeRPCError(event.Error)
