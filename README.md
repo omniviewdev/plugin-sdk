@@ -143,8 +143,8 @@ or confer host authority.
 
 All resource RPC paths preserve typed `ResourceOperationError` meaning, including
 non-envelope RPCs and stream termination through typed gRPC status details.
-Cancellation/deadline remain cancellation/timeout. Existing error numbers1–14
-remain unchanged; additive codes15–22 cover invalid request, unsupported,
+Cancellation/deadline remain cancellation/timeout. Existing error numbers 1–14
+remain unchanged; additive codes 15–22 cover invalid request, unsupported,
 cancelled, limit, expired continuation, reset, partial result and provider error.
 Raw diagnostics are not safe public error text; the host redacts provider denial,
 internal and unknown failures and owns public correlation.
@@ -156,6 +156,8 @@ Return pre-establishment failures without emitting ready; error events carry
 typed `Error`, not raw diagnostic `Data`. The framework owns its outgoing stream
 channel and handles producer return independently of channel closure. Use the
 request context for native work and cancellation-aware event sends.
+A successful return without a relayed `ready` is rejected as `PROVIDER_ERROR`
+by both the native controller and the RPC server, including an empty closed stream.
 
 Providers must rebuild for this contract; no progress-as-ready compatibility
 inference is supported. Consumers must pin the reviewed publicly reachable SDK

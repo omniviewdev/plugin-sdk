@@ -274,8 +274,17 @@ func TestGR008_ListenForEventsStreaming(t *testing.T) {
 func TestGR009_StreamActionStreaming(t *testing.T) {
 	tp := resourcetest.NewTestProvider(t)
 	tp.StreamActionFunc = func(ctx context.Context, key string, actionID string, input resource.ActionInput, stream chan<- resource.ActionEvent) error {
+		select {
+		case stream <- resource.ActionEvent{Type: "ready"}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 		for i := 0; i < 5; i++ {
-			stream <- resource.ActionEvent{Type: "progress", Data: map[string]interface{}{"step": float64(i)}}
+			select {
+			case stream <- resource.ActionEvent{Type: "progress", Data: map[string]interface{}{"step": float64(i)}}:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 		close(stream)
 		return nil
@@ -289,12 +298,20 @@ func TestGR009_StreamActionStreaming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StreamAction: %v", err)
 	}
-	var count int
-	for range ch {
-		count++
+	var events []resource.ActionEvent
+	for event := range ch {
+		events = append(events, event)
 	}
-	if count != 5 {
-		t.Fatalf("expected 5 events, got %d", count)
+	if len(events) != 6 {
+		t.Fatalf("expected ready and 5 progress events, got %+v", events)
+	}
+	if events[0].Type != "ready" {
+		t.Fatalf("first event must establish readiness, got %+v", events[0])
+	}
+	for i, event := range events[1:] {
+		if event.Type != "progress" || event.Data["step"] != float64(i) {
+			t.Fatalf("progress event %d lost or reordered: %+v", i, event)
+		}
 	}
 }
 

@@ -774,11 +774,15 @@ func (c *resourceController[ClientT]) StreamAction(ctx context.Context, key stri
 	result := make(chan error, 1)
 	go func() { result <- ar.StreamAction(ctx, client, meta, actionID, input, events) }()
 	var completed bool
+	var readySeen bool
 	var resultErr error
 	for {
 		if completed && len(events) == 0 {
 			if resultErr != nil {
 				return c.classifyError(key, resultErr)
+			}
+			if !readySeen {
+				return &ResourceOperationError{Code: "PROVIDER_ERROR", Title: "Provider operation failed", Message: "The provider completed the action before it became ready."}
 			}
 			return nil
 		}
@@ -811,6 +815,9 @@ func (c *resourceController[ClientT]) StreamAction(ctx context.Context, key stri
 			case stream <- event:
 			case <-ctx.Done():
 				return ctx.Err()
+			}
+			if event.Type == "ready" && event.Error == nil {
+				readySeen = true
 			}
 			if event.Type == "error" {
 				return event.Error
