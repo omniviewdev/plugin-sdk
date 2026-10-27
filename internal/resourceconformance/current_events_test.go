@@ -82,7 +82,20 @@ func probeNativeEvents(t *testing.T, provider resource.Provider, session context
 	defer cancel()
 	sink := &nativeEventSink{t: t, ctx: ctx, updates: make(chan resource.WatchUpdatePayload, 4), states: make(chan resource.WatchStateEvent, 16)}
 	done := make(chan error, 1)
-	go func() { done <- provider.ListenForEvents(ctx, sink) }()
+	ready := make(chan struct{})
+	go func() {
+		done <- provider.ListenForEvents(ctx, sink, func() error {
+			close(ready)
+			return nil
+		})
+	}()
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatalf("native event listener returned before readiness: %v", err)
+	case <-session.Done():
+		t.Fatal("native event listener did not register")
+	}
 	// StartConnection already initialized the real watch manager. The current
 	// remote client has no StartConnectionWatch RPC; use its supported per-type control.
 	require.NoError(t, provider.EnsureResourceWatch(session, s.Name, s.Type))

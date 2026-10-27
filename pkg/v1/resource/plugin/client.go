@@ -469,10 +469,32 @@ func (c *client) StreamAction(ctx context.Context, key string, actionID string, 
 // Watch
 // ============================================================================
 
-func (c *client) ListenForEvents(ctx context.Context, sink resource.WatchEventSink) error {
+func (c *client) ListenForEvents(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	s, err := c.stub.ListenForEvents(outgoingSession(ctx), &resourcepb.ListenRequest{})
 	if err != nil {
 		return decodeRPCError(err)
+	}
+	headers, err := s.Header()
+	if err != nil {
+		return decodeRPCError(err)
+	}
+	if values := headers.Get(watchReadyHeader); len(values) != 1 || values[0] != "1" {
+		// A trailers-only failure may return no headers without a Header error.
+		// Receive its status rather than hiding the actual startup failure.
+		if _, recvErr := s.Recv(); recvErr != nil && recvErr != io.EOF {
+			return decodeRPCError(recvErr)
+		}
+		return fmt.Errorf("watch event stream did not acknowledge listener registration")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if onReady != nil {
+		if err := onReady(); err != nil {
+			return err
+		}
 	}
 	for {
 		event, err := s.Recv()

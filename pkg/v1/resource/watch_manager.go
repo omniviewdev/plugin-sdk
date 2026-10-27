@@ -2,9 +2,11 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
@@ -28,6 +30,81 @@ type resourceWatchState struct {
 	done    chan struct{} // closed when goroutine exits
 }
 
+const maxPendingWatchStates = 1000
+
+var errWatchStateReplayOverflow = errors.New("watch state replay exceeded 1000 buffered events")
+
+// watchListener owns only its registration's bounded state replay. Data events
+// remain direct. No sink callback runs while mu or a manager lock is held.
+type watchListener struct {
+	sink      WatchEventSink
+	ctx       context.Context
+	retired   atomic.Bool
+	accepted  bool // guarded by listenersMu
+	mu        sync.Mutex
+	replaying bool
+	overflow  bool
+	pending   []WatchStateEvent
+}
+
+func (l *watchListener) active() bool {
+	return !l.retired.Load() && l.ctx.Err() == nil
+}
+
+func (l *watchListener) onStateChange(event WatchStateEvent) {
+	l.mu.Lock()
+	if !l.active() {
+		l.mu.Unlock()
+		return
+	}
+	if l.replaying {
+		if len(l.pending) < maxPendingWatchStates {
+			l.pending = append(l.pending, event)
+		} else {
+			l.overflow = true
+		}
+		l.mu.Unlock()
+		return
+	}
+	l.mu.Unlock()
+	l.sink.OnStateChange(event)
+}
+
+func (l *watchListener) replay() error {
+	for {
+		l.mu.Lock()
+		if err := l.ctx.Err(); err != nil {
+			l.mu.Unlock()
+			return err
+		}
+		if l.retired.Load() {
+			l.mu.Unlock()
+			return context.Canceled
+		}
+		if l.overflow {
+			l.mu.Unlock()
+			return errWatchStateReplayOverflow
+		}
+		pending := l.pending
+		l.pending = nil
+		if len(pending) == 0 {
+			l.replaying = false
+			l.mu.Unlock()
+			return nil
+		}
+		l.mu.Unlock()
+		for _, event := range pending {
+			if !l.active() {
+				if err := l.ctx.Err(); err != nil {
+					return err
+				}
+				return context.Canceled
+			}
+			l.sink.OnStateChange(event)
+		}
+	}
+}
+
 // connectionWatchState holds all watch state for a single connection.
 type connectionWatchState[ClientT any] struct {
 	client     *ClientT
@@ -47,19 +124,21 @@ type watchManager[ClientT any] struct {
 	// scopeProvider resolves watch scope for connections (optional).
 	scopeProvider ScopeProvider[ClientT]
 
-	// Listeners for event fan-out.
-	listenersMu sync.RWMutex
-	listeners   []WatchEventSink
+	// Published slices are immutable; a fan-out snapshot never owns the lock
+	// while calling a sink. Removal retires a registration, not its in-flight calls.
+	listenersMu    sync.RWMutex
+	listeners      []*watchListener
+	readyListeners int
 
 	maxRetries  int
 	baseBackoff time.Duration
 	clock       timeutil.Clock
 
-	// pendingStateEvents buffers state events emitted before any listener registers.
-	// Data events (Add/Update/Delete) are not buffered — they carry large payloads
-	// and are recoverable via List when the frontend subscribes.
-	pendingMu          sync.Mutex
-	pendingStateEvents []WatchStateEvent
+	// Until a listener finishes replay, retain history for rejected/canceled
+	// registration retries. Overflow fails closed instead of hiding a gap.
+	pendingMu            sync.Mutex
+	pendingStateEvents   []WatchStateEvent
+	pendingStateOverflow bool
 
 	// wg tracks all goroutines for clean shutdown.
 	wg sync.WaitGroup
@@ -389,41 +468,93 @@ func (m *watchManager[ClientT]) WaitForConnectionReady(ctx context.Context, conn
 	return nil
 }
 
-// AddListener registers a WatchEventSink for event fan-out.
-// Any state events buffered before the first listener registered are replayed.
-func (m *watchManager[ClientT]) AddListener(sink WatchEventSink) {
-	// Lock ordering: listenersMu → pendingMu (same as OnStateChange).
-	// Hold both while adding the listener and draining the buffer so that
-	// OnStateChange cannot append between the drain and the listener being
-	// visible.
+// AddListener installs a registration before readiness and orders its buffered
+// states before live states. The returned identity owns that registration only.
+func (m *watchManager[ClientT]) AddListener(ctx context.Context, sink WatchEventSink, onReady func() error) (*watchListener, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	m.listenersMu.Lock()
-	m.listeners = append(m.listeners, sink)
 	m.pendingMu.Lock()
-	pending := m.pendingStateEvents
-	m.pendingStateEvents = nil
+	if m.pendingStateOverflow {
+		m.pendingMu.Unlock()
+		m.listenersMu.Unlock()
+		return nil, errWatchStateReplayOverflow
+	}
+	listener := &watchListener{sink: sink, ctx: ctx, replaying: true, pending: slices.Clone(m.pendingStateEvents)}
 	m.pendingMu.Unlock()
+	m.listeners = append(m.listeners[:len(m.listeners):len(m.listeners)], listener)
 	m.listenersMu.Unlock()
 
-	// Replay buffered state events so the engine gets the full sync progress.
-	m.log.Debugw(context.Background(), "replaying buffered watch state events", "count", len(pending))
-	for _, evt := range pending {
-		m.log.Debugw(context.Background(), "replay watch state event",
-			"connection_id", evt.Connection,
-			"resource_key", evt.ResourceKey,
-			"state", evt.State,
-			"count", evt.ResourceCount,
-		)
-		sink.OnStateChange(evt)
+	if onReady != nil {
+		if err := onReady(); err != nil {
+			m.removeListener(listener, nil)
+			return nil, err
+		}
 	}
+	if err := listener.replay(); err != nil {
+		m.removeListener(listener, nil)
+		return nil, err
+	}
+	m.listenersMu.Lock()
+	if !listener.active() {
+		m.listenersMu.Unlock()
+		m.removeListener(listener, nil)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return nil, context.Canceled
+	}
+	listener.accepted = true
+	m.readyListeners++
+	m.pendingMu.Lock()
+	m.pendingStateEvents = nil
+	m.pendingStateOverflow = false
+	m.pendingMu.Unlock()
+	m.listenersMu.Unlock()
+	return listener, nil
 }
 
-// RemoveListener unregisters a WatchEventSink.
+// RemoveListener retires registrations for sink without joining callbacks
+// already selected for delivery. A sink must own those callbacks' lifetime.
 func (m *watchManager[ClientT]) RemoveListener(sink WatchEventSink) {
+	m.removeListener(nil, sink)
+}
+
+func (m *watchManager[ClientT]) removeListener(target *watchListener, sink WatchEventSink) {
 	m.listenersMu.Lock()
 	defer m.listenersMu.Unlock()
-	m.listeners = slices.DeleteFunc(m.listeners, func(s WatchEventSink) bool {
-		return s == sink
-	})
+	count := 0
+	for _, listener := range m.listeners {
+		if listener == target || target == nil && listener.sink == sink {
+			count++
+		}
+	}
+	if count == 0 {
+		return
+	}
+	remaining := make([]*watchListener, 0, len(m.listeners)-count)
+	for _, listener := range m.listeners {
+		if listener == target || target == nil && listener.sink == sink {
+			listener.retired.Store(true)
+			if listener.accepted {
+				m.readyListeners--
+			}
+			listener.mu.Lock()
+			listener.pending = nil
+			listener.mu.Unlock()
+		} else {
+			remaining = append(remaining, listener)
+		}
+	}
+	m.listeners = remaining
+}
+
+func (m *watchManager[ClientT]) listenerSnapshot() []*watchListener {
+	m.listenersMu.RLock()
+	listeners := m.listeners
+	m.listenersMu.RUnlock()
+	return listeners
 }
 
 // fanOutSink is a WatchEventSink that broadcasts events to all registered
@@ -436,28 +567,28 @@ type fanOutSink[ClientT any] struct {
 
 func (s *fanOutSink[ClientT]) OnAdd(p WatchAddPayload) {
 	p.Connection = s.connectionID
-	s.mgr.listenersMu.RLock()
-	defer s.mgr.listenersMu.RUnlock()
-	for _, l := range s.mgr.listeners {
-		l.OnAdd(p)
+	for _, listener := range s.mgr.listenerSnapshot() {
+		if listener.active() {
+			listener.sink.OnAdd(p)
+		}
 	}
 }
 
 func (s *fanOutSink[ClientT]) OnUpdate(p WatchUpdatePayload) {
 	p.Connection = s.connectionID
-	s.mgr.listenersMu.RLock()
-	defer s.mgr.listenersMu.RUnlock()
-	for _, l := range s.mgr.listeners {
-		l.OnUpdate(p)
+	for _, listener := range s.mgr.listenerSnapshot() {
+		if listener.active() {
+			listener.sink.OnUpdate(p)
+		}
 	}
 }
 
 func (s *fanOutSink[ClientT]) OnDelete(p WatchDeletePayload) {
 	p.Connection = s.connectionID
-	s.mgr.listenersMu.RLock()
-	defer s.mgr.listenersMu.RUnlock()
-	for _, l := range s.mgr.listeners {
-		l.OnDelete(p)
+	for _, listener := range s.mgr.listenerSnapshot() {
+		if listener.active() {
+			listener.sink.OnDelete(p)
+		}
 	}
 }
 
@@ -483,34 +614,23 @@ func (s *fanOutSink[ClientT]) OnStateChange(e WatchStateEvent) {
 	}
 	s.mgr.mu.Unlock()
 
-	// Lock ordering: listenersMu → pendingMu (same as AddListener).
-	// Hold listenersMu.RLock while checking listeners AND while appending to
-	// pending so that AddListener (which takes listenersMu.Lock) cannot drain
-	// the buffer between our empty-check and the append.
+	// Snapshot and buffer under the same registration barrier. Do not clear
+	// retry history until some registration has successfully completed replay.
 	s.mgr.listenersMu.RLock()
-	if len(s.mgr.listeners) == 0 {
-		s.mgr.log.Debugw(context.Background(), "watch state buffered (no listeners)",
-			"connection_id", s.connectionID,
-			"resource_key", e.ResourceKey,
-		)
-		// Buffer state events for replay when first listener registers.
+	listeners := s.mgr.listeners
+	if s.mgr.readyListeners == 0 {
 		s.mgr.pendingMu.Lock()
-		if len(s.mgr.pendingStateEvents) < 1000 {
+		if len(s.mgr.pendingStateEvents) < maxPendingWatchStates {
 			s.mgr.pendingStateEvents = append(s.mgr.pendingStateEvents, e)
+		} else {
+			s.mgr.pendingStateOverflow = true
 		}
 		s.mgr.pendingMu.Unlock()
-		s.mgr.listenersMu.RUnlock()
-		return
-	}
-	s.mgr.log.Debugw(context.Background(), "watch state fan-out",
-		"connection_id", s.connectionID,
-		"resource_key", e.ResourceKey,
-		"listener_count", len(s.mgr.listeners),
-	)
-	for _, l := range s.mgr.listeners {
-		l.OnStateChange(e)
 	}
 	s.mgr.listenersMu.RUnlock()
+	for _, listener := range listeners {
+		listener.onStateChange(e)
+	}
 }
 
 // startWatchLocked starts a Watch goroutine for a resource.

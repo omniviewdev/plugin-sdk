@@ -6,6 +6,9 @@ import (
 	"errors"
 	"math"
 	"sync"
+	"sync/atomic"
+
+	"google.golang.org/grpc/metadata"
 
 	commonpb "github.com/omniviewdev/plugin-sdk/proto/v1/common"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/v1/resource"
@@ -554,18 +557,19 @@ func (s *server) StreamAction(req *resourcepb.ExecuteActionRequest, stream resou
 // grpcWatchSink adapts WatchEventSink to send via the ListenForEvents stream.
 // A mutex serializes Send() calls because gRPC stream.Send() is not safe for
 // concurrent use, and multiple watch goroutines call OnAdd/OnUpdate/OnDelete
-// concurrently via fanOutSink's shared RLock.
+// concurrently from fan-out snapshots. Retirement does not join an in-flight Send.
 type grpcWatchSink struct {
-	mu     sync.Mutex
-	stream resourcepb.ResourcePlugin_ListenForEventsServer
-	log    logging.Logger
-	err    error // first Send error; once set, all further sends are skipped
+	mu      sync.Mutex
+	stream  resourcepb.ResourcePlugin_ListenForEventsServer
+	log     logging.Logger
+	err     error       // first Send error; once set, all further sends are skipped
+	retired atomic.Bool // handler exit fences callbacks selected before removal
 }
 
 func (s *grpcWatchSink) OnAdd(payload resource.WatchAddPayload) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.err != nil {
+	if s.err != nil || s.retired.Load() || s.stream.Context().Err() != nil {
 		return
 	}
 	if err := s.stream.Send(&resourcepb.WatchEvent{
@@ -587,7 +591,7 @@ func (s *grpcWatchSink) OnAdd(payload resource.WatchAddPayload) {
 func (s *grpcWatchSink) OnUpdate(payload resource.WatchUpdatePayload) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.err != nil {
+	if s.err != nil || s.retired.Load() || s.stream.Context().Err() != nil {
 		return
 	}
 	if err := s.stream.Send(&resourcepb.WatchEvent{
@@ -609,7 +613,7 @@ func (s *grpcWatchSink) OnUpdate(payload resource.WatchUpdatePayload) {
 func (s *grpcWatchSink) OnDelete(payload resource.WatchDeletePayload) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.err != nil {
+	if s.err != nil || s.retired.Load() || s.stream.Context().Err() != nil {
 		return
 	}
 	if err := s.stream.Send(&resourcepb.WatchEvent{
@@ -648,7 +652,7 @@ func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.err != nil {
+	if s.err != nil || s.retired.Load() || s.stream.Context().Err() != nil {
 		return
 	}
 	if err := s.stream.Send(&resourcepb.WatchEvent{
@@ -668,13 +672,35 @@ func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
 	}
 }
 
+const watchReadyHeader = "omniview-watch-ready"
+
 func (s *server) ListenForEvents(_ *resourcepb.ListenRequest, stream resourcepb.ResourcePlugin_ListenForEventsServer) error {
 	ctx, err := s.callContext(stream.Context())
 	if err != nil {
 		return encodeRPCError(err)
 	}
 	sink := &grpcWatchSink{stream: stream, log: s.log.Named("watch_sink")}
-	return encodeRPCError(s.provider.ListenForEvents(ctx, sink))
+	defer sink.retired.Store(true)
+	// An already-running source may emit as soon as registration becomes
+	// visible. Fence Send so it cannot implicitly publish empty headers before
+	// the explicit registration acknowledgement. No manager lock is held.
+	sink.mu.Lock()
+	ready := false
+	err = s.provider.ListenForEvents(ctx, sink, func() error {
+		ready = true
+		headerErr := stream.SendHeader(metadata.Pairs(watchReadyHeader, "1"))
+		sink.err = headerErr
+		sink.mu.Unlock()
+		return headerErr
+	})
+	if !ready {
+		if err == nil {
+			err = errors.New("watch event listener returned before registration")
+		}
+		sink.err = err
+		sink.mu.Unlock()
+	}
+	return encodeRPCError(err)
 }
 
 func (s *server) EnsureResourceWatch(ctx context.Context, req *resourcepb.WatchResourceRequest) (*resourcepb.WatchResourceResponse, error) {
