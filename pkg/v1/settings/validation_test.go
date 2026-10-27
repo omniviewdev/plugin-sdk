@@ -16,7 +16,7 @@ import (
 
 func TestValidationRPCExecutesRegisteredCallbacksWithoutMutation(t *testing.T) {
 	provider := base.NewProvider(base.ProviderOpts{PluginID: "fixture", PluginSettings: []base.Category{{ID: "plugin", Settings: map[string]base.Setting{
-		"tool": {ID: "tool", Type: base.Text, Default: "saved", ValidateValue: func(value any) base.ValidationResult {
+		"tool": {ID: "tool", Type: base.Text, Default: "saved", Validator: func(value any) base.ValidationResult {
 			if value == "empty-message" {
 				return base.ValidationResult{Code: "tool_failed"}
 			}
@@ -25,7 +25,7 @@ func TestValidationRPCExecutesRegisteredCallbacksWithoutMutation(t *testing.T) {
 			}
 			return base.ValidationResult{Valid: true, Code: "tool_ready", Message: "Tool is ready."}
 		}},
-		"secret": {ID: "secret", Type: base.Text, Default: "", Sensitive: true, ValidateValue: func(value any) base.ValidationResult {
+		"secret": {ID: "secret", Type: base.Text, Default: "", Sensitive: true, Validator: func(value any) base.ValidationResult {
 			return base.ValidationResult{Code: "private", Message: value.(string)}
 		}},
 	}}}})

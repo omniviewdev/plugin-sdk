@@ -10,20 +10,23 @@ See [docs/internal-logging.md](docs/internal-logging.md).
 
 ## Settings validation
 
-Register `settings.Setting.ValidateValue` with a
+Register `settings.Setting.Validator` with a
 `func(interface{}) settings.ValidationResult` to return contextual validation
 feedback. Set `Valid` for accepted values and provide a stable `Code` plus a
 user-safe `Message`. Validators must not mutate settings and should bound external
-work. Existing `Validator` callbacks remain enforced before structured validation.
+work.
+
+This is a breaking source migration: replace error-returning `Validator` callbacks
+with callbacks returning `settings.ValidationResult`, then rebuild plugins.
+There is only one callback; no legacy callback adapter is provided.
 
 `Setting.Validation` and `Provider.ValidateSetting` check drafts without saving.
 Writes validate again and reject invalid values; bulk writes validate all values
 before changing any. Sensitive settings always return generic feedback.
 Invalid structured results with an empty message receive generic user-safe feedback;
-nonempty contextual messages remain unchanged. Legacy `Validator` errors are not
-declared user-safe and remain generic in draft feedback, even for nonsensitive
-settings. Use `ValidateValue` to opt into contextual draft messages. Nonsensitive
-legacy save errors retain their existing behavior.
+nonempty contextual messages remain unchanged. `Setting.Validate` enforces writes
+by calling the same `Setting.Validation` evaluation and returning rejection messages
+as errors.
 
 The settings capability exposes draft validation through gRPC using a dedicated
 `ValidateSettingRequest`, executing callbacks inside the plugin rather than on

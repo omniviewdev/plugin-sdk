@@ -18,11 +18,8 @@ type Setting struct {
 	Value interface{} `json:"value"`
 	// Default is the default value of the setting
 	Default interface{} `json:"default"`
-	// Validator is an optional function to validate the setting, which should return an error
-	// if the value is invalid
-	Validator func(interface{}) error `json:"-"`
-	// ValidateValue returns user-safe contextual feedback. Never include secrets in messages.
-	ValidateValue func(interface{}) ValidationResult `json:"-"`
+	// Validator returns user-safe contextual feedback. Never include secrets in messages.
+	Validator func(interface{}) ValidationResult `json:"-"`
 	// Options is an optional list of options for a select setting
 	Options []SettingOption `json:"options"`
 	// FileSelection is an optional setting for file selection
@@ -64,17 +61,7 @@ func (s Setting) clone() Setting {
 // Validate checks if the value of the setting is valid using an optional
 // validation function. If no validation function is provided, it returns nil.
 func (s *Setting) Validate(value interface{}) error {
-	copy := *s
-	if s.Validator != nil {
-		if err := s.Validator(value); err != nil {
-			if s.Sensitive {
-				return fmt.Errorf("value did not pass validation")
-			}
-			return err
-		}
-		copy.Validator = nil
-	}
-	result := copy.Validation(value)
+	result := s.Validation(value)
 	if !result.Valid {
 		return fmt.Errorf("%s", result.Message)
 	}
@@ -88,16 +75,11 @@ type ValidationResult struct {
 	Message string `json:"message"`
 }
 
-// Validation evaluates registered validators without changing the setting.
+// Validation evaluates the registered validator without changing the setting.
 func (s *Setting) Validation(value interface{}) ValidationResult {
 	result := ValidationResult{Valid: true, Code: "valid", Message: "Value is valid."}
 	if s.Validator != nil {
-		if err := s.Validator(value); err != nil {
-			result = ValidationResult{Code: "invalid", Message: "Value did not pass validation."}
-		}
-	}
-	if result.Valid && s.ValidateValue != nil {
-		result = s.ValidateValue(value)
+		result = s.Validator(value)
 	}
 	if !result.Valid && result.Message == "" {
 		result.Message = "Value did not pass validation."

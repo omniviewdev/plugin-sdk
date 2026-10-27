@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -213,15 +212,15 @@ func TestSetSetting_Validates(t *testing.T) {
 				ID:      "port",
 				Type:    Integer,
 				Default: 8080,
-				Validator: func(v interface{}) error {
+				Validator: func(v interface{}) ValidationResult {
 					n, ok := v.(int)
 					if !ok {
-						return errors.New("must be int")
+						return ValidationResult{Code: "invalid_type", Message: "must be int"}
 					}
 					if n < 1 || n > 65535 {
-						return errors.New("port out of range")
+						return ValidationResult{Code: "out_of_range", Message: "port out of range"}
 					}
-					return nil
+					return ValidationResult{Valid: true}
 				},
 			},
 		},
@@ -245,7 +244,7 @@ func TestSetSetting_TypeCoercion(t *testing.T) {
 		ID:    "misc",
 		Label: "Misc",
 		Settings: map[string]Setting{
-			"rate": {ID: "rate", Type: Float, Default: 1.5},
+			"rate":  {ID: "rate", Type: Float, Default: 1.5},
 			"count": {ID: "count", Type: Integer, Default: 10},
 		},
 	})
@@ -286,11 +285,11 @@ func TestSetSettings_PartialFailure(t *testing.T) {
 			"ok": {ID: "ok", Type: Text, Default: "orig"},
 			"guarded": {
 				ID: "guarded", Type: Integer, Default: 5,
-				Validator: func(v interface{}) error {
+				Validator: func(v interface{}) ValidationResult {
 					if n, ok := v.(int); ok && n < 0 {
-						return errors.New("negative")
+						return ValidationResult{Code: "negative", Message: "negative"}
 					}
-					return nil
+					return ValidationResult{Valid: true}
 				},
 			},
 		},
