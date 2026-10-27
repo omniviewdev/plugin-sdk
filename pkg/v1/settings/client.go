@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"time"
 
 	"github.com/omniviewdev/plugin-sdk/settings"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -73,4 +74,18 @@ func (c *Client) SetSettings(settings map[string]any) error {
 	}
 	_, err := c.client.SetSettings(context.Background(), req)
 	return err
+}
+
+func (c *Client) ValidateSetting(id string, value any) (settings.ValidationResult, error) {
+	val, err := ConvertInterfaceToAny(value)
+	if err != nil {
+		return settings.ValidationResult{}, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	resp, err := c.client.ValidateSetting(ctx, &settingspb.ValidateSettingRequest{Id: id, Value: val})
+	if err != nil {
+		return settings.ValidationResult{}, err
+	}
+	return settings.ValidationResult{Valid: resp.Valid, Code: resp.Code, Message: resp.Message}, nil
 }

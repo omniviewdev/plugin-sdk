@@ -253,6 +253,7 @@ func (p *provider) mergeSettingsLocked(categories ...Category) {
 			current.Description = setting.Description
 			current.Default = setting.Default
 			current.Validator = setting.Validator
+			current.ValidateValue = setting.ValidateValue
 			current.Options = setting.Options
 
 			currentCategory.Settings[id] = current

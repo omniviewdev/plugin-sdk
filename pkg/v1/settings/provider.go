@@ -14,6 +14,7 @@ type Provider interface {
 
 	// GetSettingValue returns the value of the setting by ID
 	GetSettingValue(id string) (any, error)
+	ValidateSetting(id string, value any) (settings.ValidationResult, error)
 
 	// SetSetting sets the value of the setting by ID
 	SetSetting(id string, value any) error
@@ -60,4 +61,12 @@ func (p *provider) SetSetting(id string, value any) error {
 
 func (p *provider) SetSettings(settings map[string]any) error {
 	return p.base.SetSettings(settings)
+}
+
+func (p *provider) ValidateSetting(id string, value any) (settings.ValidationResult, error) {
+	setting, err := p.base.GetSetting(id)
+	if err != nil {
+		return settings.ValidationResult{}, err
+	}
+	return setting.Validation(value), nil
 }
