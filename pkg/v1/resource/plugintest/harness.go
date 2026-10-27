@@ -51,12 +51,36 @@ func Mount[ClientT any](t *testing.T, cfg resource.ResourcePluginConfig[ClientT]
 
 	sink := resourcetest.NewRecordingSink()
 
-	// Start background event listener so watch events flow to the sink.
+	// Mount admits source operations only after the real listener is installed.
+	ready := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		if err := controller.ListenForEvents(ctx, sink); err != nil && ctx.Err() == nil {
+		err := controller.ListenForEvents(ctx, sink, func() error {
+			close(ready)
+			return nil
+		})
+		done <- err
+		if err != nil && ctx.Err() == nil {
 			t.Errorf("ListenForEvents failed: %v", err)
 		}
 	}()
+	timer := time.NewTimer(hcfg.timeout)
+	defer timer.Stop()
+	select {
+	case <-ready:
+	case err := <-done:
+		cancel()
+		controller.Close()
+		t.Fatalf("plugintest.Mount: listener returned before readiness: %v", err)
+	case <-ctx.Done():
+		cancel()
+		controller.Close()
+		t.Fatalf("plugintest.Mount: listener registration cancelled: %v", ctx.Err())
+	case <-timer.C:
+		cancel()
+		controller.Close()
+		t.Fatal("plugintest.Mount: listener registration timed out")
+	}
 
 	h := &Harness[ClientT]{
 		t:          t,

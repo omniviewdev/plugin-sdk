@@ -39,7 +39,7 @@ type TestProvider struct {
 	StopConnectionWatchFunc    func(ctx context.Context, connID string) error
 	HasWatchFunc               func(ctx context.Context, connID string) bool
 	GetWatchStateFunc          func(ctx context.Context, connID string) (*resource.WatchConnectionSummary, error)
-	ListenForEventsFunc        func(ctx context.Context, sink resource.WatchEventSink) error
+	ListenForEventsFunc        func(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error
 	EnsureResourceWatchFunc    func(ctx context.Context, connID, key string) error
 	StopResourceWatchFunc      func(ctx context.Context, connID, key string) error
 	RestartResourceWatchFunc   func(ctx context.Context, connID, key string) error
@@ -105,7 +105,7 @@ func WithLoadConnectionsFunc(fn func(ctx context.Context) ([]types.Connection, e
 }
 
 // WithListenForEventsFunc sets the ListenForEvents handler.
-func WithListenForEventsFunc(fn func(ctx context.Context, sink resource.WatchEventSink) error) Option {
+func WithListenForEventsFunc(fn func(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error) Option {
 	return func(p *TestProvider) { p.ListenForEventsFunc = fn }
 }
 
@@ -256,9 +256,14 @@ func (p *TestProvider) GetWatchState(ctx context.Context, connID string) (*resou
 	return &resource.WatchConnectionSummary{}, nil
 }
 
-func (p *TestProvider) ListenForEvents(ctx context.Context, sink resource.WatchEventSink) error {
+func (p *TestProvider) ListenForEvents(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error {
 	if p.ListenForEventsFunc != nil {
-		return p.ListenForEventsFunc(ctx, sink)
+		return p.ListenForEventsFunc(ctx, sink, onReady)
+	}
+	if onReady != nil {
+		if err := onReady(); err != nil {
+			return err
+		}
 	}
 	<-ctx.Done()
 	return nil

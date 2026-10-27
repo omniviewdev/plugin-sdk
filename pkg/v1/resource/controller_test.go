@@ -1157,7 +1157,7 @@ func TestWP_ListenForEventsBlocks(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		ctrl.ListenForEvents(ctx, sink)
+		ctrl.ListenForEvents(ctx, sink, nil)
 		close(done)
 	}()
 
@@ -2635,7 +2635,7 @@ func TestWP_ListenForEventsNilSink(t *testing.T) {
 			}
 			close(done)
 		}()
-		ctrl.ListenForEvents(ctx, nil)
+		ctrl.ListenForEvents(ctx, nil, nil)
 	}()
 
 	select {
@@ -3351,5 +3351,72 @@ func TestC02NativeStreamActionRequiresReadyBeforeSuccess(t *testing.T) {
 				t.Fatalf("observable readiness = %v, want %v", ready, tc.ready)
 			}
 		})
+	}
+}
+
+func TestListenerReadinessFailureRemovesRejectedNativeConsumer(t *testing.T) {
+	provider, err := resource.BuildResourceController(context.Background(), resource.ResourcePluginConfig[string]{
+		Connections: &resourcetest.StubConnectionProvider[string]{},
+		Resources: []resource.ResourceRegistration[string]{{Meta: resourcetest.PodMeta, Resourcer: &resourcetest.WatchableResourcer[string]{
+			WatchFunc: func(ctx context.Context, _ *string, meta resource.ResourceMeta, sink resource.WatchEventSink) error {
+				sink.OnAdd(resource.WatchAddPayload{Key: meta.Key(), ID: "first"})
+				<-ctx.Done()
+				return nil
+			},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(provider.Close)
+	if _, err := provider.LoadConnections(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rejected := resourcetest.NewRecordingSink()
+	failure := errors.New("listener registration rejected")
+	if err := provider.ListenForEvents(context.Background(), rejected, func() error { return failure }); !errors.Is(err, failure) {
+		t.Fatalf("readiness failure was not preserved: %v", err)
+	}
+	accepted := resourcetest.NewRecordingSink()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- provider.ListenForEvents(ctx, accepted, func() error {
+			// Registration is already installed, and its callback holds no manager
+			// lock that would block this actual initial source operation.
+			if _, err := provider.StartConnection(context.Background(), "conn-1"); err != nil {
+				return err
+			}
+			close(ready)
+			return nil
+		})
+	}()
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatalf("replacement listener did not register: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("registration callback blocked native connection startup")
+	}
+	accepted.WaitForAdds(t, 1, time.Second)
+	if rejected.AddCount() != 0 {
+		t.Fatal("failed registration retained its native event consumer")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled replacement listener did not stop")
+	}
+	if err := provider.ListenForEvents(ctx, accepted, func() error {
+		t.Error("already-cancelled listener must not acknowledge readiness")
+		return nil
+	}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("pre-registration cancellation was not preserved: %v", err)
 	}
 }

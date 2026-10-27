@@ -39,9 +39,29 @@ Current-wire limitation observations are logged with `LIMIT` and are **not** ass
 - `UNSUPPORTED` has no current error-code mapping; its message survives but its machine code is lost. This is neither a uniform-error acceptance receipt nor an approved future error spelling.
 - Exact native pattern keys have no neutral catalog/metadata representation. No synthetic GVK is used to conceal that gap.
 - Current Get and event envelopes lack a native exact identity-scope tuple. Event body engine/incarnation/revision data survives; event metadata UID/namespace stays empty. A native body is not an admitted canonical resource reference.
-- The optional event test uses a test-side file barrier, released only after receiving the real listener's buffered ready state. It proves actual event delivery, not an atomic snapshot/event cutover, replay, continuity, source sequence, gap-free ordering or reliable recreation removal.
+- The optional event test uses a test-side file barrier, released only after the real listener-registration callback and native ready state. It proves actual event delivery, not an atomic snapshot/event cutover, replay, continuity, source sequence, gap-free ordering or reliable recreation removal.
 
 No host resource API, query evaluator, UI, permission admission, production infrastructure or replacement protocol is certified by this packet. The clean environment is source/profile isolation, not network or hostile-plugin sandboxing.
+
+## Event-stream registration readiness
+
+The v1 `WatchProvider.ListenForEvents(ctx, sink, onReady func() error)` contract
+acknowledges an installed listener before callers may start initial connection
+sources. The callback is synchronous, optional, and invoked once on successful
+registration; its error removes that listener and fails the call. Cancellation
+or provider failure before registration must not acknowledge readiness. Data
+events emitted before registration are not buffered or replayed.
+
+The matching gRPC server sends `omniview-watch-ready: 1` only after installation.
+Its event-send mutex fences concurrent live events so they cannot implicitly
+publish headers first; acknowledgement performs no network I/O under the watch
+manager lock. The client validates the acknowledgement before notifying its
+caller, preserves early RPC failures, and cancels its owned stream on callback
+failure. This requires a coordinated SDK/server/client/host cohort: there is no
+old-peer fallback, new protobuf, snapshot/event-cutover guarantee or provider
+capability upgrade. The host keeps pending providers unavailable, waits for
+actual readiness before connection discovery/autoconnect, and fails/cleans up
+startup cancellation or its unchanged readiness deadline instead of continuing.
 
 ## Reproduction and disposable state
 

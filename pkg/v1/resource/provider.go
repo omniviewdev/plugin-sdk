@@ -92,11 +92,10 @@ type ConnectionLifecycleProvider interface {
 //
 // A typical watch lifecycle proceeds as follows:
 //
-//  1. The engine calls StartConnectionWatch after a connection is established.
+//  1. The engine calls ListenForEvents and waits for its registration callback.
+//     The WatchEventSink receives ADD/UPDATE/DELETE and STATE notifications.
+//  2. Only then does the engine establish connections/StartConnectionWatch.
 //     This starts watches for all resource types whose SyncPolicy is SyncOnConnect.
-//  2. The engine calls ListenForEvents to open a long-lived event stream. The
-//     WatchEventSink receives ADD/UPDATE/DELETE data events and STATE change
-//     notifications. ListenForEvents blocks until the provided context is cancelled.
 //  3. For resource types with SyncPolicy SyncOnFirstQuery, the engine calls
 //     EnsureResourceWatch on the first List or Get call for that resource type.
 //  4. On shutdown or disconnect, the engine calls StopConnectionWatch, which
@@ -104,7 +103,7 @@ type ConnectionLifecycleProvider interface {
 //
 // # SyncPolicy Interaction
 //
-//   - SyncOnConnect: Watch starts immediately in step 1. The initial LIST+WATCH
+//   - SyncOnConnect: Watch starts immediately in step 2. The initial LIST+WATCH
 //     runs in the background; ADD events arrive via the sink before the first
 //     user query completes.
 //   - SyncOnFirstQuery: Watch is deferred until EnsureResourceWatch is called.
@@ -148,11 +147,13 @@ type WatchProvider interface {
 	// GetWatchState returns a snapshot of all watch states for a connection.
 	GetWatchState(ctx context.Context, connectionID string) (*WatchConnectionSummary, error)
 
-	// ListenForEvents opens a long-lived event stream.
-	// Blocks until ctx is cancelled, delivering events via the sink.
-	// Must be called after StartConnectionWatch. Events that arrive before
-	// ListenForEvents is called are buffered internally.
-	ListenForEvents(ctx context.Context, sink WatchEventSink) error
+	// ListenForEvents installs a long-lived event listener before sources start.
+	// onReady, when non-nil, is called synchronously exactly once after registration.
+	// Its error aborts the listener and is returned to the caller. Cancellation or
+	// failure before registration must return without signalling readiness.
+	// The call blocks until cancellation or failure; data events are not buffered
+	// before registration. Concurrent existing watches may deliver during setup.
+	ListenForEvents(ctx context.Context, sink WatchEventSink, onReady func() error) error
 
 	// EnsureResourceWatch ensures a watch is running for a specific resource type.
 	// No-op if already running. Used by SyncOnFirstQuery resources and for

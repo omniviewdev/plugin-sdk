@@ -391,18 +391,23 @@ func (m *watchManager[ClientT]) WaitForConnectionReady(ctx context.Context, conn
 
 // AddListener registers a WatchEventSink for event fan-out.
 // Any state events buffered before the first listener registered are replayed.
-func (m *watchManager[ClientT]) AddListener(sink WatchEventSink) {
-	// Lock ordering: listenersMu → pendingMu (same as OnStateChange).
-	// Hold both while adding the listener and draining the buffer so that
-	// OnStateChange cannot append between the drain and the listener being
-	// visible.
+func (m *watchManager[ClientT]) AddListener(sink WatchEventSink, onReady func() error) error {
 	m.listenersMu.Lock()
 	m.listeners = append(m.listeners, sink)
+	m.listenersMu.Unlock()
+
+	// A transport acknowledgement may perform I/O. Registration is already
+	// visible, but no manager lock is held while its readiness callback runs.
+	if onReady != nil {
+		if err := onReady(); err != nil {
+			m.RemoveListener(sink)
+			return err
+		}
+	}
 	m.pendingMu.Lock()
 	pending := m.pendingStateEvents
 	m.pendingStateEvents = nil
 	m.pendingMu.Unlock()
-	m.listenersMu.Unlock()
 
 	// Replay buffered state events so the engine gets the full sync progress.
 	m.log.Debugw(context.Background(), "replaying buffered watch state events", "count", len(pending))
@@ -415,6 +420,7 @@ func (m *watchManager[ClientT]) AddListener(sink WatchEventSink) {
 		)
 		sink.OnStateChange(evt)
 	}
+	return nil
 }
 
 // RemoveListener unregisters a WatchEventSink.

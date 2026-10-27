@@ -623,8 +623,13 @@ func (c *resourceController[ClientT]) GetWatchState(ctx context.Context, connect
 	return c.watchMgr.GetWatchState(connectionID)
 }
 
-func (c *resourceController[ClientT]) ListenForEvents(ctx context.Context, sink WatchEventSink) error {
-	c.watchMgr.AddListener(sink)
+func (c *resourceController[ClientT]) ListenForEvents(ctx context.Context, sink WatchEventSink, onReady func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := c.watchMgr.AddListener(sink, onReady); err != nil {
+		return err
+	}
 	defer c.watchMgr.RemoveListener(sink)
 	<-ctx.Done()
 	return nil

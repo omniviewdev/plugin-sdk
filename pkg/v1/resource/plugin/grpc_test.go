@@ -234,7 +234,12 @@ func TestGR007_StartConnectionRoundTrip(t *testing.T) {
 
 func TestGR008_ListenForEventsStreaming(t *testing.T) {
 	tp := resourcetest.NewTestProvider(t,
-		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink) error {
+		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error {
+			if onReady != nil {
+				if err := onReady(); err != nil {
+					return err
+				}
+			}
 			sink.OnAdd(resource.WatchAddPayload{
 				Connection: "conn-1", Key: "core::v1::Pod",
 				ID: "pod-1", Namespace: "default",
@@ -262,7 +267,7 @@ func TestGR008_ListenForEventsStreaming(t *testing.T) {
 		onDelete: func(_ resource.WatchDeletePayload) { deletes++ },
 	}
 
-	err := c.ListenForEvents(context.Background(), sink)
+	err := c.ListenForEvents(context.Background(), sink, nil)
 	if err != nil {
 		t.Fatalf("ListenForEvents: %v", err)
 	}
@@ -351,7 +356,12 @@ func TestGR010_WatchConnectionsStreaming(t *testing.T) {
 func TestGR011_ContextCancellation(t *testing.T) {
 	started := make(chan struct{})
 	tp := resourcetest.NewTestProvider(t,
-		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink) error {
+		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error {
+			if onReady != nil {
+				if err := onReady(); err != nil {
+					return err
+				}
+			}
 			close(started)
 			<-ctx.Done()
 			return ctx.Err()
@@ -361,7 +371,7 @@ func TestGR011_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- c.ListenForEvents(ctx, &countingSink{})
+		errCh <- c.ListenForEvents(ctx, &countingSink{}, nil)
 	}()
 	<-started
 	cancel()
@@ -680,8 +690,12 @@ func TestGR023_ServerShutdownDuringStream(t *testing.T) {
 	s := grpc.NewServer()
 
 	tp := resourcetest.NewTestProvider(t,
-		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink) error {
-			// Send one event then block until server stops.
+		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error {
+			if onReady != nil {
+				if err := onReady(); err != nil {
+					return err
+				}
+			} // Send one event then block until server stops.
 			sink.OnAdd(resource.WatchAddPayload{Connection: "c1", Key: "k", ID: "1", Data: json.RawMessage(`{}`)})
 			<-ctx.Done()
 			return ctx.Err()
@@ -702,7 +716,7 @@ func TestGR023_ServerShutdownDuringStream(t *testing.T) {
 	go func() {
 		errCh <- c.ListenForEvents(context.Background(), &countingSink{
 			onAdd: func(_ resource.WatchAddPayload) {},
-		})
+		}, nil)
 	}()
 
 	time.Sleep(100 * time.Millisecond)
@@ -722,7 +736,12 @@ func TestGR023_ServerShutdownDuringStream(t *testing.T) {
 func TestGR024_ClientDisconnectDuringStream(t *testing.T) {
 	serverReturned := make(chan struct{})
 	tp := resourcetest.NewTestProvider(t,
-		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink) error {
+		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error {
+			if onReady != nil {
+				if err := onReady(); err != nil {
+					return err
+				}
+			}
 			defer close(serverReturned)
 			<-ctx.Done()
 			return ctx.Err()
@@ -731,7 +750,7 @@ func TestGR024_ClientDisconnectDuringStream(t *testing.T) {
 	c := setupBufconn(t, tp)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		_ = c.ListenForEvents(ctx, &countingSink{})
+		_ = c.ListenForEvents(ctx, &countingSink{}, nil)
 	}()
 	time.Sleep(100 * time.Millisecond)
 	cancel()
@@ -784,8 +803,12 @@ func TestGR026_LargeMetadataMaps(t *testing.T) {
 
 func TestGR027_StreamingZeroEvents(t *testing.T) {
 	tp := resourcetest.NewTestProvider(t,
-		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink) error {
-			// Return immediately — no events.
+		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error {
+			if onReady != nil {
+				if err := onReady(); err != nil {
+					return err
+				}
+			} // Return immediately — no events.
 			return nil
 		}),
 	)
@@ -793,7 +816,7 @@ func TestGR027_StreamingZeroEvents(t *testing.T) {
 	var eventCount int
 	err := c.ListenForEvents(context.Background(), &countingSink{
 		onAdd: func(_ resource.WatchAddPayload) { eventCount++ },
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("ListenForEvents: %v", err)
 	}
@@ -839,7 +862,12 @@ func TestGR029_Backpressure(t *testing.T) {
 	}
 	const eventCount = 10000
 	tp := resourcetest.NewTestProvider(t,
-		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink) error {
+		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error {
+			if onReady != nil {
+				if err := onReady(); err != nil {
+					return err
+				}
+			}
 			for i := 0; i < eventCount; i++ {
 				sink.OnAdd(resource.WatchAddPayload{
 					Connection: "conn-1",
@@ -860,7 +888,7 @@ func TestGR029_Backpressure(t *testing.T) {
 			time.Sleep(10 * time.Microsecond) // Slow consumer.
 		},
 	}
-	err := c.ListenForEvents(context.Background(), sink)
+	err := c.ListenForEvents(context.Background(), sink, nil)
 	if err != nil {
 		t.Fatalf("ListenForEvents: %v", err)
 	}
@@ -1152,7 +1180,12 @@ func (s *countingSink) OnStateChange(e resource.WatchStateEvent) {
 // Connection field survives the gRPC round-trip: server → proto → client.
 func TestGR034_ListenForEvents_StateConnectionRoundTrip(t *testing.T) {
 	tp := resourcetest.NewTestProvider(t,
-		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink) error {
+		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error {
+			if onReady != nil {
+				if err := onReady(); err != nil {
+					return err
+				}
+			}
 			sink.OnStateChange(resource.WatchStateEvent{
 				Connection:    "conn-42",
 				ResourceKey:   "core::v1::Pod",
@@ -1186,7 +1219,7 @@ func TestGR034_ListenForEvents_StateConnectionRoundTrip(t *testing.T) {
 		},
 	}
 
-	err := c.ListenForEvents(context.Background(), sink)
+	err := c.ListenForEvents(context.Background(), sink, nil)
 	if err != nil {
 		t.Fatalf("ListenForEvents: %v", err)
 	}
@@ -1233,7 +1266,12 @@ func TestGR034_ListenForEvents_StateConnectionRoundTrip(t *testing.T) {
 func TestGR035_ListenForEvents_UpdateDataRoundTrip(t *testing.T) {
 	expected := json.RawMessage(`{"kind":"Pod","status":"Running"}`)
 	tp := resourcetest.NewTestProvider(t,
-		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink) error {
+		resourcetest.WithListenForEventsFunc(func(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error {
+			if onReady != nil {
+				if err := onReady(); err != nil {
+					return err
+				}
+			}
 			sink.OnUpdate(resource.WatchUpdatePayload{
 				Connection: "conn-1",
 				Key:        "core::v1::Pod",
@@ -1251,7 +1289,7 @@ func TestGR035_ListenForEvents_UpdateDataRoundTrip(t *testing.T) {
 		onUpdate: func(p resource.WatchUpdatePayload) { got = p },
 	}
 
-	err := c.ListenForEvents(context.Background(), sink)
+	err := c.ListenForEvents(context.Background(), sink, nil)
 	if err != nil {
 		t.Fatalf("ListenForEvents: %v", err)
 	}

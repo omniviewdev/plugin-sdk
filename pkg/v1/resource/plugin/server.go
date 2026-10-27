@@ -7,6 +7,8 @@ import (
 	"math"
 	"sync"
 
+	"google.golang.org/grpc/metadata"
+
 	commonpb "github.com/omniviewdev/plugin-sdk/proto/v1/common"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/v1/resource"
 	"github.com/omniviewdev/plugin-sdk/settings"
@@ -668,13 +670,34 @@ func (s *grpcWatchSink) OnStateChange(event resource.WatchStateEvent) {
 	}
 }
 
+const watchReadyHeader = "omniview-watch-ready"
+
 func (s *server) ListenForEvents(_ *resourcepb.ListenRequest, stream resourcepb.ResourcePlugin_ListenForEventsServer) error {
 	ctx, err := s.callContext(stream.Context())
 	if err != nil {
 		return encodeRPCError(err)
 	}
 	sink := &grpcWatchSink{stream: stream, log: s.log.Named("watch_sink")}
-	return encodeRPCError(s.provider.ListenForEvents(ctx, sink))
+	// An already-running source may emit as soon as registration becomes
+	// visible. Fence Send so it cannot implicitly publish empty headers before
+	// the explicit registration acknowledgement. No manager lock is held.
+	sink.mu.Lock()
+	ready := false
+	err = s.provider.ListenForEvents(ctx, sink, func() error {
+		ready = true
+		headerErr := stream.SendHeader(metadata.Pairs(watchReadyHeader, "1"))
+		sink.err = headerErr
+		sink.mu.Unlock()
+		return headerErr
+	})
+	if !ready {
+		if err == nil {
+			err = errors.New("watch event listener returned before registration")
+		}
+		sink.err = err
+		sink.mu.Unlock()
+	}
+	return encodeRPCError(err)
 }
 
 func (s *server) EnsureResourceWatch(ctx context.Context, req *resourcepb.WatchResourceRequest) (*resourcepb.WatchResourceResponse, error) {
