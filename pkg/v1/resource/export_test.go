@@ -79,10 +79,10 @@ func IsControllerClosed(ctrl *resourceController[string]) bool {
 
 // AddListenerForTest registers a sink synchronously, without spawning a goroutine.
 func AddListenerForTest(ctrl *resourceController[string], sink WatchEventSink) {
-	ctrl.watchMgr.AddListener(sink, nil)
+	ctrl.watchMgr.AddListener(context.Background(), sink, nil)
 }
 
-// RemoveListenerForTest unregisters a sink synchronously.
+// RemoveListenerForTest retires the sink's registrations, not in-flight callbacks.
 func RemoveListenerForTest(ctrl *resourceController[string], sink WatchEventSink) {
 	ctrl.watchMgr.RemoveListener(sink)
 }

@@ -627,10 +627,11 @@ func (c *resourceController[ClientT]) ListenForEvents(ctx context.Context, sink 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := c.watchMgr.AddListener(sink, onReady); err != nil {
+	listener, err := c.watchMgr.AddListener(ctx, sink, onReady)
+	if err != nil {
 		return err
 	}
-	defer c.watchMgr.RemoveListener(sink)
+	defer c.watchMgr.removeListener(listener, nil)
 	<-ctx.Done()
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -170,5 +171,145 @@ func TestWatchStreamReadinessCallbackFailureRemovesListener(t *testing.T) {
 	case <-gated.stopped:
 	case <-time.After(time.Second):
 		t.Fatal("rejected registration retained its real controller listener")
+	}
+}
+
+type failedNativeReadyRegistration struct {
+	resource.Provider
+	first        atomic.Bool
+	entered      chan struct{}
+	eventEntered chan struct{}
+	release      chan struct{}
+	stopped      chan struct{}
+}
+
+type enteredAddSink struct {
+	resource.WatchEventSink
+	entered chan struct{}
+}
+
+func (s *enteredAddSink) OnAdd(event resource.WatchAddPayload) {
+	close(s.entered)
+	s.WatchEventSink.OnAdd(event)
+}
+
+func (p *failedNativeReadyRegistration) ListenForEvents(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error {
+	if !p.first.CompareAndSwap(false, true) {
+		return p.Provider.ListenForEvents(ctx, sink, onReady)
+	}
+	defer close(p.stopped)
+	observed := &enteredAddSink{WatchEventSink: sink, entered: p.eventEntered}
+	return p.Provider.ListenForEvents(ctx, observed, func() error {
+		close(p.entered)
+		select {
+		case <-p.release:
+			return errors.New("native registration rejected before acknowledgement")
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+}
+
+func TestWatchStreamPendingSendDoesNotDeadlockReadinessRetirement(t *testing.T) {
+	for _, mode := range []string{"rejected", "canceled"} {
+		t.Run(mode, func(t *testing.T) {
+			producer := make(chan resource.WatchEventSink, 1)
+			provider, err := resource.BuildResourceController(t.Context(), resource.ResourcePluginConfig[string]{
+				Connections: &resourcetest.StubConnectionProvider[string]{},
+				Resources: []resource.ResourceRegistration[string]{{Meta: resourcetest.PodMeta, Resourcer: &resourcetest.WatchableResourcer[string]{
+					WatchFunc: func(ctx context.Context, _ *string, _ resource.ResourceMeta, sink resource.WatchEventSink) error {
+						producer <- sink
+						<-ctx.Done()
+						return nil
+					},
+				}}},
+			})
+			require.NoError(t, err)
+			t.Cleanup(provider.Close)
+			_, err = provider.LoadConnections(t.Context())
+			require.NoError(t, err)
+			_, err = provider.StartConnection(t.Context(), "conn-1")
+			require.NoError(t, err)
+			source := <-producer
+			gated := &failedNativeReadyRegistration{
+				Provider: provider, entered: make(chan struct{}), eventEntered: make(chan struct{}),
+				release: make(chan struct{}), stopped: make(chan struct{}),
+			}
+			transport := setupBufconn(t, gated)
+			ctx1, cancel1 := context.WithCancel(t.Context())
+			ctx2, cancel2 := context.WithCancel(t.Context())
+			defer cancel1()
+			defer cancel2()
+			first := resourcetest.NewRecordingSink()
+			firstDone := make(chan error, 1)
+			go func() {
+				firstDone <- transport.ListenForEvents(ctx1, first, func() error {
+					t.Error("failed registration must not acknowledge readiness")
+					return nil
+				})
+			}()
+			select {
+			case <-gated.entered:
+			case <-time.After(time.Second):
+				t.Fatal("actual first RPC did not reach native readiness")
+			}
+			emissionDone := make(chan struct{})
+			go func() {
+				defer close(emissionDone)
+				source.OnAdd(resource.WatchAddPayload{Key: resourcetest.PodMeta.Key(), ID: "retired"})
+			}()
+			select {
+			case <-gated.eventEntered:
+			case <-time.After(time.Second):
+				t.Fatal("native ADD did not reach the header-fenced gRPC sink")
+			}
+			// The old callback is now selected while the real server's Send mutex
+			// is held by readiness. A second real RPC must still register/ack.
+			next := resourcetest.NewRecordingSink()
+			nextReady, nextDone := make(chan struct{}), make(chan error, 1)
+			go func() {
+				nextDone <- transport.ListenForEvents(ctx2, next, func() error { close(nextReady); return nil })
+			}()
+			select {
+			case <-nextReady:
+			case <-time.After(time.Second):
+				t.Fatal("blocked old Send prevented another actual RPC from registering")
+			}
+			if mode == "rejected" {
+				close(gated.release)
+			} else {
+				cancel1()
+			}
+			select {
+			case err = <-firstDone:
+				require.Error(t, err)
+				if mode == "canceled" {
+					require.Equal(t, codes.Canceled, status.Code(err))
+				}
+			case <-time.After(time.Second):
+				t.Fatal("failed readiness deadlocked native listener removal")
+			}
+			select {
+			case <-gated.stopped:
+			case <-time.After(time.Second):
+				t.Fatal("old native registration did not retire")
+			}
+			select {
+			case <-emissionDone:
+			case <-time.After(time.Second):
+				t.Fatal("retired header-fenced callback never returned")
+			}
+			source.OnAdd(resource.WatchAddPayload{Key: resourcetest.PodMeta.Key(), ID: "replacement"})
+			next.WaitForAdds(t, 1, time.Second)
+			require.Zero(t, first.AddCount())
+			require.Equal(t, 1, next.AddCount())
+			require.Equal(t, "replacement", next.Adds[0].ID, "old in-flight ADD must not enter the replacement stream")
+			cancel2()
+			select {
+			case <-nextDone:
+			case <-time.After(time.Second):
+				t.Fatal("replacement RPC did not stop")
+			}
+		})
 	}
 }

@@ -52,6 +52,26 @@ registration; its error removes that listener and fails the call. Cancellation
 or provider failure before registration must not acknowledge readiness. Data
 events emitted before registration are not buffered or replayed.
 
+The built-in controller orders buffered STATE progress before live STATE events,
+including events produced reentrantly during readiness or replay. Until a listener
+completes replay, rejected/canceled attempts retain history for the next attempt.
+Each queued state buffer is capped at 1000 events (with at most one additional
+1000-event replay batch in flight); resource-data events are never queued.
+Overflow returns a registration/stream error, possibly after the readiness header:
+readiness acknowledges installation, not successful completion of state replay.
+Already-overflowed history fails new registration before readiness. Unless an
+in-flight registration can still complete replay, recovery requires a fresh
+controller; retry never silently claims that missing history was replayed.
+
+Fan-out uses immutable registration snapshots, never manager locks around sink
+callbacks. Retirement/cancellation excludes future selections and pending replay,
+but does **not** join callbacks already selected. A sink must retain its storage and
+coordinate in-flight completion before closing/reusing it. Arbitrary callbacks
+cannot be preempted and must return or observe their own cancellation. The gRPC sink separately
+fences late sends on handler retirement/cancellation; an already-running Send owns
+only its original RPC stream, never a replacement stream. This is not a new
+snapshot/event cutover or gap-free subscription guarantee.
+
 The matching gRPC server sends `omniview-watch-ready: 1` only after installation.
 Its event-send mutex fences concurrent live events so they cannot implicitly
 publish headers first; acknowledgement performs no network I/O under the watch

@@ -24,7 +24,7 @@ func setupWatchTest(t *testing.T, regs ...resource.ResourceRegistration[string])
 	wm := resource.NewWatchManagerForTest(reg)
 	resource.SetWatchManagerBackoff(wm, 3, 10*time.Millisecond) // fast backoff for tests
 	sink := resourcetest.NewRecordingSink()
-	wm.AddListener(sink, nil)
+	wm.AddListener(t.Context(), sink, nil)
 	return wm, reg, sink
 }
 
@@ -949,7 +949,7 @@ func TestWM_MultipleListeners(t *testing.T) {
 	)
 
 	sink2 := resourcetest.NewRecordingSink()
-	wm.AddListener(sink2, nil)
+	wm.AddListener(t.Context(), sink2, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -986,7 +986,7 @@ func TestWM_ListenerDisconnect(t *testing.T) {
 	)
 
 	sink2 := resourcetest.NewRecordingSink()
-	wm.AddListener(sink2, nil)
+	wm.AddListener(t.Context(), sink2, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -2498,7 +2498,7 @@ func TestWM_ListenBeforeStart(t *testing.T) {
 
 	// Add a separate listener BEFORE start.
 	earlyListener := resourcetest.NewRecordingSink()
-	wm.AddListener(earlyListener, nil)
+	wm.AddListener(t.Context(), earlyListener, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -2538,10 +2538,10 @@ func TestWM_SinkAfterListenerRemoved(t *testing.T) {
 	resource.SetWatchManagerBackoff(wm, 3, 10*time.Millisecond)
 
 	removedSink := resourcetest.NewRecordingSink()
-	wm.AddListener(removedSink, nil)
+	wm.AddListener(t.Context(), removedSink, nil)
 
 	activeSink := resourcetest.NewRecordingSink()
-	wm.AddListener(activeSink, nil)
+	wm.AddListener(t.Context(), activeSink, nil)
 
 	// Remove the first listener before events are emitted.
 	wm.RemoveListener(removedSink)
@@ -3321,7 +3321,7 @@ func TestWM_StateEventBuffering(t *testing.T) {
 
 	// Now add a listener — buffered state events should be replayed.
 	sink := resourcetest.NewRecordingSink()
-	wm.AddListener(sink, nil)
+	wm.AddListener(t.Context(), sink, nil)
 
 	// Wait for replayed SYNCED event.
 	sink.WaitForState(t, "core::v1::Pod", resource.WatchStateSynced, 5*time.Second)
@@ -3374,7 +3374,7 @@ func TestWM_DataEventsNotBuffered(t *testing.T) {
 
 	// Add listener after the fact.
 	sink := resourcetest.NewRecordingSink()
-	wm.AddListener(sink, nil)
+	wm.AddListener(t.Context(), sink, nil)
 
 	// Give a brief window — no add events should appear since data events are not buffered.
 	time.Sleep(50 * time.Millisecond)

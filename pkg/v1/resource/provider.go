@@ -153,6 +153,10 @@ type WatchProvider interface {
 	// failure before registration must return without signalling readiness.
 	// The call blocks until cancellation or failure; data events are not buffered
 	// before registration. Concurrent existing watches may deliver during setup.
+	// The built-in controller orders bounded state replay before live states.
+	// Replay overflow fails the call, including after onReady has acknowledged
+	// installation. Cancellation retires the registration, but does not join
+	// callbacks already selected; sink storage must outlive those callbacks.
 	ListenForEvents(ctx context.Context, sink WatchEventSink, onReady func() error) error
 
 	// EnsureResourceWatch ensures a watch is running for a specific resource type.
