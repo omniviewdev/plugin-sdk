@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"errors"
 	"strings"
 	"testing"
 )
@@ -14,7 +13,7 @@ func TestStructuredValidationEnforcesAtomicSave(t *testing.T) {
 		return ValidationResult{Valid: true, Code: "ready", Message: "Tool is ready."}
 	}
 	p := NewProvider(ProviderOpts{PluginSettings: []Category{{ID: "tools", Settings: map[string]Setting{
-		"path":  {ID: "path", Type: Text, Default: "default", ValidateValue: validator},
+		"path":  {ID: "path", Type: Text, Default: "default", Validator: validator},
 		"other": {ID: "other", Type: Text, Default: "original"},
 	}}}})
 	s, err := p.GetSetting("tools.path")
@@ -39,16 +38,11 @@ func TestStructuredValidationEnforcesAtomicSave(t *testing.T) {
 }
 
 func TestSensitiveValidationRedactsFeedback(t *testing.T) {
-	s := Setting{Sensitive: true, ValidateValue: func(value any) ValidationResult {
+	s := Setting{Sensitive: true, Validator: func(value any) ValidationResult {
 		return ValidationResult{Code: "secret", Message: value.(string)}
 	}}
 	if result := s.Validation("private-input"); result.Valid || strings.Contains(result.Message, "private-input") || result.Code == "secret" {
 		t.Fatalf("sensitive feedback leaked: %+v", result)
-	}
-	s.ValidateValue = nil
-	s.Validator = func(any) error { return errors.New("private-input") }
-	if result := s.Validation("private-input"); strings.Contains(result.Message, "private-input") {
-		t.Fatal("legacy preflight leaked input")
 	}
 	if err := s.Validate("private-input"); err == nil || strings.Contains(err.Error(), "private-input") {
 		t.Fatal("sensitive save leaked input")
@@ -58,7 +52,7 @@ func TestSensitiveValidationRedactsFeedback(t *testing.T) {
 func TestInvalidStructuredValidationNormalizesEmptyMessage(t *testing.T) {
 	for _, message := range []string{"", "Choose a working tool."} {
 		t.Run(message, func(t *testing.T) {
-			s := Setting{Value: "saved", ValidateValue: func(any) ValidationResult {
+			s := Setting{Value: "saved", Validator: func(any) ValidationResult {
 				return ValidationResult{Code: "unusable", Message: message}
 			}}
 			want := message
@@ -79,14 +73,47 @@ func TestInvalidStructuredValidationNormalizesEmptyMessage(t *testing.T) {
 	}
 }
 
-func TestLegacyValidationDraftHidesUntrustedErrorWithoutChangingSave(t *testing.T) {
-	legacyErr := errors.New("credential=private-input")
-	s := Setting{Validator: func(any) error { return legacyErr }}
-	result := s.Validation("draft")
-	if result.Valid || result.Message != "Value did not pass validation." {
-		t.Fatalf("legacy draft exposed untrusted error: %+v", result)
+func TestValidationUsesOneCallbackWithoutMutation(t *testing.T) {
+	calls := 0
+	s := Setting{Value: "saved", Validator: func(value any) ValidationResult {
+		calls++
+		return ValidationResult{Valid: true, Code: "ready", Message: "Tool is ready."}
+	}}
+	want := ValidationResult{Valid: true, Code: "ready", Message: "Tool is ready."}
+	if got := s.Validation("draft"); got != want {
+		t.Fatalf("lost contextual feedback: %+v", got)
 	}
-	if err := s.Validate("draft"); err != legacyErr {
-		t.Fatalf("legacy save error changed: %v", err)
+	if calls != 1 || s.Value != "saved" {
+		t.Fatalf("draft evaluation changed state: calls=%d, value=%v", calls, s.Value)
+	}
+	if err := s.Validate("draft"); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || s.Value != "saved" {
+		t.Fatalf("write enforcement evaluated more than once or changed state: calls=%d, value=%v", calls, s.Value)
+	}
+}
+
+func TestMergeSettingsRestoresRegisteredValidator(t *testing.T) {
+	p := newTestProvider(t, Category{ID: "tools", Settings: map[string]Setting{
+		"path": {ID: "path", Type: Text, Default: "saved"},
+	}})
+	p.mergeSettings(Category{ID: "tools", Settings: map[string]Setting{
+		"path": {ID: "path", Type: Text, Default: "default", Validator: func(any) ValidationResult {
+			return ValidationResult{Code: "unusable", Message: "Choose a working tool."}
+		}},
+	}})
+	s, err := p.GetSetting("tools.path")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Validation("draft"); got.Valid || got.Code != "unusable" || got.Message != "Choose a working tool." {
+		t.Fatalf("hydration lost registered validator: %+v", got)
+	}
+	if err := p.SetSetting("tools.path", "draft"); err == nil {
+		t.Fatal("hydrated setting accepted invalid save")
+	}
+	if got, err := p.GetString("tools.path"); err != nil || got != "saved" {
+		t.Fatalf("hydration or validation changed saved value: %q, %v", got, err)
 	}
 }
