@@ -23,6 +23,7 @@ const (
 	SettingsPlugin_ListSettings_FullMethodName    = "/omniview.sdk.settings.v1.SettingsPlugin/ListSettings"
 	SettingsPlugin_GetSetting_FullMethodName      = "/omniview.sdk.settings.v1.SettingsPlugin/GetSetting"
 	SettingsPlugin_GetSettingValue_FullMethodName = "/omniview.sdk.settings.v1.SettingsPlugin/GetSettingValue"
+	SettingsPlugin_ValidateSetting_FullMethodName = "/omniview.sdk.settings.v1.SettingsPlugin/ValidateSetting"
 	SettingsPlugin_SetSetting_FullMethodName      = "/omniview.sdk.settings.v1.SettingsPlugin/SetSetting"
 	SettingsPlugin_SetSettings_FullMethodName     = "/omniview.sdk.settings.v1.SettingsPlugin/SetSettings"
 )
@@ -34,6 +35,7 @@ type SettingsPluginClient interface {
 	ListSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListSettingsResponse, error)
 	GetSetting(ctx context.Context, in *GetSettingRequest, opts ...grpc.CallOption) (*Setting, error)
 	GetSettingValue(ctx context.Context, in *GetSettingValueRequest, opts ...grpc.CallOption) (*GetSettingValueResponse, error)
+	ValidateSetting(ctx context.Context, in *SetSettingRequest, opts ...grpc.CallOption) (*ValidateSettingResponse, error)
 	SetSetting(ctx context.Context, in *SetSettingRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	SetSettings(ctx context.Context, in *SetSettingsRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
@@ -73,6 +75,15 @@ func (c *settingsPluginClient) GetSettingValue(ctx context.Context, in *GetSetti
 	return out, nil
 }
 
+func (c *settingsPluginClient) ValidateSetting(ctx context.Context, in *SetSettingRequest, opts ...grpc.CallOption) (*ValidateSettingResponse, error) {
+	out := new(ValidateSettingResponse)
+	err := c.cc.Invoke(ctx, SettingsPlugin_ValidateSetting_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *settingsPluginClient) SetSetting(ctx context.Context, in *SetSettingRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, SettingsPlugin_SetSetting_FullMethodName, in, out, opts...)
@@ -98,6 +109,7 @@ type SettingsPluginServer interface {
 	ListSettings(context.Context, *emptypb.Empty) (*ListSettingsResponse, error)
 	GetSetting(context.Context, *GetSettingRequest) (*Setting, error)
 	GetSettingValue(context.Context, *GetSettingValueRequest) (*GetSettingValueResponse, error)
+	ValidateSetting(context.Context, *SetSettingRequest) (*ValidateSettingResponse, error)
 	SetSetting(context.Context, *SetSettingRequest) (*emptypb.Empty, error)
 	SetSettings(context.Context, *SetSettingsRequest) (*emptypb.Empty, error)
 }
@@ -114,6 +126,9 @@ func (UnimplementedSettingsPluginServer) GetSetting(context.Context, *GetSetting
 }
 func (UnimplementedSettingsPluginServer) GetSettingValue(context.Context, *GetSettingValueRequest) (*GetSettingValueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetSettingValue not implemented")
+}
+func (UnimplementedSettingsPluginServer) ValidateSetting(context.Context, *SetSettingRequest) (*ValidateSettingResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ValidateSetting not implemented")
 }
 func (UnimplementedSettingsPluginServer) SetSetting(context.Context, *SetSettingRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetSetting not implemented")
@@ -187,6 +202,24 @@ func _SettingsPlugin_GetSettingValue_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SettingsPlugin_ValidateSetting_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetSettingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SettingsPluginServer).ValidateSetting(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SettingsPlugin_ValidateSetting_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SettingsPluginServer).ValidateSetting(ctx, req.(*SetSettingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SettingsPlugin_SetSetting_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SetSettingRequest)
 	if err := dec(in); err != nil {
@@ -241,6 +274,10 @@ var SettingsPlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSettingValue",
 			Handler:    _SettingsPlugin_GetSettingValue_Handler,
+		},
+		{
+			MethodName: "ValidateSetting",
+			Handler:    _SettingsPlugin_ValidateSetting_Handler,
 		},
 		{
 			MethodName: "SetSetting",

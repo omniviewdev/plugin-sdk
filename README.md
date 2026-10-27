@@ -8,6 +8,23 @@ Use `log` for plugin runtime/internal logging. This is separate from the log cap
 
 See [docs/internal-logging.md](docs/internal-logging.md).
 
+## Settings validation
+
+Register `settings.Setting.ValidateValue` with a
+`func(interface{}) settings.ValidationResult` to return contextual validation
+feedback. Set `Valid` for accepted values and provide a stable `Code` plus a
+user-safe `Message`. Validators must not mutate settings and should bound external
+work. Existing `Validator` callbacks remain enforced before structured validation.
+
+`Setting.Validation` and `Provider.ValidateSetting` check drafts without saving.
+Writes validate again and reject invalid values; bulk writes validate all values
+before changing any. Sensitive settings always return generic feedback.
+
+The settings capability exposes draft validation through gRPC, executing callbacks
+inside the plugin rather than on serialized host copies. Rebuild plugins and the
+host against the updated SDK to use this RPC. Older plugin processes report an
+unsupported RPC instead of approving unvalidated drafts.
+
 ## Application state and workspace isolation
 
 The SDK resolves all owned plugin configuration and capability stores through
