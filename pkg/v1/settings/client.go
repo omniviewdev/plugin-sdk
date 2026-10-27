@@ -83,7 +83,7 @@ func (c *Client) ValidateSetting(id string, value any) (settings.ValidationResul
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	resp, err := c.client.ValidateSetting(ctx, &settingspb.SetSettingRequest{Id: id, Value: val})
+	resp, err := c.client.ValidateSetting(ctx, &settingspb.ValidateSettingRequest{Id: id, Value: val})
 	if err != nil {
 		return settings.ValidationResult{}, err
 	}

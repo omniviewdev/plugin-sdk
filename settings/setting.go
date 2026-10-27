@@ -99,6 +99,9 @@ func (s *Setting) Validation(value interface{}) ValidationResult {
 	if result.Valid && s.ValidateValue != nil {
 		result = s.ValidateValue(value)
 	}
+	if !result.Valid && result.Message == "" {
+		result.Message = "Value did not pass validation."
+	}
 	if s.Sensitive {
 		if result.Valid {
 			return ValidationResult{Valid: true, Code: "valid", Message: "Value is valid."}

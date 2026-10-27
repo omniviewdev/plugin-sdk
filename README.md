@@ -19,9 +19,15 @@ work. Existing `Validator` callbacks remain enforced before structured validatio
 `Setting.Validation` and `Provider.ValidateSetting` check drafts without saving.
 Writes validate again and reject invalid values; bulk writes validate all values
 before changing any. Sensitive settings always return generic feedback.
+Invalid structured results with an empty message receive generic user-safe feedback;
+nonempty contextual messages remain unchanged. Legacy `Validator` errors are not
+declared user-safe and remain generic in draft feedback, even for nonsensitive
+settings. Use `ValidateValue` to opt into contextual draft messages. Nonsensitive
+legacy save errors retain their existing behavior.
 
-The settings capability exposes draft validation through gRPC, executing callbacks
-inside the plugin rather than on serialized host copies. Rebuild plugins and the
+The settings capability exposes draft validation through gRPC using a dedicated
+`ValidateSettingRequest`, executing callbacks inside the plugin rather than on
+serialized host copies. Rebuild plugins and the
 host against the updated SDK to use this RPC. Older plugin processes report an
 unsupported RPC instead of approving unvalidated drafts.
 

@@ -139,7 +139,7 @@ func (x VisualResourceComponent_ComponentType) Number() protoreflect.EnumNumber 
 
 // Deprecated: Use VisualResourceComponent_ComponentType.Descriptor instead.
 func (VisualResourceComponent_ComponentType) EnumDescriptor() ([]byte, []int) {
-	return file_proto_v1_settings_settings_proto_rawDescGZIP(), []int{12, 0}
+	return file_proto_v1_settings_settings_proto_rawDescGZIP(), []int{13, 0}
 }
 
 type SettingsCategory struct {
@@ -752,6 +752,58 @@ func (x *ListSettingsResponse) GetSettings() map[string]*Setting {
 	return nil
 }
 
+type ValidateSettingRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Value         *anypb.Any             `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ValidateSettingRequest) Reset() {
+	*x = ValidateSettingRequest{}
+	mi := &file_proto_v1_settings_settings_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ValidateSettingRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ValidateSettingRequest) ProtoMessage() {}
+
+func (x *ValidateSettingRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_settings_settings_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ValidateSettingRequest.ProtoReflect.Descriptor instead.
+func (*ValidateSettingRequest) Descriptor() ([]byte, []int) {
+	return file_proto_v1_settings_settings_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ValidateSettingRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ValidateSettingRequest) GetValue() *anypb.Any {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
 type ValidateSettingResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Valid         bool                   `protobuf:"varint,1,opt,name=valid,proto3" json:"valid,omitempty"`
@@ -763,7 +815,7 @@ type ValidateSettingResponse struct {
 
 func (x *ValidateSettingResponse) Reset() {
 	*x = ValidateSettingResponse{}
-	mi := &file_proto_v1_settings_settings_proto_msgTypes[10]
+	mi := &file_proto_v1_settings_settings_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -775,7 +827,7 @@ func (x *ValidateSettingResponse) String() string {
 func (*ValidateSettingResponse) ProtoMessage() {}
 
 func (x *ValidateSettingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_settings_settings_proto_msgTypes[10]
+	mi := &file_proto_v1_settings_settings_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -788,7 +840,7 @@ func (x *ValidateSettingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateSettingResponse.ProtoReflect.Descriptor instead.
 func (*ValidateSettingResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_settings_settings_proto_rawDescGZIP(), []int{10}
+	return file_proto_v1_settings_settings_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ValidateSettingResponse) GetValid() bool {
@@ -823,7 +875,7 @@ type VisualComponentList struct {
 
 func (x *VisualComponentList) Reset() {
 	*x = VisualComponentList{}
-	mi := &file_proto_v1_settings_settings_proto_msgTypes[11]
+	mi := &file_proto_v1_settings_settings_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -835,7 +887,7 @@ func (x *VisualComponentList) String() string {
 func (*VisualComponentList) ProtoMessage() {}
 
 func (x *VisualComponentList) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_settings_settings_proto_msgTypes[11]
+	mi := &file_proto_v1_settings_settings_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -848,7 +900,7 @@ func (x *VisualComponentList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VisualComponentList.ProtoReflect.Descriptor instead.
 func (*VisualComponentList) Descriptor() ([]byte, []int) {
-	return file_proto_v1_settings_settings_proto_rawDescGZIP(), []int{11}
+	return file_proto_v1_settings_settings_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *VisualComponentList) GetResource() []*VisualResourceComponent {
@@ -876,7 +928,7 @@ type VisualResourceComponent struct {
 
 func (x *VisualResourceComponent) Reset() {
 	*x = VisualResourceComponent{}
-	mi := &file_proto_v1_settings_settings_proto_msgTypes[12]
+	mi := &file_proto_v1_settings_settings_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -888,7 +940,7 @@ func (x *VisualResourceComponent) String() string {
 func (*VisualResourceComponent) ProtoMessage() {}
 
 func (x *VisualResourceComponent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_settings_settings_proto_msgTypes[12]
+	mi := &file_proto_v1_settings_settings_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -901,7 +953,7 @@ func (x *VisualResourceComponent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VisualResourceComponent.ProtoReflect.Descriptor instead.
 func (*VisualResourceComponent) Descriptor() ([]byte, []int) {
-	return file_proto_v1_settings_settings_proto_rawDescGZIP(), []int{12}
+	return file_proto_v1_settings_settings_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *VisualResourceComponent) GetId() string {
@@ -992,7 +1044,10 @@ const file_proto_v1_settings_settings_proto_rawDesc = "" +
 	"\bsettings\x18\x01 \x03(\v2<.omniview.sdk.settings.v1.ListSettingsResponse.SettingsEntryR\bsettings\x1a^\n" +
 	"\rSettingsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x127\n" +
-	"\x05value\x18\x02 \x01(\v2!.omniview.sdk.settings.v1.SettingR\x05value:\x028\x01\"]\n" +
+	"\x05value\x18\x02 \x01(\v2!.omniview.sdk.settings.v1.SettingR\x05value:\x028\x01\"T\n" +
+	"\x16ValidateSettingRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12*\n" +
+	"\x05value\x18\x02 \x01(\v2\x14.google.protobuf.AnyR\x05value\"]\n" +
 	"\x17ValidateSettingResponse\x12\x14\n" +
 	"\x05valid\x18\x01 \x01(\bR\x05valid\x12\x12\n" +
 	"\x04code\x18\x02 \x01(\tR\x04code\x12\x18\n" +
@@ -1019,13 +1074,13 @@ const file_proto_v1_settings_settings_proto_rawDesc = "" +
 	"\x13SETTING_TYPE_TOGGLE\x10\x05\x12\x16\n" +
 	"\x12SETTING_TYPE_COLOR\x10\x06\x12\x19\n" +
 	"\x15SETTING_TYPE_DATETIME\x10\a\x12\x19\n" +
-	"\x15SETTING_TYPE_PASSWORD\x10\b2\xd9\x04\n" +
+	"\x15SETTING_TYPE_PASSWORD\x10\b2\xde\x04\n" +
 	"\x0eSettingsPlugin\x12V\n" +
 	"\fListSettings\x12\x16.google.protobuf.Empty\x1a..omniview.sdk.settings.v1.ListSettingsResponse\x12\\\n" +
 	"\n" +
 	"GetSetting\x12+.omniview.sdk.settings.v1.GetSettingRequest\x1a!.omniview.sdk.settings.v1.Setting\x12v\n" +
-	"\x0fGetSettingValue\x120.omniview.sdk.settings.v1.GetSettingValueRequest\x1a1.omniview.sdk.settings.v1.GetSettingValueResponse\x12q\n" +
-	"\x0fValidateSetting\x12+.omniview.sdk.settings.v1.SetSettingRequest\x1a1.omniview.sdk.settings.v1.ValidateSettingResponse\x12Q\n" +
+	"\x0fGetSettingValue\x120.omniview.sdk.settings.v1.GetSettingValueRequest\x1a1.omniview.sdk.settings.v1.GetSettingValueResponse\x12v\n" +
+	"\x0fValidateSetting\x120.omniview.sdk.settings.v1.ValidateSettingRequest\x1a1.omniview.sdk.settings.v1.ValidateSettingResponse\x12Q\n" +
 	"\n" +
 	"SetSetting\x12+.omniview.sdk.settings.v1.SetSettingRequest\x1a\x16.google.protobuf.Empty\x12S\n" +
 	"\vSetSettings\x12,.omniview.sdk.settings.v1.SetSettingsRequest\x1a\x16.google.protobuf.EmptyB@Z>github.com/omniviewdev/plugin-sdk/proto/v1/settings;settingspbb\x06proto3"
@@ -1043,7 +1098,7 @@ func file_proto_v1_settings_settings_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_v1_settings_settings_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_v1_settings_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_proto_v1_settings_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_proto_v1_settings_settings_proto_goTypes = []any{
 	(SettingType)(0), // 0: omniview.sdk.settings.v1.SettingType
 	(VisualResourceComponent_ComponentType)(0), // 1: omniview.sdk.settings.v1.VisualResourceComponent.ComponentType
@@ -1057,49 +1112,51 @@ var file_proto_v1_settings_settings_proto_goTypes = []any{
 	(*SetSettingRequest)(nil),                  // 9: omniview.sdk.settings.v1.SetSettingRequest
 	(*SetSettingsRequest)(nil),                 // 10: omniview.sdk.settings.v1.SetSettingsRequest
 	(*ListSettingsResponse)(nil),               // 11: omniview.sdk.settings.v1.ListSettingsResponse
-	(*ValidateSettingResponse)(nil),            // 12: omniview.sdk.settings.v1.ValidateSettingResponse
-	(*VisualComponentList)(nil),                // 13: omniview.sdk.settings.v1.VisualComponentList
-	(*VisualResourceComponent)(nil),            // 14: omniview.sdk.settings.v1.VisualResourceComponent
-	nil,                                        // 15: omniview.sdk.settings.v1.SettingsCategory.SettingsEntry
-	nil,                                        // 16: omniview.sdk.settings.v1.SetSettingsRequest.SettingsEntry
-	nil,                                        // 17: omniview.sdk.settings.v1.ListSettingsResponse.SettingsEntry
-	(*anypb.Any)(nil),                          // 18: google.protobuf.Any
-	(*emptypb.Empty)(nil),                      // 19: google.protobuf.Empty
+	(*ValidateSettingRequest)(nil),             // 12: omniview.sdk.settings.v1.ValidateSettingRequest
+	(*ValidateSettingResponse)(nil),            // 13: omniview.sdk.settings.v1.ValidateSettingResponse
+	(*VisualComponentList)(nil),                // 14: omniview.sdk.settings.v1.VisualComponentList
+	(*VisualResourceComponent)(nil),            // 15: omniview.sdk.settings.v1.VisualResourceComponent
+	nil,                                        // 16: omniview.sdk.settings.v1.SettingsCategory.SettingsEntry
+	nil,                                        // 17: omniview.sdk.settings.v1.SetSettingsRequest.SettingsEntry
+	nil,                                        // 18: omniview.sdk.settings.v1.ListSettingsResponse.SettingsEntry
+	(*anypb.Any)(nil),                          // 19: google.protobuf.Any
+	(*emptypb.Empty)(nil),                      // 20: google.protobuf.Empty
 }
 var file_proto_v1_settings_settings_proto_depIdxs = []int32{
-	15, // 0: omniview.sdk.settings.v1.SettingsCategory.settings:type_name -> omniview.sdk.settings.v1.SettingsCategory.SettingsEntry
+	16, // 0: omniview.sdk.settings.v1.SettingsCategory.settings:type_name -> omniview.sdk.settings.v1.SettingsCategory.SettingsEntry
 	0,  // 1: omniview.sdk.settings.v1.Setting.type:type_name -> omniview.sdk.settings.v1.SettingType
-	18, // 2: omniview.sdk.settings.v1.Setting.value:type_name -> google.protobuf.Any
-	18, // 3: omniview.sdk.settings.v1.Setting.default:type_name -> google.protobuf.Any
+	19, // 2: omniview.sdk.settings.v1.Setting.value:type_name -> google.protobuf.Any
+	19, // 3: omniview.sdk.settings.v1.Setting.default:type_name -> google.protobuf.Any
 	4,  // 4: omniview.sdk.settings.v1.Setting.options:type_name -> omniview.sdk.settings.v1.SettingOption
 	5,  // 5: omniview.sdk.settings.v1.Setting.file_selection:type_name -> omniview.sdk.settings.v1.SettingFileSelection
-	18, // 6: omniview.sdk.settings.v1.SettingOption.value:type_name -> google.protobuf.Any
-	18, // 7: omniview.sdk.settings.v1.GetSettingValueResponse.value:type_name -> google.protobuf.Any
-	18, // 8: omniview.sdk.settings.v1.SetSettingRequest.value:type_name -> google.protobuf.Any
-	16, // 9: omniview.sdk.settings.v1.SetSettingsRequest.settings:type_name -> omniview.sdk.settings.v1.SetSettingsRequest.SettingsEntry
-	17, // 10: omniview.sdk.settings.v1.ListSettingsResponse.settings:type_name -> omniview.sdk.settings.v1.ListSettingsResponse.SettingsEntry
-	14, // 11: omniview.sdk.settings.v1.VisualComponentList.resource:type_name -> omniview.sdk.settings.v1.VisualResourceComponent
-	1,  // 12: omniview.sdk.settings.v1.VisualResourceComponent.type:type_name -> omniview.sdk.settings.v1.VisualResourceComponent.ComponentType
-	3,  // 13: omniview.sdk.settings.v1.SettingsCategory.SettingsEntry.value:type_name -> omniview.sdk.settings.v1.Setting
-	18, // 14: omniview.sdk.settings.v1.SetSettingsRequest.SettingsEntry.value:type_name -> google.protobuf.Any
-	3,  // 15: omniview.sdk.settings.v1.ListSettingsResponse.SettingsEntry.value:type_name -> omniview.sdk.settings.v1.Setting
-	19, // 16: omniview.sdk.settings.v1.SettingsPlugin.ListSettings:input_type -> google.protobuf.Empty
-	6,  // 17: omniview.sdk.settings.v1.SettingsPlugin.GetSetting:input_type -> omniview.sdk.settings.v1.GetSettingRequest
-	7,  // 18: omniview.sdk.settings.v1.SettingsPlugin.GetSettingValue:input_type -> omniview.sdk.settings.v1.GetSettingValueRequest
-	9,  // 19: omniview.sdk.settings.v1.SettingsPlugin.ValidateSetting:input_type -> omniview.sdk.settings.v1.SetSettingRequest
-	9,  // 20: omniview.sdk.settings.v1.SettingsPlugin.SetSetting:input_type -> omniview.sdk.settings.v1.SetSettingRequest
-	10, // 21: omniview.sdk.settings.v1.SettingsPlugin.SetSettings:input_type -> omniview.sdk.settings.v1.SetSettingsRequest
-	11, // 22: omniview.sdk.settings.v1.SettingsPlugin.ListSettings:output_type -> omniview.sdk.settings.v1.ListSettingsResponse
-	3,  // 23: omniview.sdk.settings.v1.SettingsPlugin.GetSetting:output_type -> omniview.sdk.settings.v1.Setting
-	8,  // 24: omniview.sdk.settings.v1.SettingsPlugin.GetSettingValue:output_type -> omniview.sdk.settings.v1.GetSettingValueResponse
-	12, // 25: omniview.sdk.settings.v1.SettingsPlugin.ValidateSetting:output_type -> omniview.sdk.settings.v1.ValidateSettingResponse
-	19, // 26: omniview.sdk.settings.v1.SettingsPlugin.SetSetting:output_type -> google.protobuf.Empty
-	19, // 27: omniview.sdk.settings.v1.SettingsPlugin.SetSettings:output_type -> google.protobuf.Empty
-	22, // [22:28] is the sub-list for method output_type
-	16, // [16:22] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	19, // 6: omniview.sdk.settings.v1.SettingOption.value:type_name -> google.protobuf.Any
+	19, // 7: omniview.sdk.settings.v1.GetSettingValueResponse.value:type_name -> google.protobuf.Any
+	19, // 8: omniview.sdk.settings.v1.SetSettingRequest.value:type_name -> google.protobuf.Any
+	17, // 9: omniview.sdk.settings.v1.SetSettingsRequest.settings:type_name -> omniview.sdk.settings.v1.SetSettingsRequest.SettingsEntry
+	18, // 10: omniview.sdk.settings.v1.ListSettingsResponse.settings:type_name -> omniview.sdk.settings.v1.ListSettingsResponse.SettingsEntry
+	19, // 11: omniview.sdk.settings.v1.ValidateSettingRequest.value:type_name -> google.protobuf.Any
+	15, // 12: omniview.sdk.settings.v1.VisualComponentList.resource:type_name -> omniview.sdk.settings.v1.VisualResourceComponent
+	1,  // 13: omniview.sdk.settings.v1.VisualResourceComponent.type:type_name -> omniview.sdk.settings.v1.VisualResourceComponent.ComponentType
+	3,  // 14: omniview.sdk.settings.v1.SettingsCategory.SettingsEntry.value:type_name -> omniview.sdk.settings.v1.Setting
+	19, // 15: omniview.sdk.settings.v1.SetSettingsRequest.SettingsEntry.value:type_name -> google.protobuf.Any
+	3,  // 16: omniview.sdk.settings.v1.ListSettingsResponse.SettingsEntry.value:type_name -> omniview.sdk.settings.v1.Setting
+	20, // 17: omniview.sdk.settings.v1.SettingsPlugin.ListSettings:input_type -> google.protobuf.Empty
+	6,  // 18: omniview.sdk.settings.v1.SettingsPlugin.GetSetting:input_type -> omniview.sdk.settings.v1.GetSettingRequest
+	7,  // 19: omniview.sdk.settings.v1.SettingsPlugin.GetSettingValue:input_type -> omniview.sdk.settings.v1.GetSettingValueRequest
+	12, // 20: omniview.sdk.settings.v1.SettingsPlugin.ValidateSetting:input_type -> omniview.sdk.settings.v1.ValidateSettingRequest
+	9,  // 21: omniview.sdk.settings.v1.SettingsPlugin.SetSetting:input_type -> omniview.sdk.settings.v1.SetSettingRequest
+	10, // 22: omniview.sdk.settings.v1.SettingsPlugin.SetSettings:input_type -> omniview.sdk.settings.v1.SetSettingsRequest
+	11, // 23: omniview.sdk.settings.v1.SettingsPlugin.ListSettings:output_type -> omniview.sdk.settings.v1.ListSettingsResponse
+	3,  // 24: omniview.sdk.settings.v1.SettingsPlugin.GetSetting:output_type -> omniview.sdk.settings.v1.Setting
+	8,  // 25: omniview.sdk.settings.v1.SettingsPlugin.GetSettingValue:output_type -> omniview.sdk.settings.v1.GetSettingValueResponse
+	13, // 26: omniview.sdk.settings.v1.SettingsPlugin.ValidateSetting:output_type -> omniview.sdk.settings.v1.ValidateSettingResponse
+	20, // 27: omniview.sdk.settings.v1.SettingsPlugin.SetSetting:output_type -> google.protobuf.Empty
+	20, // 28: omniview.sdk.settings.v1.SettingsPlugin.SetSettings:output_type -> google.protobuf.Empty
+	23, // [23:29] is the sub-list for method output_type
+	17, // [17:23] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_settings_settings_proto_init() }
@@ -1114,7 +1171,7 @@ func file_proto_v1_settings_settings_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_settings_settings_proto_rawDesc), len(file_proto_v1_settings_settings_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   16,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

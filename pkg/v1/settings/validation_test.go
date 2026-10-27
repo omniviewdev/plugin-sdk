@@ -17,6 +17,9 @@ import (
 func TestValidationRPCExecutesRegisteredCallbacksWithoutMutation(t *testing.T) {
 	provider := base.NewProvider(base.ProviderOpts{PluginID: "fixture", PluginSettings: []base.Category{{ID: "plugin", Settings: map[string]base.Setting{
 		"tool": {ID: "tool", Type: base.Text, Default: "saved", ValidateValue: func(value any) base.ValidationResult {
+			if value == "empty-message" {
+				return base.ValidationResult{Code: "tool_failed"}
+			}
 			if value == "bad" {
 				return base.ValidationResult{Code: "tool_failed", Message: "Select a working tool."}
 			}
@@ -52,6 +55,13 @@ func TestValidationRPCExecutesRegisteredCallbacksWithoutMutation(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.Valid)
 	require.Equal(t, "tool_failed", result.Code)
+	require.Equal(t, "Select a working tool.", result.Message)
+	result, err = client.ValidateSetting("tool", "empty-message")
+	require.NoError(t, err)
+	require.False(t, result.Valid)
+	require.Equal(t, "tool_failed", result.Code)
+	require.Equal(t, "Value did not pass validation.", result.Message)
+	require.ErrorContains(t, client.SetSettings(map[string]any{"tool": "empty-message"}), result.Message)
 	value, err := provider.GetString("tool")
 	require.NoError(t, err)
 	require.Equal(t, "saved", value)

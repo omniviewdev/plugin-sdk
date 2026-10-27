@@ -109,7 +109,7 @@ func (s *SettingsPluginServer) SetSettings(
 }
 
 // ValidateSetting executes registered callbacks in the plugin, without mutating values.
-func (s *SettingsPluginServer) ValidateSetting(_ context.Context, in *settingspb.SetSettingRequest) (*settingspb.ValidateSettingResponse, error) {
+func (s *SettingsPluginServer) ValidateSetting(_ context.Context, in *settingspb.ValidateSettingRequest) (*settingspb.ValidateSettingResponse, error) {
 	value, err := ConvertAnyToInterface(in.GetValue())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid validation input")

@@ -54,3 +54,39 @@ func TestSensitiveValidationRedactsFeedback(t *testing.T) {
 		t.Fatal("sensitive save leaked input")
 	}
 }
+
+func TestInvalidStructuredValidationNormalizesEmptyMessage(t *testing.T) {
+	for _, message := range []string{"", "Choose a working tool."} {
+		t.Run(message, func(t *testing.T) {
+			s := Setting{Value: "saved", ValidateValue: func(any) ValidationResult {
+				return ValidationResult{Code: "unusable", Message: message}
+			}}
+			want := message
+			if want == "" {
+				want = "Value did not pass validation."
+			}
+			result := s.Validation("draft")
+			if result.Valid || result.Code != "unusable" || result.Message != want {
+				t.Fatalf("unexpected draft feedback: %+v", result)
+			}
+			if err := s.SetValue("draft"); err == nil || err.Error() != want {
+				t.Fatalf("unexpected save error: %v", err)
+			}
+			if s.Value != "saved" {
+				t.Fatal("invalid save changed value")
+			}
+		})
+	}
+}
+
+func TestLegacyValidationDraftHidesUntrustedErrorWithoutChangingSave(t *testing.T) {
+	legacyErr := errors.New("credential=private-input")
+	s := Setting{Validator: func(any) error { return legacyErr }}
+	result := s.Validation("draft")
+	if result.Valid || result.Message != "Value did not pass validation." {
+		t.Fatalf("legacy draft exposed untrusted error: %+v", result)
+	}
+	if err := s.Validate("draft"); err != legacyErr {
+		t.Fatalf("legacy save error changed: %v", err)
+	}
+}
