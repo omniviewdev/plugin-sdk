@@ -12,10 +12,8 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
-	"github.com/omniviewdev/plugin-sdk/pkg/resource"
-	rp "github.com/omniviewdev/plugin-sdk/pkg/resource/plugin"
-	"github.com/omniviewdev/plugin-sdk/pkg/resource/services"
-	"github.com/omniviewdev/plugin-sdk/pkg/resource/types"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	rp "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/state"
 	"github.com/omniviewdev/plugin-sdk/pkg/telemetry"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils"
@@ -167,7 +165,7 @@ func GRPCServerFactory(opts []grpc.ServerOption) *grpc.Server {
 }
 
 func GRPCServerFactoryWithLogger(log logging.Logger, opts []grpc.ServerOption) *grpc.Server {
-	return grpc.NewServer(utils.RegisterServerOpts(opts, log)...)
+	return grpc.NewServer(utils.RegisterServerOpts(append(opts, rp.ServerOptions()...), log)...)
 }
 
 func GRPCDialOptions() []grpc.DialOption {
@@ -238,85 +236,15 @@ func (p *Plugin) registerLifecycle() {
 	}
 }
 
-// RegisterResourcePlugin registers a resource plugin with the given options. Resource plugins are
-// plugins that manage resources, such as clouds, Kubernetes clusters, etc.
-func RegisterResourcePlugin[ClientT any](
-	p *Plugin,
-	opts ResourcePluginOpts[ClientT],
-) {
-	if p == nil {
-		// improper use of plugin
-		panic("plugin cannot be nil")
+// RegisterResourcePlugin registers the resource-v2 provider. The catalog is
+// required; finite operations are independently optional and catalog-qualified.
+// Resource wire negotiation does not change unrelated utility protocol versions.
+func RegisterResourcePlugin(p *Plugin, provider resourcev2.Provider) {
+	if p == nil || provider == nil {
+		panic("plugin and resource provider must not be nil")
 	}
-
-	metas := make([]types.ResourceMeta, 0, len(opts.Resourcers))
-	for meta := range opts.Resourcers {
-		metas = append(metas, meta)
-	}
-
-	// check for discovery
-	var typeManager services.ResourceTypeManager
-	if opts.DiscoveryProvider != nil {
-		// dynamic resource plugin
-		typeManager = services.NewDynamicResourceTypeManager(
-			metas,
-			opts.ResourceGroups,
-			opts.ResourceDefinitions,
-			opts.DefaultResourceDefinition,
-			opts.DiscoveryProvider,
-		)
-	} else {
-		// static resource plugin
-		typeManager = services.NewStaticResourceTypeManager(
-			metas,
-			opts.ResourceGroups,
-			opts.ResourceDefinitions,
-			opts.DefaultResourceDefinition,
-		)
-	}
-
-	// create the layouts
-	layoutManager := services.NewLayoutManager(opts.LayoutOpts)
-	if opts.LayoutOpts != nil {
-		// generate from the metas
-		layoutManager.GenerateLayoutFromMetas(metas)
-	}
-
-	// create the resourcer
-	resourcer := services.NewResourcerManager[ClientT]()
-	if err := resourcer.RegisterResourcersFromMap(opts.Resourcers); err != nil {
-		panic(err)
-	}
-
-	if len(opts.PatternResourcers) > 0 {
-		if err := resourcer.RegisterPatternResourcersFromMap(opts.PatternResourcers); err != nil {
-			panic(err)
-		}
-	}
-
-	controller := resource.NewResourceController(
-		resourcer,
-		services.NewConnectionManager(
-			opts.CreateClient,
-			opts.RefreshClient,
-			opts.StartClient,
-			opts.StopClient,
-			opts.LoadConnectionFunc,
-			opts.WatchConnectionsFunc,
-			opts.CheckConnectionFunc,
-			opts.LoadConnectionNamespacesFunc,
-		),
-		typeManager,
-		layoutManager,
-		opts.CreateInformerFunc,
-		opts.SyncPolicies,
-		opts.SchemaFunc,
-		opts.ErrorClassifier,
-	)
-
-	// Register the resource plugin with the plugin system.
-	p.RegisterCapability("resource", &rp.ResourcePlugin{
-		Impl:             controller,
+	p.RegisterCapability("resource", &rp.GRPCPlugin{
+		Impl:             provider,
 		SettingsProvider: p.SettingsProvider,
 	})
 }

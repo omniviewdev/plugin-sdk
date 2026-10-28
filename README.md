@@ -156,34 +156,126 @@ value/default/option payloads fail closed as sensitive metadata. This transport
 fix does not change the provider's runtime accessors or itself authorize access
 to secret settings.
 
+## Resource v2 boundary
+
+Resource providers use the handwritten `pkg/resource/v2` domain and
+`sdk.RegisterResourcePlugin(plugin, provider)`. `Provider` requires only
+`Catalog(context.Context, CatalogRequest) (Catalog, error)`. `Getter`,
+`Enumerator`, `NativeQuerier`, `Mutator`, and `Actioner` are independent optional
+interfaces. Catalog capabilities qualify support by explicit connection, type,
+and scope; method presence alone does not advertise support.
+
+`ResourceAddress` contains provider, host-issued authority, opaque type, scope
+entries, and opaque ID. Connection is an access route, not identity. Incarnation
+and source revision remain optional opaque tokens; neither is fabricated.
+Namespace, GVK, CRUD, enumeration, and live acquisition are not universal
+requirements. Requests never choose the first active connection implicitly.
+
+Documents use recursive tagged `Value` maps, not `google.protobuf.Struct`.
+JSON values use `{ "kind": "int64", "value": "9223372036854775807" }`, with
+analogous null, bool, string, uint64, double, timestamp, list, and map tags.
+The adapters reject duplicate members, ambiguous protobuf fields, invalid Unicode,
+unknown fields, nonfinite numbers, invalid integer/timestamp ranges, and bounded
+work exhaustion. Generated protobuf messages remain transport-only.
+
+`SourcePage` is a bounded source acquisition page, not a host query result or
+cursor. Unknown count stays unknown. Partial coverage, schema unavailability,
+representation provenance, consistency, and source revision remain explicit.
+P05 owns live continuity; finite enumeration does not claim a live subscription
+or an atomic snapshot/update cutover.
+
+The resource service negotiates wire version `2` independently of the shared
+go-plugin transport, which remains version `1` for active utility services.
+Both incoming resource requests and incoming client responses pass raw-wire
+validation before generated protobuf decoding. Selecting the default protobuf
+content subtype does not disable resource admission.
+
+Before optional ancillary startup, call
+`FeatureNegotiator.Features(context.Context) (FeatureSet, error)` and inspect
+`FeatureSet.Has`. A remote client's static Go method set does not prove that its
+provider supports connections, best-effort updates, action streams, or other
+ancillary traits. Finite-operation support still comes only from the qualified
+catalog. No unsupported listener is treated as ready.
+
+`NewController(Config[T])` supplies exact-type optional registrations, explicit
+client lifecycle ownership, cancellation, classification, and shared catalog
+admission. `AdmitCatalogOperation` reuses the same rules when a host already owns
+an admitted catalog. `ValidateOperationResult` rejects identity, scope, or
+representation escape. `ValueFromNative` and `NativeFromValue` preserve native
+scalar intent without a JSON float roundtrip; `JSONToValue` admits native JSON
+under its documented exact-integer policy.
+
+`ConnectionOverlayProvider.ApplyConnectionOverlay` atomically replaces the
+host's explicit in-memory desired connection overlay: `Upserts` contains only
+manual profiles or overrides, and `DisabledIDs` contains tombstones. Native
+discovery remains separate and subsequent refreshes cannot erase overrides or
+resurrect tombstones. An empty overlay restores native configuration. Changed
+effective routes stop/drain old clients before success. The host owns durable
+storage and startup replay; the SDK never rewrites kubeconfig or duplicates the
+host's profile store. A failed durable save can reapply the previous overlay.
+
+
+The implementation-candidate policy `omniview.resource-wire-policy.v1` caps a
+decoded frame at 32 MiB, one body at 16 MiB, nesting at 64, nodes at 262144,
+fields at 1048576, and source pages at 256 records. Aggregate page/frame work is
+bounded before generated decoding; per-record limits do not multiply the frame
+budget. Hosts may lower effective limits. These safety ceilings require policy
+review and measurements before final freeze; they are not latency promises.
+The separate predicate/projection policy remains unchanged at 64 KiB.
+`ValueWireSize` and `RecordWireSize` permit bounded page construction without
+allocating transport messages.
+
+Catalog discovery coverage is `complete`, `partial`, or `unknown`, qualified by
+the actual connection and declared scopes. Failed or denied discovery returns an
+error, not an empty complete catalog. `NativeAuthorityHint` is nonauthoritative
+provider metadata: its scheme, opaque ID, and connection-local/stable-native
+continuity claim never issue authority or permission. Only the host binds
+AuthorityID; unknown backing identity remains isolated.
+
+Schema bindings distinguish available, absent, and unavailable, retaining actual
+revision and local-root provenance. A shared `SchemaDocumentReference` plus
+`Root` identifies a catalog schema without copying an OpenAPI group document into
+each type. Fetch a bounded raw document once through `SchemaDocumentProvider`.
+Empty root selects the whole document; other roots are local RFC6901 URI-fragment
+JSON pointers. No implicit external IO or normalization occurs. P07 owns schema
+normalization. Editor schemas carry the same binding. An omitted representation
+is resolved only through the provider's explicit `DefaultRepresentation`.
+
+The optional `BestEffortUpdateProvider` preserves native informer readiness,
+state replay, cancellation, and teardown with canonical records. Every update
+capability/event explicitly says `bestEffort`: no atomic snapshot/watch boundary,
+replay continuity, or gap-free source claim is implied. Hosts supply explicit
+admitted `ReadTarget`s, including host-issued authority, before sources start.
+P05 owns stronger source continuity. The obsolete unversioned and v1 resource
+composition/Find/mandatory-CRUD APIs and RPCs are removed, not re-exported.
+
+
 ## Resource invocation and action migration (C02)
 
-Resource `GetResourceGroups`/`GetResourceTypes` return `(map, error)`, and
-`HasResourceType` returns `(bool, error)`. Transport/discovery failure is not an
-empty successful catalog; missing RPC support is structured `UNSUPPORTED`.
+Catalog discovery and ancillary calls return explicit errors. Transport/discovery
+failure is not an empty successful catalog; missing support is `UNSUPPORTED`.
 Diagnostic Session request/requester labels are bounded to 256 UTF-8 bytes and
-transported using binary gRPC metadata. They survive CRUD and lifecycle
+transported using binary gRPC metadata. They survive finite and lifecycle
 connection enrichment, including recreation/deletion, without mutating the
 incoming Session. Neither these labels nor connection IDs authenticate an actor
 or confer host authority.
 
-All resource RPC paths preserve typed `ResourceOperationError` meaning, including
-non-envelope RPCs and stream termination through typed gRPC status details.
-Cancellation/deadline remain cancellation/timeout. Existing error numbers 1–14
-remain unchanged; additive codes 15–22 cover invalid request, unsupported,
-cancelled, limit, expired continuation, reset, partial result and provider error.
+Resource RPCs preserve typed `ResourceOperationError` classification, including
+stream termination through typed gRPC status details. Cancellation and deadline
+remain `CANCELLED` and `TIMEOUT`. The host converts provider classification into
+its canonical AppError and supplies trusted provenance and recovery policy.
 Raw diagnostics are not safe public error text; the host redacts provider denial,
 internal and unknown failures and owns public correlation.
 
-Streaming action resourcers must emit exactly one `ActionEvent{Type: "ready"}`
+Streaming action providers must emit exactly one `ActionEvent{Type: "ready"}`
 only after authoritative native establishment/admission succeeds, before any
 progress/output/completion. Method entry or gRPC headers are not readiness.
 Return pre-establishment failures without emitting ready; error events carry
 typed `Error`, not raw diagnostic `Data`. The framework owns its outgoing stream
 channel and handles producer return independently of channel closure. Use the
 request context for native work and cancellation-aware event sends.
-A successful return without a relayed `ready` is rejected as `PROVIDER_ERROR`
-by both the native controller and the RPC server, including an empty closed stream.
+A successful stream return without a relayed `ready` is rejected as
+`PROVIDER_ERROR`, including an empty closed stream.
 
 Providers must rebuild for this contract; no progress-as-ready compatibility
 inference is supported. Consumers must pin the reviewed publicly reachable SDK
@@ -191,8 +283,8 @@ revision and finish coordinated source/transport/host checks before claiming the
 new semantics. Local replacements alone are not a consumable release receipt.
 
 `buf.gen.yaml` pins protoc-gen-go `v1.36.11` and protoc-gen-go-grpc `v1.3.0`.
-Use `make proto` for full regeneration; C02's scoped regeneration used
-`buf generate --path proto/v1/common/common.proto --path proto/v1/resource/resource.proto`.
+Use `make proto` for full regeneration, including resource v2 and shared
+non-resource utility declarations.
 These remote Buf generators do not require an ambient native `protoc` binary.
 
 ## Settings value reads
@@ -205,7 +297,7 @@ RPC status errors propagate unchanged.
 
 ## Connection readiness
 
-The v1 connection manager's `CheckConnection` returns `DISCONNECTED` with the
+The v2 controller's `CheckConnection` returns `DISCONNECTED` with the
 saved connection metadata for a configured connection that has never started
 or has stopped. It does not construct a client or probe the provider in that
 state. Unknown connection IDs remain errors; active connections still delegate

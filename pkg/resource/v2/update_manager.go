@@ -1,0 +1,674 @@
+package resourcev2
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+const maxPendingUpdateStates = 1000
+
+// updateListener ports the bounded state replay barrier. Data events remain
+// advisory direct delivery; this is not a replay log or a continuity protocol.
+type updateListener struct {
+	ctx       context.Context
+	sink      WatchEventSink
+	retired   atomic.Bool
+	accepted  bool
+	mu        sync.Mutex
+	replaying bool
+	overflow  bool
+	pending   []WatchStateEvent
+	failed    chan error
+	callbacks sync.WaitGroup
+}
+
+func (l *updateListener) active() bool { return !l.retired.Load() && l.ctx.Err() == nil }
+func (l *updateListener) terminalError() error {
+	select {
+	case err := <-l.failed:
+		return err
+	default:
+	}
+	if err := l.ctx.Err(); err != nil {
+		return err
+	}
+	return context.Canceled
+}
+func (l *updateListener) call(fn func()) {
+	l.mu.Lock()
+	if !l.active() {
+		l.mu.Unlock()
+		return
+	}
+	l.callbacks.Add(1)
+	l.mu.Unlock()
+	defer l.callbacks.Done()
+	defer func() {
+		if recover() != nil {
+			l.mu.Lock()
+			l.retired.Store(true)
+			l.mu.Unlock()
+			select {
+			case l.failed <- NewError("INTERNAL", "Update listener panicked."):
+			default:
+			}
+		}
+	}()
+	fn()
+}
+func (l *updateListener) state(event WatchStateEvent) {
+	l.mu.Lock()
+	if !l.active() {
+		l.mu.Unlock()
+		return
+	}
+	if l.replaying {
+		if len(l.pending) < maxPendingUpdateStates {
+			l.pending = append(l.pending, event)
+		} else {
+			l.overflow = true
+		}
+		l.mu.Unlock()
+		return
+	}
+	l.mu.Unlock()
+	l.call(func() { l.sink.OnStateChange(event) })
+}
+func (l *updateListener) replay() error {
+	for {
+		l.mu.Lock()
+		if !l.active() {
+			l.mu.Unlock()
+			return l.terminalError()
+		}
+		if l.overflow {
+			l.mu.Unlock()
+			return NewError("RESOURCE_LIMIT", "Update state replay exceeded its bounded buffer.")
+		}
+		pending := l.pending
+		l.pending = nil
+		if len(pending) == 0 {
+			l.replaying = false
+			l.mu.Unlock()
+			return nil
+		}
+		l.mu.Unlock()
+		for _, event := range pending {
+			if !l.active() {
+				return l.terminalError()
+			}
+			l.call(func() { l.sink.OnStateChange(event) })
+		}
+	}
+}
+
+type updateWatch struct {
+	target        ReadTarget
+	ctx           context.Context
+	cancel        context.CancelFunc
+	ready         chan struct{}
+	done          chan struct{}
+	running       bool
+	state         WatchState
+	count         Count
+	validationErr error
+}
+
+type updateManager[T any] struct {
+	controller     *Controller[T]
+	mu             sync.Mutex
+	watches        map[string]map[string]*updateWatch
+	stopping       map[string]int
+	listenersMu    sync.Mutex
+	listeners      []*updateListener
+	readyListeners int
+	pending        []WatchStateEvent
+	overflow       bool
+	baseBackoff    time.Duration
+	maxRetries     int
+}
+
+func newUpdateManager[T any](controller *Controller[T]) *updateManager[T] {
+	return &updateManager[T]{controller: controller, watches: make(map[string]map[string]*updateWatch), stopping: make(map[string]int), baseBackoff: 500 * time.Millisecond, maxRetries: 5}
+}
+
+func (m *updateManager[T]) snapshot() []*updateListener {
+	m.listenersMu.Lock()
+	listeners := m.listeners
+	m.listenersMu.Unlock()
+	return listeners
+}
+func (m *updateManager[T]) publishState(watch *updateWatch, event WatchStateEvent) {
+	event.Route = watch.target.Route
+	event.Type = watch.target.Type
+	event.Guarantee = BestEffortGuarantee
+	if event.Count.Kind == "" {
+		event.Count = Count{Kind: "unknown"}
+	}
+	m.mu.Lock()
+	watch.state = event.State
+	watch.count = event.Count
+	m.mu.Unlock()
+	m.listenersMu.Lock()
+	listeners := m.listeners
+	if m.readyListeners == 0 {
+		if len(m.pending) < maxPendingUpdateStates {
+			m.pending = append(m.pending, event)
+		} else {
+			m.overflow = true
+		}
+	}
+	m.listenersMu.Unlock()
+	for _, listener := range listeners {
+		listener.state(event)
+	}
+}
+func (m *updateManager[T]) remove(listener *updateListener) {
+	m.listenersMu.Lock()
+	listener.mu.Lock()
+	listener.retired.Store(true)
+	listener.pending = nil
+	listener.mu.Unlock()
+	remaining := make([]*updateListener, 0, len(m.listeners))
+	for _, current := range m.listeners {
+		if current != listener {
+			remaining = append(remaining, current)
+		}
+	}
+	m.listeners = remaining
+	if listener.accepted {
+		m.readyListeners--
+		listener.accepted = false
+	}
+	m.listenersMu.Unlock()
+	// Retirement closes callback admission under listener.mu. Only callbacks
+	// admitted before that barrier remain, and none may outlive listener return.
+	listener.callbacks.Wait()
+}
+func (m *updateManager[T]) listen(ctx context.Context, sink WatchEventSink, onReady func() error) error {
+	if sink == nil {
+		return NewError("INVALID_REQUEST", "Update sink is required.")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.listenersMu.Lock()
+	if m.overflow {
+		m.listenersMu.Unlock()
+		return NewError("RESOURCE_LIMIT", "Update state replay exceeded its bounded buffer.")
+	}
+	listener := &updateListener{ctx: ctx, sink: sink, replaying: true, pending: append([]WatchStateEvent(nil), m.pending...), failed: make(chan error, 1)}
+	m.listeners = append(m.listeners[:len(m.listeners):len(m.listeners)], listener)
+	m.listenersMu.Unlock()
+	defer m.remove(listener)
+	if onReady != nil {
+		if err := onReady(); err != nil {
+			return err
+		}
+	}
+	if err := listener.replay(); err != nil {
+		return err
+	}
+	m.listenersMu.Lock()
+	if !listener.active() {
+		m.listenersMu.Unlock()
+		return listener.terminalError()
+	}
+	listener.accepted = true
+	m.readyListeners++
+	m.pending = nil
+	m.overflow = false
+	m.listenersMu.Unlock()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-listener.failed:
+		return err
+	}
+}
+
+func (m *updateManager[T]) start(ctx context.Context, target ReadTarget, registration *Registration[T], descriptor ResourceType) error {
+	base := context.WithoutCancel(ctx)
+	leaseCtx, client, release, err := m.controller.lease(base, target.Route)
+	if err != nil {
+		return err
+	}
+	watchCtx, cancel := context.WithCancel(leaseCtx)
+	watch := &updateWatch{target: target, ctx: watchCtx, cancel: cancel, ready: make(chan struct{}), done: make(chan struct{}), running: true, state: WatchStateIdle, count: Count{Kind: "unknown"}}
+	var representation Representation
+	for _, candidate := range descriptor.Representations {
+		if candidate.ID == target.Representation {
+			representation = candidate
+			break
+		}
+	}
+	m.mu.Lock()
+	if m.stopping[target.Route.Connection] != 0 {
+		m.mu.Unlock()
+		cancel()
+		release()
+		return NewError("CANCELLED", "Connection updates are stopping.")
+	}
+	resources := m.watches[target.Route.Connection]
+	if resources == nil {
+		resources = make(map[string]*updateWatch)
+		m.watches[target.Route.Connection] = resources
+	}
+	if existing := resources[target.Type]; existing != nil {
+		previous := existing.target
+		if previous.Provider != target.Provider || previous.Authority != target.Authority || previous.Type != target.Type || previous.Representation != target.Representation || !scopeContains(previous.Scope, target.Scope) {
+			m.mu.Unlock()
+			cancel()
+			release()
+			return NewError("RESET_REQUIRED", "Update target changed; stop the existing resource watch first.")
+		}
+		if existing.running {
+			m.mu.Unlock()
+			cancel()
+			release()
+			return nil
+		}
+		select {
+		case <-existing.done:
+		default:
+			m.mu.Unlock()
+			cancel()
+			release()
+			return NewError("CANCELLED", "Previous resource watch is still stopping.")
+		}
+	}
+	if watchCtx.Err() != nil {
+		m.mu.Unlock()
+		cancel()
+		release()
+		return watchCtx.Err()
+	}
+	resources[target.Type] = watch
+	m.mu.Unlock()
+	sink := &updateSourceSink[T]{manager: m, watch: watch, descriptor: descriptor}
+	go m.run(watchCtx, client, release, watch, registration, representation, sink)
+	select {
+	case <-watch.ready:
+		return nil
+	case <-ctx.Done():
+		cancel()
+		<-watch.done
+		return ctx.Err()
+	}
+}
+
+func invokeUpdate[T any](ctx context.Context, client *T, target ReadTarget, registration *Registration[T], representation Representation, sink WatchEventSink) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = NewError("INTERNAL", "Provider update handler panicked.")
+		}
+	}()
+	return registration.Watch(ctx, client, target, representation, sink)
+}
+func (m *updateManager[T]) run(ctx context.Context, client *T, release func(), watch *updateWatch, registration *Registration[T], representation Representation, sink WatchEventSink) {
+	defer close(watch.done)
+	defer release()
+	defer watch.cancel()
+	close(watch.ready)
+	for attempt := 0; ; attempt++ {
+		if ctx.Err() != nil {
+			m.finish(watch, WatchStateStopped, nil)
+			return
+		}
+		err := invokeUpdate(ctx, client, watch.target, registration, representation, sink)
+		m.mu.Lock()
+		validationErr := watch.validationErr
+		m.mu.Unlock()
+		if validationErr != nil {
+			m.finish(watch, WatchStateFailed, validationErr)
+			return
+		}
+		if ctx.Err() != nil || err == nil {
+			m.finish(watch, WatchStateStopped, nil)
+			return
+		}
+		err = m.controller.classify(registration, err)
+		if attempt >= m.maxRetries {
+			m.finish(watch, WatchStateFailed, err)
+			return
+		}
+		m.publishState(watch, WatchStateEvent{State: WatchStateError, Count: Count{Kind: "unknown"}, Error: updateError(err), Message: "Native update failed; retrying with bounded backoff."})
+		backoff := m.baseBackoff * time.Duration(1<<attempt)
+		if backoff > 30*time.Second {
+			backoff = 30 * time.Second
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			m.finish(watch, WatchStateStopped, nil)
+			return
+		case <-timer.C:
+		}
+	}
+}
+func updateError(err error) *ResourceOperationError {
+	if err == nil {
+		return nil
+	}
+	var typed *ResourceOperationError
+	if errors.As(err, &typed) {
+		return typed
+	}
+	return &ResourceOperationError{Code: ErrorCode(err), Message: "Native update source failed.", Err: err}
+}
+func (m *updateManager[T]) finish(watch *updateWatch, state WatchState, err error) {
+	m.mu.Lock()
+	watch.running = false
+	m.mu.Unlock()
+	m.publishState(watch, WatchStateEvent{State: state, Count: Count{Kind: "unknown"}, Error: updateError(err)})
+}
+func (m *updateManager[T]) stopResource(connection, typ string) error {
+	m.mu.Lock()
+	watch := m.watches[connection][typ]
+	if watch != nil {
+		watch.cancel()
+	}
+	m.mu.Unlock()
+	if watch != nil {
+		<-watch.done
+		m.mu.Lock()
+		if m.watches[connection][typ] == watch {
+			delete(m.watches[connection], typ)
+			if len(m.watches[connection]) == 0 {
+				delete(m.watches, connection)
+			}
+		}
+		m.mu.Unlock()
+	}
+	return nil
+}
+func (m *updateManager[T]) stopRoute(connection string) error {
+	m.mu.Lock()
+	m.stopping[connection]++
+	resources := m.watches[connection]
+	watches := make([]*updateWatch, 0, len(resources))
+	for _, watch := range resources {
+		watch.cancel()
+		watches = append(watches, watch)
+	}
+	m.mu.Unlock()
+	for _, watch := range watches {
+		<-watch.done
+	}
+	m.mu.Lock()
+	for _, watch := range watches {
+		if m.watches[connection][watch.target.Type] == watch {
+			delete(m.watches[connection], watch.target.Type)
+		}
+	}
+	if len(m.watches[connection]) == 0 {
+		delete(m.watches, connection)
+	}
+	m.stopping[connection]--
+	if m.stopping[connection] == 0 {
+		delete(m.stopping, connection)
+	}
+	m.mu.Unlock()
+	return nil
+}
+func (m *updateManager[T]) stopAll() {
+	m.mu.Lock()
+	watches := make([]*updateWatch, 0)
+	for _, resources := range m.watches {
+		for _, watch := range resources {
+			watch.cancel()
+			watches = append(watches, watch)
+		}
+	}
+	m.mu.Unlock()
+	for _, watch := range watches {
+		<-watch.done
+	}
+}
+
+type updateSourceSink[T any] struct {
+	manager    *updateManager[T]
+	watch      *updateWatch
+	descriptor ResourceType
+}
+
+func (s *updateSourceSink[T]) reject(err error) {
+	s.manager.mu.Lock()
+	if s.watch.validationErr == nil {
+		s.watch.validationErr = err
+	}
+	s.watch.cancel()
+	s.manager.mu.Unlock()
+}
+func (s *updateSourceSink[T]) record(record Record) error {
+	target := s.watch.target
+	return checkRecord(record, s.descriptor, target.Provider, target.Authority, target.Representation, nil, target.Scope)
+}
+func (s *updateSourceSink[T]) OnAdd(payload WatchAddPayload) {
+	if s.watch.ctx.Err() != nil {
+		return
+	}
+	if err := s.record(payload.Record); err != nil {
+		s.reject(err)
+		return
+	}
+	payload.Route, payload.Guarantee = s.watch.target.Route, BestEffortGuarantee
+	for _, listener := range s.manager.snapshot() {
+		listener.call(func() { listener.sink.OnAdd(payload) })
+	}
+}
+func (s *updateSourceSink[T]) OnUpdate(payload WatchUpdatePayload) {
+	if s.watch.ctx.Err() != nil {
+		return
+	}
+	if err := s.record(payload.Record); err != nil {
+		s.reject(err)
+		return
+	}
+	payload.Route, payload.Guarantee = s.watch.target.Route, BestEffortGuarantee
+	for _, listener := range s.manager.snapshot() {
+		listener.call(func() { listener.sink.OnUpdate(payload) })
+	}
+}
+func (s *updateSourceSink[T]) OnDelete(payload WatchDeletePayload) {
+	if s.watch.ctx.Err() != nil {
+		return
+	}
+	if err := validateReference(payload.Reference); err != nil {
+		s.reject(err)
+		return
+	}
+	a, target := payload.Reference.Address, s.watch.target
+	if a.Provider != target.Provider || a.Authority != target.Authority || a.Type != target.Type {
+		s.reject(NewError("INTERNAL", "Update deletion changed target identity."))
+		return
+	}
+	if err := ValidateAddress(a, s.descriptor.IdentityDimensions); err != nil {
+		s.reject(err)
+		return
+	}
+	scope, err := exactScope(a, s.descriptor.QueryDimensions)
+	if err != nil || !scopeContains(target.Scope, scope) {
+		s.reject(NewError("INTERNAL", "Update deletion escaped target scope."))
+		return
+	}
+	if payload.LastKnown != nil {
+		if err := checkRecord(*payload.LastKnown, s.descriptor, target.Provider, target.Authority, target.Representation, &payload.Reference, target.Scope); err != nil {
+			s.reject(err)
+			return
+		}
+	}
+	payload.Route, payload.Guarantee = target.Route, BestEffortGuarantee
+	for _, listener := range s.manager.snapshot() {
+		listener.call(func() { listener.sink.OnDelete(payload) })
+	}
+}
+func (s *updateSourceSink[T]) OnStateChange(event WatchStateEvent) {
+	if s.watch.ctx.Err() != nil {
+		return
+	}
+	if event.State < WatchStateIdle || event.State > WatchStateSkipped {
+		s.reject(NewError("INTERNAL", "Native update emitted an unknown state."))
+		return
+	}
+	if event.Count.Kind == "" {
+		event.Count = Count{Kind: "unknown"}
+	}
+	if err := validateCount(event.Count); err != nil {
+		s.reject(err)
+		return
+	}
+	s.manager.publishState(s.watch, event)
+}
+
+func (c *Controller[T]) StartConnectionWatch(ctx context.Context, targets []ReadTarget) (err error) {
+	var registration *Registration[T]
+	defer c.guard(&registration, &err)
+	// Admit every target before starting any native source.
+	type admitted struct {
+		target       ReadTarget
+		registration *Registration[T]
+		descriptor   ResourceType
+	}
+	operations := make([]admitted, 0, len(targets))
+	for _, target := range targets {
+		if err := ValidateEnumerateRequest(EnumerateRequest{Target: target}); err != nil {
+			return err
+		}
+		r, descriptor, err := c.resolve(ctx, target.Route, target.Provider, target.Type, target.Representation, target.Scope, nil, OperationUpdate)
+		if err != nil {
+			return err
+		}
+		operations = append(operations, admitted{target, r, descriptor})
+	}
+	for _, operation := range operations {
+		if operation.registration.SyncPolicy == SyncOnConnect {
+			if err := c.updates.start(ctx, operation.target, operation.registration, operation.descriptor); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+func (c *Controller[T]) EnsureResourceWatch(ctx context.Context, target ReadTarget) (err error) {
+	var registration *Registration[T]
+	defer c.guard(&registration, &err)
+	if err := ValidateEnumerateRequest(EnumerateRequest{Target: target}); err != nil {
+		return err
+	}
+	registration, descriptor, err := c.resolve(ctx, target.Route, target.Provider, target.Type, target.Representation, target.Scope, nil, OperationUpdate)
+	if err != nil {
+		return err
+	}
+	if registration.SyncPolicy == SyncNever {
+		return NewError("UNSUPPORTED", "Resource updates are disabled by sync policy.")
+	}
+	return c.updates.start(ctx, target, registration, descriptor)
+}
+func (c *Controller[T]) StopConnectionWatch(ctx context.Context, route AccessRoute) error {
+	if route.Connection == "" {
+		return NewError("INVALID_REQUEST", "An explicit connection route is required.")
+	}
+	if err := ctx.Err(); err != nil {
+		return c.classify(nil, err)
+	}
+	return c.updates.stopRoute(route.Connection)
+}
+func (c *Controller[T]) StopResourceWatch(ctx context.Context, route AccessRoute, typ string) error {
+	if route.Connection == "" || typ == "" {
+		return NewError("INVALID_REQUEST", "An explicit route and resource type are required.")
+	}
+	if err := ctx.Err(); err != nil {
+		return c.classify(nil, err)
+	}
+	return c.updates.stopResource(route.Connection, typ)
+}
+func (c *Controller[T]) RestartResourceWatch(ctx context.Context, target ReadTarget) error {
+	if _, err := AdmitBestEffortTarget(ctx, c, target); err != nil {
+		return err
+	}
+	if err := c.StopResourceWatch(ctx, target.Route, target.Type); err != nil {
+		return err
+	}
+	return c.EnsureResourceWatch(ctx, target)
+}
+func (c *Controller[T]) HasWatch(ctx context.Context, route AccessRoute) bool {
+	if ctx.Err() != nil || route.Connection == "" {
+		return false
+	}
+	c.updates.mu.Lock()
+	defer c.updates.mu.Unlock()
+	return len(c.updates.watches[route.Connection]) != 0
+}
+func (c *Controller[T]) IsResourceWatchRunning(ctx context.Context, route AccessRoute, typ string) (bool, error) {
+	if route.Connection == "" || typ == "" {
+		return false, NewError("INVALID_REQUEST", "An explicit route and resource type are required.")
+	}
+	if err := ctx.Err(); err != nil {
+		return false, c.classify(nil, err)
+	}
+	c.updates.mu.Lock()
+	defer c.updates.mu.Unlock()
+	watch := c.updates.watches[route.Connection][typ]
+	return watch != nil && watch.running, nil
+}
+func (c *Controller[T]) GetWatchState(ctx context.Context, route AccessRoute) (*WatchConnectionSummary, error) {
+	if route.Connection == "" {
+		return nil, NewError("INVALID_REQUEST", "An explicit connection route is required.")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, c.classify(nil, err)
+	}
+	c.updates.mu.Lock()
+	defer c.updates.mu.Unlock()
+	resources := c.updates.watches[route.Connection]
+	if resources == nil {
+		return nil, NewError("NOT_FOUND", "Connection has no registered updates.")
+	}
+	summary := &WatchConnectionSummary{Route: route, Resources: make(map[string]WatchState, len(resources)), ResourceCounts: make(map[string]Count, len(resources)), Guarantee: BestEffortGuarantee}
+	for typ, watch := range resources {
+		summary.Resources[typ] = watch.state
+		summary.ResourceCounts[typ] = watch.count
+	}
+	return summary, nil
+}
+func (c *Controller[T]) ListenForEvents(ctx context.Context, sink WatchEventSink, onReady func() error) (err error) {
+	var registration *Registration[T]
+	defer c.guard(&registration, &err)
+	features, err := c.Features(ctx)
+	if err != nil {
+		return err
+	}
+	if !features.Has(FeatureBestEffortUpdates) {
+		return NewError("UNSUPPORTED", "Best-effort updates are not installed.")
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(c.ctx, cancel)
+	defer func() { stop(); cancel() }()
+	return c.updates.listen(ctx, sink, onReady)
+}
+
+var _ BestEffortUpdateProvider = (*Controller[struct{}])(nil)
+
+func (c *Controller[T]) ensureOnFirstQuery(ctx context.Context, target ReadTarget) error {
+	registrations, err := c.registrations(ctx, target.Route, target.Type)
+	if err != nil {
+		return err
+	}
+	for _, registration := range registrations {
+		if registration.Watch == nil || registration.SyncPolicy != SyncOnFirstQuery || !scopeContains(registration.Scope, target.Scope) {
+			continue
+		}
+		err := c.EnsureResourceWatch(ctx, target)
+		// A finite query does not imply that the catalog declared live support.
+		if ErrorCode(err) == "UNSUPPORTED" {
+			return nil
+		}
+		return err
+	}
+	return nil
+}

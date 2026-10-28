@@ -1,113 +1,82 @@
-# P44 provider-native conformance corpus
+# Provider-native conformance corpus
 
-Status: implemented and locally verified after the coordinator's settled-slice barrier; independent acceptance review remains required. Scope is [plugin-sdk#11](https://github.com/omniviewdev/plugin-sdk/issues/11), selected SDK source `1e92fb518b117814acb504aaae1772ff39abcdef` (v0.6.0). This is a verification deliverable, not a released provider or approval of any replacement API.
+## P45 canonical boundary
 
-## Acceptance shape and implementation
+`internal/resourceconformance/{corpus,native,oracles}.go` retains the P44 credential-free native records and independent finite semantic oracles unchanged. The `current_*_test.go` probes now target the new-major handwritten `pkg/resource/v2` domain through an actual disposable go-plugin child and `pkg/resource/v2/plugin.GRPCPlugin{Impl: provider}`. Generated protobuf remains transport-only. The fixture implements `Provider` directly, without the legacy resource controller, mandatory CRUD methods, GVK metadata or v1 imports.
 
-The accepted plan is deliberately confined to one internal package:
+The integration barrier exposed two fixture mismatches: undeclared route-catalog types correctly return `UNSUPPORTED`, and advertised update support requires an explicit `bestEffort` capability guarantee. Both expectations are corrected; integration owns the next settled-slice execution and retained acceptance evidence. Earlier P44 verification receipts apply only to the old boundary and do not certify this port.
 
-1. Define deterministic native records, finite page membership, independent identity cases and native host/VM/disk links.
-2. Supply transport-independent snapshot, page, update, link, coverage and freshness oracles; include negative controls for payload corruption, scope escape, duplicate/missing membership and guarantee upgrades.
-3. Exercise the current SDK runtime in a disposable go-plugin process through its real resource protobuf client/server and `BuildResourceController`, without `TestProvider` forwarding/default successes.
-4. Record supported behavior separately from current representability limitations and hand the transport port to P45.
+## Native profiles
 
-`internal/resourceconformance/{corpus,native,oracles}.go` imports only the Go standard library. Its exported names are fixture entrypoints inside the repository's `internal` boundary, not new public SDK contracts. `NativeCorpus()` returns fresh data. `SameAddress`, `CheckSnapshot`, `CheckPages`, `CheckChanges`, `CheckLinks` and `Validate` are finite test oracles, not a second query/identity/graph engine. Test-only `current_*_test.go` owns every legacy transport dependency and serving entrypoint. There is no `main` executable, production registration, cloud SDK dependency, frontend fixture row or product fallback.
-
-| Native profile | Cases |
+| Profile | Preserved evidence |
 | --- | --- |
-| Cloud | Flat ARN/OCID-like opaque IDs, delimiters/slashes/percent/Unicode, account/region tuples and collisions, tag arrays with same-element-correlation counterexample, null versus missing, quoted map keys/injection-shaped strings, exact large integers and nanosecond timestamp text; two native cursor pages; bundled/absent schema and explicit partial/eventual listing |
-| Container | Engine-local colliding IDs, label maps, optional incarnation and opaque revision, bundled event profile plus absent-schema snapshot profile; one native `running` to `paused` update with revision `event:z9` to `event:a1` (never lexical recency) |
-| Hypervisor | Native numeric VM/disk IDs (`101` and `7`) collide across nodes; host/VM/disk body links resolve within exact node; bundled/absent VM schema, paged and preselected single-node reads, snapshot-only without fake watch/poller |
+| Cloud | Opaque ARN/OCID-like IDs; slash, percent, delimiter and Unicode bytes; account/region scope entries and collisions; tag arrays; same-element-correlation counterexample; null versus missing; quoted map keys and injection-shaped strings; exact large signed/unsigned integers; native timestamp; cursor pages; bundled/absent schema; explicit partial/eventual listing |
+| Container | Engine-local colliding IDs; label maps; optional incarnation and opaque source revision; bundled/absent schema; actual optional best-effort update transport probe, separately scoped below |
+| Hypervisor | VM/disk IDs `101` and `7` collide across node scope; host/VM/disk links checked from transported bodies; bundled/absent VM schema; paged and preselected single-node reads; snapshot-only without invented watches |
 
-Every scenario explicitly records operation support, effective finite native selection, coverage and freshness. All mutation/server-filter modes are unsupported. Exhausted means only the selected accessible listing was exhausted, not unrestricted inventory or point-in-time consistency. Partial last-page completion remains partial. Snapshot-only remains snapshot-only. Incarnation/revision absence stays absent; neither is filled with a UID.
+All 13 native scenarios use explicit `AccessRoute` and canonical `ScopeEntry` identity tuples. Get sends the full reference, so colliding local IDs remain unchanged and resolvable. Connection IDs stay access provenance, not address components. Optional incarnation and source revision remain absent when unknown. Revisions remain opaque equality tokens, never lexical clocks.
 
-The server-filter/create/update/delete boundary checks consume each scenario's declared support expectation, rather than pinning all declarations to a hard-coded default. A disposable negative control changed the parent oracle to claim supported server filtering while the real child still rejected it; all affected scenarios failed at the operation-result assertion. The mutation was removed before verification. Unsupported machine-code loss remains separately logged, not treated as correct semantics.
+The caller supplies the host-issued canonical authority in the admitted target/reference. The fixture validates native provider/type/scope and preserves that authority in Get, Enumerate, NativeQuery and best-effort updates; corpus authority strings are oracle labels, not provider authority issuance. A separate child gRPC probe uses a different host-issued authority to prevent accidental dependence on native corpus labels. Catalog authority hints remain absent.
 
-## Actual current boundary and its limits
+Native document conversion uses `json.Decoder.UseNumber` and an explicit fixture policy: integer tokens become exact signed or unsigned values; `createdAt` is a declared native timestamp. No integer passes through `float64`, and no rounded JSON number is claimed to regain precision. Resource bodies cross gRPC as recursive tagged map values, not raw JSON bytes. The independent body and link oracles consume reconstructed native JSON only after transport, retaining exact numeric tokens.
 
-The subprocess runs `sdk.NewPlugin(...).Serve()`, dispensing `resourceplugin.GRPCPlugin` backed by the real resource controller, connection manager and watch manager. The finite fixture source implements mandatory current `Resourcer` methods, returning explicit errors for unsupported operations; it is not a released product resourcer. Exact native type keys are registered as current pattern keys (`compute/instance`, `container`, `vm`, `host`, `disk`). No invented group/version/kind tuple is introduced. Consequently metadata is empty and no catalog types are advertised: that is a current SDK limitation, not successful neutral catalog support.
+Each page asserts unknown count with no count value, source coverage, best-effort consistency and opaque cursor preservation. Catalog discovery separately reports complete coverage; absent native authority hints remain unknown, never synthesized from route or endpoint. A partial final page stays partial. Exhaustion means the selected accessible listing ended, not unrestricted inventory or an atomic snapshot. Schema binding transports available document/revision provenance or explicit absence with validation `none`; schema transport does not establish P07 schema admission. Snapshot-only freshness remains a native corpus expectation: finite acquisition makes no live freshness or gap-free guarantee.
 
-Selected source routes choose finite scenarios. Their connection IDs are access provenance, not added to identity. Native account/region/engine/node scope is never encoded as `Namespace`. Unambiguous current Get works; colliding local IDs without an exact scope slot are explicitly rejected rather than merged, rewritten into compound IDs or namespace-encoded. Single-node source routes permit each VM `101` to be read honestly under their preselected native scope. They do not prove the current Get request can encode a general scope tuple.
+## Independent optional operations
 
-Boundary probes cover native JSON byte preservation (including large numeric lexemes), cursor traversal, bundled/absent schema bytes, native IDs, source scope collisions, invalid cursor/namespace/unknown type and not-found errors, no-server-filter and read-only errors, optional container streaming, cancellation observed inside the plugin, connection destruction, stopped-source rejection and child process exit. Hypervisor link checking consumes bodies actually transported by these reads. Schema transport is not schema admission, normalization or CEL validation.
+Catalog is the sole required provider method. Test implementations genuinely omit optional methods:
 
-Current-wire limitation observations are logged with `LIMIT` and are **not** asserted as correct target semantics:
+- Catalog-only has no Getter, Enumerator or NativeQuerier.
+- Get-only has Getter but no Enumerator or NativeQuerier.
+- Enumerate-only has Enumerator but no Getter or NativeQuerier.
+- Native-query-only has NativeQuerier but no Getter or Enumerator.
+- Read-only has Getter and Enumerator but no mutation, action or native query implementation.
 
-- `ListResult.TotalCount = -1` is clamped to zero by the current server. Zero must not be treated as inventory size or an exact known count.
-- Current List has no coverage/freshness/consistency envelope. The source-side finite oracles remain independently available, not falsely described as transported guarantees.
-- Current mandatory Find/CRUD interface produces true-by-default capability claims despite read-only/no-filter operation errors. Context-qualified absent schema/update capability discovery is also not established by structural type assertions.
-- `UNSUPPORTED` has no current error-code mapping; its message survives but its machine code is lost. This is neither a uniform-error acceptance receipt nor an approved future error spelling.
-- Exact native pattern keys have no neutral catalog/metadata representation. No synthetic GVK is used to conceal that gap.
-- Current Get and event envelopes lack a native exact identity-scope tuple. Event body engine/incarnation/revision data survives; event metadata UID/namespace stays empty. A native body is not an admitted canonical resource reference.
-- The optional event test uses a test-side file barrier, released only after the real listener-registration callback and native ready state. It proves actual event delivery, not an atomic snapshot/event cutover, replay, continuity, source sequence, gap-free ordering or reliable recreation removal.
+The tests check these native method sets and then exercise each profile over real child gRPC. Route-qualified catalog capabilities are support authority; a transport client's broad method set is not capability discovery. Unsupported remote operations must return the existing typed error class rather than successful empty results. No fake mandatory Find/Create/Update/Delete implementations remain.
 
-No host resource API, query evaluator, UI, permission admission, production infrastructure or replacement protocol is certified by this packet. The clean environment is source/profile isolation, not network or hostile-plugin sandboxing.
+A structurally valid undeclared type, representation or operation is `UNSUPPORTED` at its qualified route catalog. Malformed identity/scope/cursor requests remain `INVALID_REQUEST`; provider mismatch is also invalid request. The fixture follows this catalog admission distinction rather than requiring dispatch to a native implementation for unsupported targets.
 
-## Event-stream registration readiness
+The native-query-only fixture accepts `fixture.compute.v1` with tagged int64 `9007199254740993`, computes addition by one in the child and returns a map containing int64 `9007199254740994`, pre-epoch timestamp `1969-12-31T23:59:59.999999999Z`, and a heterogeneous list containing uint64 maximum, null and true. Assertions consume actual gRPC results and tagged JSON serialization. This is computed result codec evidence, not input echo or CEL evaluation. The SDK has no CEL dependency. Host-owned selected native CEL evaluation and Node result proof remain separate acceptance work; the fixture recipe is intentionally simple enough to reproduce there without publishing a fixture API.
 
-The v1 `WatchProvider.ListenForEvents(ctx, sink, onReady func() error)` contract
-acknowledges an installed listener before callers may start initial connection
-sources. The callback is synchronous, optional, and invoked once on successful
-registration; its error removes that listener and fails the call. Cancellation
-or provider failure before registration must not acknowledge readiness. Data
-events emitted before registration are not buffered or replayed.
+## Cancellation, isolation and teardown
 
-The built-in controller orders buffered STATE progress before live STATE events,
-including events produced reentrantly during readiness or replay. Until a listener
-completes replay, rejected/canceled attempts retain history for the next attempt.
-Each queued state buffer is capped at 1000 events (with at most one additional
-1000-event replay batch in flight); resource-data events are never queued.
-Overflow returns a registration/stream error, possibly after the readiness header:
-readiness acknowledges installation, not successful completion of state replay.
-Already-overflowed history fails new registration before readiness. Unless an
-in-flight registration can still complete replay, recovery requires a fresh
-controller; retry never silently claims that missing history was replayed.
+A test-only file receipt signals that a child request reached its cancellation wait. The parent cancels that actual RPC, checks cancellation, waits for the child cancellation receipt and makes a successful independent request. Connection stop writes a close receipt and rejects subsequent acquisition. Explicit process teardown asserts child exit; test cleanup also kills children after failures.
 
-Fan-out uses immutable registration snapshots, never manager locks around sink
-callbacks. Retirement/cancellation excludes future selections and pending replay,
-but does **not** join callbacks already selected. A sink must retain its storage and
-coordinate in-flight completion before closing/reusing it. Arbitrary callbacks
-cannot be preempted and must return or observe their own cancellation. The gRPC sink separately
-fences late sends on handler retirement/cancellation; an already-running Send owns
-only its original RPC stream, never a replacement stream. This is not a new
-snapshot/event cutover or gap-free subscription guarantee.
+The child receives temporary HOME, USERPROFILE, XDG, state and short Unix socket roots. `SkipHostEnv: true` prevents go-plugin from appending ambient credentials, kubeconfig or workspace selection. A subprocess isolation probe sets harmless ambient sentinels and rejects their variable names in the child before serving. The optional existing `P44_CLEAN_ENV_LAUNCHER` hook remains a test-launch mechanism, not a legacy resource API.
 
-The matching gRPC server sends `omniview-watch-ready: 1` only after installation.
-Its event-send mutex fences concurrent live events so they cannot implicitly
-publish headers first; acknowledgement performs no network I/O under the watch
-manager lock. The client validates the acknowledgement before notifying its
-caller, preserves early RPC failures, and cancels its owned stream on callback
-failure. This requires a coordinated SDK/server/client/host cohort: there is no
-old-peer fallback, new protobuf, snapshot/event-cutover guarantee or provider
-capability upgrade. The host keeps pending providers unavailable, waits for
-actual readiness before connection discovery/autoconnect, and fails/cleans up
-startup cancellation or its unchanged readiness deadline instead of continuing.
+This is credential/profile isolation, not hostile-plugin sandboxing or network isolation. Temporary plugin metadata and waiting/cancelled/closed receipts are test artifacts, not production state.
 
-## Reproduction and disposable state
+## Best-effort updates and P05 scope
 
-After the coordinator's settled-slice barrier, from the SDK worktree:
+The retained native container update changes `running` to `paused` and revision `event:z9` to `event:a1`. The optional `BestEffortUpdateProvider` fixture traverses the actual new-major child gRPC update transport. The probe waits for listener readiness before starting the native source, waits for its advisory Synced state, then releases the finite native change through a test-side file barrier. It checks transported canonical references, exact engine scope, stable incarnation, tagged bodies, opaque source revisions and explicit `bestEffort` guarantees against `CheckChanges`. It stops the native watch and cancels the listener before source teardown.
+
+These probes passed in the normal and race SDK suites recorded below. No v1 import or fixture-specific event RPC remains. The approved advisory contract preserves useful live workflow without claiming atomic snapshot/event cutover, replay continuity, gap detection, gap-free ordering or reliable recreation removal. Synced means native readiness, not a point-in-time snapshot. P05 owns the separate stronger continuity contract; this receipt does not certify that contract.
+
+## SDK verification receipt — 2026-10-28
+
+The selected SDK worktree passed:
 
 ```sh
-GOWORK=off go test ./internal/resourceconformance -count=1 -v
-GOWORK=off go test -race ./internal/resourceconformance -count=1
+GOWORK=off go test ./... -count=1
+GOWORK=off go test -race ./... -count=1
+GOWORK=off go test ./pkg/resource/v2/plugin -run '^TestActualGRPCMultiMiBResourceBodies$' -count=1 -v
 ```
 
-For the isolated frontier run, launch each command through the coordinator-provided `baseline-env` and set `P44_CLEAN_ENV_LAUNCHER` to that launcher using `env`. The subprocess also re-enters that launcher, then supplies an explicit minimal environment, magic cookie and negotiated current protocol version. `SkipHostEnv: true` prevents go-plugin from appending the parent's environment in both launcher and ordinary reproduction paths. The child receives temporary HOME, USERPROFILE, XDG and `OMNIVIEW_STATE_DIR` roots, not cloud credentials, kubeconfig, ambient workspace selection or telemetry settings.
+Both full suites reported 20 packages passing and 17 packages without tests.
+They include the real child-process profiles, optional finite-operation variants,
+canonical authority binding, best-effort update readiness, cancellation and
+teardown, strict JSON/protobuf negatives, typed C02 errors, and actual gRPC
+connection overlay/native snapshot workflows. Independent review identified
+listener retirement, replacement-watch admission, connection response binding,
+and unknown remote error-code defects; fixes and regression tests are included.
 
-Each test run creates unique `t.TempDir` roots for plugin metadata/state, home and lifecycle receipts. Plugin registration YAML, event-release barrier and waiting/cancelled/closed receipts are verification artifacts inside those roots. `StopConnection`, event cancellation and `client.Kill()` retire runtime resources; testing cleanup removes the directories. No checked-in binary, generated binding, `.devinfo`, standalone fixture provider, persistent receipt output, global link or profile seed is needed. Preserve the command output externally when attaching acceptance evidence.
+The dedicated actual-gRPC body probe admitted a 2,097,152-byte Kubernetes-shaped
+payload in a 2,097,530-byte response (2.810917 ms), and an 8,388,608-byte payload in
+an 8,388,986-byte response (8.142708 ms). These single local observations are not
+latency guarantees or production policy approval. Over-body, aggregate-frame,
+node, depth and field limits have separate negative probes.
 
-Independent review found that an explicit `cmd.Env` alone did not prevent the pinned go-plugin from appending `os.Environ()`. A real-subprocess regression disables the optional clean-child launcher, supplies harmless ambient credential/kubeconfig/workspace sentinels, rejects those variable names in the child before SDK initialization, and performs actual connection discovery. It failed before `SkipHostEnv` was enabled and passed afterward; the full conformance race run also passed. No credential values are asserted or printed. Earlier clean-launcher receipts alone did not establish the ordinary path's isolation.
-
-## Explicit P45 port ownership
-
-P44 can be accepted after P00 without waiting for P01/P45. P45 owns replacing/deleting `current_*_test.go` with probes for its **actually reviewed new-major boundary**, and the real host adapter smoke. Do not guess a replacement RPC, source-open signature, DTO package, capability flag or canonical identity encoding here.
-
-Retain the native records and finite semantic expectations independently. P45 must carry all three profiles through real new-wire/host reads and demonstrate exact scope/local-ID behavior, optional incarnation/revision, honest unavailable/absent schemas, unknown totals, explicit partial/eventual/snapshot freshness, independently unsupported mutation/filter/update modes and cancellation/cleanup. It must replace limitation observations with real supported behavior or explicit unsupported results, not assert today's lossy encodings as compatibility requirements. P05 then owns the separately reviewed snapshot-plus-update acquisition/cutover contract; P07 schema admission/catalog; P03 canonical identity. No legacy adapter in this verification package is a production compatibility shim or an approval to retain one at release.
-
-## Narrow progress receipt
-
-Coordinator authorized scoped formatting and sequential verification. All 13 real-process scenarios passed, including actual container update delivery, cancellation receipts, source destruction, stopped-source rejection, transported hypervisor link checks and plugin exit. The full conformance suite passed with `-race`; existing resource/controller/transport/plugintest suites and the complete SDK `go test ./... -count=1` passed under the isolated launcher. No race detector report occurred for this workload; no claim covers every schedule.
-
-Two initial harness failures were diagnosed and corrected before those passing receipts: nested testing TMPDIR exceeded Darwin's Unix-socket path limit (now a short unique cleanup-owned socket directory); remote `StartConnectionWatch` has no current RPC (the real `StartConnection` already initializes the manager, so the probe uses supported `EnsureResourceWatch`). Neither correction changed SDK/product code, masked a native semantic failure or invented a replacement API.
-
-The real run observed unknown-total transport `-1` to `0`, unsupported code `UNKNOWN_0`, and true legacy Find/CRUD flags; these remain documented losses, not accepted semantics. Cancellation/shutdown can log current SDK gRPC `Canceled` diagnostics even though the explicit lifecycle checks pass. Packaging/reference inspection found the fixture package/plugin ID only in this internal test package and this document. No issue closure, public publication, commit, push, PR or merge is claimed here. The integration coordinator owns independent review, retained command receipts, issue acceptance/Project readiness and central host ledger updates.
+The host read adapter, selected native CEL/Node computed-result proof, permission
+admission, actual app/utility smoke, schema normalization and cross-repository
+independent acceptance require their own receipts. No release or issue closure
+is claimed here.

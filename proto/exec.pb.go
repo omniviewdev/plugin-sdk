@@ -1251,7 +1251,7 @@ var File_proto_exec_proto protoreflect.FileDescriptor
 
 const file_proto_exec_proto_rawDesc = "" +
 	"\n" +
-	"\x10proto/exec.proto\x12\x16com.omniview.pluginsdk\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x14proto/resource.proto\"\x8a\x03\n" +
+	"\x10proto/exec.proto\x12\x16com.omniview.pluginsdk\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1aproto/utility_target.proto\"\x8a\x03\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\battached\x18\x02 \x01(\bR\battached\x12\x18\n" +
@@ -1475,7 +1475,7 @@ func file_proto_exec_proto_init() {
 	if File_proto_exec_proto != nil {
 		return
 	}
-	file_proto_resource_proto_init()
+	file_proto_utility_target_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

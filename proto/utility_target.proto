@@ -1,0 +1,12 @@
+syntax = "proto3";
+package com.omniview.pluginsdk;
+option go_package = "./proto";
+
+// ResourceActionTargetBuilder is shared by active exec and log providers. It is
+// a utility presentation selector, not canonical resource identity.
+message ResourceActionTargetBuilder {
+  string label = 1;
+  string label_selector = 2;
+  repeated string paths = 3;
+  map<string, string> selectors = 4;
+}

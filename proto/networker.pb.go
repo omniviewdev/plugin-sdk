@@ -829,7 +829,7 @@ var File_proto_networker_proto protoreflect.FileDescriptor
 
 const file_proto_networker_proto_rawDesc = "" +
 	"\n" +
-	"\x15proto/networker.proto\x12\x16com.omniview.pluginsdk\x1a\x1egoogle/protobuf/duration.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14proto/resource.proto\"\xf0\x06\n" +
+	"\x15proto/networker.proto\x12\x16com.omniview.pluginsdk\x1a\x1egoogle/protobuf/duration.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf0\x06\n" +
 	"\x12PortForwardSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -995,7 +995,6 @@ func file_proto_networker_proto_init() {
 	if File_proto_networker_proto != nil {
 		return
 	}
-	file_proto_resource_proto_init()
 	file_proto_networker_proto_msgTypes[0].OneofWrappers = []any{
 		(*PortForwardSession_ResourceConnection)(nil),
 		(*PortForwardSession_StaticConnection)(nil),

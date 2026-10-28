@@ -1384,7 +1384,7 @@ var File_proto_logs_proto protoreflect.FileDescriptor
 
 const file_proto_logs_proto_rawDesc = "" +
 	"\n" +
-	"\x10proto/logs.proto\x12\x16com.omniview.pluginsdk\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14proto/resource.proto\"\x90\x03\n" +
+	"\x10proto/logs.proto\x12\x16com.omniview.pluginsdk\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1aproto/utility_target.proto\"\x90\x03\n" +
 	"\aLogLine\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
@@ -1620,7 +1620,7 @@ func file_proto_logs_proto_init() {
 	if File_proto_logs_proto != nil {
 		return
 	}
-	file_proto_resource_proto_init()
+	file_proto_utility_target_proto_init()
 	file_proto_logs_proto_msgTypes[15].OneofWrappers = []any{
 		(*LogStreamOutput_Line)(nil),
 		(*LogStreamOutput_Event)(nil),

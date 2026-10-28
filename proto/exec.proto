@@ -5,7 +5,7 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/struct.proto";
 
-import "proto/resource.proto";
+import "proto/utility_target.proto";
 
 option go_package = "./proto";
 
