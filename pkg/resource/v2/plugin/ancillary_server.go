@@ -255,30 +255,43 @@ func (s *ancillaryServer) call(ctx context.Context, r *resourcepb.AncillaryReque
 			result.Descriptors = append(result.Descriptors, p)
 		}
 		out.Result = &resourcepb.AncillaryResponse_Relationships{Relationships: result}
-	case "resolveRelationships", "health", "events":
+	case "resolveRelationships":
+		if r.Get != nil {
+			return nil, invalid("legacy get field is not valid for relationship resolution")
+		}
+		in, err := resourcev2.FromProtoRelationshipResolutionRequest(r.RelationshipResolution)
+		if err != nil {
+			return nil, err
+		}
+		if err := resourcev2.ValidateRelationshipResolutionRequest(in); err != nil {
+			return nil, err
+		}
+		p, ok := impl.(resourcev2.RelationshipProvider)
+		if !ok {
+			return nil, unsupported("relationships unsupported")
+		}
+		v, err := p.ResolveRelationships(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		if err := resourcev2.ValidateRelationshipResolutionResult(in, v); err != nil {
+			return nil, err
+		}
+		result := &resourcepb.ResolvedRelationships{}
+		for _, item := range v {
+			p, err := resourcev2.ToProtoResolvedRelationship(item)
+			if err != nil {
+				return nil, err
+			}
+			result.Relationships = append(result.Relationships, p)
+		}
+		out.Result = &resourcepb.AncillaryResponse_Resolved{Resolved: result}
+	case "health", "events":
 		in, err := resourcev2.FromProtoGetRequest(r.Get)
 		if err != nil {
 			return nil, err
 		}
 		switch r.Operation {
-		case "resolveRelationships":
-			p, ok := impl.(resourcev2.RelationshipProvider)
-			if !ok {
-				return nil, unsupported("relationships unsupported")
-			}
-			v, err := p.ResolveRelationships(ctx, in)
-			if err != nil {
-				return nil, err
-			}
-			result := &resourcepb.ResolvedRelationships{}
-			for _, item := range v {
-				p, err := resourcev2.ToProtoResolvedRelationship(item)
-				if err != nil {
-					return nil, err
-				}
-				result.Relationships = append(result.Relationships, p)
-			}
-			out.Result = &resourcepb.AncillaryResponse_Resolved{Resolved: result}
 		case "health":
 			p, ok := impl.(resourcev2.HealthProvider)
 			if !ok {

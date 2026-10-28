@@ -206,6 +206,9 @@ func toCapability(v Capability) *resourcepb.Capability {
 }
 func toResourceType(v ResourceType) *resourcepb.ResourceType {
 	p := &resourcepb.ResourceType{Type: v.Type, DisplayName: v.DisplayName, DefaultRepresentation: v.DefaultRepresentation, IdentityDimensions: make([]*resourcepb.Dimension, len(v.IdentityDimensions)), QueryDimensions: make([]*resourcepb.Dimension, len(v.QueryDimensions)), Representations: make([]*resourcepb.Representation, len(v.Representations)), Capabilities: make([]*resourcepb.Capability, len(v.Capabilities))}
+	if v.NativeAuthorityHint != nil {
+		p.NativeAuthorityHint = toNativeAuthorityHint(*v.NativeAuthorityHint)
+	}
 	for i, x := range v.IdentityDimensions {
 		p.IdentityDimensions[i] = toDimension(x)
 	}
@@ -225,9 +228,6 @@ func toNativeAuthorityHint(v NativeAuthorityHint) *resourcepb.NativeAuthorityHin
 }
 func toCatalog(v Catalog) *resourcepb.Catalog {
 	p := &resourcepb.Catalog{Provider: v.Provider, Revision: v.Revision, Types: make([]*resourcepb.ResourceType, len(v.Types)), Coverage: toCoverage(v.Coverage)}
-	if v.NativeAuthorityHint != nil {
-		p.NativeAuthorityHint = toNativeAuthorityHint(*v.NativeAuthorityHint)
-	}
 	for i, x := range v.Types {
 		p.Types[i] = toResourceType(x)
 	}
@@ -516,6 +516,10 @@ func (d *adapterDecoder) resourceType(p *resourcepb.ResourceType) ResourceType {
 		return ResourceType{}
 	}
 	v := ResourceType{Type: p.Type, DisplayName: p.DisplayName, DefaultRepresentation: p.DefaultRepresentation, IdentityDimensions: make([]Dimension, len(p.IdentityDimensions)), QueryDimensions: make([]Dimension, len(p.QueryDimensions)), Representations: make([]Representation, len(p.Representations)), Capabilities: make([]Capability, len(p.Capabilities))}
+	if p.NativeAuthorityHint != nil {
+		hint := d.nativeAuthorityHint(p.NativeAuthorityHint)
+		v.NativeAuthorityHint = &hint
+	}
 	for i, p := range p.IdentityDimensions {
 		v.IdentityDimensions[i] = d.dimension(p)
 	}
@@ -543,10 +547,6 @@ func (d *adapterDecoder) catalog(p *resourcepb.Catalog) Catalog {
 		return Catalog{}
 	}
 	v := Catalog{Provider: p.Provider, Revision: p.Revision, Types: make([]ResourceType, len(p.Types)), Coverage: d.coverage(p.Coverage)}
-	if p.NativeAuthorityHint != nil {
-		hint := d.nativeAuthorityHint(p.NativeAuthorityHint)
-		v.NativeAuthorityHint = &hint
-	}
 	for i, p := range p.Types {
 		v.Types[i] = d.resourceType(p)
 	}

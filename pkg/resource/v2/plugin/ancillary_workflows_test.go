@@ -29,8 +29,8 @@ func testRelationship() resourcev2.RelationshipDescriptor {
 func (*ancillaryFixtureProvider) GetRelationships(context.Context, resourcev2.AccessRoute, string) ([]resourcev2.RelationshipDescriptor, error) {
 	return []resourcev2.RelationshipDescriptor{testRelationship()}, nil
 }
-func (*ancillaryFixtureProvider) ResolveRelationships(context.Context, resourcev2.GetRequest) ([]resourcev2.ResolvedRelationship, error) {
-	return []resourcev2.ResolvedRelationship{{Descriptor: testRelationship(), Targets: []resourcev2.RelationshipTarget{{Reference: testGet().Reference, Route: testGet().Route, DisplayName: "linked resource"}}}}, nil
+func (*ancillaryFixtureProvider) ResolveRelationships(context.Context, resourcev2.RelationshipResolutionRequest) ([]resourcev2.ResolvedRelationship, error) {
+	return relationshipFixtureResults(), nil
 }
 func (*ancillaryFixtureProvider) GetHealth(context.Context, resourcev2.GetRequest, resourcev2.Value) (*resourcev2.ResourceHealth, error) {
 	return nil, nil
@@ -71,7 +71,7 @@ func TestActualGRPCCanonicalAncillaryWorkflows(t *testing.T) {
 	if err != nil || len(descriptors) != 1 || descriptors[0].ScopeExtractors[0].Dimension != "namespace" {
 		t.Fatalf("relationships: %v %v", descriptors, err)
 	}
-	resolved, err := c.ResolveRelationships(ctx, testGet())
+	resolved, err := c.ResolveRelationships(ctx, relationshipFixtureRequest())
 	if err != nil || len(resolved) != 1 || resolved[0].Targets[0].Reference.Address.ID != "opaque/id" {
 		t.Fatalf("resolved: %v %v", resolved, err)
 	}
@@ -87,4 +87,32 @@ func TestActualGRPCCanonicalAncillaryWorkflows(t *testing.T) {
 	if err != nil || len(actions) != 1 || !actions[0].Streaming {
 		t.Fatalf("actions: %v %v", actions, err)
 	}
+}
+
+func relationshipFixtureRequest() resourcev2.RelationshipResolutionRequest {
+	return resourcev2.RelationshipResolutionRequest{
+		Source: testGet(),
+		Targets: []resourcev2.ReadTarget{{
+			Route:    resourcev2.AccessRoute{Connection: "target-connection"},
+			Provider: "test", Authority: "target-authority", Type: "opaque/linked-type",
+			Scope: resourcev2.QueryScope{}, Representation: "document",
+		}},
+	}
+}
+
+func relationshipFixtureResults() []resourcev2.ResolvedRelationship {
+	target := relationshipFixtureRequest().Targets[0]
+	descriptor := testRelationship()
+	descriptor.TargetType = target.Type
+	descriptor.TargetScope = []resourcev2.ScopeEntry{}
+	return []resourcev2.ResolvedRelationship{{
+		Descriptor: descriptor,
+		Targets: []resourcev2.RelationshipTarget{{
+			Reference: resourcev2.ResourceReference{Address: resourcev2.ResourceAddress{
+				Provider: target.Provider, Authority: target.Authority, Type: target.Type,
+				ID: "opaque/id", Scope: []resourcev2.ScopeEntry{},
+			}},
+			Route: target.Route, DisplayName: "linked resource",
+		}},
+	}}
 }

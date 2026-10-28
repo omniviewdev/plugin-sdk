@@ -63,6 +63,13 @@ func (p *workflowContextProvider) StreamAction(ctx context.Context, _ resourcev2
 		return ctx.Err()
 	}
 }
+func (p *workflowContextProvider) GetRelationships(context.Context, resourcev2.AccessRoute, string) ([]resourcev2.RelationshipDescriptor, error) {
+	return []resourcev2.RelationshipDescriptor{testRelationship()}, nil
+}
+func (p *workflowContextProvider) ResolveRelationships(ctx context.Context, _ resourcev2.RelationshipResolutionRequest) ([]resourcev2.ResolvedRelationship, error) {
+	p.observe(ctx, "relationships")
+	return relationshipFixtureResults(), nil
+}
 func TestDiagnosticsCrossAncillaryLifecycleAndActionStreams(t *testing.T) {
 	p := &workflowContextProvider{seen: make(chan observedSession, 16)}
 	s := grpc.NewServer()
@@ -81,6 +88,9 @@ func TestDiagnosticsCrossAncillaryLifecycleAndActionStreams(t *testing.T) {
 	if err := c.StreamAction(ctx, actionInput(), make(chan resourcev2.ActionEvent, 1)); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := c.ResolveRelationships(ctx, relationshipFixtureRequest()); err != nil {
+		t.Fatal(err)
+	}
 	seen := map[string]bool{}
 	for len(p.seen) > 0 {
 		v := <-p.seen
@@ -89,7 +99,7 @@ func TestDiagnosticsCrossAncillaryLifecycleAndActionStreams(t *testing.T) {
 		}
 		seen[v.method] = true
 	}
-	for _, method := range []string{"browser", "lifecycle", "connectionStream", "actionStream"} {
+	for _, method := range []string{"browser", "lifecycle", "connectionStream", "actionStream", "relationships"} {
 		if !seen[method] {
 			t.Fatalf("missing %s invocation", method)
 		}

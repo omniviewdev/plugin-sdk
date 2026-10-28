@@ -160,7 +160,7 @@ func (c *Controller[T]) lease(ctx context.Context, route AccessRoute) (context.C
 	c.mu.Unlock()
 	stop := context.AfterFunc(s.ctx, cancel)
 	session, _ := SessionFromContext(ctx)
-	connection := s.connection
+	connection := cloneConnection(s.connection)
 	session.Connection = &connection
 	ctx = WithSession(ctx, session)
 	return ctx, s.client, func() { stop(); cancel(); s.users.Done() }, nil
@@ -371,10 +371,14 @@ func (c *Controller[T]) Catalog(ctx context.Context, request CatalogRequest) (ca
 }
 
 func exactScope(address ResourceAddress, dimensions []Dimension) (QueryScope, error) {
+	return exactScopeEntries(address.Scope, dimensions)
+}
+
+func exactScopeEntries(entries []ScopeEntry, dimensions []Dimension) (QueryScope, error) {
 	scope := make(QueryScope, 0, len(dimensions))
 	for _, dimension := range dimensions {
 		found := false
-		for _, entry := range address.Scope {
+		for _, entry := range entries {
 			if entry.Dimension == dimension.Name {
 				values := []string{entry.Value}
 				scope = append(scope, ScopeConstraint{Dimension: dimension.Name, Match: ScopeOneOf, Values: &values})
@@ -868,6 +872,15 @@ func (c *Controller[T]) LoadConnections(ctx context.Context) (connections []type
 }
 
 func (c *Controller[T]) GetConnection(ctx context.Context, id string) (types.Connection, error) {
+	connection, err := c.connection(ctx, id)
+	if err != nil {
+		return types.Connection{}, err
+	}
+	return cloneConnection(connection), nil
+}
+
+// connection returns an immutable controller-owned value for internal use only.
+func (c *Controller[T]) connection(ctx context.Context, id string) (types.Connection, error) {
 	if err := c.requireLifecycle(); err != nil {
 		return types.Connection{}, err
 	}
@@ -896,12 +909,16 @@ func (c *Controller[T]) startClient(s *clientSlot[T]) {
 			s.err = NewError("INTERNAL", "Connection start handler panicked.")
 		}
 	}()
-	s.client, s.err = c.cfg.Lifecycle.CreateClient(s.ctx, s.connection)
+	connection := cloneConnection(s.connection)
+	session, _ := SessionFromContext(s.ctx)
+	session.Connection = &connection
+	ctx := WithSession(s.ctx, session)
+	s.client, s.err = c.cfg.Lifecycle.CreateClient(ctx, connection)
 	if s.err == nil && s.client == nil {
 		s.err = NewError("INTERNAL", "CreateClient returned a nil client.")
 	}
 	if s.err == nil && c.cfg.Lifecycle.OnStart != nil {
-		s.err = c.cfg.Lifecycle.OnStart(s.ctx, s.connection, s.client)
+		s.err = c.cfg.Lifecycle.OnStart(ctx, connection, s.client)
 	}
 	if s.err == nil {
 		s.err = s.ctx.Err()
@@ -911,7 +928,7 @@ func (c *Controller[T]) startClient(s *clientSlot[T]) {
 func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status types.ConnectionStatus, err error) {
 	var r *Registration[T]
 	defer c.guard(&r, &err)
-	connection, err := c.GetConnection(ctx, id)
+	connection, err := c.connection(ctx, id)
 	if err != nil {
 		return status, err
 	}
@@ -935,7 +952,7 @@ func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status 
 	if created {
 		clientCtx, cancel := context.WithCancel(c.ctx)
 		session, _ := SessionFromContext(ctx)
-		session.Connection = &connection
+		session.Connection = nil
 		clientCtx = WithSession(clientCtx, session)
 		s = &clientSlot[T]{connection: connection, ctx: clientCtx, cancel: cancel, ready: make(chan struct{})}
 		c.clients[id] = s
@@ -969,6 +986,7 @@ func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status 
 	if stopping {
 		return status, NewError("CANCELLED", "Connection is stopping.")
 	}
+	connection = cloneConnection(connection)
 	return types.ConnectionStatus{Connection: &connection, Status: types.ConnectionStatusConnected}, nil
 }
 
@@ -993,8 +1011,12 @@ func (c *Controller[T]) stopSlot(s *clientSlot[T]) error {
 		if s.client != nil {
 			// Cleanup must not inherit the canceled client context.
 			ctx := context.WithoutCancel(s.ctx)
+			connection := cloneConnection(s.connection)
+			session, _ := SessionFromContext(ctx)
+			session.Connection = &connection
+			ctx = WithSession(ctx, session)
 			if c.cfg.Lifecycle.OnStop != nil {
-				s.destroyErr = lifecycleCall(func() error { return c.cfg.Lifecycle.OnStop(ctx, s.connection, s.client) })
+				s.destroyErr = lifecycleCall(func() error { return c.cfg.Lifecycle.OnStop(ctx, connection, s.client) })
 			}
 			s.destroyErr = errors.Join(s.destroyErr, lifecycleCall(func() error { return c.cfg.Lifecycle.DestroyClient(ctx, s.client) }))
 		}
@@ -1026,7 +1048,7 @@ func (c *Controller[T]) StopConnection(ctx context.Context, id string) (connecti
 func (c *Controller[T]) CheckConnection(ctx context.Context, id string) (status types.ConnectionStatus, err error) {
 	var r *Registration[T]
 	defer c.guard(&r, &err)
-	connection, err := c.GetConnection(ctx, id)
+	connection, err := c.connection(ctx, id)
 	if err != nil {
 		return status, err
 	}
@@ -1034,6 +1056,7 @@ func (c *Controller[T]) CheckConnection(ctx context.Context, id string) (status 
 	s := c.clients[id]
 	c.mu.Unlock()
 	if s == nil {
+		connection = cloneConnection(connection)
 		return types.ConnectionStatus{Connection: &connection, Status: types.ConnectionStatusDisconnected}, nil
 	}
 	ctx, client, done, err := c.lease(ctx, AccessRoute{Connection: id})
@@ -1041,6 +1064,8 @@ func (c *Controller[T]) CheckConnection(ctx context.Context, id string) (status 
 		return status, err
 	}
 	defer done()
+	session, _ := SessionFromContext(ctx)
+	connection = *session.Connection
 	if c.cfg.Lifecycle.CheckConnection == nil {
 		return types.ConnectionStatus{Connection: &connection, Status: types.ConnectionStatusConnected}, nil
 	}
@@ -1050,6 +1075,10 @@ func (c *Controller[T]) CheckConnection(ctx context.Context, id string) (status 
 	}
 	if err == nil && (status.Connection == nil || status.Connection.ID != id) {
 		err = NewError("INTERNAL", "Connection check changed the requested connection.")
+	}
+	if status.Connection != nil {
+		owned := cloneConnection(*status.Connection)
+		status.Connection = &owned
 	}
 	return status, err
 }
@@ -1153,7 +1182,7 @@ func connectionSnapshot(inventory map[string]types.Connection) []types.Connectio
 	sort.Strings(ids)
 	connections := make([]types.Connection, 0, len(ids))
 	for _, id := range ids {
-		connections = append(connections, inventory[id])
+		connections = append(connections, cloneConnection(inventory[id]))
 	}
 	return connections
 }
@@ -1175,7 +1204,7 @@ func (c *Controller[T]) ApplyConnections(ctx context.Context, connections []type
 		if _, exists := loaded[connection.ID]; exists {
 			return NewError("INVALID_REQUEST", "Connection inventory contains duplicate IDs.")
 		}
-		loaded[connection.ID] = connection
+		loaded[connection.ID] = cloneConnection(connection)
 	}
 	c.configMu.Lock()
 	defer c.configMu.Unlock()
@@ -1194,7 +1223,7 @@ func (c *Controller[T]) ApplyConnectionOverlay(ctx context.Context, overlay Conn
 	}
 	overrides := make(map[string]types.Connection, len(overlay.Upserts))
 	for _, connection := range overlay.Upserts {
-		overrides[connection.ID] = connection
+		overrides[connection.ID] = cloneConnection(connection)
 	}
 	disabled := make(map[string]struct{}, len(overlay.DisabledIDs))
 	for _, id := range overlay.DisabledIDs {
@@ -1297,12 +1326,13 @@ func (c *Controller[T]) UpdateConnection(ctx context.Context, connection types.C
 	c.configMu.Lock()
 	defer c.configMu.Unlock()
 	overrides, disabled := copyConnectionOverlay(c.overrides, c.disabled)
+	connection = cloneConnection(connection)
 	overrides[connection.ID] = connection
 	delete(disabled, connection.ID)
 	if err := c.applyInventory(ctx, c.nativeConnections, overrides, disabled); err != nil {
 		return types.Connection{}, err
 	}
-	return connection, nil
+	return cloneConnection(connection), nil
 }
 
 // DeleteConnection hides a native route or removes a manual desired profile.

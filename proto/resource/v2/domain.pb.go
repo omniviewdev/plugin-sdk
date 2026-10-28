@@ -1274,6 +1274,7 @@ type ResourceType struct {
 	Representations       []*Representation      `protobuf:"bytes,5,rep,name=representations,proto3" json:"representations,omitempty"`
 	Capabilities          []*Capability          `protobuf:"bytes,6,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
 	DefaultRepresentation string                 `protobuf:"bytes,7,opt,name=default_representation,json=defaultRepresentation,proto3" json:"default_representation,omitempty"`
+	NativeAuthorityHint   *NativeAuthorityHint   `protobuf:"bytes,8,opt,name=native_authority_hint,json=nativeAuthorityHint,proto3" json:"native_authority_hint,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -1357,6 +1358,13 @@ func (x *ResourceType) GetDefaultRepresentation() string {
 	return ""
 }
 
+func (x *ResourceType) GetNativeAuthorityHint() *NativeAuthorityHint {
+	if x != nil {
+		return x.NativeAuthorityHint
+	}
+	return nil
+}
+
 type NativeAuthorityHint struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Scheme        string                 `protobuf:"bytes,1,opt,name=scheme,proto3" json:"scheme,omitempty"`
@@ -1418,14 +1426,13 @@ func (x *NativeAuthorityHint) GetContinuity() string {
 }
 
 type Catalog struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	Provider            string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
-	Types               []*ResourceType        `protobuf:"bytes,2,rep,name=types,proto3" json:"types,omitempty"`
-	Revision            string                 `protobuf:"bytes,3,opt,name=revision,proto3" json:"revision,omitempty"`
-	NativeAuthorityHint *NativeAuthorityHint   `protobuf:"bytes,4,opt,name=native_authority_hint,json=nativeAuthorityHint,proto3" json:"native_authority_hint,omitempty"`
-	Coverage            *Coverage              `protobuf:"bytes,5,opt,name=coverage,proto3" json:"coverage,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Provider      string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	Types         []*ResourceType        `protobuf:"bytes,2,rep,name=types,proto3" json:"types,omitempty"`
+	Revision      string                 `protobuf:"bytes,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	Coverage      *Coverage              `protobuf:"bytes,5,opt,name=coverage,proto3" json:"coverage,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Catalog) Reset() {
@@ -1477,13 +1484,6 @@ func (x *Catalog) GetRevision() string {
 		return x.Revision
 	}
 	return ""
-}
-
-func (x *Catalog) GetNativeAuthorityHint() *NativeAuthorityHint {
-	if x != nil {
-		return x.NativeAuthorityHint
-	}
-	return nil
 }
 
 func (x *Catalog) GetCoverage() *Coverage {
@@ -2809,7 +2809,7 @@ const file_proto_resource_v2_domain_proto_rawDesc = "" +
 	"Capability\x12\x1c\n" +
 	"\toperation\x18\x01 \x01(\tR\toperation\x126\n" +
 	"\x05scope\x18\x02 \x01(\v2 .omniview.resource.v2.QueryScopeR\x05scope\x12\x1c\n" +
-	"\tguarantee\x18\x03 \x01(\tR\tguarantee\"\xb0\x03\n" +
+	"\tguarantee\x18\x03 \x01(\tR\tguarantee\"\x8f\x04\n" +
 	"\fResourceType\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12P\n" +
@@ -2817,19 +2817,19 @@ const file_proto_resource_v2_domain_proto_rawDesc = "" +
 	"\x10query_dimensions\x18\x04 \x03(\v2\x1f.omniview.resource.v2.DimensionR\x0fqueryDimensions\x12N\n" +
 	"\x0frepresentations\x18\x05 \x03(\v2$.omniview.resource.v2.RepresentationR\x0frepresentations\x12D\n" +
 	"\fcapabilities\x18\x06 \x03(\v2 .omniview.resource.v2.CapabilityR\fcapabilities\x125\n" +
-	"\x16default_representation\x18\a \x01(\tR\x15defaultRepresentation\"]\n" +
+	"\x16default_representation\x18\a \x01(\tR\x15defaultRepresentation\x12]\n" +
+	"\x15native_authority_hint\x18\b \x01(\v2).omniview.resource.v2.NativeAuthorityHintR\x13nativeAuthorityHint\"]\n" +
 	"\x13NativeAuthorityHint\x12\x16\n" +
 	"\x06scheme\x18\x01 \x01(\tR\x06scheme\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x1e\n" +
 	"\n" +
 	"continuity\x18\x03 \x01(\tR\n" +
-	"continuity\"\x96\x02\n" +
+	"continuity\"\xbd\x01\n" +
 	"\aCatalog\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x128\n" +
 	"\x05types\x18\x02 \x03(\v2\".omniview.resource.v2.ResourceTypeR\x05types\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\tR\brevision\x12]\n" +
-	"\x15native_authority_hint\x18\x04 \x01(\v2).omniview.resource.v2.NativeAuthorityHintR\x13nativeAuthorityHint\x12:\n" +
-	"\bcoverage\x18\x05 \x01(\v2\x1e.omniview.resource.v2.CoverageR\bcoverage\"\xf3\x01\n" +
+	"\brevision\x18\x03 \x01(\tR\brevision\x12:\n" +
+	"\bcoverage\x18\x05 \x01(\v2\x1e.omniview.resource.v2.CoverageR\bcoverageJ\x04\b\x04\x10\x05\"\xf3\x01\n" +
 	"\n" +
 	"ReadTarget\x127\n" +
 	"\x05route\x18\x01 \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\x12\x1a\n" +
@@ -3005,8 +3005,8 @@ var file_proto_resource_v2_domain_proto_depIdxs = []int32{
 	18, // 17: omniview.resource.v2.ResourceType.query_dimensions:type_name -> omniview.resource.v2.Dimension
 	17, // 18: omniview.resource.v2.ResourceType.representations:type_name -> omniview.resource.v2.Representation
 	19, // 19: omniview.resource.v2.ResourceType.capabilities:type_name -> omniview.resource.v2.Capability
-	20, // 20: omniview.resource.v2.Catalog.types:type_name -> omniview.resource.v2.ResourceType
-	21, // 21: omniview.resource.v2.Catalog.native_authority_hint:type_name -> omniview.resource.v2.NativeAuthorityHint
+	21, // 20: omniview.resource.v2.ResourceType.native_authority_hint:type_name -> omniview.resource.v2.NativeAuthorityHint
+	20, // 21: omniview.resource.v2.Catalog.types:type_name -> omniview.resource.v2.ResourceType
 	27, // 22: omniview.resource.v2.Catalog.coverage:type_name -> omniview.resource.v2.Coverage
 	2,  // 23: omniview.resource.v2.ReadTarget.route:type_name -> omniview.resource.v2.AccessRoute
 	7,  // 24: omniview.resource.v2.ReadTarget.scope:type_name -> omniview.resource.v2.QueryScope

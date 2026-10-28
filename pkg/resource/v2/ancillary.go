@@ -31,7 +31,7 @@ type SchemaDocumentProvider interface {
 }
 type RelationshipProvider interface {
 	GetRelationships(context.Context, AccessRoute, string) ([]RelationshipDescriptor, error)
-	ResolveRelationships(context.Context, GetRequest) ([]ResolvedRelationship, error)
+	ResolveRelationships(context.Context, RelationshipResolutionRequest) ([]ResolvedRelationship, error)
 }
 type HealthProvider interface {
 	GetHealth(context.Context, GetRequest, Value) (*ResourceHealth, error)

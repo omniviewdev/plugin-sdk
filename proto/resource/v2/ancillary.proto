@@ -4,7 +4,8 @@ option go_package = "github.com/omniviewdev/plugin-sdk/proto/resource/v2;resourc
 import "proto/resource/v2/domain.proto";
 
 // JSON fields contain only bounded shared connection data or presentation documents.
-message AncillaryRequest { uint32 version = 1; string operation = 2; AccessRoute route = 3; string type = 4; GetInput get = 5; Value value = 6; bytes connection_json = 7; string id = 8; uint32 limit = 9; SchemaDocumentReference document_ref = 10; }
+message RelationshipResolutionInput { GetInput source = 1; repeated ReadTarget targets = 2; }
+message AncillaryRequest { uint32 version = 1; string operation = 2; AccessRoute route = 3; string type = 4; GetInput get = 5; Value value = 6; bytes connection_json = 7; string id = 8; uint32 limit = 9; SchemaDocumentReference document_ref = 10; RelationshipResolutionInput relationship_resolution = 11; }
 message AncillaryResponse { uint32 version = 1; oneof result { bytes json = 2; RelationshipDescriptors relationships = 3; ResolvedRelationships resolved = 4; OptionalHealth health = 5; ResourceEvents events = 6; SchemaDocument document = 7; EditorSchemas editor_schemas = 8; } }
 message EditorSchema { string type = 1; string file_match = 2; string uri = 3; string language = 4; SchemaBinding binding = 5; }
 message EditorSchemas { repeated EditorSchema schemas = 1; }

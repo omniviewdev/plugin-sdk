@@ -539,13 +539,13 @@ func ValidateCatalog(c Catalog) error {
 	if err := validateCoverage(c.Coverage); err != nil {
 		return err
 	}
-	if c.NativeAuthorityHint != nil {
-		if err := validateNativeAuthorityHint(*c.NativeAuthorityHint); err != nil {
-			return err
-		}
-	}
 	seen := map[string]bool{}
 	for _, t := range c.Types {
+		if t.NativeAuthorityHint != nil {
+			if err := validateNativeAuthorityHint(*t.NativeAuthorityHint); err != nil {
+				return err
+			}
+		}
 		if err := text(t.Type, true); err != nil {
 			return err
 		}

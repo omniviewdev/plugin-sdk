@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"net"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -182,5 +183,71 @@ func TestStrictProtoPreservesUnrelatedServices(t *testing.T) {
 	}
 	if out.Status != healthpb.HealthCheckResponse_SERVING {
 		t.Fatal("unrelated health RPC changed")
+	}
+}
+
+type mixedAuthorityProvider struct{ catalog resourcev2.Catalog }
+
+func (p *mixedAuthorityProvider) Catalog(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
+	return p.catalog, nil
+}
+
+func TestActualGRPCMixedCatalogAuthorityHintIsolation(t *testing.T) {
+	cluster := &resourcev2.NativeAuthorityHint{Scheme: "kubernetes.cluster.v1", ID: "cluster/opaque", Continuity: resourcev2.ContinuityStableNative}
+	helm := &resourcev2.NativeAuthorityHint{Scheme: "helm.local.v1", ID: "helm/opaque", Continuity: resourcev2.ContinuityConnectionLocal}
+	descriptor := func(name string, hint *resourcev2.NativeAuthorityHint) resourcev2.ResourceType {
+		return resourcev2.ResourceType{Type: name, IdentityDimensions: []resourcev2.Dimension{}, QueryDimensions: []resourcev2.Dimension{}, Representations: []resourcev2.Representation{testRepresentation()}, Capabilities: []resourcev2.Capability{}, NativeAuthorityHint: hint}
+	}
+	want := resourcev2.Catalog{
+		Provider: "mixed", Revision: "mixed-1", Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}},
+		Types: []resourcev2.ResourceType{
+			descriptor("cluster/pod", cluster),
+			descriptor("localHelm/release", helm),
+			descriptor("unknown/backing", nil),
+			descriptor("cluster/service", cluster),
+		},
+	}
+	s := grpc.NewServer()
+	RegisterServer(s, &mixedAuthorityProvider{catalog: want})
+	client := NewClient(pipe(t, s))
+	got, err := client.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "mixed-route"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("mixed catalog changed across gRPC:\ngot %#v\nwant %#v", got, want)
+	}
+	if got.Types[2].NativeAuthorityHint != nil {
+		t.Fatal("unhinted descriptor inherited another type's backing")
+	}
+	got.Types[0].NativeAuthorityHint.ID = "changed"
+	if got.Types[1].NativeAuthorityHint.ID != helm.ID || got.Types[3].NativeAuthorityHint.ID != cluster.ID {
+		t.Fatal("decoded descriptors share hint storage")
+	}
+	if cluster.ID != "cluster/opaque" {
+		t.Fatal("decoded hint aliases provider storage")
+	}
+	again, err := client.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "mixed-route"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(again, want) {
+		t.Fatal("client mutation leaked into a later catalog response")
+	}
+}
+
+func TestRawRetiredCatalogAuthorityHintRejected(t *testing.T) {
+	// Catalog field 4 belonged to the retired catalog-wide hint. The current
+	// strict version table must reject it, including an empty hint payload.
+	for _, hint := range [][]byte{nil, append(bytesField(1, []byte("legacy.v1")), bytesField(2, []byte("legacy-id"))...)} {
+		catalog := bytesField(4, hint)
+		data := append([]byte{8, 2}, bytesField(2, catalog)...)
+		s := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{data: data}))
+		RegisterServer(s, &countProvider{})
+		client := NewClient(pipe(t, s))
+		_, err := client.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}})
+		if resourcev2.ErrorCode(err) != "UNSUPPORTED" {
+			t.Fatalf("retired catalog field 4 class %s, want UNSUPPORTED: %v", resourcev2.ErrorCode(err), err)
+		}
 	}
 }

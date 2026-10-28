@@ -54,7 +54,8 @@ func TestEveryFiniteDomainAdapter(t *testing.T) {
 	scope := QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &values}}
 	target := ReadTarget{Route: route, Provider: r.Reference.Address.Provider, Authority: r.Reference.Address.Authority, Type: r.Reference.Address.Type, Scope: scope, Representation: r.Representation.ID}
 	typ := ResourceType{Type: target.Type, IdentityDimensions: []Dimension{{Name: "region"}}, QueryDimensions: []Dimension{{Name: "region"}}, Representations: []Representation{r.Representation}, Capabilities: []Capability{{Operation: OperationEnumerate, Scope: scope}, {Operation: OperationUpdate, Scope: scope, Guarantee: BestEffortGuarantee}}}
-	catalog := Catalog{Provider: target.Provider, Revision: "catalog-1", Types: []ResourceType{typ}, Coverage: Coverage{Kind: "complete"}, NativeAuthorityHint: &NativeAuthorityHint{Scheme: "fixture.v1", ID: "provider-native-id", Continuity: ContinuityConnectionLocal}}
+	typ.NativeAuthorityHint = &NativeAuthorityHint{Scheme: "fixture.v1", ID: "provider-native-id", Continuity: ContinuityConnectionLocal}
+	catalog := Catalog{Provider: target.Provider, Revision: "catalog-1", Types: []ResourceType{typ, {Type: "localHelm/release", IdentityDimensions: []Dimension{}, QueryDimensions: []Dimension{}, Representations: []Representation{}, Capabilities: []Capability{}}}, Coverage: Coverage{Kind: "complete"}}
 	adapterRoundTrip(t, r.Body, ToProtoValue, FromProtoValue)
 	adapterRoundTrip(t, r.Reference.Address.Scope[0], ToProtoScopeEntry, FromProtoScopeEntry)
 	adapterRoundTrip(t, r.Reference.Address, ToProtoResourceAddress, FromProtoResourceAddress)
@@ -68,8 +69,27 @@ func TestEveryFiniteDomainAdapter(t *testing.T) {
 	adapterRoundTrip(t, typ.Capabilities[0], ToProtoCapability, FromProtoCapability)
 	adapterRoundTrip(t, typ.Capabilities[1], ToProtoCapability, FromProtoCapability)
 	adapterRoundTrip(t, typ, ToProtoResourceType, FromProtoResourceType)
-	adapterRoundTrip(t, *catalog.NativeAuthorityHint, ToProtoNativeAuthorityHint, FromProtoNativeAuthorityHint)
+	adapterRoundTrip(t, *typ.NativeAuthorityHint, ToProtoNativeAuthorityHint, FromProtoNativeAuthorityHint)
 	adapterRoundTrip(t, catalog, ToProtoCatalog, FromProtoCatalog)
+	wireCatalog, err := ToProtoCatalog(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wireCatalog.Types[0].NativeAuthorityHint == nil || wireCatalog.Types[1].NativeAuthorityHint != nil {
+		t.Fatal("mixed catalog inherited or lost a type authority hint")
+	}
+	wireCatalog.Types[0].NativeAuthorityHint.Id = "wire-only"
+	if typ.NativeAuthorityHint.ID != "provider-native-id" {
+		t.Fatal("encoder aliased authority hint")
+	}
+	decodedCatalog, err := FromProtoCatalog(wireCatalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wireCatalog.Types[0].NativeAuthorityHint.Id = "changed-again"
+	if decodedCatalog.Types[0].NativeAuthorityHint.ID != "wire-only" || decodedCatalog.Types[1].NativeAuthorityHint != nil {
+		t.Fatal("decoder aliased or inherited authority hint")
+	}
 	adapterRoundTrip(t, CatalogRequest{Route: route}, ToProtoCatalogRequest, FromProtoCatalogRequest)
 	adapterRoundTrip(t, target, ToProtoReadTarget, FromProtoReadTarget)
 	adapterRoundTrip(t, GetRequest{Route: route, Reference: r.Reference, Representation: r.Representation.ID}, ToProtoGetRequest, FromProtoGetRequest)

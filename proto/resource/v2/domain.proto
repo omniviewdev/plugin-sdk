@@ -22,9 +22,9 @@ message SchemaBinding { string state = 1; optional string revision = 2; string d
 message Representation { string id = 1; string revision = 2; SchemaBinding schema = 3; }
 message Dimension { string name = 1; bool allow_empty = 2; }
 message Capability { string operation = 1; QueryScope scope = 2; string guarantee = 3; }
-message ResourceType { string type = 1; string display_name = 2; repeated Dimension identity_dimensions = 3; repeated Dimension query_dimensions = 4; repeated Representation representations = 5; repeated Capability capabilities = 6; string default_representation = 7; }
+message ResourceType { string type = 1; string display_name = 2; repeated Dimension identity_dimensions = 3; repeated Dimension query_dimensions = 4; repeated Representation representations = 5; repeated Capability capabilities = 6; string default_representation = 7; NativeAuthorityHint native_authority_hint = 8; }
 message NativeAuthorityHint { string scheme = 1; string id = 2; string continuity = 3; }
-message Catalog { string provider = 1; repeated ResourceType types = 2; string revision = 3; NativeAuthorityHint native_authority_hint = 4; Coverage coverage = 5; }
+message Catalog { string provider = 1; repeated ResourceType types = 2; string revision = 3; reserved 4; Coverage coverage = 5; }
 message ReadTarget { AccessRoute route = 1; string provider = 2; string authority = 3; string type = 4; QueryScope scope = 5; string representation = 6; }
 message GetInput { AccessRoute route = 1; ResourceReference reference = 2; string representation = 3; }
 message EnumerateInput { ReadTarget target = 1; uint32 page_size = 2; optional string cursor = 3; }

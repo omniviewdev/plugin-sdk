@@ -157,12 +157,12 @@ func (c *Client) GetRelationships(ctx context.Context, route resourcev2.AccessRo
 	}
 	return out, nil
 }
-func (c *Client) ResolveRelationships(ctx context.Context, in resourcev2.GetRequest) ([]resourcev2.ResolvedRelationship, error) {
-	p, err := resourcev2.ToProtoGetRequest(in)
+func (c *Client) ResolveRelationships(ctx context.Context, in resourcev2.RelationshipResolutionRequest) ([]resourcev2.ResolvedRelationship, error) {
+	p, err := resourcev2.ToProtoRelationshipResolutionRequest(in)
 	if err != nil {
 		return nil, err
 	}
-	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: "resolveRelationships", Get: p})
+	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: "resolveRelationships", RelationshipResolution: p})
 	if err != nil {
 		return nil, err
 	}
@@ -176,6 +176,9 @@ func (c *Client) ResolveRelationships(ctx context.Context, in resourcev2.GetRequ
 			return nil, err
 		}
 		out = append(out, v)
+	}
+	if err := resourcev2.ValidateRelationshipResolutionResult(in, out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

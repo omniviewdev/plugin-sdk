@@ -471,7 +471,11 @@ func (v *Capability) UnmarshalJSON(data []byte) error {
 func (v *ResourceType) UnmarshalJSON(data []byte) error {
 	type plain ResourceType
 	var out plain
-	if _, err := decodeDomainObject(data, &out, "type", "identityDimensions", "queryDimensions", "representations", "capabilities"); err != nil {
+	object, err := decodeDomainObject(data, &out, "type", "identityDimensions", "queryDimensions", "representations", "capabilities")
+	if err != nil {
+		return err
+	}
+	if err := rejectNullTokens(object, "nativeAuthorityHint"); err != nil {
 		return err
 	}
 	value := ResourceType(out)
@@ -484,11 +488,7 @@ func (v *ResourceType) UnmarshalJSON(data []byte) error {
 func (v *Catalog) UnmarshalJSON(data []byte) error {
 	type plain Catalog
 	var out plain
-	object, err := decodeDomainObject(data, &out, "provider", "types", "revision", "coverage")
-	if err != nil {
-		return err
-	}
-	if err := rejectNullTokens(object, "nativeAuthorityHint"); err != nil {
+	if _, err := decodeDomainObject(data, &out, "provider", "types", "revision", "coverage"); err != nil {
 		return err
 	}
 	value := Catalog(out)

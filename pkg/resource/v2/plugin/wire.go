@@ -48,6 +48,7 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 	var seen, selections uint64
 	var keys map[wireKey]struct{}
 	records := 0
+	relationshipTargets := 0
 	for len(data) > 0 {
 		b.fields++
 		if b.fields > MaxFields {
@@ -75,6 +76,12 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 			records++
 			if records > MaxPageSize {
 				return limited("page records exceed limit")
+			}
+		}
+		if d.Name() == "RelationshipResolutionInput" && number == 2 {
+			relationshipTargets++
+			if relationshipTargets > resourcev2.MaxRelationshipTargets {
+				return limited("relationship target bindings exceed limit")
 			}
 		}
 		mask := uint64(1) << f.Index()

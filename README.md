@@ -214,6 +214,13 @@ effective routes stop/drain old clients before success. The host owns durable
 storage and startup replay; the SDK never rewrites kubeconfig or duplicates the
 host's profile store. A failed durable save can reapply the previous overlay.
 
+The controller owns deep copies of admitted mutable connection configuration at
+native/overlay ingress, returned inventory/status snapshots, and provider
+callback/session boundaries. Nested containers, exact native numbers and nil
+values are preserved without a JSON roundtrip. Editing a returned snapshot has
+no effect until explicitly applied; a changed endpoint cannot silently retain
+its previous active client.
+
 
 The implementation-candidate policy `omniview.resource-wire-policy.v1` caps a
 decoded frame at 32 MiB, one body at 16 MiB, nesting at 64, nodes at 262144,
@@ -227,10 +234,24 @@ allocating transport messages.
 
 Catalog discovery coverage is `complete`, `partial`, or `unknown`, qualified by
 the actual connection and declared scopes. Failed or denied discovery returns an
-error, not an empty complete catalog. `NativeAuthorityHint` is nonauthoritative
+error, not an empty complete catalog. Each exact `ResourceType` may declare an
+optional `NativeAuthorityHint`; catalogs have no shared hint or fallback.
+Mixed catalogs can therefore identify cluster-native and local Helm backing
+independently, while an unhinted type remains unknown. This is nonauthoritative
 provider metadata: its scheme, opaque ID, and connection-local/stable-native
 continuity claim never issue authority or permission. Only the host binds
-AuthorityID; unknown backing identity remains isolated.
+AuthorityID; unknown backing identity remains isolated. Resource addresses and
+identity dimensions do not change.
+
+`RelationshipProvider.ResolveRelationships` takes
+`RelationshipResolutionRequest{Source: GetRequest, Targets: []ReadTarget}`.
+The host admits target catalogs and authorities before calling the provider.
+Bindings are bounded to 256 and must be unique and unambiguous; they are not
+permission grants or authorization to scan. Providers follow observed native
+links only. Returned canonical references must match an explicit target's
+provider, authority, opaque type, route and scope. Missing or out-of-scope links
+return an explicit `UNSUPPORTED` error, never a fabricated address, source
+authority fallback, host-side repair, or silently filtered complete result.
 
 Schema bindings distinguish available, absent, and unavailable, retaining actual
 revision and local-root provenance. A shared `SchemaDocumentReference` plus

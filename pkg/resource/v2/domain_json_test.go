@@ -33,6 +33,9 @@ func TestPublicDomainJSONRejectsMalformedIdentity(t *testing.T) {
 		{"null cursor", `{"target":{"route":{"connection":"c"},"provider":"p","authority":"a","type":"t","scope":[],"representation":"native"},"cursor":null}`, func() any { return &EnumerateRequest{} }},
 		{"unknown route field", `{"route":{"connection":"c","principal":"caller"}}`, func() any { return &CatalogRequest{} }},
 		{"duplicate schema revision", `{"id":"doc","revision":"r","revision":"r"}`, func() any { return &SchemaDocumentReference{} }},
+		{"old catalog hint", `{"provider":"p","types":[],"revision":"r","coverage":{"kind":"complete","paths":[]},"nativeAuthorityHint":{"scheme":"fixture.v1","id":"id","continuity":"connectionLocal"}}`, func() any { return &Catalog{} }},
+		{"null type hint", `{"type":"cluster/pod","identityDimensions":[],"queryDimensions":[],"representations":[],"capabilities":[],"nativeAuthorityHint":null}`, func() any { return &ResourceType{} }},
+		{"invalid type hint", `{"type":"cluster/pod","identityDimensions":[],"queryDimensions":[],"representations":[],"capabilities":[],"nativeAuthorityHint":{"scheme":"fixture.v1","id":"id","continuity":"authoritative"}}`, func() any { return &ResourceType{} }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -40,6 +43,25 @@ func TestPublicDomainJSONRejectsMalformedIdentity(t *testing.T) {
 				t.Fatalf("class %s: %v", ErrorCode(err), err)
 			}
 		})
+	}
+}
+
+func TestPublicDomainJSONMixedCatalogAuthorityHints(t *testing.T) {
+	source := `{"provider":"p","revision":"r","coverage":{"kind":"complete","paths":[]},"types":[{"type":"cluster/pod","identityDimensions":[],"queryDimensions":[],"representations":[],"capabilities":[],"nativeAuthorityHint":{"scheme":"fixture.v1","id":"cluster","continuity":"stableNative"}},{"type":"localHelm/release","identityDimensions":[],"queryDimensions":[],"representations":[],"capabilities":[]}]}`
+	var catalog Catalog
+	if err := json.Unmarshal([]byte(source), &catalog); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Catalog
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Types[0].NativeAuthorityHint == nil || decoded.Types[0].NativeAuthorityHint.ID != "cluster" || decoded.Types[1].NativeAuthorityHint != nil {
+		t.Fatal("JSON round trip inherited or lost a type authority hint")
 	}
 }
 

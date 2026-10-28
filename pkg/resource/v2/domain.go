@@ -109,13 +109,14 @@ type Capability struct {
 	Guarantee string     `json:"guarantee,omitempty"`
 }
 type ResourceType struct {
-	Type                  string           `json:"type"`
-	DisplayName           string           `json:"displayName"`
-	IdentityDimensions    []Dimension      `json:"identityDimensions"`
-	QueryDimensions       []Dimension      `json:"queryDimensions"`
-	Representations       []Representation `json:"representations"`
-	DefaultRepresentation string           `json:"defaultRepresentation,omitempty"`
-	Capabilities          []Capability     `json:"capabilities"`
+	Type                  string               `json:"type"`
+	DisplayName           string               `json:"displayName"`
+	IdentityDimensions    []Dimension          `json:"identityDimensions"`
+	QueryDimensions       []Dimension          `json:"queryDimensions"`
+	Representations       []Representation     `json:"representations"`
+	DefaultRepresentation string               `json:"defaultRepresentation,omitempty"`
+	Capabilities          []Capability         `json:"capabilities"`
+	NativeAuthorityHint   *NativeAuthorityHint `json:"nativeAuthorityHint,omitempty"`
 }
 type CatalogRequest struct {
 	Route AccessRoute `json:"route"`
@@ -135,11 +136,10 @@ const (
 )
 
 type Catalog struct {
-	Provider            string               `json:"provider"`
-	Types               []ResourceType       `json:"types"`
-	Revision            string               `json:"revision"`
-	NativeAuthorityHint *NativeAuthorityHint `json:"nativeAuthorityHint,omitempty"`
-	Coverage            Coverage             `json:"coverage"`
+	Provider string         `json:"provider"`
+	Types    []ResourceType `json:"types"`
+	Revision string         `json:"revision"`
+	Coverage Coverage       `json:"coverage"`
 }
 type ReadTarget struct {
 	Route          AccessRoute `json:"route"`

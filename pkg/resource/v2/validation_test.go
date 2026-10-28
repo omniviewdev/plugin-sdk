@@ -148,11 +148,11 @@ func TestCatalogHintCoverageAndGuarantees(t *testing.T) {
 		t.Fatalf("failure disguised as catalog: %v", err)
 	}
 	c.Coverage = Coverage{Kind: "complete"}
-	c.NativeAuthorityHint = &NativeAuthorityHint{Scheme: "fixture.v1", ID: "id", Continuity: ContinuityConnectionLocal}
+	c.Types = []ResourceType{{Type: "cluster/pod", NativeAuthorityHint: &NativeAuthorityHint{Scheme: "fixture.v1", ID: "id", Continuity: ContinuityConnectionLocal}}, {Type: "localHelm/release"}}
 	if err := ValidateCatalog(c); err != nil {
 		t.Fatal(err)
 	}
-	c.NativeAuthorityHint.Continuity = "authoritative"
+	c.Types[0].NativeAuthorityHint.Continuity = "authoritative"
 	if err := ValidateCatalog(c); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("unknown hint continuity: %v", err)
 	}

@@ -129,7 +129,9 @@ func TestCurrentSDKNativeBoundary(t *testing.T) {
 			}
 			require.Equal(t, expectedCaps, catalog.Types[0].Capabilities)
 			require.Equal(t, resource.Coverage{Kind: "complete", Paths: []string{}}, catalog.Coverage)
-			require.Nil(t, catalog.NativeAuthorityHint)
+			for _, descriptor := range catalog.Types {
+				require.Nil(t, descriptor.NativeAuthorityHint)
+			}
 			var observed []Observation
 			var cursor *string
 			for _, page := range s.Pages {

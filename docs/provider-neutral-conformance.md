@@ -16,7 +16,7 @@ The integration barrier exposed two fixture mismatches: undeclared route-catalog
 
 All 13 native scenarios use explicit `AccessRoute` and canonical `ScopeEntry` identity tuples. Get sends the full reference, so colliding local IDs remain unchanged and resolvable. Connection IDs stay access provenance, not address components. Optional incarnation and source revision remain absent when unknown. Revisions remain opaque equality tokens, never lexical clocks.
 
-The caller supplies the host-issued canonical authority in the admitted target/reference. The fixture validates native provider/type/scope and preserves that authority in Get, Enumerate, NativeQuery and best-effort updates; corpus authority strings are oracle labels, not provider authority issuance. A separate child gRPC probe uses a different host-issued authority to prevent accidental dependence on native corpus labels. Catalog authority hints remain absent.
+The caller supplies the host-issued canonical authority in the admitted target/reference. The fixture validates native provider/type/scope and preserves that authority in Get, Enumerate, NativeQuery and best-effort updates; corpus authority strings are oracle labels, not provider authority issuance. A separate child gRPC probe uses a different host-issued authority to prevent accidental dependence on native corpus labels. Each native corpus type descriptor leaves its optional authority hint absent.
 
 Native document conversion uses `json.Decoder.UseNumber` and an explicit fixture policy: integer tokens become exact signed or unsigned values; `createdAt` is a declared native timestamp. No integer passes through `float64`, and no rounded JSON number is claimed to regain precision. Resource bodies cross gRPC as recursive tagged map values, not raw JSON bytes. The independent body and link oracles consume reconstructed native JSON only after transport, retaining exact numeric tokens.
 
@@ -80,3 +80,59 @@ The host read adapter, selected native CEL/Node computed-result proof, permissio
 admission, actual app/utility smoke, schema normalization and cross-repository
 independent acceptance require their own receipts. No release or issue closure
 is claimed here.
+
+## Reviewed SDK follow-up receipt — 2026-10-28
+
+The settled follow-up source passed both `GOWORK=off go test ./... -count=1`
+and `GOWORK=off go test -race ./... -count=1`: 20 packages passing and 17
+packages without tests in each run. This receipt includes the corrections below;
+the earlier payload timings remain observations of the preceding source.
+
+### Type-qualified authority hints
+
+Optional `NativeAuthorityHint` now belongs to each exact `ResourceType`
+(`nativeAuthorityHint` in JSON; protobuf field 8). `Catalog` has no shared hint
+or compatibility fallback; its former protobuf field 4 is reserved. Resource
+addresses and identity dimensions are unchanged. The actual-gRPC mixed-catalog
+probe preserves distinct fixture hints and an unhinted descriptor without
+inheritance. This proves transport qualification, not approval of a local Helm
+identity scheme. Local Helm types remain unhinted absent separate review.
+Raw gRPC rejects retired catalog field 4 as `UNSUPPORTED`.
+
+### Owned connection configuration
+
+The new native-HTTP regression was exercised before the fix: nine returned or
+retained-input boundaries mutated stored configuration before explicit apply,
+failed to cancel the old native request, destroyed no client, and continued
+reading the old source. After the fix, the same probes cancel the actual old
+HTTP request, destroy its client exactly once, and read the replacement source.
+
+Native/overlay/update ingress, inventory/status egress, and native callback/session
+configuration now have independent mutable ownership. Internal immutable
+inventories share values without repeated copies. Tests preserve nested typed
+containers, raw bytes, signed/unsigned integer boundaries, `json.Number`, signed
+double zero, nil containers, lifecycle pointers/triggers, and private credentials
+without a JSON roundtrip. Provider-retained and per-request context mutations
+cannot alter inventory or subsequent client leases.
+
+### Explicit relationship target bindings
+
+`RelationshipResolutionRequest` carries the source and at most 256 explicit
+host-admitted `ReadTarget` bindings. Both server and client validate returned
+provider/authority/type/route/scope against those bindings. Extra identity
+dimensions survive projection onto declared query dimensions. Ambiguous,
+missing or out-of-scope bindings fail explicitly rather than fabricating an
+address, borrowing source authority, repairing identities, or dropping links.
+Bindings are not permissions and do not authorize inventory scans.
+
+Actual default-protobuf gRPC probes admit 256 valid bindings and reject the
+257th with `RESOURCE_LIMIT` and zero dispatch before generated decoding.
+Direct handwritten adapter callers also reject excess cardinality before
+conversion/allocation. Strict JSON, malformed RPC, authority/scope escape and
+large-oneOf overlap regressions passed in both full suites.
+
+Independent provider-lifecycle and wire-admission reviewers accepted these
+source corrections with no remaining findings in their bounded re-reviews.
+They did not run checks. Host/provider integration, native completeness,
+authorization, app smoke and final cross-repository acceptance remain parent
+gates; this SDK receipt does not certify them.
