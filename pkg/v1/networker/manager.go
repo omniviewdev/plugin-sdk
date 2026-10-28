@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	logging "github.com/omniviewdev/plugin-sdk/log"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 	"github.com/omniviewdev/plugin-sdk/settings"
@@ -43,10 +44,11 @@ type Manager struct {
 	resourceForwarders map[string]ResourceForwarder
 	staticForwarders   map[string]StaticForwarder
 
-	mu       sync.RWMutex
-	sessions map[string]*sessionEntry
-	wg       sync.WaitGroup // tracks monitor goroutines
-	stopped  bool           // set by StopAll to reject new sessions
+	mu                 sync.RWMutex
+	sessions           map[string]*sessionEntry
+	wg                 sync.WaitGroup // tracks monitor goroutines
+	stopped            bool           // set by StopAll to reject new sessions
+	connectionProvider resourcev2.ConnectionContextProvider
 }
 
 var _ Provider = (*Manager)(nil)
@@ -87,6 +89,11 @@ func NewManager(cfg ManagerConfig, opts PluginOpts) *Manager {
 		staticForwarders:   sf,
 		sessions:           make(map[string]*sessionEntry),
 	}
+}
+
+// BindConnectionContextProvider binds resource forwarding to the active registry.
+func (m *Manager) BindConnectionContextProvider(provider resourcev2.ConnectionContextProvider) {
+	m.connectionProvider = provider
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +176,36 @@ func (m *Manager) StartPortForwardSession(
 	pluginctx *types.PluginContext,
 	opts PortForwardSessionOptions,
 ) (*PortForwardSession, error) {
+	if err := validateOptionMetadata(opts); err != nil {
+		return nil, err
+	}
+	if _, ok := resourceConnection(opts.Connection); ok {
+		return nil, resourceUnsupported()
+	}
+	return m.startPortForwardSession(pluginctx, opts)
+}
+
+func (m *Manager) StartResourcePortForwardSession(pluginctx *types.PluginContext, opts PortForwardSessionOptions) (*PortForwardSession, error) {
+	if err := validateResourceContext(pluginctx, opts); err != nil {
+		return nil, err
+	}
+	connection, _ := resourceConnection(opts.Connection)
+	var session *PortForwardSession
+	err := resourcev2.WithUtilityConnection(pluginctx, m.connectionProvider, connection.Reference, connection.Route, func(bound *types.PluginContext) error {
+		var err error
+		session, err = m.startPortForwardSession(bound, opts)
+		return err
+	})
+	if err != nil {
+		if session != nil {
+			_, _ = m.ClosePortForwardSession(pluginctx, session.ID)
+		}
+		return nil, err
+	}
+	return session, nil
+}
+
+func (m *Manager) startPortForwardSession(pluginctx *types.PluginContext, opts PortForwardSessionOptions) (*PortForwardSession, error) {
 	// Read from pluginctx without mutating it.
 	if pluginctx == nil {
 		pluginctx = &types.PluginContext{}

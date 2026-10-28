@@ -25,4 +25,3 @@ func WaitDone(m *Manager) {
 func ExtractTimestampForBench(line []byte) (time.Time, string) {
 	return extractTimestamp(line)
 }
-

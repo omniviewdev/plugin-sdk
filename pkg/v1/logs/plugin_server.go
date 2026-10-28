@@ -11,8 +11,11 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
+	"google.golang.org/protobuf/proto"
 )
 
 type PluginServer struct {
@@ -20,11 +23,23 @@ type PluginServer struct {
 	Impl Provider
 }
 
+// logsPluginContext binds native calls to the actual RPC lifetime, including
+// callers that do not send serialized plugin metadata.
+func logsPluginContext(ctx context.Context) *types.PluginContext {
+	pc := types.PluginContextFromContext(ctx)
+	if pc == nil {
+		return &types.PluginContext{Context: ctx}
+	}
+	copy := *pc
+	copy.Context = ctx
+	return &copy
+}
+
 func (s *PluginServer) GetSupportedResources(
 	ctx context.Context,
 	_ *emptypb.Empty,
 ) (*logspb.GetSupportedLogResourcesResponse, error) {
-	resp := s.Impl.GetSupportedResources(types.PluginContextFromContext(ctx))
+	resp := s.Impl.GetSupportedResources(logsPluginContext(ctx))
 	handlers := make([]*logspb.LogHandler, 0, len(resp))
 	for _, h := range resp {
 		handlers = append(handlers, h.ToProto())
@@ -42,19 +57,15 @@ func (s *PluginServer) CreateSession(
 		return nil, status.Errorf(codes.InvalidArgument, "request is nil")
 	}
 
-	var resourceData map[string]interface{}
-	if rd := in.GetResourceData(); rd != nil {
-		resourceData = rd.AsMap()
+	opts, err := CreateSessionOptionsFromProto(in)
+	if err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	if opts.HasResourceIntent() {
+		return nil, resourceplugin.ResourceRPCError(resourceError("UNSUPPORTED", "Resource logs require CreateResourceSession."))
 	}
 
-	opts := CreateSessionOptions{
-		ResourceKey:  in.GetResourceKey(),
-		ResourceID:   in.GetResourceId(),
-		ResourceData: resourceData,
-		Options:      LogSessionOptionsFromProto(in.GetOptions()),
-	}
-
-	resp, err := s.Impl.CreateSession(types.PluginContextFromContext(ctx), opts)
+	resp, err := s.Impl.CreateSession(logsPluginContext(ctx), opts)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create session: %v", err)
 	}
@@ -65,6 +76,40 @@ func (s *PluginServer) CreateSession(
 	}, nil
 }
 
+func (s *PluginServer) CreateResourceSession(ctx context.Context, in *logspb.CreateLogSessionRequest) (*logspb.ResourceLogSessionResponse, error) {
+	ctx, err := resourceplugin.IncomingSessionContext(ctx)
+	if err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	if in == nil || in.ResourceWireVersion != ResourceSessionWireVersion {
+		return nil, resourceplugin.ResourceRPCError(resourceError("UNSUPPORTED", "Unsupported logs resource wire version."))
+	}
+	opts, err := CreateSessionOptionsFromProto(in)
+	if err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	pctx := logsPluginContext(ctx)
+	if err := validateRoute(pctx, opts); err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	provider, ok := s.Impl.(ResourceSessionProvider)
+	if !ok {
+		return nil, resourceplugin.ResourceRPCError(resourceError("UNSUPPORTED", "Resource logs provider unavailable."))
+	}
+	session, err := provider.CreateResourceSession(pctx, opts)
+	if err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	if err := validateResourceSessionResult(session); err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	response := &logspb.ResourceLogSessionResponse{ResourceWireVersion: ResourceSessionWireVersion, Session: session.ToProto()}
+	if proto.Size(response) > resourcev2.MaxMessageBytes {
+		return nil, resourceplugin.ResourceRPCError(resourceError("RESOURCE_LIMIT", "Logs response exceeds wire limit."))
+	}
+	return response, nil
+}
+
 func (s *PluginServer) GetSession(
 	ctx context.Context,
 	in *logspb.LogSessionByIdRequest,
@@ -73,7 +118,7 @@ func (s *PluginServer) GetSession(
 		return nil, status.Errorf(codes.InvalidArgument, "request is nil")
 	}
 
-	resp, err := s.Impl.GetSession(types.PluginContextFromContext(ctx), in.GetSessionId())
+	resp, err := s.Impl.GetSession(logsPluginContext(ctx), in.GetSessionId())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get session: %v", err)
 	}
@@ -88,7 +133,7 @@ func (s *PluginServer) ListSessions(
 	ctx context.Context,
 	_ *emptypb.Empty,
 ) (*logspb.ListLogSessionsResponse, error) {
-	resp, err := s.Impl.ListSessions(types.PluginContextFromContext(ctx))
+	resp, err := s.Impl.ListSessions(logsPluginContext(ctx))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list sessions: %v", err)
 	}
@@ -112,7 +157,7 @@ func (s *PluginServer) CloseSession(
 		return nil, status.Errorf(codes.InvalidArgument, "request is nil")
 	}
 
-	if err := s.Impl.CloseSession(types.PluginContextFromContext(ctx), in.GetSessionId()); err != nil {
+	if err := s.Impl.CloseSession(logsPluginContext(ctx), in.GetSessionId()); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to close session: %v", err)
 	}
 
@@ -130,7 +175,7 @@ func (s *PluginServer) UpdateSessionOptions(
 	}
 
 	resp, err := s.Impl.UpdateSessionOptions(
-		types.PluginContextFromContext(ctx),
+		logsPluginContext(ctx),
 		in.GetSessionId(),
 		LogSessionOptionsFromProto(in.GetOptions()),
 	)

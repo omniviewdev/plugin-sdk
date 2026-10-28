@@ -1,6 +1,7 @@
 package logs
 
 import (
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -58,15 +59,15 @@ func LogSessionStatusFromProto(p logspb.LogSessionStatus) LogSessionStatus {
 
 // LogSession represents an active log viewing session.
 type LogSession struct {
-	ID             string            `json:"id"`
-	PluginID       string            `json:"plugin_id"`
-	ConnectionID   string            `json:"connection_id"`
-	ResourceKey    string            `json:"resource_key"`
-	ResourceID     string            `json:"resource_id"`
-	Options        LogSessionOptions `json:"options"`
-	Status         LogSessionStatus  `json:"status"`
-	ActiveSources  []LogSource       `json:"active_sources"`
-	CreatedAt      time.Time         `json:"created_at"`
+	ID            string            `json:"id"`
+	PluginID      string            `json:"plugin_id"`
+	ConnectionID  string            `json:"connection_id"`
+	ResourceKey   string            `json:"resource_key"`
+	ResourceID    string            `json:"resource_id"`
+	Options       LogSessionOptions `json:"options"`
+	Status        LogSessionStatus  `json:"status"`
+	ActiveSources []LogSource       `json:"active_sources"`
+	CreatedAt     time.Time         `json:"created_at"`
 }
 
 func (s *LogSession) ToProto() *logspb.LogSession {
@@ -107,16 +108,18 @@ func LogSessionFromProto(p *logspb.LogSession) *LogSession {
 
 // LogSessionOptions contains options for creating or updating a log session.
 type LogSessionOptions struct {
-	Target              string            `json:"target"`
-	Follow              bool              `json:"follow"`
-	IncludePrevious     bool              `json:"include_previous"`
-	IncludeTimestamps   bool              `json:"include_timestamps"`
-	TailLines           int64             `json:"tail_lines"`
-	SinceSeconds        int64             `json:"since_seconds"`
-	SinceTime           *time.Time        `json:"since_time,omitempty"`
-	LimitBytes          int64             `json:"limit_bytes"`
-	IncludeSourceEvents bool              `json:"include_source_events"`
-	Params              map[string]string `json:"params"`
+	Reference           *resourcev2.ResourceReference `json:"-"`
+	Route               *resourcev2.AccessRoute       `json:"-"`
+	Target              string                        `json:"target"`
+	Follow              bool                          `json:"follow"`
+	IncludePrevious     bool                          `json:"include_previous"`
+	IncludeTimestamps   bool                          `json:"include_timestamps"`
+	TailLines           int64                         `json:"tail_lines"`
+	SinceSeconds        int64                         `json:"since_seconds"`
+	SinceTime           *time.Time                    `json:"since_time,omitempty"`
+	LimitBytes          int64                         `json:"limit_bytes"`
+	IncludeSourceEvents bool                          `json:"include_source_events"`
+	Params              map[string]string             `json:"params"`
 }
 
 func (o *LogSessionOptions) ToProto() *logspb.LogSessionOptions {
@@ -164,8 +167,10 @@ func LogSessionOptionsFromProto(p *logspb.LogSessionOptions) LogSessionOptions {
 
 // CreateSessionOptions contains everything needed to create a log session.
 type CreateSessionOptions struct {
-	ResourceKey  string                 `json:"resource_key"`
-	ResourceID   string                 `json:"resource_id"`
-	ResourceData map[string]interface{} `json:"resource_data"`
-	Options      LogSessionOptions      `json:"options"`
+	ResourceKey  string                        `json:"resource_key"`
+	ResourceID   string                        `json:"resource_id"`
+	ResourceData *resourcev2.Value             `json:"resource_data"`
+	Reference    *resourcev2.ResourceReference `json:"reference,omitempty"`
+	Route        *resourcev2.AccessRoute       `json:"route,omitempty"`
+	Options      LogSessionOptions             `json:"options"`
 }

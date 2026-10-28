@@ -29,19 +29,21 @@ type Controller[ClientT any] struct {
 	closeOnce         sync.Once
 	closeErr          error
 	updates           *updateManager[ClientT]
+	catalogNonce      [32]byte
 }
 
 type clientSlot[T any] struct {
-	connection types.Connection
-	client     *T
-	ctx        context.Context
-	cancel     context.CancelFunc
-	ready      chan struct{}
-	err        error
-	stopping   bool
-	users      sync.WaitGroup
-	destroy    sync.Once
-	destroyErr error
+	connection   types.Connection
+	client       *T
+	ctx          context.Context
+	cancel       context.CancelFunc
+	ready        chan struct{}
+	err          error
+	stopping     bool
+	users        sync.WaitGroup
+	destroy      sync.Once
+	destroyErr   error
+	catalogNonce [32]byte
 }
 
 func NewController[T any](cfg Config[T]) (*Controller[T], error) {
@@ -68,8 +70,13 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 		}
 	}
 	cfg.Registrations = append([]Registration[T](nil), cfg.Registrations...)
+	nonce, err := newCatalogNonce()
+	if err != nil {
+		return nil, err
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	controller := &Controller[T]{cfg: cfg, ctx: ctx, cancel: cancel, connections: make(map[string]types.Connection), nativeConnections: make(map[string]types.Connection), overrides: make(map[string]types.Connection), disabled: make(map[string]struct{}), changing: make(map[string]bool), clients: make(map[string]*clientSlot[T])}
+	controller.catalogNonce = nonce
 	controller.updates = newUpdateManager(controller)
 	return controller, nil
 }
@@ -136,6 +143,20 @@ func (c *Controller[T]) lease(ctx context.Context, route AccessRoute) (context.C
 	if c.cfg.Lifecycle == nil {
 		return ctx, nil, cancel, nil
 	}
+	if held, ok := ctx.Value(catalogSlotKey{}).(*clientSlot[T]); ok {
+		c.mu.Lock()
+		current := c.clients[route.Connection] == held && !held.stopping && held.ctx.Err() == nil
+		if current {
+			held.users.Add(1)
+		}
+		c.mu.Unlock()
+		if !current {
+			cancel()
+			return nil, nil, nil, NewError("RESET_REQUIRED", "The admitted client generation has retired.")
+		}
+		stop := context.AfterFunc(held.ctx, cancel)
+		return ctx, held.client, func() { stop(); cancel(); held.users.Done() }, nil
+	}
 	c.mu.Lock()
 	s := c.clients[route.Connection]
 	if s == nil || s.stopping {
@@ -157,13 +178,48 @@ func (c *Controller[T]) lease(ctx context.Context, route AccessRoute) (context.C
 		return nil, nil, nil, NewError("CANCELLED", "Connection is stopping or failed to start.")
 	}
 	s.users.Add(1)
+	connection := cloneConnection(c.connections[route.Connection])
 	c.mu.Unlock()
 	stop := context.AfterFunc(s.ctx, cancel)
 	session, _ := SessionFromContext(ctx)
-	connection := cloneConnection(s.connection)
 	session.Connection = &connection
 	ctx = WithSession(ctx, session)
+	ctx = context.WithValue(ctx, catalogSlotKey{}, s)
 	return ctx, s.client, func() { stop(); cancel(); s.users.Done() }, nil
+}
+
+// WithConnection holds an already-connected native client generation for
+// utility work. Metadata is only a selector; the callback receives the actual
+// configured profile. No probe, implicit start or default selection occurs.
+func (c *Controller[T]) WithConnection(ctx context.Context, route AccessRoute, fn func(context.Context, types.Connection) error) (err error) {
+	var registration *Registration[T]
+	defer c.guard(&registration, &err)
+	if c.cfg.Lifecycle == nil {
+		return NewError("UNSUPPORTED", "Connected utility context is unavailable.")
+	}
+	if fn == nil {
+		return NewError("INVALID_REQUEST", "Utility callback is required.")
+	}
+	if _, err = c.connection(ctx, route.Connection); err != nil {
+		return err
+	}
+	native, _, done, err := c.lease(ctx, route)
+	if err != nil {
+		if ErrorCode(err) == "INVALID_REQUEST" {
+			return NewError("CONNECTION_ERROR", "Selected connection is not started.")
+		}
+		return err
+	}
+	defer done()
+	session, _ := SessionFromContext(native)
+	if session.Connection == nil {
+		return NewError("INTERNAL", "Active client has no configured profile.")
+	}
+	err = fn(native, *session.Connection)
+	if err == nil {
+		err = native.Err()
+	}
+	return err
 }
 
 // WithClient holds an active client lease for discovery or provider-specific
@@ -317,7 +373,7 @@ func scopeContains(outer, inner QueryScope) bool {
 func (c *Controller[T]) Catalog(ctx context.Context, request CatalogRequest) (catalog Catalog, err error) {
 	var registration *Registration[T]
 	defer c.guard(&registration, &err)
-	ctx, done, err := c.routeContext(ctx, request.Route)
+	ctx, _, done, err := c.lease(ctx, request.Route)
 	if err != nil {
 		return Catalog{}, err
 	}
@@ -367,11 +423,90 @@ func (c *Controller[T]) Catalog(ctx context.Context, request CatalogRequest) (ca
 		}
 		typ.Capabilities = caps
 	}
+	nonce := c.catalogNonce
+	if slot, ok := ctx.Value(catalogSlotKey{}).(*clientSlot[T]); ok {
+		c.mu.Lock()
+		current := c.clients[request.Route.Connection] == slot && !slot.stopping && slot.ctx.Err() == nil
+		c.mu.Unlock()
+		if !current {
+			return Catalog{}, NewError("RESET_REQUIRED", "Catalog client generation retired.")
+		}
+		nonce = slot.catalogNonce
+	}
+	if ctx.Err() != nil {
+		return Catalog{}, NewError("RESET_REQUIRED", "Catalog client generation retired.")
+	}
+	catalog.Revision = boundCatalogRevision(nonce, catalog.Revision)
 	return catalog, nil
 }
 
-func exactScope(address ResourceAddress, dimensions []Dimension) (QueryScope, error) {
-	return exactScopeEntries(address.Scope, dimensions)
+// ScopeForAddress projects validated identity onto declared query dimensions.
+// Selection-only dimensions remain explicit any/unknown. This is support
+// qualification only: callers must independently admit trusted access covering
+// that entire derived scope and must never infer a narrower native selection.
+func ScopeForAddress(address ResourceAddress, descriptor ResourceType) (QueryScope, error) {
+	if err := ValidateAddress(address, descriptor.IdentityDimensions); err != nil {
+		return nil, err
+	}
+	if _, err := dimensions(descriptor.QueryDimensions); err != nil {
+		return nil, err
+	}
+	scope, _ := queryScopeForIdentity(address, descriptor.QueryDimensions)
+	return scope, nil
+}
+
+// queryScopeForIdentity does not infer selection-only dimensions from opaque IDs.
+// An unknown dimension is any only for capability qualification, never evidence
+// of narrow membership or authority to acquire a wider source.
+func queryScopeForIdentity(address ResourceAddress, dimensions []Dimension) (QueryScope, bool) {
+	scope := make(QueryScope, 0, len(dimensions))
+	exact := true
+	for _, dimension := range dimensions {
+		constraint := ScopeConstraint{Dimension: dimension.Name, Match: ScopeAny}
+		found := false
+		for _, entry := range address.Scope {
+			if entry.Dimension == dimension.Name {
+				values := []string{entry.Value}
+				constraint.Match, constraint.Values = ScopeOneOf, &values
+				found = true
+				break
+			}
+		}
+		if !found {
+			exact = false
+		}
+		scope = append(scope, constraint)
+	}
+	return scope, exact
+}
+
+// identityWithinQueryScope checks only dimensions shared by identity and query.
+// Selection-only filtering and its coverage claim belong to the native source.
+func identityWithinQueryScope(address ResourceAddress, scope QueryScope) bool {
+	for _, entry := range address.Scope {
+		for _, constraint := range scope {
+			if entry.Dimension != constraint.Dimension {
+				continue
+			}
+			if constraint.Match == ScopeAny {
+				break
+			}
+			found := false
+			if constraint.Values != nil {
+				for _, value := range *constraint.Values {
+					if entry.Value == value {
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				return false
+			}
+			break
+		}
+	}
+	return true
 }
 
 func exactScopeEntries(entries []ScopeEntry, dimensions []Dimension) (QueryScope, error) {
@@ -422,11 +557,7 @@ func admitTarget(catalog Catalog, target operationTarget) (ResourceType, QuerySc
 		if err := ValidateAddress(*target.address, descriptor.IdentityDimensions); err != nil {
 			return ResourceType{}, nil, err
 		}
-		var err error
-		scope, err = exactScope(*target.address, descriptor.QueryDimensions)
-		if err != nil {
-			return ResourceType{}, nil, err
-		}
+		scope, _ = queryScopeForIdentity(*target.address, descriptor.QueryDimensions)
 	} else if err := ValidateScope(scope, descriptor.QueryDimensions); err != nil {
 		return ResourceType{}, nil, err
 	}
@@ -528,6 +659,10 @@ func AdmitStreamingAction(ctx context.Context, provider Provider, request Action
 }
 
 func admitProviderTarget(ctx context.Context, provider Provider, target operationTarget) (ResourceType, error) {
+	revision, _ := CatalogRevisionForRouteFromContext(ctx, target.provider, target.route)
+	if err := ValidateCatalogRevision(revision); err != nil {
+		return ResourceType{}, err
+	}
 	if err := ctx.Err(); err != nil {
 		return ResourceType{}, &ResourceOperationError{Code: ErrorCode(err), Err: err}
 	}
@@ -539,6 +674,9 @@ func admitProviderTarget(ctx context.Context, provider Provider, target operatio
 		return ResourceType{}, &ResourceOperationError{Code: ErrorCode(err), Err: err}
 	}
 	if err := ValidateCatalog(catalog); err != nil {
+		return ResourceType{}, err
+	}
+	if err := CheckCatalogRevisionForRoute(ctx, catalog, target.route); err != nil {
 		return ResourceType{}, err
 	}
 	descriptor, _, err := admitTarget(catalog, target)
@@ -585,10 +723,27 @@ func ValidateOperationResult(request any, result any, descriptor ResourceType) e
 		return NewError("UNSUPPORTED", "Unsupported finite resource operation.")
 	}
 }
-
-func (c *Controller[T]) resolve(ctx context.Context, route AccessRoute, provider, typ, representation string, scope QueryScope, address *ResourceAddress, op Operation) (*Registration[T], ResourceType, error) {
+func (c *Controller[T]) fenceCatalog(ctx context.Context, route AccessRoute) error {
+	if ctx.Err() != nil {
+		return NewError("RESET_REQUIRED", "The admitted catalog generation retired during the operation.")
+	}
 	catalog, err := c.Catalog(ctx, CatalogRequest{Route: route})
 	if err != nil {
+		return err
+	}
+	return CheckCatalogRevisionForRoute(ctx, catalog, route)
+}
+
+func (c *Controller[T]) resolve(ctx context.Context, route AccessRoute, provider, typ, representation string, scope QueryScope, address *ResourceAddress, op Operation) (*Registration[T], ResourceType, error) {
+	revision, _ := CatalogRevisionForRouteFromContext(ctx, provider, route)
+	if err := ValidateCatalogRevision(revision); err != nil {
+		return nil, ResourceType{}, err
+	}
+	catalog, err := c.Catalog(ctx, CatalogRequest{Route: route})
+	if err != nil {
+		return nil, ResourceType{}, err
+	}
+	if err := CheckCatalogRevisionForRoute(ctx, catalog, route); err != nil {
 		return nil, ResourceType{}, err
 	}
 	descriptor, scope, err := admitTarget(catalog, operationTarget{route: route, provider: provider, typ: typ, representation: representation, scope: scope, address: address, operation: op})
@@ -653,14 +808,8 @@ func checkRecord(record Record, descriptor ResourceType, provider, authority, re
 			return NewError("RESET_REQUIRED", "Resource incarnation changed.")
 		}
 	}
-	if scope != nil {
-		actual, err := exactScope(a, descriptor.QueryDimensions)
-		if err != nil {
-			return err
-		}
-		if !scopeContains(scope, actual) {
-			return NewError("INTERNAL", "Provider response escaped requested scope.")
-		}
+	if scope != nil && !identityWithinQueryScope(a, scope) {
+		return NewError("INTERNAL", "Provider response escaped requested identity scope.")
 	}
 	if representation != "" && record.Representation.ID != representation {
 		return NewError("INTERNAL", "Provider response changed requested representation.")
@@ -699,27 +848,28 @@ func (c *Controller[T]) Get(ctx context.Context, request GetRequest) (record Rec
 	if err = ValidateGetRequest(request); err != nil {
 		return record, err
 	}
+	ctx, client, done, err := c.lease(ctx, request.Route)
+	if err != nil {
+		return record, err
+	}
+	defer done()
 	a := request.Reference.Address
 	var descriptor ResourceType
 	r, descriptor, err = c.resolve(ctx, request.Route, a.Provider, a.Type, request.Representation, nil, &a, OperationGet)
 	if err != nil {
 		return record, err
 	}
-	scope, scopeErr := exactScope(a, descriptor.QueryDimensions)
-	if scopeErr != nil {
-		return record, scopeErr
+	scope, exact := queryScopeForIdentity(a, descriptor.QueryDimensions)
+	// Unknown selection-only dimensions must not turn an exact Get into an
+	// implicit unscoped watch or acquisition. An explicit query can start it.
+	if exact {
+		if err := c.ensureOnFirstQuery(ctx, ReadTarget{Route: request.Route, Provider: a.Provider, Authority: a.Authority, Type: a.Type, Scope: scope, Representation: request.Representation}); err != nil {
+			return record, err
+		}
 	}
-	if err := c.ensureOnFirstQuery(ctx, ReadTarget{Route: request.Route, Provider: a.Provider, Authority: a.Authority, Type: a.Type, Scope: scope, Representation: request.Representation}); err != nil {
-		return record, err
-	}
-	ctx, client, done, err := c.lease(ctx, request.Route)
-	if err != nil {
-		return record, err
-	}
-	defer done()
 	record, err = r.Get(ctx, client, request)
 	if err == nil {
-		err = ctx.Err()
+		err = c.fenceCatalog(ctx, request.Route)
 	}
 	if err == nil {
 		err = checkRecord(record, descriptor, a.Provider, a.Authority, request.Representation, &request.Reference, nil)
@@ -733,6 +883,11 @@ func (c *Controller[T]) Enumerate(ctx context.Context, request EnumerateRequest)
 	if err = ValidateEnumerateRequest(request); err != nil {
 		return page, err
 	}
+	ctx, client, done, err := c.lease(ctx, request.Target.Route)
+	if err != nil {
+		return page, err
+	}
+	defer done()
 	t := request.Target
 	var descriptor ResourceType
 	r, descriptor, err = c.resolve(ctx, t.Route, t.Provider, t.Type, t.Representation, t.Scope, nil, OperationEnumerate)
@@ -742,14 +897,9 @@ func (c *Controller[T]) Enumerate(ctx context.Context, request EnumerateRequest)
 	if err := c.ensureOnFirstQuery(ctx, t); err != nil {
 		return page, err
 	}
-	ctx, client, done, err := c.lease(ctx, t.Route)
-	if err != nil {
-		return page, err
-	}
-	defer done()
 	page, err = r.Enumerate(ctx, client, request)
 	if err == nil {
-		err = ctx.Err()
+		err = c.fenceCatalog(ctx, t.Route)
 	}
 	if err == nil {
 		err = checkPage(page, descriptor, t, request.PageSize)
@@ -763,6 +913,11 @@ func (c *Controller[T]) NativeQuery(ctx context.Context, request NativeQueryRequ
 	if err = ValidateNativeQueryRequest(request); err != nil {
 		return page, err
 	}
+	ctx, client, done, err := c.lease(ctx, request.Target.Route)
+	if err != nil {
+		return page, err
+	}
+	defer done()
 	t := request.Target
 	var descriptor ResourceType
 	r, descriptor, err = c.resolve(ctx, t.Route, t.Provider, t.Type, t.Representation, t.Scope, nil, OperationNativeQuery)
@@ -772,14 +927,9 @@ func (c *Controller[T]) NativeQuery(ctx context.Context, request NativeQueryRequ
 	if err := c.ensureOnFirstQuery(ctx, t); err != nil {
 		return page, err
 	}
-	ctx, client, done, err := c.lease(ctx, t.Route)
-	if err != nil {
-		return page, err
-	}
-	defer done()
 	page, err = r.NativeQuery(ctx, client, request)
 	if err == nil {
-		err = ctx.Err()
+		err = c.fenceCatalog(ctx, t.Route)
 	}
 	if err == nil {
 		err = checkPage(page, descriptor, t, request.PageSize)
@@ -793,20 +943,20 @@ func (c *Controller[T]) Mutate(ctx context.Context, request MutationRequest) (re
 	if err = ValidateMutationRequest(request); err != nil {
 		return record, err
 	}
+	ctx, client, done, err := c.lease(ctx, request.Route)
+	if err != nil {
+		return record, err
+	}
+	defer done()
 	a := request.Reference.Address
 	var descriptor ResourceType
 	r, descriptor, err = c.resolve(ctx, request.Route, a.Provider, a.Type, "", nil, &a, OperationMutation)
 	if err != nil {
 		return record, err
 	}
-	ctx, client, done, err := c.lease(ctx, request.Route)
-	if err != nil {
-		return record, err
-	}
-	defer done()
 	record, err = r.Mutate(ctx, client, request)
 	if err == nil {
-		err = ctx.Err()
+		err = c.fenceCatalog(ctx, request.Route)
 	}
 	if err == nil {
 		err = checkRecord(record, descriptor, a.Provider, a.Authority, "", &request.Reference, nil)
@@ -820,19 +970,19 @@ func (c *Controller[T]) Action(ctx context.Context, request ActionRequest) (valu
 	if err = ValidateActionRequest(request); err != nil {
 		return value, err
 	}
-	a := request.Reference.Address
-	r, _, err = c.resolve(ctx, request.Route, a.Provider, a.Type, "", nil, &a, OperationAction)
-	if err != nil {
-		return value, err
-	}
 	ctx, client, done, err := c.lease(ctx, request.Route)
 	if err != nil {
 		return value, err
 	}
 	defer done()
+	a := request.Reference.Address
+	r, _, err = c.resolve(ctx, request.Route, a.Provider, a.Type, "", nil, &a, OperationAction)
+	if err != nil {
+		return value, err
+	}
 	value, err = r.Action(ctx, client, request)
 	if err == nil {
-		err = ctx.Err()
+		err = c.fenceCatalog(ctx, request.Route)
 	}
 	if err == nil {
 		err = ValidateValue(value)
@@ -950,11 +1100,17 @@ func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status 
 	s := c.clients[id]
 	created := s == nil
 	if created {
+		nonce, nonceErr := newCatalogNonce()
+		if nonceErr != nil {
+			c.mu.Unlock()
+			return status, nonceErr
+		}
 		clientCtx, cancel := context.WithCancel(c.ctx)
 		session, _ := SessionFromContext(ctx)
 		session.Connection = nil
 		clientCtx = WithSession(clientCtx, session)
 		s = &clientSlot[T]{connection: connection, ctx: clientCtx, cancel: cancel, ready: make(chan struct{})}
+		s.catalogNonce = nonce
 		c.clients[id] = s
 	}
 	c.mu.Unlock()
@@ -1255,12 +1411,45 @@ func (c *Controller[T]) applyInventory(ctx context.Context, native, overrides ma
 		c.mu.Unlock()
 		return NewError("CANCELLED", "Provider is closed.")
 	}
+	// Host overlays omit private credentials. Merge only into the ephemeral
+	// effective inventory, never into the host-owned desired overlay.
+	for id, override := range overrides {
+		if override.GetSensitiveData() != nil {
+			continue
+		}
+		source, exists := native[id]
+		candidate := override
+		if exists {
+			candidate.SetSensitiveData(source.GetSensitiveData())
+			if SameConnectionClientConfig(candidate, source) {
+				effective[id] = candidate
+				continue
+			}
+		}
+		if source, exists = c.connections[id]; exists {
+			candidate.SetSensitiveData(source.GetSensitiveData())
+			if SameConnectionClientConfig(candidate, source) {
+				effective[id] = candidate
+			}
+		}
+	}
 	changed := make([]string, 0)
 	for id, previous := range c.connections {
 		current, exists := effective[id]
-		if !exists || !reflect.DeepEqual(previous, current) {
+		if !exists || !SameConnectionClientConfig(previous, current) {
 			c.changing[id] = true
 			changed = append(changed, id)
+		} else {
+			if current.LastRefresh.IsZero() {
+				current.LastRefresh = previous.LastRefresh
+			}
+			if current.ExpiryTime == 0 {
+				current.ExpiryTime = previous.ExpiryTime
+			}
+			if current.Client == nil {
+				current.Client = previous.Client
+			}
+			effective[id] = current
 		}
 	}
 	for id := range effective {

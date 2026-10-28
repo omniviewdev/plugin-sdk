@@ -1,13 +1,15 @@
 package metric
 
 import (
+	"context"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"time"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 )
 
 // PluginOpts contains the options for the metric plugin.
@@ -414,16 +416,18 @@ func MetricResultFromProto(p *metricpb.MetricResult) MetricResult {
 
 // QueryRequest is the Go-side representation of a metric query.
 type QueryRequest struct {
-	ResourceKey       string                 `json:"resource_key"`
-	ResourceID        string                 `json:"resource_id"`
-	ResourceNamespace string                 `json:"resource_namespace"`
-	ResourceData      map[string]interface{} `json:"resource_data"`
-	MetricIDs         []string               `json:"metric_ids"`
-	Shape             MetricShape            `json:"shape"`
-	StartTime         time.Time              `json:"start_time"`
-	EndTime           time.Time              `json:"end_time"`
-	Step              time.Duration          `json:"step"`
-	Params            map[string]string      `json:"params"`
+	ResourceKey       string                        `json:"resource_key"`
+	ResourceID        string                        `json:"resource_id"`
+	ResourceNamespace string                        `json:"resource_namespace"`
+	ResourceData      *resourcev2.Value             `json:"resource_data,omitempty"`
+	Reference         *resourcev2.ResourceReference `json:"reference,omitempty"`
+	Route             *resourcev2.AccessRoute       `json:"route,omitempty"`
+	MetricIDs         []string                      `json:"metric_ids"`
+	Shape             MetricShape                   `json:"shape"`
+	StartTime         time.Time                     `json:"start_time"`
+	EndTime           time.Time                     `json:"end_time"`
+	Step              time.Duration                 `json:"step"`
+	Params            map[string]string             `json:"params"`
 }
 
 // QueryResponse is the Go-side representation of a metric query response.
@@ -461,22 +465,27 @@ func (r *QueryResponse) ToProto() *metricpb.QueryMetricsResponse {
 
 // StreamInput is a control message for the metric stream.
 type StreamInput struct {
-	SubscriptionID    string                 `json:"subscription_id"`
-	Command           MetricStreamCommand    `json:"command"`
-	ResourceKey       string                 `json:"resource_key"`
-	ResourceID        string                 `json:"resource_id"`
-	ResourceNamespace string                 `json:"resource_namespace"`
-	ResourceData      map[string]interface{} `json:"resource_data"`
-	MetricIDs         []string               `json:"metric_ids"`
-	Interval          time.Duration          `json:"interval"`
+	SubscriptionID    string                        `json:"subscription_id"`
+	Command           MetricStreamCommand           `json:"command"`
+	ResourceKey       string                        `json:"resource_key"`
+	ResourceID        string                        `json:"resource_id"`
+	ResourceNamespace string                        `json:"resource_namespace"`
+	ResourceData      *resourcev2.Value             `json:"resource_data,omitempty"`
+	Reference         *resourcev2.ResourceReference `json:"reference,omitempty"`
+	Route             *resourcev2.AccessRoute       `json:"route,omitempty"`
+	MetricIDs         []string                      `json:"metric_ids"`
+	Interval          time.Duration                 `json:"interval"`
+	Params            map[string]string             `json:"params"`
+	CatalogRevision   string                        `json:"catalog_revision,omitempty"`
 }
 
 // StreamOutput is a metric data push from the stream.
 type StreamOutput struct {
-	SubscriptionID string         `json:"subscription_id"`
-	Results        []MetricResult `json:"results"`
-	Timestamp      time.Time      `json:"timestamp"`
-	Error          string         `json:"error"`
+	SubscriptionID string                             `json:"subscription_id"`
+	Results        []MetricResult                     `json:"results"`
+	Timestamp      time.Time                          `json:"timestamp"`
+	Error          string                             `json:"error"`
+	OperationError *resourcev2.ResourceOperationError `json:"operation_error,omitempty"`
 }
 
 // ===================== Context Types ===================== //
@@ -484,12 +493,16 @@ type StreamOutput struct {
 // QueryContext provides context for metric queries. Wraps the plugin context
 // plus connection information passed via gRPC metadata.
 type QueryContext struct {
-	PluginID     string
-	ConnectionID string
-	Connection   *types.Connection
+	context.Context `json:"-"`
+	PluginID        string
+	ConnectionID    string
+	Connection      *types.Connection
 }
 
 // StreamContext provides context for metric streams.
 type StreamContext struct {
-	PluginID string
+	PluginID        string
+	context.Context `json:"-"`
+	ConnectionID    string
+	Connection      *types.Connection
 }

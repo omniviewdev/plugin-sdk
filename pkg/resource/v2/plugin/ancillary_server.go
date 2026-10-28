@@ -35,7 +35,14 @@ func ancillaryCallHandler(srv interface{}, ctx context.Context, dec func(interfa
 		if err != nil {
 			return nil, rpcError(err)
 		}
+		request := v.(*resourcepb.AncillaryRequest)
+		if err := s.owner.checkAncillaryCatalogs(ctx, request); err != nil {
+			return nil, rpcError(s.owner.classify(err))
+		}
 		out, err := s.call(ctx, v.(*resourcepb.AncillaryRequest))
+		if fenceErr := s.owner.checkAncillaryCatalogs(ctx, request); fenceErr != nil {
+			return nil, rpcError(s.owner.classify(fenceErr))
+		}
 		err = responseError(out, err)
 		return out, rpcError(s.owner.classify(err))
 	}

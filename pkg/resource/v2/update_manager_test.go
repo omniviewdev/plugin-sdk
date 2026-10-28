@@ -69,7 +69,7 @@ func TestControllerWatchOnlyCatalogAndExplicitTarget(t *testing.T) {
 	if len(caps) != 1 || caps[0].Operation != OperationUpdate || caps[0].Guarantee != BestEffortGuarantee {
 		t.Fatal("watch-only registration fabricated finite or strong continuity support")
 	}
-	if err := c.StartConnectionWatch(context.Background(), []ReadTarget{controllerTarget()}); err != nil {
+	if err := c.StartConnectionWatch(acceptedControllerContext(t, context.Background(), c), []ReadTarget{controllerTarget()}); err != nil {
 		t.Fatal(err)
 	}
 	target := <-started
@@ -78,11 +78,11 @@ func TestControllerWatchOnlyCatalogAndExplicitTarget(t *testing.T) {
 	}
 	changed := target
 	changed.Authority = "different"
-	assertControllerCode(t, c.EnsureResourceWatch(context.Background(), changed), "RESET_REQUIRED")
-	if err := c.StopConnectionWatch(context.Background(), target.Route); err != nil {
+	assertControllerCode(t, c.EnsureResourceWatch(acceptedControllerContext(t, context.Background(), c), changed), "RESET_REQUIRED")
+	if err := c.StopConnectionWatch(acceptedControllerContext(t, context.Background(), c), target.Route); err != nil {
 		t.Fatal(err)
 	}
-	if c.HasWatch(context.Background(), target.Route) {
+	if c.HasWatch(acceptedControllerContext(t, context.Background(), c), target.Route) {
 		t.Fatal("stopped connection watch remains registered")
 	}
 }
@@ -97,7 +97,7 @@ func TestControllerUpdateReadinessReplaysBeforeLiveStates(t *testing.T) {
 	finished := make(chan error, 1)
 	var readyCalls atomic.Int32
 	go func() {
-		finished <- c.ListenForEvents(ctx, controllerUpdateSink{state: func(e WatchStateEvent) { states <- e }}, func() error {
+		finished <- c.ListenForEvents(acceptedControllerContext(t, ctx, c), controllerUpdateSink{state: func(e WatchStateEvent) { states <- e }}, func() error {
 			readyCalls.Add(1)
 			c.updates.publishState(watch, WatchStateEvent{State: WatchStateSynced, Count: Count{Kind: "unknown"}})
 			return nil
@@ -122,7 +122,7 @@ func TestControllerUpdateRejectedReadinessRetainsReplay(t *testing.T) {
 	watch := &updateWatch{target: controllerTarget()}
 	c.updates.publishState(watch, WatchStateEvent{State: WatchStateSynced, Count: Count{Kind: "unknown"}})
 	rejected := errors.New("listener not ready")
-	err := c.ListenForEvents(context.Background(), controllerUpdateSink{}, func() error { return rejected })
+	err := c.ListenForEvents(acceptedControllerContext(t, context.Background(), c), controllerUpdateSink{}, func() error { return rejected })
 	if !errors.Is(err, rejected) {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestControllerUpdateRejectedReadinessRetainsReplay(t *testing.T) {
 	delivered := make(chan WatchStateEvent, 1)
 	finished := make(chan error, 1)
 	go func() {
-		finished <- c.ListenForEvents(ctx, controllerUpdateSink{state: func(event WatchStateEvent) { delivered <- event }}, func() error { return nil })
+		finished <- c.ListenForEvents(acceptedControllerContext(t, ctx, c), controllerUpdateSink{state: func(event WatchStateEvent) { delivered <- event }}, func() error { return nil })
 	}()
 	if (<-delivered).State != WatchStateSynced {
 		t.Fatal("rejected registration lost replay history")
@@ -146,7 +146,7 @@ func TestControllerUpdateReplayOverflowFailsBeforeReadiness(t *testing.T) {
 	for range maxPendingUpdateStates + 1 {
 		c.updates.publishState(watch, WatchStateEvent{State: WatchStateSyncing, Count: Count{Kind: "unknown"}})
 	}
-	err := c.ListenForEvents(context.Background(), controllerUpdateSink{}, func() error { t.Fatal("overflow reached readiness"); return nil })
+	err := c.ListenForEvents(acceptedControllerContext(t, context.Background(), c), controllerUpdateSink{}, func() error { t.Fatal("overflow reached readiness"); return nil })
 	assertControllerCode(t, err, "RESOURCE_LIMIT")
 }
 
@@ -178,7 +178,7 @@ func TestControllerUpdateRetriesAndStopDrainsBeforeDestroy(t *testing.T) {
 	c := newTestController(t, cfg)
 	c.updates.baseBackoff = time.Millisecond
 	startTestConnection(t, c)
-	if err := c.EnsureResourceWatch(context.Background(), controllerTarget()); err != nil {
+	if err := c.EnsureResourceWatch(acceptedControllerContext(t, context.Background(), c), controllerTarget()); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -196,7 +196,13 @@ func TestControllerUpdateRetriesAndStopDrainsBeforeDestroy(t *testing.T) {
 
 func TestControllerUpdateRejectsEscapedNativeRecord(t *testing.T) {
 	cfg := controllerConfig()
+	release := make(chan struct{})
 	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Watch: func(ctx context.Context, _ *string, _ ReadTarget, _ Representation, sink WatchEventSink) error {
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 		record := controllerRecord()
 		record.Reference.Address.Authority = "escaped"
 		sink.OnAdd(WatchAddPayload{Record: record})
@@ -204,14 +210,15 @@ func TestControllerUpdateRejectsEscapedNativeRecord(t *testing.T) {
 		return ctx.Err()
 	}}}
 	c := newTestController(t, cfg)
-	if err := c.EnsureResourceWatch(context.Background(), controllerTarget()); err != nil {
+	if err := c.EnsureResourceWatch(acceptedControllerContext(t, context.Background(), c), controllerTarget()); err != nil {
 		t.Fatal(err)
 	}
 	c.updates.mu.Lock()
 	watch := c.updates.watches["explicit"]["opaque/type"]
 	c.updates.mu.Unlock()
+	close(release)
 	<-watch.done
-	summary, err := c.GetWatchState(context.Background(), controllerTarget().Route)
+	summary, err := c.GetWatchState(acceptedControllerContext(t, context.Background(), c), controllerTarget().Route)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,16 +234,16 @@ func TestControllerUpdateSyncPolicyAndOptionalCallback(t *testing.T) {
 		return ctx.Err()
 	}}}
 	c := newTestController(t, cfg)
-	if err := c.StartConnectionWatch(context.Background(), []ReadTarget{controllerTarget()}); err != nil {
+	if err := c.StartConnectionWatch(acceptedControllerContext(t, context.Background(), c), []ReadTarget{controllerTarget()}); err != nil {
 		t.Fatal(err)
 	}
-	if c.HasWatch(context.Background(), controllerTarget().Route) {
+	if c.HasWatch(acceptedControllerContext(t, context.Background(), c), controllerTarget().Route) {
 		t.Fatal("on-first-query source started eagerly")
 	}
-	if _, err := c.Get(context.Background(), GetRequest{Route: controllerTarget().Route, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"}); err != nil {
+	if _, err := c.Get(acceptedControllerContext(t, context.Background(), c), GetRequest{Route: controllerTarget().Route, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"}); err != nil {
 		t.Fatal(err)
 	}
-	if running, err := c.IsResourceWatchRunning(context.Background(), controllerTarget().Route, "opaque/type"); err != nil || !running {
+	if running, err := c.IsResourceWatchRunning(acceptedControllerContext(t, context.Background(), c), controllerTarget().Route, "opaque/type"); err != nil || !running {
 		t.Fatalf("watch not running: %v", err)
 	}
 }
@@ -250,7 +257,7 @@ func TestControllerApplyConnectionsRetiresChangedAndRemovedClients(t *testing.T)
 	if _, err := c.StartConnection(context.Background(), "other"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.ApplyConnections(context.Background(), []types.Connection{{ID: "explicit", Name: "Explicit"}, {ID: "other", Name: "Changed"}}); err != nil {
+	if err := c.ApplyConnections(context.Background(), []types.Connection{{ID: "explicit", Name: "Explicit"}, {ID: "other", Name: "Changed", Data: map[string]any{"endpoint": "https://changed.invalid"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if destroyed.Load() != 1 {
@@ -277,14 +284,14 @@ func TestControllerApplyConnectionsRetiresChangedAndRemovedClients(t *testing.T)
 
 func TestControllerMissingWatchNeverAcknowledgesListenerReadiness(t *testing.T) {
 	c := newTestController(t, controllerConfig())
-	err := c.ListenForEvents(context.Background(), controllerUpdateSink{}, func() error { t.Fatal("missing watch acknowledged listener readiness"); return nil })
+	err := c.ListenForEvents(acceptedControllerContext(t, context.Background(), c), controllerUpdateSink{}, func() error { t.Fatal("missing watch acknowledged listener readiness"); return nil })
 	assertControllerCode(t, err, "UNSUPPORTED")
 }
 
 func TestControllerUpdateListenerPanicRetiresRegistration(t *testing.T) {
 	c := newTestController(t, controllerUpdateConfig())
 	c.updates.publishState(&updateWatch{target: controllerTarget()}, WatchStateEvent{State: WatchStateSynced, Count: Count{Kind: "unknown"}})
-	err := c.ListenForEvents(context.Background(), controllerUpdateSink{state: func(WatchStateEvent) { panic("private callback data") }}, func() error { return nil })
+	err := c.ListenForEvents(acceptedControllerContext(t, context.Background(), c), controllerUpdateSink{state: func(WatchStateEvent) { panic("private callback data") }}, func() error { return nil })
 	assertControllerCode(t, err, "INTERNAL")
 	if len(c.updates.snapshot()) != 0 {
 		t.Fatal("panicked listener survives return")
@@ -298,7 +305,7 @@ func TestControllerListenerCancellationDrainsPausedCallback(t *testing.T) {
 	ready := make(chan struct{})
 	finished := make(chan error, 1)
 	go func() {
-		finished <- c.ListenForEvents(ctx, controllerUpdateSink{}, func() error { close(ready); return nil })
+		finished <- c.ListenForEvents(acceptedControllerContext(t, ctx, c), controllerUpdateSink{}, func() error { close(ready); return nil })
 	}()
 	<-ready
 	listeners := c.updates.snapshot()
@@ -362,7 +369,7 @@ func TestControllerRestartReplacesDrainedUpdateTarget(t *testing.T) {
 			target := controllerTarget()
 			east := []string{"east"}
 			target.Scope = QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &east}}
-			if err := c.EnsureResourceWatch(context.Background(), target); err != nil {
+			if err := c.EnsureResourceWatch(acceptedControllerContext(t, context.Background(), c), target); err != nil {
 				t.Fatal(err)
 			}
 			<-started
@@ -375,7 +382,7 @@ func TestControllerRestartReplacesDrainedUpdateTarget(t *testing.T) {
 				west := []string{"west"}
 				target.Scope = QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &west}}
 			}
-			if err := c.RestartResourceWatch(context.Background(), target); err != nil {
+			if err := c.RestartResourceWatch(acceptedControllerContext(t, context.Background(), c), target); err != nil {
 				t.Fatal(err)
 			}
 			replacement := <-started

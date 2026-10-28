@@ -94,7 +94,7 @@ func TestActualGRPCBestEffortReadinessAndCancel(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(acceptedCatalogContext(t, context.Background(), c, updateTarget().Route))
 	defer cancel()
 	ready := make(chan struct{})
 	done := make(chan error, 1)

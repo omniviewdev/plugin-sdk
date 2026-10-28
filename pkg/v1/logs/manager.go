@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	logging "github.com/omniviewdev/plugin-sdk/log"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 	"github.com/omniviewdev/plugin-sdk/settings"
@@ -141,11 +142,12 @@ type ManagerConfig struct {
 
 // Manager manages the lifecycle of log sessions within a plugin process.
 type Manager struct {
-	log      logging.Logger
-	settings settings.Provider
-	registry *handlerRegistry
-	sink     OutputSink
-	clock    timeutil.Clock
+	log                logging.Logger
+	settings           settings.Provider
+	registry           *handlerRegistry
+	sink               OutputSink
+	clock              timeutil.Clock
+	connectionProvider resourcev2.ConnectionContextProvider
 
 	mu       sync.RWMutex
 	sessions map[string]*sessionState
@@ -181,6 +183,11 @@ func NewManager(cfg ManagerConfig) *Manager {
 // Provider interface implementation
 // ---------------------------------------------------------------------------
 
+// BindConnectionContextProvider binds resource sessions to the active source generation.
+func (m *Manager) BindConnectionContextProvider(provider resourcev2.ConnectionContextProvider) {
+	m.connectionProvider = provider
+}
+
 func (m *Manager) GetSupportedResources(_ *types.PluginContext) []Handler {
 	return m.registry.AllHandlers()
 }
@@ -189,6 +196,37 @@ func (m *Manager) CreateSession(
 	pluginctx *types.PluginContext,
 	opts CreateSessionOptions,
 ) (*LogSession, error) {
+	if opts.HasResourceIntent() {
+		return nil, resourceError("UNSUPPORTED", "Resource logs require CreateResourceSession.")
+	}
+	return m.createSession(pluginctx, opts)
+}
+
+func (m *Manager) CreateResourceSession(pluginctx *types.PluginContext, opts CreateSessionOptions) (*LogSession, error) {
+	if err := opts.Validate(); err != nil {
+		return nil, err
+	}
+	if err := validateRoute(pluginctx, opts); err != nil {
+		return nil, err
+	}
+	var session *LogSession
+	err := resourcev2.WithUtilityConnection(pluginctx, m.connectionProvider, opts.Reference, opts.Route, func(bound *types.PluginContext) error {
+		var err error
+		session, err = m.createSession(bound, opts)
+		return err
+	})
+	if err != nil {
+		if session != nil {
+			_ = m.CloseSession(pluginctx, session.ID)
+		}
+		return nil, err
+	}
+	return session, nil
+}
+
+func (m *Manager) createSession(pluginctx *types.PluginContext, opts CreateSessionOptions) (*LogSession, error) {
+	opts.Options.Reference = opts.Reference
+	opts.Options.Route = opts.Route
 	if pluginctx == nil {
 		return nil, fmt.Errorf("plugin context is nil")
 	}
@@ -199,7 +237,12 @@ func (m *Manager) CreateSession(
 	)
 
 	sessionID := uuid.NewString()
-	ctx, cancel := context.WithCancel(context.Background())
+	// Sessions outlive the creation RPC, but retain its context values.
+	parent := pluginctx.Context
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
 
 	// Copy the PluginContext so we don't mutate the caller's shared instance.
 	pctxCopy := *pluginctx
@@ -308,6 +351,8 @@ func (m *Manager) UpdateSessionOptions(
 	}
 
 	ss.mu.Lock()
+	opts.Reference = ss.opts.Reference
+	opts.Route = ss.opts.Route
 	ss.session.Options = opts
 	ss.opts.Options = opts
 	ss.mu.Unlock()
@@ -398,9 +443,11 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 
 	// Resolve sources
 	result, err := resolver(ss.pluginCtx, opts.ResourceData, SourceResolverOptions{
-		Watch:  opts.Options.Follow,
-		Target: opts.Options.Target,
-		Params: opts.Options.Params,
+		Watch:     opts.Options.Follow,
+		Target:    opts.Options.Target,
+		Params:    opts.Options.Params,
+		Reference: opts.Reference,
+		Route:     opts.Route,
 	})
 	if err != nil {
 		logger.Errorw(ss.ctx, "failed to resolve sources", "error", err)
@@ -634,6 +681,8 @@ func (m *Manager) streamSource(
 		SourceID:          source.ID,
 		Labels:            source.Labels,
 		ResourceData:      opts.ResourceData,
+		Reference:         opts.Reference,
+		Route:             opts.Route,
 		Target:            opts.Options.Target,
 		Follow:            opts.Options.Follow,
 		IncludePrevious:   opts.Options.IncludePrevious,

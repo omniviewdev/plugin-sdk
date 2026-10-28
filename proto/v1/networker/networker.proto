@@ -5,7 +5,7 @@ option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/networker;networ
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
-import "google/protobuf/struct.proto";
+import "proto/resource/v2/domain.proto";
 import "google/protobuf/timestamp.proto";
 
 // An active port forwarding session that is used to forward network traffic
@@ -50,7 +50,11 @@ message PortForwardResourceConnection {
   string plugin_id = 2;
   string resource_id = 3;
   string resource_key = 4;
-  google.protobuf.Struct resource_data = 5;
+  reserved 5;
+  omniview.resource.v2.Value resource_data = 6;
+  uint32 resource_wire_version = 7;
+  omniview.resource.v2.ResourceReference reference = 8;
+  omniview.resource.v2.AccessRoute route = 9;
 }
 
 message PortForwardStaticConnection {
@@ -97,6 +101,11 @@ message PortForwardSessionListResponse {
   repeated PortForwardSession sessions = 1;
 }
 
+message ResourcePortForwardSessionResponse {
+  uint32 resource_wire_version = 1;
+  PortForwardSession session = 2;
+}
+
 message GetSupportedPortForwardTargetsResponse {
   repeated string resources = 1;
 }
@@ -110,5 +119,6 @@ service NetworkerPlugin {
   rpc ListPortForwardSessions(google.protobuf.Empty) returns (PortForwardSessionListResponse);
   rpc FindPortForwardSessions(FindPortForwardSessionRequest) returns (PortForwardSessionListResponse);
   rpc StartPortForwardSession(PortForwardSessionOptions) returns (PortForwardSessionByIdResponse);
+  rpc StartResourcePortForwardSession(PortForwardSessionOptions) returns (ResourcePortForwardSessionResponse);
   rpc ClosePortForwardSession(PortForwardSessionByIdRequest) returns (PortForwardSessionByIdResponse);
 }

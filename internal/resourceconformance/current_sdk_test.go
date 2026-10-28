@@ -121,6 +121,7 @@ func TestCurrentSDKNativeBoundary(t *testing.T) {
 			require.NoError(t, err)
 			catalog, err := provider.Catalog(ctx, resource.CatalogRequest{Route: resource.AccessRoute{Connection: s.Name}})
 			require.NoError(t, err)
+			ctx := resource.WithCatalogRevision(ctx, catalog.Revision)
 			require.Equal(t, s.Type, catalog.Types[0].Type)
 			require.Equal(t, representation(s), catalog.Types[0].Representations[0])
 			expectedCaps := []resource.Capability{{Operation: resource.OperationGet, Scope: queryScope(s)}, {Operation: resource.OperationEnumerate, Scope: queryScope(s)}}
@@ -304,6 +305,7 @@ func TestCurrentSDKIndependentProfiles(t *testing.T) {
 			require.NoError(t, err)
 			catalog, err := provider.Catalog(ctx, resource.CatalogRequest{Route: resource.AccessRoute{Connection: s.Name}})
 			require.NoError(t, err)
+			ctx = resource.WithCatalogRevision(ctx, catalog.Revision)
 			ops := []resource.Operation{}
 			for _, cap := range catalog.Types[0].Capabilities {
 				ops = append(ops, cap.Operation)
@@ -365,6 +367,9 @@ func TestCurrentSDKHostIssuedAuthority(t *testing.T) {
 			s := c.Scenarios[0]
 			_, err := provider.(resource.ConnectionLifecycle).StartConnection(ctx, s.Name)
 			require.NoError(t, err)
+			catalog, err := provider.Catalog(ctx, resource.CatalogRequest{Route: resource.AccessRoute{Connection: s.Name}})
+			require.NoError(t, err)
+			ctx = resource.WithCatalogRevision(ctx, catalog.Revision)
 			admitted := target(s, c)
 			admitted.Authority = "host-issued:isolated/雪"
 			var page resource.SourcePage
@@ -386,4 +391,36 @@ func TestCurrentSDKHostIssuedAuthority(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNativeFixtureCatalogBindingTracksSourceInstance(t *testing.T) {
+	provider := newNativeProvider(t.TempDir(), "read-only")
+	t.Cleanup(func() { require.NoError(t, provider.Close()) })
+	ctx := context.Background()
+	route := resource.AccessRoute{Connection: provider.corpus.Scenarios[0].Name}
+	readCatalog := func() resource.Catalog {
+		catalog, err := provider.Catalog(ctx, resource.CatalogRequest{Route: route})
+		require.NoError(t, err)
+		return catalog
+	}
+	_, err := provider.StartConnection(ctx, route.Connection)
+	require.NoError(t, err)
+	first := readCatalog()
+	firstEpoch, err := resource.CatalogBindingEpoch(first.Revision)
+	require.NoError(t, err)
+	require.Equal(t, provider.bindingEpochs[route.Connection], firstEpoch)
+	require.Equal(t, first.Revision, readCatalog().Revision)
+	_, err = provider.StartConnection(ctx, route.Connection)
+	require.NoError(t, err)
+	require.Equal(t, first.Revision, readCatalog().Revision)
+	_, err = provider.StopConnection(ctx, route.Connection)
+	require.NoError(t, err)
+	_, err = provider.StartConnection(ctx, route.Connection)
+	require.NoError(t, err)
+	second := readCatalog()
+	secondEpoch, err := resource.CatalogBindingEpoch(second.Revision)
+	require.NoError(t, err)
+	require.NotEqual(t, firstEpoch, secondEpoch)
+	require.NotEqual(t, first.Revision, second.Revision)
+	require.Equal(t, "catalog:opaque/1", provider.nativeCatalogRevision)
 }

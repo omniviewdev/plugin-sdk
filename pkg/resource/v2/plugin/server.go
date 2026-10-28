@@ -68,7 +68,19 @@ func (s *server) Call(ctx context.Context, r *resourcepb.Request) (*resourcepb.R
 	if err != nil {
 		return nil, rpcError(err)
 	}
+	switch r.Operation.(type) {
+	case *resourcepb.Request_Get, *resourcepb.Request_Enumerate, *resourcepb.Request_NativeQuery, *resourcepb.Request_Mutate, *resourcepb.Request_Action:
+		if err := s.checkCatalogRoute(ctx, finiteRoute(r)); err != nil {
+			return nil, rpcError(s.classify(err))
+		}
+	}
 	out, err := s.dispatch(ctx, r)
+	switch r.Operation.(type) {
+	case *resourcepb.Request_Get, *resourcepb.Request_Enumerate, *resourcepb.Request_NativeQuery, *resourcepb.Request_Mutate, *resourcepb.Request_Action:
+		if fenceErr := s.checkCatalogRoute(ctx, finiteRoute(r)); fenceErr != nil {
+			return nil, rpcError(s.classify(fenceErr))
+		}
+	}
 	if err != nil {
 		return nil, rpcError(s.classify(err))
 	}

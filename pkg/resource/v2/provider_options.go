@@ -59,3 +59,16 @@ type Lifecycle[ClientT any] struct {
 	OnStart         func(context.Context, types.Connection, *ClientT) error
 	OnStop          func(context.Context, types.Connection, *ClientT) error
 }
+
+// ConnectionContextProvider binds utility work to the sole active native client
+// registry. It never starts a connection. Stop, reconfiguration and Close cancel
+// the callback before that client is destroyed.
+type ConnectionContextProvider interface {
+	WithConnection(context.Context, AccessRoute, func(context.Context, types.Connection) error) error
+}
+
+// ConnectionContextConsumer receives the provider during SDK capability setup.
+// A source without resource composition can install its own reviewed registry.
+type ConnectionContextConsumer interface {
+	BindConnectionContextProvider(ConnectionContextProvider)
+}

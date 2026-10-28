@@ -3,12 +3,14 @@ package logs
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
+	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
@@ -21,9 +23,21 @@ type PluginClient struct {
 
 var _ Provider = (*PluginClient)(nil)
 
+func logsClientContext(pc *types.PluginContext) context.Context {
+	if pc == nil {
+		return context.Background()
+	}
+	ctx := pc.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	copy := *pc
+	return types.WithPluginContext(ctx, &copy)
+}
+
 func (c *PluginClient) GetSupportedResources(ctx *types.PluginContext) []Handler {
 	resp, err := c.client.GetSupportedResources(
-		types.WithPluginContext(context.Background(), ctx),
+		logsClientContext(ctx),
 		&emptypb.Empty{},
 	)
 	if err != nil {
@@ -42,24 +56,56 @@ func (c *PluginClient) CreateSession(
 	ctx *types.PluginContext,
 	opts CreateSessionOptions,
 ) (*LogSession, error) {
-	data, err := structpb.NewStruct(opts.ResourceData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert resource data: %w", err)
+	if opts.HasResourceIntent() {
+		return c.CreateResourceSession(ctx, opts)
 	}
-
-	resp, err := c.client.CreateSession(
-		types.WithPluginContext(context.Background(), ctx),
-		&logspb.CreateLogSessionRequest{
-			ResourceKey:  opts.ResourceKey,
-			ResourceId:   opts.ResourceID,
-			ResourceData: data,
-			Options:      opts.Options.ToProto(),
-		},
-	)
+	request, err := opts.ToProto()
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.client.CreateSession(logsClientContext(ctx), request)
 	if err != nil {
 		return nil, err
 	}
 	return LogSessionFromProto(resp.GetSession()), nil
+}
+
+func (c *PluginClient) CreateResourceSession(ctx *types.PluginContext, opts CreateSessionOptions) (*LogSession, error) {
+	if err := validateRoute(ctx, opts); err != nil {
+		return nil, err
+	}
+	request, err := opts.ToProto()
+	if err != nil {
+		return nil, err
+	}
+	request.ResourceWireVersion = ResourceSessionWireVersion
+	rpcContext, err := resourceplugin.OutgoingSessionContext(logsClientContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	admission, admissionError := resourceplugin.ResponseAdmission()
+	resp, err := c.client.CreateResourceSession(rpcContext, request,
+		grpc.MaxCallSendMsgSize(resourceplugin.MaxWireBytes), grpc.MaxCallRecvMsgSize(resourceplugin.MaxWireBytes), admission)
+	if err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			return nil, resourceError("UNSUPPORTED", "Resource logs RPC unavailable.")
+		}
+		return nil, resourceplugin.ResourceDomainError(err)
+	}
+	if err := admissionError(); err != nil {
+		return nil, err
+	}
+	if resp == nil || resp.ResourceWireVersion != ResourceSessionWireVersion || resp.Session == nil {
+		return nil, resourceError("INVALID_REQUEST", "Invalid resource logs response.")
+	}
+	if resp.Session.CreatedAt == nil || resp.Session.CreatedAt.CheckValid() != nil {
+		return nil, resourceError("INVALID_REQUEST", "Invalid logs session timestamp.")
+	}
+	session := LogSessionFromProto(resp.Session)
+	if err := validateResourceSessionResult(session); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 func (c *PluginClient) GetSession(
@@ -67,7 +113,7 @@ func (c *PluginClient) GetSession(
 	sessionID string,
 ) (*LogSession, error) {
 	resp, err := c.client.GetSession(
-		types.WithPluginContext(context.Background(), ctx),
+		logsClientContext(ctx),
 		&logspb.LogSessionByIdRequest{SessionId: sessionID},
 	)
 	if err != nil {
@@ -78,7 +124,7 @@ func (c *PluginClient) GetSession(
 
 func (c *PluginClient) ListSessions(ctx *types.PluginContext) ([]*LogSession, error) {
 	resp, err := c.client.ListSessions(
-		types.WithPluginContext(context.Background(), ctx),
+		logsClientContext(ctx),
 		&emptypb.Empty{},
 	)
 	if err != nil {
@@ -94,7 +140,7 @@ func (c *PluginClient) ListSessions(ctx *types.PluginContext) ([]*LogSession, er
 
 func (c *PluginClient) CloseSession(ctx *types.PluginContext, sessionID string) error {
 	_, err := c.client.CloseSession(
-		types.WithPluginContext(context.Background(), ctx),
+		logsClientContext(ctx),
 		&logspb.LogSessionByIdRequest{SessionId: sessionID},
 	)
 	return err
@@ -106,7 +152,7 @@ func (c *PluginClient) UpdateSessionOptions(
 	opts LogSessionOptions,
 ) (*LogSession, error) {
 	resp, err := c.client.UpdateSessionOptions(
-		types.WithPluginContext(context.Background(), ctx),
+		logsClientContext(ctx),
 		&logspb.UpdateLogSessionOptionsRequest{
 			SessionId: sessionID,
 			Options:   opts.ToProto(),

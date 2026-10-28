@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 	logs "github.com/omniviewdev/plugin-sdk/pkg/v1/logs"
@@ -179,7 +180,7 @@ func TestMultiSourceStaggeredConnection(t *testing.T) {
 		return src.ReaderFunc(pctx)
 	})
 
-	resolver := func(_ *types.PluginContext, _ map[string]interface{}, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
+	resolver := func(_ *types.PluginContext, _ *resourcev2.Value, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
 		return &logs.SourceResolverResult{
 			Sources: []logs.LogSource{
 				{ID: "src-1", Labels: map[string]string{"source": "src-1"}},
@@ -201,11 +202,9 @@ func TestMultiSourceStaggeredConnection(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "log", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "apps::v1::Deployment",
-		ResourceID:  "test-deploy",
-		Options:     logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "apps::v1::Deployment",
+		ResourceID: "test-deploy",
+		Options:    logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -371,10 +370,8 @@ func TestCreateSessionNilPluginContext(t *testing.T) {
 	})
 	t.Cleanup(mgr.Close)
 
-	_, err := mgr.CreateSession(nil, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test",
-	})
+	_, err := mgr.CreateResourceSession(nil, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test"})
 	if err == nil {
 		t.Fatal("expected error for nil PluginContext, got nil")
 	}
@@ -516,11 +513,9 @@ func TestHandlerConnectFailureReconnects(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "container-1",
-		ResourceID:  "test-resource",
-		Options:     logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "container-1",
+		ResourceID: "test-resource",
+		Options:    logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -575,11 +570,9 @@ func TestStreamCreatesChannelSink(t *testing.T) {
 
 	// Create a session — output should flow through the channel
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err = mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true},
-	})
+	_, err = mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -640,11 +633,9 @@ func TestStreamHandleCommands(t *testing.T) {
 	}
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -734,11 +725,9 @@ func TestStreamContextCancelTriggersCloseAll(t *testing.T) {
 	}
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err = mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	_, err = mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -780,7 +769,7 @@ func TestWatchSourceEventsAddSource(t *testing.T) {
 	})
 
 	events := make(chan logs.SourceEvent, 10)
-	resolver := func(_ *types.PluginContext, _ map[string]interface{}, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
+	resolver := func(_ *types.PluginContext, _ *resourcev2.Value, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
 		return &logs.SourceResolverResult{
 			Sources: []logs.LogSource{
 				{ID: "initial", Labels: map[string]string{"source": "initial"}},
@@ -802,12 +791,10 @@ func TestWatchSourceEventsAddSource(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey:  "apps::v1::Deployment",
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "apps::v1::Deployment",
 		ResourceID:   "deploy-1",
-		ResourceData: map[string]interface{}{},
-		Options:      logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true},
-	})
+		ResourceData: &resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{}},
+		Options:      logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -863,7 +850,7 @@ func TestWatchSourceEventsRemoveSource(t *testing.T) {
 	})
 
 	events := make(chan logs.SourceEvent, 10)
-	resolver := func(_ *types.PluginContext, _ map[string]interface{}, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
+	resolver := func(_ *types.PluginContext, _ *resourcev2.Value, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
 		return &logs.SourceResolverResult{
 			Sources: []logs.LogSource{
 				{ID: "src-1", Labels: map[string]string{}},
@@ -886,11 +873,9 @@ func TestWatchSourceEventsRemoveSource(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "test/deploy",
-		ResourceID:  "deploy-1",
-		Options:     logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "test/deploy",
+		ResourceID: "deploy-1",
+		Options:    logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -941,7 +926,7 @@ func TestWatchSourceEventsChannelClose(t *testing.T) {
 	})
 
 	events := make(chan logs.SourceEvent, 10)
-	resolver := func(_ *types.PluginContext, _ map[string]interface{}, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
+	resolver := func(_ *types.PluginContext, _ *resourcev2.Value, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
 		return &logs.SourceResolverResult{
 			Sources: []logs.LogSource{{ID: "src-1", Labels: map[string]string{}}},
 			Events:  events,
@@ -961,11 +946,9 @@ func TestWatchSourceEventsChannelClose(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "test/deploy",
-		ResourceID:  "deploy-1",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "test/deploy",
+		ResourceID: "deploy-1",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1006,11 +989,9 @@ func TestUpdateEnabledSourcesDisableOne(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1050,7 +1031,7 @@ func TestUpdateEnabledSourcesDisableOne(t *testing.T) {
 
 // CG-009: Resolver returns error → session goes to ERROR
 func TestResolverReturnsError(t *testing.T) {
-	resolver := func(_ *types.PluginContext, _ map[string]interface{}, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
+	resolver := func(_ *types.PluginContext, _ *resourcev2.Value, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
 		return nil, fmt.Errorf("simulated resolver failure")
 	}
 
@@ -1064,11 +1045,9 @@ func TestResolverReturnsError(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "test/deploy",
-		ResourceID:  "deploy-1",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "test/deploy",
+		ResourceID: "deploy-1",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1092,7 +1071,7 @@ func TestResolverReturnsError(t *testing.T) {
 
 // CG-010: Resolver succeeds but no handler available → ERROR
 func TestResolverNoHandlerAvailable(t *testing.T) {
-	resolver := func(_ *types.PluginContext, _ map[string]interface{}, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
+	resolver := func(_ *types.PluginContext, _ *resourcev2.Value, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
 		return &logs.SourceResolverResult{
 			Sources: []logs.LogSource{{ID: "src-1", Labels: map[string]string{}}},
 		}, nil
@@ -1109,11 +1088,9 @@ func TestResolverNoHandlerAvailable(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "test/deploy",
-		ResourceID:  "deploy-1",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "test/deploy",
+		ResourceID: "deploy-1",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1154,11 +1131,9 @@ func TestHandlerNilSourceBuilder(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1176,7 +1151,7 @@ func TestHandlerNilSourceBuilder(t *testing.T) {
 
 // CG-012: SourceBuilder returns empty slice → ERROR
 func TestHandlerEmptySourceBuilder(t *testing.T) {
-	emptyBuilder := func(_ string, _ map[string]interface{}, _ logs.LogSessionOptions) []logs.LogSource {
+	emptyBuilder := func(_ string, _ *resourcev2.Value, _ logs.LogSessionOptions) []logs.LogSource {
 		return nil // empty
 	}
 
@@ -1195,11 +1170,9 @@ func TestHandlerEmptySourceBuilder(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1251,11 +1224,9 @@ func TestReadStreamPausedSkipsLines(t *testing.T) {
 	}
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1331,11 +1302,9 @@ func TestListSessionsWithActiveSessions(t *testing.T) {
 	// Create 3 sessions
 	ids := make([]string, 3)
 	for i := 0; i < 3; i++ {
-		session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-			ResourceKey: "pod",
-			ResourceID:  fmt.Sprintf("pod-%d", i),
-			Options:     logs.LogSessionOptions{Follow: true},
-		})
+		session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+			ResourceID: fmt.Sprintf("pod-%d", i),
+			Options:    logs.LogSessionOptions{Follow: true}})
 		if err != nil {
 			t.Fatalf("CreateSession[%d]: %v", i, err)
 		}
@@ -1441,11 +1410,9 @@ func TestExtractTimestampFormats(t *testing.T) {
 			})
 
 			pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-			_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-				ResourceKey: "pod",
-				ResourceID:  "test",
-				Options:     logs.LogSessionOptions{Follow: true},
-			})
+			_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+				ResourceID: "test",
+				Options:    logs.LogSessionOptions{Follow: true}})
 			if err != nil {
 				t.Fatalf("CreateSession: %v", err)
 			}
@@ -1524,11 +1491,9 @@ func TestConcurrentSessionOperations(t *testing.T) {
 	// Concurrent creates
 	for i := 0; i < N; i++ {
 		go func(i int) {
-			session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-				ResourceKey: "pod",
-				ResourceID:  fmt.Sprintf("pod-%d", i),
-				Options:     logs.LogSessionOptions{Follow: true},
-			})
+			session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+				ResourceID: fmt.Sprintf("pod-%d", i),
+				Options:    logs.LogSessionOptions{Follow: true}})
 			if err != nil {
 				results <- createResult{err: fmt.Errorf("create[%d]: %w", i, err)}
 				return
@@ -1590,10 +1555,9 @@ func TestNonFollowModeNoReconnect(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: false}, // non-follow
+	_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: false}, // non-follow
 	})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
@@ -1632,11 +1596,9 @@ func TestMultiSourceBuilder(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1694,11 +1656,9 @@ func TestHandleCommandsClosedChannelNoSpin(t *testing.T) {
 
 	// Create a session so closeAll has something to clean up
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err = mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	_, err = mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1750,11 +1710,9 @@ func TestReconnectWithInstantEOFReaderBounded(t *testing.T) {
 	})
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1807,11 +1765,9 @@ func TestReconnectExitsOnContextCancelDuringBackoff(t *testing.T) {
 	})
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1851,11 +1807,9 @@ func TestReadStreamExitsOnContextCancel(t *testing.T) {
 	})
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1899,11 +1853,9 @@ func TestGoroutineCountConverges(t *testing.T) {
 	baseline := runtime.NumGoroutine()
 
 	for i := 0; i < 50; i++ {
-		session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-			ResourceKey: "pod",
-			ResourceID:  fmt.Sprintf("pod-%d", i),
-			Options:     logs.LogSessionOptions{Follow: true},
-		})
+		session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+			ResourceID: fmt.Sprintf("pod-%d", i),
+			Options:    logs.LogSessionOptions{Follow: true}})
 		if err != nil {
 			t.Fatalf("CreateSession[%d]: %v", i, err)
 		}
@@ -1954,11 +1906,9 @@ func TestFanOutSourcesContextCancelledDuringSemaphore(t *testing.T) {
 	})
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -1986,7 +1936,7 @@ func TestWatchSourceEventsExitsOnSessionCancel(t *testing.T) {
 	})
 
 	events := make(chan logs.SourceEvent, 10)
-	resolver := func(_ *types.PluginContext, _ map[string]interface{}, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
+	resolver := func(_ *types.PluginContext, _ *resourcev2.Value, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
 		return &logs.SourceResolverResult{
 			Sources: []logs.LogSource{{ID: "src-1", Labels: map[string]string{}}},
 			Events:  events, // never closed — must rely on ctx cancel
@@ -2005,11 +1955,9 @@ func TestWatchSourceEventsExitsOnSessionCancel(t *testing.T) {
 	})
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "test/deploy",
-		ResourceID:  "deploy-1",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "test/deploy",
+		ResourceID: "deploy-1",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -2056,11 +2004,9 @@ func TestHandlerReturnsNilReader(t *testing.T) {
 	})
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -2105,11 +2051,9 @@ func TestHandlerReaderImmediateError(t *testing.T) {
 	})
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -2148,11 +2092,9 @@ func TestScannerBufferOverflow(t *testing.T) {
 	})
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -2202,11 +2144,9 @@ func TestSuccessfulReconnectionEmitsEvent(t *testing.T) {
 	})
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: false},
-	})
+	_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: false}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -2258,11 +2198,9 @@ func TestCloseSessionSafetyTimeout(t *testing.T) {
 	})
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -2310,11 +2248,9 @@ func TestEmptyReaderMarksSourceReady(t *testing.T) {
 	})
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: false},
-	})
+	_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: false}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -2352,11 +2288,9 @@ func TestConcurrentCloseSessionNoDeadlock(t *testing.T) {
 	const N = 10
 	ids := make([]string, N)
 	for i := 0; i < N; i++ {
-		session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-			ResourceKey: "pod",
-			ResourceID:  fmt.Sprintf("pod-%d", i),
-			Options:     logs.LogSessionOptions{Follow: true},
-		})
+		session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+			ResourceID: fmt.Sprintf("pod-%d", i),
+			Options:    logs.LogSessionOptions{Follow: true}})
 		if err != nil {
 			t.Fatalf("CreateSession[%d]: %v", i, err)
 		}
@@ -2408,11 +2342,9 @@ func TestUpdateEnabledSourcesReEnable(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -2488,11 +2420,9 @@ func TestCreateSessionWithSettingsProvider(t *testing.T) {
 	t.Cleanup(mgr.Close)
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
-	_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "test-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "test-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -2545,11 +2475,9 @@ func BenchmarkCreateCloseSession(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-			ResourceKey: "pod",
-			ResourceID:  "bench-pod",
-			Options:     logs.LogSessionOptions{Follow: true},
-		})
+		session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+			ResourceID: "bench-pod",
+			Options:    logs.LogSessionOptions{Follow: true}})
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -2596,11 +2524,9 @@ func BenchmarkSnapshotSession(b *testing.B) {
 	defer mgr.Close()
 
 	pctx := types.NewPluginContext(context.Background(), "bench", nil, nil, nil)
-	session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey: "pod",
-		ResourceID:  "bench-pod",
-		Options:     logs.LogSessionOptions{Follow: true},
-	})
+	session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+		ResourceID: "bench-pod",
+		Options:    logs.LogSessionOptions{Follow: true}})
 	if err != nil {
 		b.Fatal(err)
 	}

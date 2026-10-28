@@ -32,7 +32,8 @@ func TestActualRawGRPCRelationshipTargetLimitBeforeDecode(t *testing.T) {
 			// otherwise-valid binding. The raw field counter must reject it first.
 			wireRequest := &resourcepb.AncillaryRequest{Version: 2, Operation: "resolveRelationships", RelationshipResolution: request}
 			var response resourcepb.AncillaryResponse
-			err = pipe(t, server).Invoke(context.Background(), resourcepb.ResourceAncillary_Call_FullMethodName, wireRequest, &response)
+			conn := pipe(t, server)
+			err = conn.Invoke(acceptedRelationshipWireContext(t, context.Background(), NewClient(conn), relationshipFixtureRequest()), resourcepb.ResourceAncillary_Call_FullMethodName, wireRequest, &response)
 			if count == resourcev2.MaxRelationshipTargets {
 				if err != nil || p.calls.Load() != 1 {
 					t.Fatalf("valid boundary rejected: calls=%d err=%v", p.calls.Load(), err)

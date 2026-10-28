@@ -103,15 +103,17 @@ func nativeRecord(r Record, s Scenario) resource.Record {
 func nativeError(code, message string) error { return resource.NewError(code, message) }
 
 type nativeProvider struct {
-	corpus  Corpus
-	state   string
-	profile string
-	mu      sync.Mutex
-	active  map[string]bool
+	corpus                Corpus
+	state                 string
+	profile               string
+	mu                    sync.Mutex
+	active                map[string]bool
+	bindingEpochs         map[string]string
+	nativeCatalogRevision string
 }
 
 func newNativeProvider(state, profile string) *nativeProvider {
-	return &nativeProvider{corpus: NativeCorpus(), state: state, profile: profile, active: map[string]bool{}}
+	return &nativeProvider{corpus: NativeCorpus(), state: state, profile: profile, active: map[string]bool{}, bindingEpochs: map[string]string{}, nativeCatalogRevision: "catalog:opaque/1"}
 }
 func (p *nativeProvider) scenario(route resource.AccessRoute) (Scenario, error) {
 	p.mu.Lock()
@@ -157,7 +159,14 @@ func (p *nativeProvider) Catalog(ctx context.Context, in resource.CatalogRequest
 	for _, op := range ops {
 		caps = append(caps, resource.Capability{Operation: op, Scope: queryScope(s)})
 	}
-	return resource.Catalog{Provider: r.Provider, Revision: "catalog:opaque/1", Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}, Types: []resource.ResourceType{{Type: s.Type, DisplayName: s.Type, IdentityDimensions: dims, QueryDimensions: dims, Representations: []resource.Representation{representation(s)}, Capabilities: caps}}}, nil
+	p.mu.Lock()
+	bindingEpoch := p.bindingEpochs[in.Route.Connection]
+	p.mu.Unlock()
+	revision, err := resource.BindCatalogRevision(bindingEpoch, p.nativeCatalogRevision)
+	if err != nil {
+		return resource.Catalog{}, err
+	}
+	return resource.Catalog{Provider: r.Provider, Revision: revision, Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}, Types: []resource.ResourceType{{Type: s.Type, DisplayName: s.Type, IdentityDimensions: dims, QueryDimensions: dims, Representations: []resource.Representation{representation(s)}, Capabilities: caps}}}, nil
 }
 func (p *nativeProvider) LoadConnections(context.Context) ([]types.Connection, error) {
 	out := []types.Connection{}
@@ -180,6 +189,14 @@ func (p *nativeProvider) StartConnection(ctx context.Context, id string) (types.
 		return types.ConnectionStatus{}, err
 	}
 	p.mu.Lock()
+	if !p.active[id] {
+		bindingEpoch, err := resource.NewCatalogBindingEpoch()
+		if err != nil {
+			p.mu.Unlock()
+			return types.ConnectionStatus{}, err
+		}
+		p.bindingEpochs[id] = bindingEpoch
+	}
 	p.active[id] = true
 	p.mu.Unlock()
 	return types.ConnectionStatus{Connection: &c, Status: types.ConnectionStatusConnected}, nil
@@ -195,13 +212,20 @@ func (p *nativeProvider) CheckConnection(ctx context.Context, id string) (types.
 func (p *nativeProvider) StopConnection(ctx context.Context, id string) (types.Connection, error) {
 	p.mu.Lock()
 	delete(p.active, id)
+	delete(p.bindingEpochs, id)
 	p.mu.Unlock()
 	if err := os.WriteFile(filepath.Join(p.state, id+".closed"), []byte("closed"), 0600); err != nil {
 		return types.Connection{}, err
 	}
 	return p.GetConnection(ctx, id)
 }
-func (p *nativeProvider) Close() error { p.mu.Lock(); defer p.mu.Unlock(); clear(p.active); return nil }
+func (p *nativeProvider) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	clear(p.active)
+	clear(p.bindingEpochs)
+	return nil
+}
 
 type nativeReader struct{ *nativeProvider }
 

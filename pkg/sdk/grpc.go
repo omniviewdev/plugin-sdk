@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/grpc-ecosystem/go-grpc-middleware/v2/metadata"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	grpcMetadata "google.golang.org/grpc/metadata"
@@ -83,8 +82,12 @@ func UseClientPluginContext(ctx context.Context) (context.Context, error) {
 		pairs = append(pairs, MDKeyResourceKey, pc.ResourceContext.Key)
 	}
 
-	md := metadata.MD(grpcMetadata.Pairs(pairs...))
-	return md.ToOutgoing(ctx), nil
+	current, _ := grpcMetadata.FromOutgoingContext(ctx)
+	outgoing := current.Copy()
+	for key, values := range grpcMetadata.Pairs(pairs...) {
+		outgoing[key] = values
+	}
+	return grpcMetadata.NewOutgoingContext(ctx, outgoing), nil
 }
 
 func ClientPluginContextInterceptor(log logging.Logger) grpc.UnaryClientInterceptor {

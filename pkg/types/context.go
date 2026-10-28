@@ -78,8 +78,12 @@ type PluginContext struct {
 }
 
 func WithPluginContext(ctx context.Context, pluginContext *PluginContext) context.Context {
-	pluginContext.Context = nil
-	return context.WithValue(ctx, pluginCtxKey{}, pluginContext)
+	if pluginContext == nil {
+		return ctx
+	}
+	copy := *pluginContext
+	copy.Context = nil
+	return context.WithValue(ctx, pluginCtxKey{}, &copy)
 }
 
 func PluginContextFromContext(ctx context.Context) *PluginContext {
@@ -87,11 +91,9 @@ func PluginContextFromContext(ctx context.Context) *PluginContext {
 	if v == nil {
 		return nil
 	}
-	pluginctx := v.(*PluginContext)
-	if pluginctx.Context == nil {
-		pluginctx.Context = ctx
-	}
-	return pluginctx
+	pluginctx := *v.(*PluginContext)
+	pluginctx.Context = ctx
+	return &pluginctx
 }
 
 // Construct a new plugin context with the given requester, resource key, and resource context.

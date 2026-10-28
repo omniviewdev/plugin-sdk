@@ -69,7 +69,7 @@ func TestActualGRPCActionReadiness(t *testing.T) {
 			RegisterServer(s, p)
 			c := NewClient(pipe(t, s))
 			out := make(chan resourcev2.ActionEvent, 8)
-			err := c.StreamAction(context.Background(), actionInput(), out)
+			err := c.StreamAction(acceptedCatalogContext(t, context.Background(), c, actionInput().Route), actionInput(), out)
 			if resourcev2.ErrorCode(err) != tc.code {
 				t.Fatalf("class %s want %s: %v", resourcev2.ErrorCode(err), tc.code, err)
 			}
@@ -100,7 +100,7 @@ func TestActionCancellationJoinsProducer(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(acceptedCatalogContext(t, context.Background(), c, actionInput().Route))
 	out := make(chan resourcev2.ActionEvent, 1)
 	done := make(chan error, 1)
 	go func() { done <- c.StreamAction(ctx, actionInput(), out) }()
@@ -155,7 +155,7 @@ func TestActualGRPCConnectionBrowser(t *testing.T) {
 	if _, err := c.ListConnections(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	values, err := c.ScopeValues(context.Background(), resourcev2.AccessRoute{Connection: "explicit"}, "dimension")
+	values, err := c.ScopeValues(acceptedCatalogContext(t, context.Background(), c, resourcev2.AccessRoute{Connection: "explicit"}), resourcev2.AccessRoute{Connection: "explicit"}, "dimension")
 	if err != nil || len(values) != 2 {
 		t.Fatalf("scope values: %v %v", values, err)
 	}

@@ -101,8 +101,16 @@ func (c *PluginClient) CreateResourceSession(ctx *types.PluginContext, opts Sess
 	if err != nil {
 		return nil, err
 	}
+	base := context.Background()
+	if ctx != nil && ctx.Context != nil {
+		base = ctx.Context
+	}
+	rpcContext, err := resourceplugin.OutgoingSessionContext(base)
+	if err != nil {
+		return nil, err
+	}
 	admission, admissionError := resourceplugin.ResponseAdmission()
-	response, err := c.client.CreateResourceSession(types.WithPluginContext(context.Background(), ctx), request,
+	response, err := c.client.CreateResourceSession(types.WithPluginContext(rpcContext, ctx), request,
 		grpc.MaxCallSendMsgSize(resourceplugin.MaxWireBytes), grpc.MaxCallRecvMsgSize(resourceplugin.MaxWireBytes), admission)
 	if err != nil {
 		decoded := resourceplugin.ResourceDomainError(err)

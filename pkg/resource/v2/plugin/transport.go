@@ -20,7 +20,7 @@ func ResourceRPCError(err error) error    { return rpcError(err) }
 func ResourceDomainError(err error) error { return domainError(err) }
 
 func strictRoot(d protoreflect.MessageDescriptor) bool {
-	return d.ParentFile().Package() == "omniview.resource.v2" || d.FullName() == "omniview.sdk.exec.v1.SessionOptions" || d.FullName() == "omniview.sdk.exec.v1.ResourceSessionResponse"
+	return d.ParentFile().Package() == "omniview.resource.v2" || strictUtilityRoot(d)
 }
 
 // ValidateLegacyExecWire detects resource intent without discarding reserved fields.

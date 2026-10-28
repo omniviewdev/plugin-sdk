@@ -9,8 +9,8 @@ import (
 
 // FakePortChecker provides deterministic port assignment for tests.
 type FakePortChecker struct {
-	mu              sync.Mutex
-	nextPort        int32
+	mu               sync.Mutex
+	nextPort         int32
 	unavailablePorts map[int32]bool
 }
 
@@ -19,7 +19,7 @@ var _ networker.PortChecker = (*FakePortChecker)(nil)
 // NewFakePortChecker creates a FakePortChecker that assigns ports starting at startPort.
 func NewFakePortChecker(startPort int32) *FakePortChecker {
 	return &FakePortChecker{
-		nextPort:        startPort,
+		nextPort:         startPort,
 		unavailablePorts: make(map[int32]bool),
 	}
 }

@@ -46,7 +46,7 @@ func TestCatalogDeniesDirectProviderDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out resourcepb.Response
-	err = c.Invoke(context.Background(), resourcepb.ResourceProvider_Call_FullMethodName, &resourcepb.Request{Version: 2, Operation: &resourcepb.Request_Get{Get: input}}, &out)
+	err = c.Invoke(acceptedWireContext(t, context.Background(), NewClient(c), testGet().Route), resourcepb.ResourceProvider_Call_FullMethodName, &resourcepb.Request{Version: 2, Operation: &resourcepb.Request_Get{Get: input}}, &out)
 	if resourcev2.ErrorCode(domainError(err)) != "UNSUPPORTED" {
 		t.Fatalf("unexpected class: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestServerRejectsEscapedResponse(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
-	_, err := c.Get(context.Background(), testGet())
+	_, err := c.Get(acceptedCatalogContext(t, context.Background(), c, testGet().Route), testGet())
 	if resourcev2.ErrorCode(err) != "INTERNAL" {
 		t.Fatalf("escaped response accepted: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestClientRejectsEscapedResponse(t *testing.T) {
 	s := grpc.NewServer()
 	resourcepb.RegisterResourceProviderServer(s, &maliciousServer{provider: p})
 	c := NewClient(pipe(t, s))
-	_, err := c.Get(context.Background(), testGet())
+	_, err := c.Get(acceptedCatalogContext(t, context.Background(), c, testGet().Route), testGet())
 	if resourcev2.ErrorCode(err) != "INTERNAL" {
 		t.Fatalf("client accepted escaped response: %v", err)
 	}

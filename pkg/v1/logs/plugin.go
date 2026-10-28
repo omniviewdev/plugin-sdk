@@ -8,6 +8,7 @@ import (
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
@@ -31,8 +32,15 @@ type Plugin struct {
 	Impl Provider
 }
 
+// BindConnectionContextProvider forwards the source binding to providers that consume it.
+func (p *Plugin) BindConnectionContextProvider(provider resourcev2.ConnectionContextProvider) {
+	if consumer, ok := p.Impl.(resourcev2.ConnectionContextConsumer); ok {
+		consumer.BindConnectionContextProvider(provider)
+	}
+}
+
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
-	logspb.RegisterLogPluginServer(s, &PluginServer{log: logging.Default().Named("logs.plugin.server"), Impl: p.Impl})
+	RegisterLogPluginServer(s, &PluginServer{log: logging.Default().Named("logs.plugin.server"), Impl: p.Impl})
 	return nil
 }
 

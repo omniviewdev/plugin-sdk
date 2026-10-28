@@ -63,10 +63,17 @@ func TestActualGRPCConnectionOverlayResetAndNativeRefresh(t *testing.T) {
 	if err = c.ApplyConnectionOverlay(ctx, overlay); err != nil {
 		t.Fatal(err)
 	}
-	if destroyed.Load() != 1 {
-		t.Fatal("changed native client did not drain before overlay success")
+	if destroyed.Load() != 0 {
+		t.Fatal("display-only overlay drained the native client")
 	}
 	assertConnectionNames(t, c, map[string]string{"native": "override", "custom": "host-custom"})
+	overlay.Upserts[0].Data = map[string]any{"endpoint": "https://changed.example"}
+	if err = c.ApplyConnectionOverlay(ctx, overlay); err != nil {
+		t.Fatal(err)
+	}
+	if destroyed.Load() != 1 {
+		t.Fatal("runtime connection data change did not drain the native client")
+	}
 	mu.Lock()
 	native = []types.Connection{{ID: "native", Name: "native-v2"}, {ID: "fresh", Name: "new-native"}}
 	mu.Unlock()

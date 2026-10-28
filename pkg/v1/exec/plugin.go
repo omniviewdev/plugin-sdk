@@ -9,6 +9,7 @@ import (
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
@@ -42,6 +43,13 @@ type Provider interface {
 type Plugin struct {
 	plugin.Plugin
 	Impl Provider
+}
+
+// BindConnectionContextProvider forwards registry binding to the native provider.
+func (p *Plugin) BindConnectionContextProvider(provider resourcev2.ConnectionContextProvider) {
+	if consumer, ok := p.Impl.(resourcev2.ConnectionContextConsumer); ok {
+		consumer.BindConnectionContextProvider(provider)
+	}
 }
 
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {

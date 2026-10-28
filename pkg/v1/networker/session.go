@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"maps"
 	"sync"
 	"time"
 
-	"google.golang.org/protobuf/types/known/structpb"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
@@ -199,14 +200,14 @@ func (e *sessionEntry) snapshot() PortForwardSession {
 func cloneConnection(c Connection) Connection {
 	switch v := c.(type) {
 	case PortForwardResourceConnection:
-		v.ResourceData = maps.Clone(v.ResourceData)
+		v = cloneResourceConnection(v)
 		return v
 	case *PortForwardResourceConnection:
 		if v == nil {
 			return nil
 		}
 		cp := *v
-		cp.ResourceData = maps.Clone(v.ResourceData)
+		cp = cloneResourceConnection(cp)
 		return &cp
 	case PortForwardStaticConnection:
 		return v
@@ -240,9 +241,17 @@ type PortForwardSession struct {
 	RemotePort     int32                        `json:"remote_port"`
 }
 
-func (s *PortForwardSession) ToProto() *networkerpb.PortForwardSession {
+func (s *PortForwardSession) ToProto() (*networkerpb.PortForwardSession, error) {
 	if s == nil {
-		return nil
+		return nil, nil
+	}
+	if err := validateResourceSession(*s); err != nil {
+		return nil, err
+	}
+	metadata := *s
+	metadata.Connection = nil
+	if err := resourcev2.ValidateMetadata(metadata); err != nil {
+		return nil, err
 	}
 	session := &networkerpb.PortForwardSession{
 		CreatedAt:  timestamppb.New(s.CreatedAt),
@@ -250,38 +259,84 @@ func (s *PortForwardSession) ToProto() *networkerpb.PortForwardSession {
 		Labels:     maps.Clone(s.Labels),
 		Id:         s.ID,
 		State:      s.State.ToProto(),
+		Protocol:   s.Protocol.ToProto(),
 		Encryption: s.Encryption.ToProto(),
 		LocalPort:  s.LocalPort,
 		RemotePort: s.RemotePort,
 	}
+	if _, ok := resourceConnection(s.Connection); ok {
+		if err := session.CreatedAt.CheckValid(); err != nil {
+			return nil, resourcev2.NewError("INVALID_REQUEST", err.Error())
+		}
+		if err := session.UpdatedAt.CheckValid(); err != nil {
+			return nil, resourcev2.NewError("INVALID_REQUEST", err.Error())
+		}
+	}
+	if err := preflightResource(session, 20, s.Connection); err != nil {
+		return nil, err
+	}
 
 	switch c := s.Connection.(type) {
 	case PortForwardResourceConnection:
-		session.Connection = c.ToSessionProto()
+		p, err := c.ToProto()
+		if err != nil {
+			return nil, err
+		}
+		session.Connection = &networkerpb.PortForwardSession_ResourceConnection{ResourceConnection: p}
 	case *PortForwardResourceConnection:
-		session.Connection = c.ToSessionProto()
+		p, err := c.ToProto()
+		if err != nil {
+			return nil, err
+		}
+		session.Connection = &networkerpb.PortForwardSession_ResourceConnection{ResourceConnection: p}
 	case PortForwardStaticConnection:
 		session.Connection = c.ToSessionProto()
 	case *PortForwardStaticConnection:
 		session.Connection = c.ToSessionProto()
 	}
 
-	session.Protocol = s.Protocol.ToProto()
-
-	return session
+	if err := validateFrame(session); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 // NewPortForwardSessionFromProto creates a PortForwardSession from a protobuf.
-func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) *PortForwardSession {
+func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) (*PortForwardSession, error) {
 	if s == nil {
-		return nil
+		return nil, nil
+	}
+	if err := validateFrame(s); err != nil {
+		return nil, err
+	}
+	metadata := PortForwardSession{ID: s.Id, Labels: s.Labels, LocalPort: s.LocalPort, RemotePort: s.RemotePort, Encryption: PortForwardSessionEncryptionFromProto(s.Encryption)}
+	if err := resourcev2.ValidateMetadata(metadata); err != nil {
+		return nil, err
+	}
+	if s.GetResourceConnection() != nil {
+		if !PortForwardProtocolFromProto(s.Protocol).Valid() || s.State < networkerpb.PortForwardSession_ACTIVE || s.State > networkerpb.PortForwardSession_FAILED {
+			return nil, resourceInvalidResponse()
+		}
+		if s.CreatedAt == nil || s.UpdatedAt == nil {
+			return nil, resourceInvalidResponse()
+		}
+		if err := s.CreatedAt.CheckValid(); err != nil {
+			return nil, resourcev2.NewError("INVALID_REQUEST", err.Error())
+		}
+		if err := s.UpdatedAt.CheckValid(); err != nil {
+			return nil, resourcev2.NewError("INVALID_REQUEST", err.Error())
+		}
 	}
 
 	var connection Connection
 	var connectionType PortForwardConnectionType
 	switch s.GetConnection().(type) {
 	case *networkerpb.PortForwardSession_ResourceConnection:
-		connection = PortForwardResourceConnectionFromProto(s.GetResourceConnection())
+		c, err := PortForwardResourceConnectionFromProto(s.GetResourceConnection())
+		if err != nil {
+			return nil, err
+		}
+		connection = c
 		connectionType = PortForwardConnectionTypeResource
 	case *networkerpb.PortForwardSession_StaticConnection:
 		connection = PortForwardStaticConnectionFromProto(s.GetStaticConnection())
@@ -308,108 +363,110 @@ func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) *PortForw
 		Connection:     connection,
 		LocalPort:      s.GetLocalPort(),
 		RemotePort:     s.GetRemotePort(),
-	}
+	}, nil
 }
 
 // ---------------------------------------------------------------------------
 // PortForwardResourceConnection
 // ---------------------------------------------------------------------------
 
+// PortForwardResourceConnection carries exact tagged resource data and only the
+// reference and route supplied by the caller. Opaque legacy selectors retain
+// their original spelling; no identity or resource acquisition is inferred.
 type PortForwardResourceConnection struct {
-	ResourceData map[string]interface{} `json:"resource_data"`
-	ConnectionID string                 `json:"connection_id"`
-	PluginID     string                 `json:"plugin_id"`
-	ResourceID   string                 `json:"resource_id"`
-	ResourceKey  string                 `json:"resource_key"`
+	ResourceData *resourcev2.Value             `json:"resource_data,omitempty"`
+	Reference    *resourcev2.ResourceReference `json:"reference,omitempty"`
+	Route        *resourcev2.AccessRoute       `json:"route,omitempty"`
+	ConnectionID string                        `json:"connection_id"`
+	PluginID     string                        `json:"plugin_id"`
+	ResourceID   string                        `json:"resource_id"`
+	ResourceKey  string                        `json:"resource_key"`
 }
 
 func (PortForwardResourceConnection) connectionType() PortForwardConnectionType {
 	return PortForwardConnectionTypeResource
 }
 
-func (c *PortForwardResourceConnection) ToProto() *networkerpb.PortForwardResourceConnection {
+func (c *PortForwardResourceConnection) ToProto() (*networkerpb.PortForwardResourceConnection, error) {
 	if c == nil {
-		return nil
+		return nil, resourcev2.NewError("INVALID_REQUEST", "Resource connection must not be nil.")
 	}
-	data, err := structpb.NewStruct(c.ResourceData)
-	if err != nil {
-		log.Printf(
-			"networker: ResourceData -> structpb.Struct conversion failed (connection_id=%q plugin_id=%q resource_id=%q resource_key=%q): %v",
-			c.ConnectionID,
-			c.PluginID,
-			c.ResourceID,
-			c.ResourceKey,
-			err,
-		)
-		data, _ = structpb.NewStruct(map[string]interface{}{})
+	if err := validateResourceConnection(*c); err != nil {
+		return nil, err
 	}
-
-	return &networkerpb.PortForwardResourceConnection{
-		ConnectionId: c.ConnectionID,
-		PluginId:     c.PluginID,
-		ResourceId:   c.ResourceID,
-		ResourceKey:  c.ResourceKey,
-		ResourceData: data,
+	out := &networkerpb.PortForwardResourceConnection{ConnectionId: c.ConnectionID, PluginId: c.PluginID, ResourceId: c.ResourceID, ResourceKey: c.ResourceKey, ResourceWireVersion: 2}
+	var err error
+	if c.Reference != nil {
+		out.Reference, err = resourcev2.ToProtoResourceReference(*c.Reference)
+		if err != nil {
+			return nil, err
+		}
 	}
+	if c.Route != nil {
+		out.Route, err = resourcev2.ToProtoAccessRoute(*c.Route)
+		if err != nil {
+			return nil, err
+		}
+	}
+	frameBytes := proto.Size(out)
+	if c.ResourceData != nil {
+		size, err := resourcev2.ValueWireSize(*c.ResourceData)
+		if err != nil {
+			return nil, err
+		}
+		frameBytes += protowire.SizeTag(6) + protowire.SizeBytes(size)
+	}
+	if frameBytes > resourcev2.MaxMessageBytes {
+		return nil, resourcev2.NewError("RESOURCE_LIMIT", "Resource connection exceeds frame limit.")
+	}
+	if c.ResourceData != nil {
+		out.ResourceData, err = resourcev2.ToProtoValue(*c.ResourceData)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
-func (c *PortForwardResourceConnection) ToSessionProto() *networkerpb.PortForwardSession_ResourceConnection {
-	if c == nil {
-		return nil
-	}
-	return &networkerpb.PortForwardSession_ResourceConnection{
-		ResourceConnection: c.ToProto(),
-	}
-}
-
-func (c *PortForwardResourceConnection) ToSessionOptionsProto() *networkerpb.PortForwardSessionOptions_ResourceConnection {
-	if c == nil {
-		return nil
-	}
-	return &networkerpb.PortForwardSessionOptions_ResourceConnection{
-		ResourceConnection: c.ToProto(),
-	}
-}
-
-func PortForwardResourceConnectionFromProto(
-	o *networkerpb.PortForwardResourceConnection,
-) PortForwardResourceConnection {
+func PortForwardResourceConnectionFromProto(o *networkerpb.PortForwardResourceConnection) (PortForwardResourceConnection, error) {
 	if o == nil {
-		return PortForwardResourceConnection{}
+		return PortForwardResourceConnection{}, resourcev2.NewError("INVALID_REQUEST", "Resource connection must not be nil.")
 	}
-	var resourceData map[string]interface{}
-	if rd := o.GetResourceData(); rd != nil {
-		resourceData = rd.AsMap()
+	if err := validateFrame(o); err != nil {
+		return PortForwardResourceConnection{}, err
 	}
-	return PortForwardResourceConnection{
-		ConnectionID: o.GetConnectionId(),
-		PluginID:     o.GetPluginId(),
-		ResourceID:   o.GetResourceId(),
-		ResourceKey:  o.GetResourceKey(),
-		ResourceData: resourceData,
+	if o.ResourceWireVersion != 2 {
+		return PortForwardResourceConnection{}, resourcev2.NewError("UNSUPPORTED", "Resource wire version 2 is required.")
 	}
-}
-
-func PortForwardResourceConnectionFromJson(o map[string]any) *PortForwardResourceConnection {
-	conn := PortForwardResourceConnection{}
-
-	if v, ok := o["connection_id"].(string); ok {
-		conn.ConnectionID = v
+	if len(o.ProtoReflect().GetUnknown()) != 0 {
+		return PortForwardResourceConnection{}, resourcev2.NewError("UNSUPPORTED", "Unknown resource connection fields.")
 	}
-	if v, ok := o["plugin_id"].(string); ok {
-		conn.PluginID = v
+	out := PortForwardResourceConnection{ConnectionID: o.ConnectionId, PluginID: o.PluginId, ResourceID: o.ResourceId, ResourceKey: o.ResourceKey}
+	if o.Reference != nil {
+		v, e := resourcev2.FromProtoResourceReference(o.Reference)
+		if e != nil {
+			return out, e
+		}
+		out.Reference = &v
 	}
-	if v, ok := o["resource_id"].(string); ok {
-		conn.ResourceID = v
+	if o.Route != nil {
+		v, e := resourcev2.FromProtoAccessRoute(o.Route)
+		if e != nil {
+			return out, e
+		}
+		out.Route = &v
 	}
-	if v, ok := o["resource_key"].(string); ok {
-		conn.ResourceKey = v
+	if err := validateResourceConnection(out); err != nil {
+		return out, err
 	}
-	if v, ok := o["resource_data"].(map[string]any); ok {
-		conn.ResourceData = v
+	if o.ResourceData != nil {
+		v, e := resourcev2.FromProtoValue(o.ResourceData)
+		if e != nil {
+			return out, e
+		}
+		out.ResourceData = &v
 	}
-
-	return &conn
+	return out, validateResourceConnection(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -529,7 +586,7 @@ func (o *PortForwardSessionOptions) UnmarshalJSON(data []byte) error {
 	}{
 		Alias: (*Alias)(o),
 	}
-	if err := json.Unmarshal(data, aux); err != nil {
+	if err := strictNetworkJSON(data, aux); err != nil {
 		return err
 	}
 
@@ -544,14 +601,14 @@ func (o *PortForwardSessionOptions) UnmarshalJSON(data []byte) error {
 
 	switch o.ConnectionType {
 	case PortForwardConnectionTypeResource:
-		var m map[string]any
-		if err := json.Unmarshal(aux.Connection, &m); err != nil {
-			return fmt.Errorf("unmarshal resource connection: %w", err)
+		var connection PortForwardResourceConnection
+		if err := strictNetworkJSON(aux.Connection, &connection); err != nil {
+			return err
 		}
-		if m == nil {
-			return fmt.Errorf("resource connection payload decoded to nil")
+		if err := validateResourceConnection(connection); err != nil {
+			return err
 		}
-		o.Connection = PortForwardResourceConnectionFromJson(m)
+		o.Connection = &connection
 	case PortForwardConnectionTypeStatic:
 		var m map[string]any
 		if err := json.Unmarshal(aux.Connection, &m); err != nil {
@@ -580,9 +637,12 @@ type StaticPortForwardHandlerOpts struct {
 	Options PortForwardSessionOptions   `json:"options"`
 }
 
-func (o *PortForwardSessionOptions) ToProto() *networkerpb.PortForwardSessionOptions {
+func (o *PortForwardSessionOptions) ToProto() (*networkerpb.PortForwardSessionOptions, error) {
 	if o == nil {
-		return nil
+		return nil, resourcev2.NewError("INVALID_REQUEST", "Session options must not be nil.")
+	}
+	if err := validateOptionMetadata(*o); err != nil {
+		return nil, err
 	}
 	opts := &networkerpb.PortForwardSessionOptions{
 		LocalPort:  o.LocalPort,
@@ -592,33 +652,58 @@ func (o *PortForwardSessionOptions) ToProto() *networkerpb.PortForwardSessionOpt
 		Params:     maps.Clone(o.Params),
 		Encryption: o.Encryption.ToProto(),
 	}
+	if err := preflightResource(opts, 10, o.Connection); err != nil {
+		return nil, err
+	}
 
 	switch c := o.Connection.(type) {
 	case PortForwardResourceConnection:
-		opts.Connection = c.ToSessionOptionsProto()
+		p, err := c.ToProto()
+		if err != nil {
+			return nil, err
+		}
+		opts.Connection = &networkerpb.PortForwardSessionOptions_ResourceConnection{ResourceConnection: p}
 	case *PortForwardResourceConnection:
-		opts.Connection = c.ToSessionOptionsProto()
+		p, err := c.ToProto()
+		if err != nil {
+			return nil, err
+		}
+		opts.Connection = &networkerpb.PortForwardSessionOptions_ResourceConnection{ResourceConnection: p}
 	case PortForwardStaticConnection:
 		opts.Connection = c.ToSessionOptionsProto()
 	case *PortForwardStaticConnection:
 		opts.Connection = c.ToSessionOptionsProto()
 	}
 
-	return opts
+	if err := validateFrame(opts); err != nil {
+		return nil, err
+	}
+	return opts, nil
 }
 
 func NewPortForwardSessionOptionsFromProto(
 	o *networkerpb.PortForwardSessionOptions,
-) *PortForwardSessionOptions {
+) (*PortForwardSessionOptions, error) {
 	if o == nil {
-		return nil
+		return nil, resourcev2.NewError("INVALID_REQUEST", "Session options must not be nil.")
+	}
+	if err := validateFrame(o); err != nil {
+		return nil, err
+	}
+	metadata := PortForwardSessionOptions{LocalPort: o.LocalPort, RemotePort: o.RemotePort, Protocol: PortForwardProtocolFromProto(o.Protocol), Labels: o.Labels, Params: o.Params, Encryption: PortForwardSessionEncryptionFromProto(o.Encryption)}
+	if err := resourcev2.ValidateMetadata(metadata); err != nil {
+		return nil, err
 	}
 
 	var connection Connection
 	var connectionType PortForwardConnectionType
 	switch o.GetConnection().(type) {
 	case *networkerpb.PortForwardSessionOptions_ResourceConnection:
-		connection = PortForwardResourceConnectionFromProto(o.GetResourceConnection())
+		c, err := PortForwardResourceConnectionFromProto(o.GetResourceConnection())
+		if err != nil {
+			return nil, err
+		}
+		connection = c
 		connectionType = PortForwardConnectionTypeResource
 	case *networkerpb.PortForwardSessionOptions_StaticConnection:
 		connection = PortForwardStaticConnectionFromProto(o.GetStaticConnection())
@@ -627,7 +712,7 @@ func NewPortForwardSessionOptionsFromProto(
 		// Unknown connection type — leave both as zero values.
 	}
 
-	return &PortForwardSessionOptions{
+	out := &PortForwardSessionOptions{
 		LocalPort:      o.GetLocalPort(),
 		RemotePort:     o.GetRemotePort(),
 		Protocol:       PortForwardProtocolFromProto(o.GetProtocol()),
@@ -637,6 +722,10 @@ func NewPortForwardSessionOptionsFromProto(
 		Connection:     connection,
 		ConnectionType: connectionType,
 	}
+	if err := validateOptionMetadata(*out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@ package omniview.sdk.metric.v1;
 option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/metric;metricpb";
 
 import "google/protobuf/empty.proto";
-import "google/protobuf/struct.proto";
+import "proto/resource/v2/domain.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
@@ -123,7 +123,11 @@ message QueryMetricsRequest {
   string resource_key = 1;
   string resource_id = 2;
   string resource_namespace = 3;
-  google.protobuf.Struct resource_data = 4;
+  reserved 4;
+  omniview.resource.v2.Value resource_data = 11;
+  uint32 resource_wire_version = 12;
+  omniview.resource.v2.ResourceReference reference = 13;
+  omniview.resource.v2.AccessRoute route = 14;
   repeated string metric_ids = 5;
   MetricShape shape = 6;
   google.protobuf.Timestamp start_time = 7;
@@ -146,7 +150,14 @@ message MetricStreamInput {
   string resource_key = 3;
   string resource_id = 4;
   string resource_namespace = 5;
-  google.protobuf.Struct resource_data = 6;
+  reserved 6;
+  omniview.resource.v2.Value resource_data = 9;
+  uint32 resource_wire_version = 10;
+  omniview.resource.v2.ResourceReference reference = 11;
+  omniview.resource.v2.AccessRoute route = 12;
+  bool resource_open = 13;
+  map<string, string> params = 14;
+  string catalog_revision = 15;
   repeated string metric_ids = 7;
   google.protobuf.Duration interval = 8;
 }
@@ -156,6 +167,27 @@ message MetricStreamOutput {
   repeated MetricResult results = 2;
   google.protobuf.Timestamp timestamp = 3;
   string error = 4;
+  MetricOperationError operation_error = 5;
+}
+
+message MetricOperationError {
+  string code = 1;
+  string title = 2;
+  string message = 3;
+  repeated string suggestions = 4;
+}
+
+message ResourceQueryMetricsResponse {
+  uint32 resource_wire_version = 1;
+  QueryMetricsResponse response = 2;
+}
+
+message ResourceMetricStreamOutput {
+  uint32 resource_wire_version = 1;
+  oneof payload {
+    MetricStreamOutput output = 2;
+    bool ready = 3;
+  }
 }
 
 // ===================== SERVICE ===================== //
@@ -164,4 +196,6 @@ service MetricPlugin {
   rpc GetSupportedResources(google.protobuf.Empty) returns (GetSupportedMetricResourcesResponse);
   rpc Query(QueryMetricsRequest) returns (QueryMetricsResponse);
   rpc StreamMetrics(stream MetricStreamInput) returns (stream MetricStreamOutput);
+  rpc QueryResource(QueryMetricsRequest) returns (ResourceQueryMetricsResponse);
+  rpc StreamResourceMetrics(stream MetricStreamInput) returns (stream ResourceMetricStreamOutput);
 }

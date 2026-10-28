@@ -2,6 +2,7 @@ package logtest
 
 import (
 	"context"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"io"
 	"strings"
 	"sync"
@@ -128,7 +129,7 @@ func (r *channelReader) Close() error {
 // SourceBuilder returns a SourceBuilderFunc that produces a single source
 // with the given ID and labels.
 func SingleSourceBuilder(sourceID string, labels map[string]string) logs.SourceBuilderFunc {
-	return func(_ string, _ map[string]interface{}, _ logs.LogSessionOptions) []logs.LogSource {
+	return func(_ string, _ *resourcev2.Value, _ logs.LogSessionOptions) []logs.LogSource {
 		return []logs.LogSource{{ID: sourceID, Labels: labels}}
 	}
 }
@@ -136,7 +137,7 @@ func SingleSourceBuilder(sourceID string, labels map[string]string) logs.SourceB
 // MultiSourceBuilder returns a SourceBuilderFunc that produces sources with
 // the given IDs.
 func MultiSourceBuilder(sourceIDs ...string) logs.SourceBuilderFunc {
-	return func(_ string, _ map[string]interface{}, _ logs.LogSessionOptions) []logs.LogSource {
+	return func(_ string, _ *resourcev2.Value, _ logs.LogSessionOptions) []logs.LogSource {
 		sources := make([]logs.LogSource, len(sourceIDs))
 		for i, id := range sourceIDs {
 			sources[i] = logs.LogSource{ID: id, Labels: map[string]string{"source": id}}

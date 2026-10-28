@@ -7,10 +7,10 @@
 package proto
 
 import (
+	v2 "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
-	structpb "google.golang.org/protobuf/types/known/structpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
@@ -843,13 +843,16 @@ func (x *GetSupportedLogResourcesResponse) GetHandlers() []*LogHandler {
 }
 
 type CreateLogSessionRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ResourceKey   string                 `protobuf:"bytes,1,opt,name=resource_key,json=resourceKey,proto3" json:"resource_key,omitempty"`
-	ResourceId    string                 `protobuf:"bytes,2,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
-	ResourceData  *structpb.Struct       `protobuf:"bytes,3,opt,name=resource_data,json=resourceData,proto3" json:"resource_data,omitempty"`
-	Options       *LogSessionOptions     `protobuf:"bytes,4,opt,name=options,proto3" json:"options,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	ResourceKey         string                 `protobuf:"bytes,1,opt,name=resource_key,json=resourceKey,proto3" json:"resource_key,omitempty"`
+	ResourceId          string                 `protobuf:"bytes,2,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	Options             *LogSessionOptions     `protobuf:"bytes,4,opt,name=options,proto3" json:"options,omitempty"`
+	ResourceData        *v2.Value              `protobuf:"bytes,5,opt,name=resource_data,json=resourceData,proto3" json:"resource_data,omitempty"`
+	ResourceWireVersion uint32                 `protobuf:"varint,6,opt,name=resource_wire_version,json=resourceWireVersion,proto3" json:"resource_wire_version,omitempty"`
+	Reference           *v2.ResourceReference  `protobuf:"bytes,7,opt,name=reference,proto3" json:"reference,omitempty"`
+	Route               *v2.AccessRoute        `protobuf:"bytes,8,opt,name=route,proto3" json:"route,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *CreateLogSessionRequest) Reset() {
@@ -896,16 +899,37 @@ func (x *CreateLogSessionRequest) GetResourceId() string {
 	return ""
 }
 
-func (x *CreateLogSessionRequest) GetResourceData() *structpb.Struct {
+func (x *CreateLogSessionRequest) GetOptions() *LogSessionOptions {
+	if x != nil {
+		return x.Options
+	}
+	return nil
+}
+
+func (x *CreateLogSessionRequest) GetResourceData() *v2.Value {
 	if x != nil {
 		return x.ResourceData
 	}
 	return nil
 }
 
-func (x *CreateLogSessionRequest) GetOptions() *LogSessionOptions {
+func (x *CreateLogSessionRequest) GetResourceWireVersion() uint32 {
 	if x != nil {
-		return x.Options
+		return x.ResourceWireVersion
+	}
+	return 0
+}
+
+func (x *CreateLogSessionRequest) GetReference() *v2.ResourceReference {
+	if x != nil {
+		return x.Reference
+	}
+	return nil
+}
+
+func (x *CreateLogSessionRequest) GetRoute() *v2.AccessRoute {
+	if x != nil {
+		return x.Route
 	}
 	return nil
 }
@@ -970,6 +994,58 @@ func (x *CreateLogSessionResponse) GetError() string {
 	return ""
 }
 
+type ResourceLogSessionResponse struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	ResourceWireVersion uint32                 `protobuf:"varint,1,opt,name=resource_wire_version,json=resourceWireVersion,proto3" json:"resource_wire_version,omitempty"`
+	Session             *LogSession            `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *ResourceLogSessionResponse) Reset() {
+	*x = ResourceLogSessionResponse{}
+	mi := &file_proto_logs_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceLogSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceLogSessionResponse) ProtoMessage() {}
+
+func (x *ResourceLogSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_logs_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceLogSessionResponse.ProtoReflect.Descriptor instead.
+func (*ResourceLogSessionResponse) Descriptor() ([]byte, []int) {
+	return file_proto_logs_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ResourceLogSessionResponse) GetResourceWireVersion() uint32 {
+	if x != nil {
+		return x.ResourceWireVersion
+	}
+	return 0
+}
+
+func (x *ResourceLogSessionResponse) GetSession() *LogSession {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
 type LogSessionByIdRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
@@ -979,7 +1055,7 @@ type LogSessionByIdRequest struct {
 
 func (x *LogSessionByIdRequest) Reset() {
 	*x = LogSessionByIdRequest{}
-	mi := &file_proto_logs_proto_msgTypes[9]
+	mi := &file_proto_logs_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -991,7 +1067,7 @@ func (x *LogSessionByIdRequest) String() string {
 func (*LogSessionByIdRequest) ProtoMessage() {}
 
 func (x *LogSessionByIdRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_logs_proto_msgTypes[9]
+	mi := &file_proto_logs_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1004,7 +1080,7 @@ func (x *LogSessionByIdRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogSessionByIdRequest.ProtoReflect.Descriptor instead.
 func (*LogSessionByIdRequest) Descriptor() ([]byte, []int) {
-	return file_proto_logs_proto_rawDescGZIP(), []int{9}
+	return file_proto_logs_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *LogSessionByIdRequest) GetSessionId() string {
@@ -1025,7 +1101,7 @@ type LogSessionByIdResponse struct {
 
 func (x *LogSessionByIdResponse) Reset() {
 	*x = LogSessionByIdResponse{}
-	mi := &file_proto_logs_proto_msgTypes[10]
+	mi := &file_proto_logs_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1037,7 +1113,7 @@ func (x *LogSessionByIdResponse) String() string {
 func (*LogSessionByIdResponse) ProtoMessage() {}
 
 func (x *LogSessionByIdResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_logs_proto_msgTypes[10]
+	mi := &file_proto_logs_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1050,7 +1126,7 @@ func (x *LogSessionByIdResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogSessionByIdResponse.ProtoReflect.Descriptor instead.
 func (*LogSessionByIdResponse) Descriptor() ([]byte, []int) {
-	return file_proto_logs_proto_rawDescGZIP(), []int{10}
+	return file_proto_logs_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *LogSessionByIdResponse) GetSession() *LogSession {
@@ -1085,7 +1161,7 @@ type ListLogSessionsResponse struct {
 
 func (x *ListLogSessionsResponse) Reset() {
 	*x = ListLogSessionsResponse{}
-	mi := &file_proto_logs_proto_msgTypes[11]
+	mi := &file_proto_logs_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1097,7 +1173,7 @@ func (x *ListLogSessionsResponse) String() string {
 func (*ListLogSessionsResponse) ProtoMessage() {}
 
 func (x *ListLogSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_logs_proto_msgTypes[11]
+	mi := &file_proto_logs_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1110,7 +1186,7 @@ func (x *ListLogSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLogSessionsResponse.ProtoReflect.Descriptor instead.
 func (*ListLogSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_logs_proto_rawDescGZIP(), []int{11}
+	return file_proto_logs_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListLogSessionsResponse) GetSessions() []*LogSession {
@@ -1144,7 +1220,7 @@ type CloseLogSessionResponse struct {
 
 func (x *CloseLogSessionResponse) Reset() {
 	*x = CloseLogSessionResponse{}
-	mi := &file_proto_logs_proto_msgTypes[12]
+	mi := &file_proto_logs_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1156,7 +1232,7 @@ func (x *CloseLogSessionResponse) String() string {
 func (*CloseLogSessionResponse) ProtoMessage() {}
 
 func (x *CloseLogSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_logs_proto_msgTypes[12]
+	mi := &file_proto_logs_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1169,7 +1245,7 @@ func (x *CloseLogSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseLogSessionResponse.ProtoReflect.Descriptor instead.
 func (*CloseLogSessionResponse) Descriptor() ([]byte, []int) {
-	return file_proto_logs_proto_rawDescGZIP(), []int{12}
+	return file_proto_logs_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CloseLogSessionResponse) GetSuccess() bool {
@@ -1196,7 +1272,7 @@ type UpdateLogSessionOptionsRequest struct {
 
 func (x *UpdateLogSessionOptionsRequest) Reset() {
 	*x = UpdateLogSessionOptionsRequest{}
-	mi := &file_proto_logs_proto_msgTypes[13]
+	mi := &file_proto_logs_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1208,7 +1284,7 @@ func (x *UpdateLogSessionOptionsRequest) String() string {
 func (*UpdateLogSessionOptionsRequest) ProtoMessage() {}
 
 func (x *UpdateLogSessionOptionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_logs_proto_msgTypes[13]
+	mi := &file_proto_logs_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1221,7 +1297,7 @@ func (x *UpdateLogSessionOptionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateLogSessionOptionsRequest.ProtoReflect.Descriptor instead.
 func (*UpdateLogSessionOptionsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_logs_proto_rawDescGZIP(), []int{13}
+	return file_proto_logs_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UpdateLogSessionOptionsRequest) GetSessionId() string {
@@ -1248,7 +1324,7 @@ type LogStreamInput struct {
 
 func (x *LogStreamInput) Reset() {
 	*x = LogStreamInput{}
-	mi := &file_proto_logs_proto_msgTypes[14]
+	mi := &file_proto_logs_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1260,7 +1336,7 @@ func (x *LogStreamInput) String() string {
 func (*LogStreamInput) ProtoMessage() {}
 
 func (x *LogStreamInput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_logs_proto_msgTypes[14]
+	mi := &file_proto_logs_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1273,7 +1349,7 @@ func (x *LogStreamInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogStreamInput.ProtoReflect.Descriptor instead.
 func (*LogStreamInput) Descriptor() ([]byte, []int) {
-	return file_proto_logs_proto_rawDescGZIP(), []int{14}
+	return file_proto_logs_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *LogStreamInput) GetSessionId() string {
@@ -1304,7 +1380,7 @@ type LogStreamOutput struct {
 
 func (x *LogStreamOutput) Reset() {
 	*x = LogStreamOutput{}
-	mi := &file_proto_logs_proto_msgTypes[15]
+	mi := &file_proto_logs_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1316,7 +1392,7 @@ func (x *LogStreamOutput) String() string {
 func (*LogStreamOutput) ProtoMessage() {}
 
 func (x *LogStreamOutput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_logs_proto_msgTypes[15]
+	mi := &file_proto_logs_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1329,7 +1405,7 @@ func (x *LogStreamOutput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogStreamOutput.ProtoReflect.Descriptor instead.
 func (*LogStreamOutput) Descriptor() ([]byte, []int) {
-	return file_proto_logs_proto_rawDescGZIP(), []int{15}
+	return file_proto_logs_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *LogStreamOutput) GetSessionId() string {
@@ -1384,7 +1460,7 @@ var File_proto_logs_proto protoreflect.FileDescriptor
 
 const file_proto_logs_proto_rawDesc = "" +
 	"\n" +
-	"\x10proto/logs.proto\x12\x16com.omniview.pluginsdk\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1aproto/utility_target.proto\"\x90\x03\n" +
+	"\x10proto/logs.proto\x12\x16com.omniview.pluginsdk\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1eproto/resource/v2/domain.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1aproto/utility_target.proto\"\x90\x03\n" +
 	"\aLogLine\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
@@ -1445,17 +1521,23 @@ const file_proto_logs_proto_rawDesc = "" +
 	"\bresource\x18\x02 \x01(\tR\bresource\x12Z\n" +
 	"\x0etarget_builder\x18\x03 \x01(\v23.com.omniview.pluginsdk.ResourceActionTargetBuilderR\rtargetBuilder\"b\n" +
 	" GetSupportedLogResourcesResponse\x12>\n" +
-	"\bhandlers\x18\x01 \x03(\v2\".com.omniview.pluginsdk.LogHandlerR\bhandlers\"\xe0\x01\n" +
+	"\bhandlers\x18\x01 \x03(\v2\".com.omniview.pluginsdk.LogHandlerR\bhandlers\"\x9e\x03\n" +
 	"\x17CreateLogSessionRequest\x12!\n" +
 	"\fresource_key\x18\x01 \x01(\tR\vresourceKey\x12\x1f\n" +
 	"\vresource_id\x18\x02 \x01(\tR\n" +
-	"resourceId\x12<\n" +
-	"\rresource_data\x18\x03 \x01(\v2\x17.google.protobuf.StructR\fresourceData\x12C\n" +
-	"\aoptions\x18\x04 \x01(\v2).com.omniview.pluginsdk.LogSessionOptionsR\aoptions\"\x88\x01\n" +
+	"resourceId\x12C\n" +
+	"\aoptions\x18\x04 \x01(\v2).com.omniview.pluginsdk.LogSessionOptionsR\aoptions\x12@\n" +
+	"\rresource_data\x18\x05 \x01(\v2\x1b.omniview.resource.v2.ValueR\fresourceData\x122\n" +
+	"\x15resource_wire_version\x18\x06 \x01(\rR\x13resourceWireVersion\x12E\n" +
+	"\treference\x18\a \x01(\v2'.omniview.resource.v2.ResourceReferenceR\treference\x127\n" +
+	"\x05route\x18\b \x01(\v2!.omniview.resource.v2.AccessRouteR\x05routeJ\x04\b\x03\x10\x04\"\x88\x01\n" +
 	"\x18CreateLogSessionResponse\x12<\n" +
 	"\asession\x18\x01 \x01(\v2\".com.omniview.pluginsdk.LogSessionR\asession\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"6\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\x8e\x01\n" +
+	"\x1aResourceLogSessionResponse\x122\n" +
+	"\x15resource_wire_version\x18\x01 \x01(\rR\x13resourceWireVersion\x12<\n" +
+	"\asession\x18\x02 \x01(\v2\".com.omniview.pluginsdk.LogSessionR\asession\"6\n" +
 	"\x15LogSessionByIdRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\"\x86\x01\n" +
@@ -1514,10 +1596,11 @@ const file_proto_logs_proto_rawDesc = "" +
 	"\x0eLOG_LEVEL_INFO\x10\x03\x12\x12\n" +
 	"\x0eLOG_LEVEL_WARN\x10\x04\x12\x13\n" +
 	"\x0fLOG_LEVEL_ERROR\x10\x05\x12\x13\n" +
-	"\x0fLOG_LEVEL_FATAL\x10\x062\xff\x05\n" +
+	"\x0fLOG_LEVEL_FATAL\x10\x062\xfd\x06\n" +
 	"\tLogPlugin\x12i\n" +
 	"\x15GetSupportedResources\x12\x16.google.protobuf.Empty\x1a8.com.omniview.pluginsdk.GetSupportedLogResourcesResponse\x12r\n" +
-	"\rCreateSession\x12/.com.omniview.pluginsdk.CreateLogSessionRequest\x1a0.com.omniview.pluginsdk.CreateLogSessionResponse\x12k\n" +
+	"\rCreateSession\x12/.com.omniview.pluginsdk.CreateLogSessionRequest\x1a0.com.omniview.pluginsdk.CreateLogSessionResponse\x12|\n" +
+	"\x15CreateResourceSession\x12/.com.omniview.pluginsdk.CreateLogSessionRequest\x1a2.com.omniview.pluginsdk.ResourceLogSessionResponse\x12k\n" +
 	"\n" +
 	"GetSession\x12-.com.omniview.pluginsdk.LogSessionByIdRequest\x1a..com.omniview.pluginsdk.LogSessionByIdResponse\x12W\n" +
 	"\fListSessions\x12\x16.google.protobuf.Empty\x1a/.com.omniview.pluginsdk.ListLogSessionsResponse\x12n\n" +
@@ -1538,7 +1621,7 @@ func file_proto_logs_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_logs_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_proto_logs_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_proto_logs_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_proto_logs_proto_goTypes = []any{
 	(LogLineOrigin)(0),                       // 0: com.omniview.pluginsdk.LogLineOrigin
 	(LogStreamEventType)(0),                  // 1: com.omniview.pluginsdk.LogStreamEventType
@@ -1554,65 +1637,73 @@ var file_proto_logs_proto_goTypes = []any{
 	(*GetSupportedLogResourcesResponse)(nil), // 11: com.omniview.pluginsdk.GetSupportedLogResourcesResponse
 	(*CreateLogSessionRequest)(nil),          // 12: com.omniview.pluginsdk.CreateLogSessionRequest
 	(*CreateLogSessionResponse)(nil),         // 13: com.omniview.pluginsdk.CreateLogSessionResponse
-	(*LogSessionByIdRequest)(nil),            // 14: com.omniview.pluginsdk.LogSessionByIdRequest
-	(*LogSessionByIdResponse)(nil),           // 15: com.omniview.pluginsdk.LogSessionByIdResponse
-	(*ListLogSessionsResponse)(nil),          // 16: com.omniview.pluginsdk.ListLogSessionsResponse
-	(*CloseLogSessionResponse)(nil),          // 17: com.omniview.pluginsdk.CloseLogSessionResponse
-	(*UpdateLogSessionOptionsRequest)(nil),   // 18: com.omniview.pluginsdk.UpdateLogSessionOptionsRequest
-	(*LogStreamInput)(nil),                   // 19: com.omniview.pluginsdk.LogStreamInput
-	(*LogStreamOutput)(nil),                  // 20: com.omniview.pluginsdk.LogStreamOutput
-	nil,                                      // 21: com.omniview.pluginsdk.LogLine.LabelsEntry
-	nil,                                      // 22: com.omniview.pluginsdk.LogSource.LabelsEntry
-	nil,                                      // 23: com.omniview.pluginsdk.LogSessionOptions.ParamsEntry
-	(*timestamppb.Timestamp)(nil),            // 24: google.protobuf.Timestamp
-	(*ResourceActionTargetBuilder)(nil),      // 25: com.omniview.pluginsdk.ResourceActionTargetBuilder
-	(*structpb.Struct)(nil),                  // 26: google.protobuf.Struct
-	(*emptypb.Empty)(nil),                    // 27: google.protobuf.Empty
+	(*ResourceLogSessionResponse)(nil),       // 14: com.omniview.pluginsdk.ResourceLogSessionResponse
+	(*LogSessionByIdRequest)(nil),            // 15: com.omniview.pluginsdk.LogSessionByIdRequest
+	(*LogSessionByIdResponse)(nil),           // 16: com.omniview.pluginsdk.LogSessionByIdResponse
+	(*ListLogSessionsResponse)(nil),          // 17: com.omniview.pluginsdk.ListLogSessionsResponse
+	(*CloseLogSessionResponse)(nil),          // 18: com.omniview.pluginsdk.CloseLogSessionResponse
+	(*UpdateLogSessionOptionsRequest)(nil),   // 19: com.omniview.pluginsdk.UpdateLogSessionOptionsRequest
+	(*LogStreamInput)(nil),                   // 20: com.omniview.pluginsdk.LogStreamInput
+	(*LogStreamOutput)(nil),                  // 21: com.omniview.pluginsdk.LogStreamOutput
+	nil,                                      // 22: com.omniview.pluginsdk.LogLine.LabelsEntry
+	nil,                                      // 23: com.omniview.pluginsdk.LogSource.LabelsEntry
+	nil,                                      // 24: com.omniview.pluginsdk.LogSessionOptions.ParamsEntry
+	(*timestamppb.Timestamp)(nil),            // 25: google.protobuf.Timestamp
+	(*ResourceActionTargetBuilder)(nil),      // 26: com.omniview.pluginsdk.ResourceActionTargetBuilder
+	(*v2.Value)(nil),                         // 27: omniview.resource.v2.Value
+	(*v2.ResourceReference)(nil),             // 28: omniview.resource.v2.ResourceReference
+	(*v2.AccessRoute)(nil),                   // 29: omniview.resource.v2.AccessRoute
+	(*emptypb.Empty)(nil),                    // 30: google.protobuf.Empty
 }
 var file_proto_logs_proto_depIdxs = []int32{
-	21, // 0: com.omniview.pluginsdk.LogLine.labels:type_name -> com.omniview.pluginsdk.LogLine.LabelsEntry
-	24, // 1: com.omniview.pluginsdk.LogLine.timestamp:type_name -> google.protobuf.Timestamp
+	22, // 0: com.omniview.pluginsdk.LogLine.labels:type_name -> com.omniview.pluginsdk.LogLine.LabelsEntry
+	25, // 1: com.omniview.pluginsdk.LogLine.timestamp:type_name -> google.protobuf.Timestamp
 	0,  // 2: com.omniview.pluginsdk.LogLine.origin:type_name -> com.omniview.pluginsdk.LogLineOrigin
 	4,  // 3: com.omniview.pluginsdk.LogLine.level:type_name -> com.omniview.pluginsdk.LogLevel
-	22, // 4: com.omniview.pluginsdk.LogSource.labels:type_name -> com.omniview.pluginsdk.LogSource.LabelsEntry
+	23, // 4: com.omniview.pluginsdk.LogSource.labels:type_name -> com.omniview.pluginsdk.LogSource.LabelsEntry
 	1,  // 5: com.omniview.pluginsdk.LogStreamEvent.type:type_name -> com.omniview.pluginsdk.LogStreamEventType
-	24, // 6: com.omniview.pluginsdk.LogStreamEvent.timestamp:type_name -> google.protobuf.Timestamp
-	24, // 7: com.omniview.pluginsdk.LogSessionOptions.since_time:type_name -> google.protobuf.Timestamp
-	23, // 8: com.omniview.pluginsdk.LogSessionOptions.params:type_name -> com.omniview.pluginsdk.LogSessionOptions.ParamsEntry
+	25, // 6: com.omniview.pluginsdk.LogStreamEvent.timestamp:type_name -> google.protobuf.Timestamp
+	25, // 7: com.omniview.pluginsdk.LogSessionOptions.since_time:type_name -> google.protobuf.Timestamp
+	24, // 8: com.omniview.pluginsdk.LogSessionOptions.params:type_name -> com.omniview.pluginsdk.LogSessionOptions.ParamsEntry
 	8,  // 9: com.omniview.pluginsdk.LogSession.options:type_name -> com.omniview.pluginsdk.LogSessionOptions
 	3,  // 10: com.omniview.pluginsdk.LogSession.status:type_name -> com.omniview.pluginsdk.LogSessionStatus
 	6,  // 11: com.omniview.pluginsdk.LogSession.active_sources:type_name -> com.omniview.pluginsdk.LogSource
-	24, // 12: com.omniview.pluginsdk.LogSession.created_at:type_name -> google.protobuf.Timestamp
-	25, // 13: com.omniview.pluginsdk.LogHandler.target_builder:type_name -> com.omniview.pluginsdk.ResourceActionTargetBuilder
+	25, // 12: com.omniview.pluginsdk.LogSession.created_at:type_name -> google.protobuf.Timestamp
+	26, // 13: com.omniview.pluginsdk.LogHandler.target_builder:type_name -> com.omniview.pluginsdk.ResourceActionTargetBuilder
 	10, // 14: com.omniview.pluginsdk.GetSupportedLogResourcesResponse.handlers:type_name -> com.omniview.pluginsdk.LogHandler
-	26, // 15: com.omniview.pluginsdk.CreateLogSessionRequest.resource_data:type_name -> google.protobuf.Struct
-	8,  // 16: com.omniview.pluginsdk.CreateLogSessionRequest.options:type_name -> com.omniview.pluginsdk.LogSessionOptions
-	9,  // 17: com.omniview.pluginsdk.CreateLogSessionResponse.session:type_name -> com.omniview.pluginsdk.LogSession
-	9,  // 18: com.omniview.pluginsdk.LogSessionByIdResponse.session:type_name -> com.omniview.pluginsdk.LogSession
-	9,  // 19: com.omniview.pluginsdk.ListLogSessionsResponse.sessions:type_name -> com.omniview.pluginsdk.LogSession
-	8,  // 20: com.omniview.pluginsdk.UpdateLogSessionOptionsRequest.options:type_name -> com.omniview.pluginsdk.LogSessionOptions
-	2,  // 21: com.omniview.pluginsdk.LogStreamInput.command:type_name -> com.omniview.pluginsdk.LogStreamCommand
-	5,  // 22: com.omniview.pluginsdk.LogStreamOutput.line:type_name -> com.omniview.pluginsdk.LogLine
-	7,  // 23: com.omniview.pluginsdk.LogStreamOutput.event:type_name -> com.omniview.pluginsdk.LogStreamEvent
-	27, // 24: com.omniview.pluginsdk.LogPlugin.GetSupportedResources:input_type -> google.protobuf.Empty
-	12, // 25: com.omniview.pluginsdk.LogPlugin.CreateSession:input_type -> com.omniview.pluginsdk.CreateLogSessionRequest
-	14, // 26: com.omniview.pluginsdk.LogPlugin.GetSession:input_type -> com.omniview.pluginsdk.LogSessionByIdRequest
-	27, // 27: com.omniview.pluginsdk.LogPlugin.ListSessions:input_type -> google.protobuf.Empty
-	14, // 28: com.omniview.pluginsdk.LogPlugin.CloseSession:input_type -> com.omniview.pluginsdk.LogSessionByIdRequest
-	18, // 29: com.omniview.pluginsdk.LogPlugin.UpdateSessionOptions:input_type -> com.omniview.pluginsdk.UpdateLogSessionOptionsRequest
-	19, // 30: com.omniview.pluginsdk.LogPlugin.Stream:input_type -> com.omniview.pluginsdk.LogStreamInput
-	11, // 31: com.omniview.pluginsdk.LogPlugin.GetSupportedResources:output_type -> com.omniview.pluginsdk.GetSupportedLogResourcesResponse
-	13, // 32: com.omniview.pluginsdk.LogPlugin.CreateSession:output_type -> com.omniview.pluginsdk.CreateLogSessionResponse
-	15, // 33: com.omniview.pluginsdk.LogPlugin.GetSession:output_type -> com.omniview.pluginsdk.LogSessionByIdResponse
-	16, // 34: com.omniview.pluginsdk.LogPlugin.ListSessions:output_type -> com.omniview.pluginsdk.ListLogSessionsResponse
-	17, // 35: com.omniview.pluginsdk.LogPlugin.CloseSession:output_type -> com.omniview.pluginsdk.CloseLogSessionResponse
-	15, // 36: com.omniview.pluginsdk.LogPlugin.UpdateSessionOptions:output_type -> com.omniview.pluginsdk.LogSessionByIdResponse
-	20, // 37: com.omniview.pluginsdk.LogPlugin.Stream:output_type -> com.omniview.pluginsdk.LogStreamOutput
-	31, // [31:38] is the sub-list for method output_type
-	24, // [24:31] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	8,  // 15: com.omniview.pluginsdk.CreateLogSessionRequest.options:type_name -> com.omniview.pluginsdk.LogSessionOptions
+	27, // 16: com.omniview.pluginsdk.CreateLogSessionRequest.resource_data:type_name -> omniview.resource.v2.Value
+	28, // 17: com.omniview.pluginsdk.CreateLogSessionRequest.reference:type_name -> omniview.resource.v2.ResourceReference
+	29, // 18: com.omniview.pluginsdk.CreateLogSessionRequest.route:type_name -> omniview.resource.v2.AccessRoute
+	9,  // 19: com.omniview.pluginsdk.CreateLogSessionResponse.session:type_name -> com.omniview.pluginsdk.LogSession
+	9,  // 20: com.omniview.pluginsdk.ResourceLogSessionResponse.session:type_name -> com.omniview.pluginsdk.LogSession
+	9,  // 21: com.omniview.pluginsdk.LogSessionByIdResponse.session:type_name -> com.omniview.pluginsdk.LogSession
+	9,  // 22: com.omniview.pluginsdk.ListLogSessionsResponse.sessions:type_name -> com.omniview.pluginsdk.LogSession
+	8,  // 23: com.omniview.pluginsdk.UpdateLogSessionOptionsRequest.options:type_name -> com.omniview.pluginsdk.LogSessionOptions
+	2,  // 24: com.omniview.pluginsdk.LogStreamInput.command:type_name -> com.omniview.pluginsdk.LogStreamCommand
+	5,  // 25: com.omniview.pluginsdk.LogStreamOutput.line:type_name -> com.omniview.pluginsdk.LogLine
+	7,  // 26: com.omniview.pluginsdk.LogStreamOutput.event:type_name -> com.omniview.pluginsdk.LogStreamEvent
+	30, // 27: com.omniview.pluginsdk.LogPlugin.GetSupportedResources:input_type -> google.protobuf.Empty
+	12, // 28: com.omniview.pluginsdk.LogPlugin.CreateSession:input_type -> com.omniview.pluginsdk.CreateLogSessionRequest
+	12, // 29: com.omniview.pluginsdk.LogPlugin.CreateResourceSession:input_type -> com.omniview.pluginsdk.CreateLogSessionRequest
+	15, // 30: com.omniview.pluginsdk.LogPlugin.GetSession:input_type -> com.omniview.pluginsdk.LogSessionByIdRequest
+	30, // 31: com.omniview.pluginsdk.LogPlugin.ListSessions:input_type -> google.protobuf.Empty
+	15, // 32: com.omniview.pluginsdk.LogPlugin.CloseSession:input_type -> com.omniview.pluginsdk.LogSessionByIdRequest
+	19, // 33: com.omniview.pluginsdk.LogPlugin.UpdateSessionOptions:input_type -> com.omniview.pluginsdk.UpdateLogSessionOptionsRequest
+	20, // 34: com.omniview.pluginsdk.LogPlugin.Stream:input_type -> com.omniview.pluginsdk.LogStreamInput
+	11, // 35: com.omniview.pluginsdk.LogPlugin.GetSupportedResources:output_type -> com.omniview.pluginsdk.GetSupportedLogResourcesResponse
+	13, // 36: com.omniview.pluginsdk.LogPlugin.CreateSession:output_type -> com.omniview.pluginsdk.CreateLogSessionResponse
+	14, // 37: com.omniview.pluginsdk.LogPlugin.CreateResourceSession:output_type -> com.omniview.pluginsdk.ResourceLogSessionResponse
+	16, // 38: com.omniview.pluginsdk.LogPlugin.GetSession:output_type -> com.omniview.pluginsdk.LogSessionByIdResponse
+	17, // 39: com.omniview.pluginsdk.LogPlugin.ListSessions:output_type -> com.omniview.pluginsdk.ListLogSessionsResponse
+	18, // 40: com.omniview.pluginsdk.LogPlugin.CloseSession:output_type -> com.omniview.pluginsdk.CloseLogSessionResponse
+	16, // 41: com.omniview.pluginsdk.LogPlugin.UpdateSessionOptions:output_type -> com.omniview.pluginsdk.LogSessionByIdResponse
+	21, // 42: com.omniview.pluginsdk.LogPlugin.Stream:output_type -> com.omniview.pluginsdk.LogStreamOutput
+	35, // [35:43] is the sub-list for method output_type
+	27, // [27:35] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_proto_logs_proto_init() }
@@ -1621,7 +1712,7 @@ func file_proto_logs_proto_init() {
 		return
 	}
 	file_proto_utility_target_proto_init()
-	file_proto_logs_proto_msgTypes[15].OneofWrappers = []any{
+	file_proto_logs_proto_msgTypes[16].OneofWrappers = []any{
 		(*LogStreamOutput_Line)(nil),
 		(*LogStreamOutput_Event)(nil),
 	}
@@ -1631,7 +1722,7 @@ func file_proto_logs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_logs_proto_rawDesc), len(file_proto_logs_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   19,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

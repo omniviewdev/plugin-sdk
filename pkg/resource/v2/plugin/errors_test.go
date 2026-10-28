@@ -123,7 +123,9 @@ func TestUnknownActionErrorCodeRejectedBeforeDelivery(t *testing.T) {
 	resourcepb.RegisterResourceProviderServer(s, &actionCatalogServer{})
 	resourcepb.RegisterResourceAncillaryServer(s, &unknownActionCodeServer{})
 	out := make(chan resourcev2.ActionEvent, 2)
-	err := NewClient(pipe(t, s)).StreamAction(context.Background(), actionInput(), out)
+	client := NewClient(pipe(t, s))
+	ctx := acceptedCatalogContext(t, context.Background(), client, actionInput().Route)
+	err := client.StreamAction(ctx, actionInput(), out)
 	if resourcev2.ErrorCode(err) != "INTERNAL" {
 		t.Fatalf("unknown action code: %v", err)
 	}

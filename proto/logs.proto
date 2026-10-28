@@ -2,7 +2,7 @@ syntax = "proto3";
 package com.omniview.pluginsdk;
 
 import "google/protobuf/empty.proto";
-import "google/protobuf/struct.proto";
+import "proto/resource/v2/domain.proto";
 import "google/protobuf/timestamp.proto";
 
 import "proto/utility_target.proto";
@@ -118,14 +118,23 @@ message GetSupportedLogResourcesResponse {
 message CreateLogSessionRequest {
   string resource_key = 1;
   string resource_id = 2;
-  google.protobuf.Struct resource_data = 3;
+  reserved 3;
   LogSessionOptions options = 4;
+  .omniview.resource.v2.Value resource_data = 5;
+  uint32 resource_wire_version = 6;
+  .omniview.resource.v2.ResourceReference reference = 7;
+  .omniview.resource.v2.AccessRoute route = 8;
 }
 
 message CreateLogSessionResponse {
   LogSession session = 1;
   bool success = 2;
   string error = 3;
+}
+
+message ResourceLogSessionResponse {
+  uint32 resource_wire_version = 1;
+  LogSession session = 2;
 }
 
 message LogSessionByIdRequest {
@@ -174,6 +183,7 @@ message LogStreamOutput {
 service LogPlugin {
   rpc GetSupportedResources(google.protobuf.Empty) returns (GetSupportedLogResourcesResponse);
   rpc CreateSession(CreateLogSessionRequest) returns (CreateLogSessionResponse);
+  rpc CreateResourceSession(CreateLogSessionRequest) returns (ResourceLogSessionResponse);
   rpc GetSession(LogSessionByIdRequest) returns (LogSessionByIdResponse);
   rpc ListSessions(google.protobuf.Empty) returns (ListLogSessionsResponse);
   rpc CloseSession(LogSessionByIdRequest) returns (CloseLogSessionResponse);

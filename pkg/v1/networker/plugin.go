@@ -8,6 +8,7 @@ import (
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
@@ -33,6 +34,14 @@ type PortForwardProvider interface {
 	StopAll()
 }
 
+// ResourcePortForwardProvider opts into lossless resource forwarding through the
+// existing forwarding engine. Resource connections use this method even when
+// ResourceData is nil. Older peers return UNSUPPORTED; clients never retry the
+// legacy static-only StartPortForwardSession RPC.
+type ResourcePortForwardProvider interface {
+	StartResourcePortForwardSession(*types.PluginContext, PortForwardSessionOptions) (*PortForwardSession, error)
+}
+
 // Provider is the interface satisfied by the plugin server and client
 // to provide the networker functionality.
 type Provider interface {
@@ -44,8 +53,15 @@ type Plugin struct {
 	Impl Provider
 }
 
+// BindConnectionContextProvider delegates registry binding to capable providers.
+func (p *Plugin) BindConnectionContextProvider(provider resourcev2.ConnectionContextProvider) {
+	if consumer, ok := p.Impl.(resourcev2.ConnectionContextConsumer); ok {
+		consumer.BindConnectionContextProvider(provider)
+	}
+}
+
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
-	networkerpb.RegisterNetworkerPluginServer(s, &PluginServer{Impl: p.Impl})
+	RegisterNetworkerPluginServer(s, &PluginServer{Impl: p.Impl})
 	return nil
 }
 

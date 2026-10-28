@@ -45,7 +45,7 @@ func TestActualGRPCCanonicalAncillaryWorkflows(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, &ancillaryFixtureProvider{})
 	c := NewClient(pipe(t, s))
-	ctx := context.Background()
+	ctx := acceptedRelationshipContext(t, context.Background(), c, relationshipFixtureRequest())
 	route := testGet().Route
 	groups, err := c.GetResourceGroups(ctx, route)
 	if err != nil || len(groups) != 1 || groups[0].Resources[0] != "opaque/type" {

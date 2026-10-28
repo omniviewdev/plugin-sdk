@@ -33,7 +33,14 @@ func updateCallHandler(srv interface{}, ctx context.Context, dec func(interface{
 		if err != nil {
 			return nil, rpcError(err)
 		}
+		routes := updateRoutes(v.(*resourcepb.UpdateRequest))
+		if err := s.owner.checkCatalogRoutes(ctx, routes); err != nil {
+			return nil, rpcError(s.owner.classify(err))
+		}
 		out, err := s.call(ctx, v.(*resourcepb.UpdateRequest))
+		if fenceErr := s.owner.checkCatalogRoutes(ctx, routes); fenceErr != nil {
+			return nil, rpcError(s.owner.classify(fenceErr))
+		}
 		err = responseError(out, err)
 		return out, rpcError(s.owner.classify(err))
 	}

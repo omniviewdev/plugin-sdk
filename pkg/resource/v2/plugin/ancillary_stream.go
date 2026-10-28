@@ -106,6 +106,9 @@ func streamActionHandler(srv interface{}, stream grpc.ServerStream) error {
 	}
 	ctx, cancel := context.WithCancel(base)
 	defer cancel()
+	if err := s.owner.checkCatalogRoute(ctx, r.Action.GetRoute()); err != nil {
+		return rpcError(s.owner.classify(err))
+	}
 	if _, err = resourcev2.AdmitStreamingAction(ctx, s.owner.impl, in); err != nil {
 		return rpcError(err)
 	}
@@ -125,6 +128,9 @@ func streamActionHandler(srv interface{}, stream grpc.ServerStream) error {
 	}()
 	ready := false
 	send := func(v resourcev2.ActionEvent) error {
+		if err := s.owner.checkCatalogRoute(ctx, r.Action.GetRoute()); err != nil {
+			return err
+		}
 		if v.Type == "ready" {
 			if ready {
 				return invalid("duplicate action readiness")

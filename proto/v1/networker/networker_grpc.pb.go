@@ -20,12 +20,13 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	NetworkerPlugin_GetSupportedPortForwardTargets_FullMethodName = "/omniview.sdk.networker.v1.NetworkerPlugin/GetSupportedPortForwardTargets"
-	NetworkerPlugin_GetPortForwardSession_FullMethodName          = "/omniview.sdk.networker.v1.NetworkerPlugin/GetPortForwardSession"
-	NetworkerPlugin_ListPortForwardSessions_FullMethodName        = "/omniview.sdk.networker.v1.NetworkerPlugin/ListPortForwardSessions"
-	NetworkerPlugin_FindPortForwardSessions_FullMethodName        = "/omniview.sdk.networker.v1.NetworkerPlugin/FindPortForwardSessions"
-	NetworkerPlugin_StartPortForwardSession_FullMethodName        = "/omniview.sdk.networker.v1.NetworkerPlugin/StartPortForwardSession"
-	NetworkerPlugin_ClosePortForwardSession_FullMethodName        = "/omniview.sdk.networker.v1.NetworkerPlugin/ClosePortForwardSession"
+	NetworkerPlugin_GetSupportedPortForwardTargets_FullMethodName  = "/omniview.sdk.networker.v1.NetworkerPlugin/GetSupportedPortForwardTargets"
+	NetworkerPlugin_GetPortForwardSession_FullMethodName           = "/omniview.sdk.networker.v1.NetworkerPlugin/GetPortForwardSession"
+	NetworkerPlugin_ListPortForwardSessions_FullMethodName         = "/omniview.sdk.networker.v1.NetworkerPlugin/ListPortForwardSessions"
+	NetworkerPlugin_FindPortForwardSessions_FullMethodName         = "/omniview.sdk.networker.v1.NetworkerPlugin/FindPortForwardSessions"
+	NetworkerPlugin_StartPortForwardSession_FullMethodName         = "/omniview.sdk.networker.v1.NetworkerPlugin/StartPortForwardSession"
+	NetworkerPlugin_StartResourcePortForwardSession_FullMethodName = "/omniview.sdk.networker.v1.NetworkerPlugin/StartResourcePortForwardSession"
+	NetworkerPlugin_ClosePortForwardSession_FullMethodName         = "/omniview.sdk.networker.v1.NetworkerPlugin/ClosePortForwardSession"
 )
 
 // NetworkerPluginClient is the client API for NetworkerPlugin service.
@@ -38,6 +39,7 @@ type NetworkerPluginClient interface {
 	ListPortForwardSessions(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*PortForwardSessionListResponse, error)
 	FindPortForwardSessions(ctx context.Context, in *FindPortForwardSessionRequest, opts ...grpc.CallOption) (*PortForwardSessionListResponse, error)
 	StartPortForwardSession(ctx context.Context, in *PortForwardSessionOptions, opts ...grpc.CallOption) (*PortForwardSessionByIdResponse, error)
+	StartResourcePortForwardSession(ctx context.Context, in *PortForwardSessionOptions, opts ...grpc.CallOption) (*ResourcePortForwardSessionResponse, error)
 	ClosePortForwardSession(ctx context.Context, in *PortForwardSessionByIdRequest, opts ...grpc.CallOption) (*PortForwardSessionByIdResponse, error)
 }
 
@@ -94,6 +96,15 @@ func (c *networkerPluginClient) StartPortForwardSession(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *networkerPluginClient) StartResourcePortForwardSession(ctx context.Context, in *PortForwardSessionOptions, opts ...grpc.CallOption) (*ResourcePortForwardSessionResponse, error) {
+	out := new(ResourcePortForwardSessionResponse)
+	err := c.cc.Invoke(ctx, NetworkerPlugin_StartResourcePortForwardSession_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *networkerPluginClient) ClosePortForwardSession(ctx context.Context, in *PortForwardSessionByIdRequest, opts ...grpc.CallOption) (*PortForwardSessionByIdResponse, error) {
 	out := new(PortForwardSessionByIdResponse)
 	err := c.cc.Invoke(ctx, NetworkerPlugin_ClosePortForwardSession_FullMethodName, in, out, opts...)
@@ -113,6 +124,7 @@ type NetworkerPluginServer interface {
 	ListPortForwardSessions(context.Context, *emptypb.Empty) (*PortForwardSessionListResponse, error)
 	FindPortForwardSessions(context.Context, *FindPortForwardSessionRequest) (*PortForwardSessionListResponse, error)
 	StartPortForwardSession(context.Context, *PortForwardSessionOptions) (*PortForwardSessionByIdResponse, error)
+	StartResourcePortForwardSession(context.Context, *PortForwardSessionOptions) (*ResourcePortForwardSessionResponse, error)
 	ClosePortForwardSession(context.Context, *PortForwardSessionByIdRequest) (*PortForwardSessionByIdResponse, error)
 }
 
@@ -134,6 +146,9 @@ func (UnimplementedNetworkerPluginServer) FindPortForwardSessions(context.Contex
 }
 func (UnimplementedNetworkerPluginServer) StartPortForwardSession(context.Context, *PortForwardSessionOptions) (*PortForwardSessionByIdResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartPortForwardSession not implemented")
+}
+func (UnimplementedNetworkerPluginServer) StartResourcePortForwardSession(context.Context, *PortForwardSessionOptions) (*ResourcePortForwardSessionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartResourcePortForwardSession not implemented")
 }
 func (UnimplementedNetworkerPluginServer) ClosePortForwardSession(context.Context, *PortForwardSessionByIdRequest) (*PortForwardSessionByIdResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ClosePortForwardSession not implemented")
@@ -240,6 +255,24 @@ func _NetworkerPlugin_StartPortForwardSession_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NetworkerPlugin_StartResourcePortForwardSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PortForwardSessionOptions)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworkerPluginServer).StartResourcePortForwardSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworkerPlugin_StartResourcePortForwardSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworkerPluginServer).StartResourcePortForwardSession(ctx, req.(*PortForwardSessionOptions))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _NetworkerPlugin_ClosePortForwardSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PortForwardSessionByIdRequest)
 	if err := dec(in); err != nil {
@@ -284,6 +317,10 @@ var NetworkerPlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StartPortForwardSession",
 			Handler:    _NetworkerPlugin_StartPortForwardSession_Handler,
+		},
+		{
+			MethodName: "StartResourcePortForwardSession",
+			Handler:    _NetworkerPlugin_StartResourcePortForwardSession_Handler,
 		},
 		{
 			MethodName: "ClosePortForwardSession",

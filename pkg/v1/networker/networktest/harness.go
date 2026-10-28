@@ -116,6 +116,9 @@ func Mount(t *testing.T, opts ...HarnessOption) *Harness {
 func (h *Harness) StartSession(opts networker.PortForwardSessionOptions) (*networker.PortForwardSession, error) {
 	h.t.Helper()
 	pctx := newTestPluginContext(h.ctx)
+	if opts.ConnectionType == networker.PortForwardConnectionTypeResource {
+		return h.Manager.StartResourcePortForwardSession(pctx, opts)
+	}
 	return h.Manager.StartPortForwardSession(pctx, opts)
 }
 

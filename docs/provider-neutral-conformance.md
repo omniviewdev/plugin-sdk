@@ -169,3 +169,68 @@ and 17 packages without tests. The first exec barrier exposed incorrect
 Independent wire-admission and lifecycle source re-reviews reported no remaining
 findings; reviewers did not execute checks. Host/TypeScript bindings, native
 Kubernetes/app smoke, publication and coordinated acceptance remain parent gates.
+
+## Catalog/source generation and remaining utilities — 2026-10-28
+
+Catalog admission now pins an explicit accepted observation through bounded
+binary metadata; SDK clients do not substitute a current catalog cache.
+`CatalogBindingEpoch` distinguishes actual native client/configuration binding
+from ordinary catalog metadata churn. Controller and custom-provider framing use
+the same SDK implementation; custom fixtures issue an epoch per actual source
+instance. Direct controller and RPC checks fence admission and publication.
+Cross-route relationships carry independently qualified accepted observations,
+with a 32 KiB aggregate catalog-header ceiling and no new identity DTO.
+
+`current_generation_test.go` uses a disposable canonical SDK child and real
+native HTTP clients. Independent child-side refresh controls invoke actual
+`ApplyConnections`/`StartConnection`; file receipts prove native entry,
+cancellation, ignored-cancellation return and refresh completion. Cases cover
+A→B before a request, in-flight retirement, current-generation success and
+A→B→A rejection of the retired nonce. Successful bodies are tagged maps, not a
+scalar fixture bypassing record admission.
+
+Logs, metric query/subscription and resource forwarding bodies now traverse
+explicit new resource operations as canonical Value. Native builders,
+resolvers, callbacks and forwarding snapshots retain exact integers,
+timestamps and nested negative zero without Struct. Reference-bearing
+operations require the accepted catalog; opaque nonreference utility inputs
+and ordinary cluster metrics do not fabricate one or acquire a Get permission.
+
+Metric tests bind the sole started resource registry to real local HTTP
+endpoints. Two simultaneous actual connections share the same local
+subscription ID without stealing output or cancellation. A blocked native poll
+observes cancellation after source-side profile refresh; stopped admission does
+not auto-start, explicit restart samples the replacement endpoint, and stale/
+retired reference observations reject. Custom streams receive actual configured
+profiles and request contexts. Completion releases the real connection lease.
+
+Immutable per-lane admission and compact used-ID tombstones prevent queued
+retired reference output from inheriting a later nonreference subscription.
+Actual RPC tests reject ID reuse and enforce the candidate 4096-used-ID and
+32 MiB retained-metadata bounds before native work. Hosts use fresh opaque wire
+IDs; these are utility routing IDs, not resource identity.
+
+Wire-admission and lifecycle re-reviews closed the reported source findings.
+They ran no checks. The SDK verification receipt below is separate from host
+authority/restart admission, TypeScript bindings, Kubernetes/native integration,
+app smoke and coordinated publication acceptance.
+
+### Final settled SDK verification receipt
+
+Both `GOWORK=off go test ./... -count=1` and
+`GOWORK=off go test -race ./... -count=1` passed: **21 packages passing and
+16 packages without tests in each suite**. This includes the actual child
+generation controls, two-route relationship RPCs, native HTTP metric isolation,
+all utility/raw-wire regressions, and live authenticated HTTP survival across a
+display-only rename. The latter preserves the active client, endpoint,
+credentials, accepted catalog revision and source epoch while exposing the
+updated configured name.
+
+Earlier settled normal barriers exposed invalid scalar-root/native fixture
+bodies, unpinned callsites, incidental name-only teardown assumptions, metadata
+overwrite of accepted pins, and utility fixture/context mismatches. Corrections
+retain native consumer assertions rather than bypassing admission. The final
+normal barrier passed before the full race suite ran. Independent source reviews
+closed the identified wire/provenance/watch-reuse and lease-completion findings.
+Neither these SDK results nor source reviews certify parent host/provider/app
+integration or authorize publication.

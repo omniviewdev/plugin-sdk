@@ -6,6 +6,23 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
+// CloneConnection gives native utility callbacks independent ownership of the
+// configured profile without coercing exact scalars or private credentials.
+func CloneConnection(connection types.Connection) types.Connection {
+	return cloneConnection(connection)
+}
+
+// SameConnectionClientConfig compares source-affecting endpoint/auth configuration.
+// Labels and Lifecycle are IDE organization/orchestration, not client inputs;
+// display fields, refresh/expiry bookkeeping and opaque runtime Client are not
+// source identity. Native client builders must keep endpoint/auth in Data or
+// private sensitive data. This does not establish native authority continuity.
+func SameConnectionClientConfig(a, b types.Connection) bool {
+	return a.ID == b.ID && a.UID == b.UID &&
+		reflect.DeepEqual(a.Data, b.Data) &&
+		reflect.DeepEqual(a.GetSensitiveData(), b.GetSensitiveData())
+}
+
 // Connection configuration is copied only when it crosses the controller's
 // ownership boundary. Native, desired, effective, and client-slot inventories
 // may share their immutable internal values; callers and callbacks never do.

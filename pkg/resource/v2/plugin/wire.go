@@ -34,6 +34,12 @@ func ValidateWire(data []byte, descriptor protoreflect.MessageDescriptor) error 
 	if !strictRoot(descriptor) {
 		return unsupported("not a resource v2 message")
 	}
+	if networkSessionResponse(descriptor) {
+		resource, err := networkResourcePresent(data, descriptor)
+		if err != nil || !resource {
+			return err
+		}
+	}
 	b := wireBudget{}
 	return b.message(data, descriptor, 0)
 }
@@ -47,6 +53,8 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 	}
 	var seen, selections uint64
 	var version uint64
+	versionField := utilityVersionField(d)
+	var durationSeconds, durationNanos int64
 	var keys map[wireKey]struct{}
 	records := 0
 	relationshipTargets := 0
@@ -87,6 +95,9 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 		}
 		mask := uint64(1) << f.Index()
 		if !f.IsList() && !f.IsMap() && seen&mask != 0 {
+			if utilityPackage(d) && d.Name() == "MetricStreamInput" && number == 15 {
+				return resourcev2.NewError("RESET_REQUIRED", "Duplicate metric catalog admission pin.")
+			}
 			return invalid("duplicate singular protobuf field")
 		}
 		seen |= mask
@@ -119,7 +130,7 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 				return invalid("malformed protobuf varint")
 			}
 			data = data[m:]
-			if (d.FullName() == "omniview.sdk.exec.v1.SessionOptions" && number == 10) || (d.Name() == "ResourceSessionResponse" && number == 1) {
+			if versionField != 0 && number == versionField {
 				version = v
 			}
 			if f.Kind() == protoreflect.BoolKind && v > 1 {
@@ -142,6 +153,13 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 			}
 			if d.FullName() == "google.protobuf.Timestamp" && ((number == 1 && (int64(v) < -62135596800 || int64(v) > 253402300799)) || (number == 2 && v >= 1000000000)) {
 				return invalid("invalid session timestamp")
+			}
+			if d.FullName() == "google.protobuf.Duration" {
+				if number == 1 {
+					durationSeconds = int64(v)
+				} else if number == 2 {
+					durationNanos = int64(v)
+				}
 			}
 			if (d.Name() == "EnumerateInput" && number == 2 || d.Name() == "NativeQueryInput" && number == 4) && v > MaxPageSize {
 				return limited("page size exceeds limit")
@@ -171,6 +189,11 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 				return invalid("malformed protobuf length")
 			}
 			data = data[m:]
+			if utilityPackage(d) && d.Name() == "MetricStreamInput" && number == 15 {
+				if len(v) > resourcev2.MaxCatalogRevisionBytes || !utf8.Valid(v) {
+					return resourcev2.NewError("RESET_REQUIRED", "Invalid metric catalog admission pin.")
+				}
+			}
 			if len(v) > MaxBodyBytes && (f.Kind() != protoreflect.MessageKind || f.Message().Name() == "Value") {
 				return limited("resource document exceeds byte limit")
 			}
@@ -205,8 +228,11 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 			}
 		}
 	}
-	if (d.FullName() == "omniview.sdk.exec.v1.SessionOptions" || d.Name() == "ResourceSessionResponse") && version != 2 {
-		return unsupported("resource session wire version must be 2")
+	if versionField != 0 && version != 2 {
+		return unsupported("resource utility wire version must be 2")
+	}
+	if d.FullName() == "google.protobuf.Duration" && (durationSeconds < -315576000000 || durationSeconds > 315576000000 || durationNanos < -999999999 || durationNanos > 999999999 || durationSeconds > 0 && durationNanos < 0 || durationSeconds < 0 && durationNanos > 0) {
+		return invalid("invalid utility duration")
 	}
 	if d.Name() == "Value" && selections == 0 {
 		return invalid("missing value selection")

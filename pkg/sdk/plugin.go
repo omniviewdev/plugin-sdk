@@ -144,6 +144,23 @@ func (p *Plugin) RegisterCapability(capability string, registration plugin.Plugi
 	}
 
 	p.pluginMap[capability] = registration
+	p.bindConnectionContexts()
+}
+
+func (p *Plugin) bindConnectionContexts() {
+	resource, ok := p.pluginMap["resource"].(*rp.GRPCPlugin)
+	if !ok {
+		return
+	}
+	provider, ok := resource.Impl.(resourcev2.ConnectionContextProvider)
+	if !ok {
+		return
+	}
+	for _, capability := range p.pluginMap {
+		if consumer, ok := capability.(resourcev2.ConnectionContextConsumer); ok {
+			consumer.BindConnectionContextProvider(provider)
+		}
+	}
 }
 
 // GetPluginMap returns the plugin map for the plugin based on the capabilities that have been

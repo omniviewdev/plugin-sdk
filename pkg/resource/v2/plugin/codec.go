@@ -15,9 +15,11 @@ import (
 
 // envelope retains admission failure within a single RPC, without global state.
 type envelope struct {
-	message    proto.Message
-	err        error
-	legacyExec bool
+	message         proto.Message
+	err             error
+	legacyExec      bool
+	forceStrict     bool
+	legacyValidator func([]byte) error
 }
 type strictCodec struct{ fallback encoding.CodecV2 }
 
@@ -37,10 +39,10 @@ func (c strictCodec) Unmarshal(data mem.BufferSlice, v any) error {
 	} else {
 		p, _ = v.(proto.Message)
 	}
-	if !wrapped && p != nil && p.ProtoReflect().Descriptor().FullName() == "omniview.sdk.exec.v1.SessionOptions" {
+	if !wrapped && p != nil && legacyUtilityRequest(p.ProtoReflect().Descriptor()) {
 		return c.fallback.Unmarshal(data, v)
 	}
-	if p == nil || (!strictRoot(p.ProtoReflect().Descriptor()) && !(wrapped && e.legacyExec)) {
+	if p == nil || (!strictRoot(p.ProtoReflect().Descriptor()) && !(wrapped && (e.legacyExec || e.forceStrict || e.legacyValidator != nil))) {
 		return c.fallback.Unmarshal(data, v)
 	}
 	var err error
@@ -49,7 +51,9 @@ func (c strictCodec) Unmarshal(data mem.BufferSlice, v any) error {
 	} else {
 		buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
 		defer buf.Free()
-		if wrapped && e.legacyExec {
+		if wrapped && e.legacyValidator != nil {
+			err = e.legacyValidator(buf.ReadOnlyData())
+		} else if wrapped && e.legacyExec {
 			err = ValidateLegacyExecWire(buf.ReadOnlyData())
 		} else {
 			err = ValidateWire(buf.ReadOnlyData(), p.ProtoReflect().Descriptor())

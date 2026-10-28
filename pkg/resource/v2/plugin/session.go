@@ -9,9 +9,11 @@ import (
 )
 
 const (
-	requestIDMetadata    = "omniview-request-id-bin"
-	requesterIDMetadata  = "omniview-requester-id-bin"
-	maxDiagnosticIDBytes = 256
+	requestIDMetadata             = "omniview-request-id-bin"
+	requesterIDMetadata           = "omniview-requester-id-bin"
+	maxDiagnosticIDBytes          = 256
+	catalogRevisionMetadata       = "omniview-resource-catalog-revision-bin"
+	catalogRouteRevisionsMetadata = "omniview-resource-catalog-route-revisions-bin"
 )
 
 func diagnostic(md metadata.MD, key string) (string, error) {
@@ -33,6 +35,31 @@ func diagnostic(md metadata.MD, key string) (string, error) {
 func outgoingSession(ctx context.Context) (context.Context, error) {
 	session, _ := resourcev2.SessionFromContext(ctx)
 	md, _ := metadata.FromOutgoingContext(ctx)
+	pins := md.Get(catalogRevisionMetadata)
+	if len(pins) > 1 {
+		return nil, resourcev2.NewError("RESET_REQUIRED", "Duplicate catalog revision metadata.")
+	}
+	if len(pins) == 1 {
+		if err := resourcev2.ValidateCatalogRevision(pins[0]); err != nil {
+			return nil, err
+		}
+	}
+	if revision, ok := resourcev2.CatalogRevisionFromContext(ctx); ok {
+		if err := resourcev2.ValidateCatalogRevision(revision); err != nil {
+			return nil, err
+		}
+		if len(pins) != 0 {
+			return nil, resourcev2.NewError("RESET_REQUIRED", "Duplicate catalog revision metadata.")
+		}
+		md = md.Copy()
+		md.Set(catalogRevisionMetadata, revision)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+	ctx, err := outgoingCatalogRoutes(ctx, md)
+	if err != nil {
+		return nil, err
+	}
+	md, _ = metadata.FromOutgoingContext(ctx)
 	if _, err := diagnostic(md, requestIDMetadata); err != nil {
 		return nil, err
 	}
@@ -66,6 +93,22 @@ func attachDiagnostic(md metadata.MD, key, value string) error {
 }
 func incomingSession(ctx context.Context, settings pkgsettings.Provider) (context.Context, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
+	// Wire admission must not inherit an interceptor's unrelated catalog context.
+	ctx = resourcev2.WithCatalogRevision(ctx, "")
+	pins := md.Get(catalogRevisionMetadata)
+	if len(pins) > 1 {
+		return nil, resourcev2.NewError("RESET_REQUIRED", "Duplicate catalog revision metadata.")
+	}
+	if len(pins) == 1 {
+		if err := resourcev2.ValidateCatalogRevision(pins[0]); err != nil {
+			return nil, err
+		}
+		ctx = resourcev2.WithCatalogRevision(ctx, pins[0])
+	}
+	ctx, err := incomingCatalogRoutes(ctx, md)
+	if err != nil {
+		return nil, err
+	}
 	requestID, err := diagnostic(md, requestIDMetadata)
 	if err != nil {
 		return nil, err
@@ -85,4 +128,16 @@ func incomingSession(ctx context.Context, settings pkgsettings.Provider) (contex
 		session.PluginConfig = settings
 	}
 	return resourcev2.WithSession(ctx, session), nil
+}
+
+// OutgoingSessionContext serializes explicit catalog admission and diagnostic
+// context for resource-bearing utility RPCs. It never discovers a catalog.
+func OutgoingSessionContext(ctx context.Context) (context.Context, error) {
+	return outgoingSession(ctx)
+}
+
+// IncomingSessionContext validates shared resource metadata for utility RPCs.
+// A missing pin is permitted here; reference-bearing dispatch must require it.
+func IncomingSessionContext(ctx context.Context) (context.Context, error) {
+	return incomingSession(ctx, nil)
 }

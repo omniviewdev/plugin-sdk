@@ -1,6 +1,7 @@
 package logs
 
 import (
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"io"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -57,7 +58,7 @@ func ActionTargetBuilderFromProto(p *commonpb.ActionTargetBuilder) ActionTargetB
 // namespace, and container names from the pod spec.
 type SourceBuilderFunc func(
 	resourceID string,
-	resourceData map[string]interface{},
+	resourceData *resourcev2.Value,
 	opts LogSessionOptions,
 ) []LogSource
 
@@ -96,19 +97,21 @@ type LogHandlerFunc func(ctx *types.PluginContext, req LogStreamRequest) (io.Rea
 // SourceResolver resolves a "group" resource into individual log sources.
 type SourceResolver func(
 	ctx *types.PluginContext,
-	resourceData map[string]interface{},
+	resourceData *resourcev2.Value,
 	opts SourceResolverOptions,
 ) (*SourceResolverResult, error)
 
 // SourceResolverOptions configures how sources are resolved.
 type SourceResolverOptions struct {
-	Watch  bool              // if true, also return a channel for source changes
-	Target string            // optional filter (e.g., specific container name)
-	Params map[string]string // plugin-specific resolver params
+	Reference *resourcev2.ResourceReference
+	Route     *resourcev2.AccessRoute
+	Watch     bool              // if true, also return a channel for source changes
+	Target    string            // optional filter (e.g., specific container name)
+	Params    map[string]string // plugin-specific resolver params
 }
 
 // SourceResolverResult contains the resolved sources and optional event channel.
 type SourceResolverResult struct {
-	Sources []LogSource         // current sources
-	Events  <-chan SourceEvent  // source lifecycle stream (nil if Watch=false)
+	Sources []LogSource        // current sources
+	Events  <-chan SourceEvent // source lifecycle stream (nil if Watch=false)
 }

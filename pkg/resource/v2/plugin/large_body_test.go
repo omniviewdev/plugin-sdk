@@ -33,7 +33,7 @@ func TestActualGRPCMultiMiBResourceBodies(t *testing.T) {
 			RegisterServer(s, p)
 			c := NewClient(pipe(t, s))
 			started := time.Now()
-			record, err := c.Get(context.Background(), testGet())
+			record, err := c.Get(acceptedCatalogContext(t, context.Background(), c, testGet().Route), testGet())
 			elapsed := time.Since(started)
 			if err != nil {
 				t.Fatal(err)

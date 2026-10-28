@@ -303,6 +303,121 @@ wire version. Source adapters preflight body/frame allocation under the resource
 an explicit requested ID, and a valid creation timestamp. Typed C02 errors are
 preserved; malformed input and unsupported operations cannot invoke native exec.
 
+## Resource logs, metrics and forwarding
+
+Resource-scoped logs, metric queries/subscriptions and port forwarding also use
+canonical `*resourcev2.Value` bodies and optional actual `Reference`/`Route`.
+Their native callbacks/helpers consume those exact values, not generic maps or
+Struct. Existing utility engines and nonresource methods remain in place.
+
+| Existing service / new operation | Canonical transport fields |
+| --- | --- |
+| Logs `CreateResourceSession` | Request reserves old body 3; Value 5, wire version 6, reference 7, route 8 |
+| Metrics `QueryResource` | Request reserves old body 4; Value 11, wire version 12, reference 13, route 14 |
+| Metrics `StreamResourceMetrics` | Input reserves old body 6; Value 9, wire version 10, reference 11, route 12 |
+| Network `StartResourcePortForwardSession` | Nested resource connection reserves old body 5; Value 6, wire version 7, reference 8, route 9 |
+
+New unary response wrappers carry wire version 2 in field 1 and their result in
+field 2. New calls have strict bounded raw request/response admission, typed C02
+errors and no old-method fallback. Old operations reject resource intent and
+legacy bodies before native work. Static forwarding and ordinary nonresource
+query/stream methods keep their existing semantics. Resource-bearing forwarding
+session snapshots remain canonical on get/list/find/close as well as creation;
+conversion failures return errors, never an empty replacement body.
+
+Metric resource intent is an explicit body/reference/route, **not a nonempty
+key**: `cluster::metrics` remains nonresource. The explicit optional
+`metric.ResourceStreamProvider.StreamResourceMetrics` mixed lane can carry
+resource subscriptions, ordinary cluster subscriptions and control frames.
+Every frame negotiates version 2. A bounded open/ready handshake completes
+before its SDK client publishes the output channel; constructing a gRPC stream
+alone is not readiness. Legacy `StreamMetrics` is explicitly nonresource-only.
+Typed asynchronous failures populate `StreamOutput.OperationError`; stream
+retirement must fence its actual subscriptions rather than silently report
+success. `ValidateStreamInput` admits a command before host tracking/enqueue.
+
+Metric `QueryContext.Context` and `StreamContext.Context` carry actual native
+request/poll/stream cancellation. Subscription `Params` (protobuf field 14)
+survive polling into `QueryRequest.Params`; connection-specific source options
+belong there, never in a fabricated resource body. Utility inputs do not grant
+permission, synthesize identity or require an unrelated Get.
+
+`ScopeForAddress` validates identity dimensions and projects only shared
+identity/query dimensions. Query-only dimensions stay explicit any/unknown for
+support qualification, not permission or proven narrow membership. Restricted
+Get support must reject that unknown scope. Get cannot use it to start an
+implicit broad source. Enumerate/native-query targets keep explicit selection
+scope; the native adapter owns query-only filtering and honest page coverage.
+
+## Catalog observation and source-generation admission
+
+Hosts pin the **exact catalog observation** used for authority/type/scope
+admission with `resourcev2.WithCatalogRevision(ctx, catalog.Revision)`.
+The SDK client must never replace it with a later cached token. Binary metadata
+`omniview-resource-catalog-revision-bin` transports that context, bounded to
+4096 UTF-8 bytes; missing, duplicate, malformed, stale or oversized required
+pins fail closed with `RESET_REQUIRED`. This context is not a permission grant.
+
+Finite reads, mutations/actions, resource ancillary calls and targeted
+best-effort sources require the pin. Catalog/feature discovery, connection
+browser/lifecycle/overlay operations and pin-free native connection leasing are
+exempt. The default observation pins one route: split multi-route source starts
+by their actual accepted revisions. Cross-route relationships additionally use
+`WithCatalogRevisionForRoute(ctx, provider, route, revision)` for each independently
+admitted target. A different route cannot reuse the source observation.
+`omniview-resource-catalog-route-revisions-bin` carries the SDK-owned versioned
+binary list; hosts never concatenate IDs or parse tokens. It admits at most 256
+entries, each pin at most 4096 bytes, with a conservative 32 KiB aggregate
+catalog-header ceiling including source observation and framing. Malformed or
+duplicate entries fail `RESET_REQUIRED`; aggregate excess is `RESOURCE_LIMIT`.
+Global listeners have no invented route; admitted sources retain their fences.
+
+`CatalogBindingEpoch` is the SDK-owned accessor for the actual source/client
+binding epoch embedded in opaque `Catalog.Revision`. It is distinct from native
+catalog metadata revision: CRD/schema churn must not by itself reidentify an
+unchanged source. Controllers use cryptographic per-client-slot epochs and
+unambiguous framing, hold the actual connected lease during catalog publication
+and native dispatch, and fence returned results/events. Native refresh completed
+before a request, ignored cancellation, and retired A→B→A epochs cannot reuse
+an earlier observation. Catalog discovery does not implicitly start a client.
+
+Custom providers are not required to use Controller. They issue an epoch with
+`NewCatalogBindingEpoch` once for an actual source/configuration generation and
+frame native metadata revision with `BindCatalogRevision`. They must rotate the
+epoch when that binding changes, not use a constant fictitious epoch or rotate
+it for ordinary catalog churn. The host owns authority issuance, restart policy
+and retiring assignments when the observed binding changes.
+
+Canonical-reference-bearing exec/logs/forwarding and metric query RPCs carry the
+same admitted context without an extra Get. A reference-bearing metric
+SUBSCRIBE carries host-derived `StreamInput.CatalogRevision` (protobuf field
+15), checked before native subscription/poll and publication. Ordinary cluster
+metrics and opaque nonreference utilities need no fabricated catalog or ref.
+
+Native utility work binds through `ConnectionContextProvider.WithConnection`
+to the sole already-started registry. SDK capability composition connects its
+consumers automatically; explicit fixtures/custom composition use
+`BindConnectionContextProvider`. No probe, implicit start, first-connection
+fallback or metadata-only profile is accepted. Stopped connection admission is
+`CONNECTION_ERROR`; stop/configuration refresh cancels its generation. Metric
+streams have owner-scoped output/subscriptions, so equal local subscription IDs
+on different actual connections cannot steal output or cancel each other.
+
+Each metric lane retains immutable admission provenance and compact used-ID
+tombstones. Reusing a local subscription ID in that same lane is `CONFLICT`,
+even after unsubscribe; late retired outputs are dropped. Hosts mint fresh
+opaque wire IDs and map them to current public interests without parsing them.
+The candidate ceilings are 4096 used IDs and 32 MiB total retained admission
+metadata per lane, checked before native work; retired bindings do not retain
+resource bodies. Excess is `RESOURCE_LIMIT`, not an automatic retry/downgrade.
+
+`SameConnectionClientConfig` compares ID/UID/Data/private credentials, not
+display/runtime/IDE orchestration. Display-only edits preserve active clients,
+runtime state and source epochs. Nil private override data may inherit only
+source-owned credentials for unchanged public client configuration; explicit
+empty data clears them, and endpoint/auth changes do not inherit old secrets.
+The host does not persist native private credentials.
+
 ## Resource invocation and action migration (C02)
 
 Catalog discovery and ancillary calls return explicit errors. Transport/discovery

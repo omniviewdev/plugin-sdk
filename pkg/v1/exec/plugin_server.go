@@ -140,6 +140,10 @@ func (s *PluginServer) CreateSession(
 }
 
 func (s *PluginServer) CreateResourceSession(ctx context.Context, in *execpb.SessionOptions) (*execpb.ResourceSessionResponse, error) {
+	ctx, contextErr := resourceplugin.IncomingSessionContext(ctx)
+	if contextErr != nil {
+		return nil, resourceplugin.ResourceRPCError(contextErr)
+	}
 	if in == nil || in.ResourceWireVersion != ResourceSessionWireVersion {
 		return nil, resourceplugin.ResourceRPCError(resourcev2.NewError("UNSUPPORTED", "resource session wire version must be 2"))
 	}
@@ -154,7 +158,11 @@ func (s *PluginServer) CreateResourceSession(ctx context.Context, in *execpb.Ses
 	if !ok {
 		return nil, resourceplugin.ResourceRPCError(resourcev2.NewError("UNSUPPORTED", "resource exec provider unavailable"))
 	}
-	session, err := provider.CreateResourceSession(types.PluginContextFromContext(ctx), *opts)
+	pc := types.PluginContextFromContext(ctx)
+	if pc == nil {
+		pc = &types.PluginContext{Context: ctx}
+	}
+	session, err := provider.CreateResourceSession(pc, *opts)
 	if err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}

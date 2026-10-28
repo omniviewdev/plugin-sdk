@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/networker"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/networker/networktest"
@@ -336,7 +337,8 @@ func TestManager_ConcurrentStartClose(t *testing.T) {
 	}
 }
 
-func TestManager_InvalidConnectionType(t *testing.T) {
+// Resource DTO admission precedes the ordinary connection-kind classifier.
+func TestManager_ResourceConnectionRequiresResourceType(t *testing.T) {
 	h := networktest.Mount(t)
 	_, err := h.StartSession(networker.PortForwardSessionOptions{
 		ConnectionType: "INVALID",
@@ -345,7 +347,30 @@ func TestManager_InvalidConnectionType(t *testing.T) {
 			ResourceKey: "core::v1::Pod",
 		},
 	})
-	if !errors.Is(err, networker.ErrNetInvalidConnectionType) {
-		t.Fatalf("expected InvalidConnectionType, got: %v", err)
+	if resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatalf("expected INVALID_REQUEST for mismatched resource connection type, got: %v", err)
+	}
+}
+
+func TestManager_InvalidConnectionType(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		connection networker.Connection
+	}{
+		{name: "no connection"},
+		{name: "static value", connection: networker.PortForwardStaticConnection{Address: "localhost"}},
+		{name: "static pointer", connection: &networker.PortForwardStaticConnection{Address: "localhost"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := networktest.Mount(t)
+			_, err := h.StartSession(networker.PortForwardSessionOptions{
+				ConnectionType: "INVALID",
+				Protocol:       networker.PortForwardProtocolTCP,
+				Connection:     tc.connection,
+			})
+			if !errors.Is(err, networker.ErrNetInvalidConnectionType) {
+				t.Fatalf("expected InvalidConnectionType, got: %v", err)
+			}
+		})
 	}
 }

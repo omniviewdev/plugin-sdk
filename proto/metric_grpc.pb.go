@@ -23,6 +23,8 @@ const (
 	MetricPlugin_GetSupportedResources_FullMethodName = "/com.omniview.pluginsdk.MetricPlugin/GetSupportedResources"
 	MetricPlugin_Query_FullMethodName                 = "/com.omniview.pluginsdk.MetricPlugin/Query"
 	MetricPlugin_StreamMetrics_FullMethodName         = "/com.omniview.pluginsdk.MetricPlugin/StreamMetrics"
+	MetricPlugin_QueryResource_FullMethodName         = "/com.omniview.pluginsdk.MetricPlugin/QueryResource"
+	MetricPlugin_StreamResourceMetrics_FullMethodName = "/com.omniview.pluginsdk.MetricPlugin/StreamResourceMetrics"
 )
 
 // MetricPluginClient is the client API for MetricPlugin service.
@@ -32,6 +34,8 @@ type MetricPluginClient interface {
 	GetSupportedResources(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetSupportedMetricResourcesResponse, error)
 	Query(ctx context.Context, in *QueryMetricsRequest, opts ...grpc.CallOption) (*QueryMetricsResponse, error)
 	StreamMetrics(ctx context.Context, opts ...grpc.CallOption) (MetricPlugin_StreamMetricsClient, error)
+	QueryResource(ctx context.Context, in *QueryMetricsRequest, opts ...grpc.CallOption) (*ResourceQueryMetricsResponse, error)
+	StreamResourceMetrics(ctx context.Context, opts ...grpc.CallOption) (MetricPlugin_StreamResourceMetricsClient, error)
 }
 
 type metricPluginClient struct {
@@ -91,6 +95,46 @@ func (x *metricPluginStreamMetricsClient) Recv() (*MetricStreamOutput, error) {
 	return m, nil
 }
 
+func (c *metricPluginClient) QueryResource(ctx context.Context, in *QueryMetricsRequest, opts ...grpc.CallOption) (*ResourceQueryMetricsResponse, error) {
+	out := new(ResourceQueryMetricsResponse)
+	err := c.cc.Invoke(ctx, MetricPlugin_QueryResource_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *metricPluginClient) StreamResourceMetrics(ctx context.Context, opts ...grpc.CallOption) (MetricPlugin_StreamResourceMetricsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &MetricPlugin_ServiceDesc.Streams[1], MetricPlugin_StreamResourceMetrics_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &metricPluginStreamResourceMetricsClient{stream}
+	return x, nil
+}
+
+type MetricPlugin_StreamResourceMetricsClient interface {
+	Send(*MetricStreamInput) error
+	Recv() (*ResourceMetricStreamOutput, error)
+	grpc.ClientStream
+}
+
+type metricPluginStreamResourceMetricsClient struct {
+	grpc.ClientStream
+}
+
+func (x *metricPluginStreamResourceMetricsClient) Send(m *MetricStreamInput) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *metricPluginStreamResourceMetricsClient) Recv() (*ResourceMetricStreamOutput, error) {
+	m := new(ResourceMetricStreamOutput)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // MetricPluginServer is the server API for MetricPlugin service.
 // All implementations should embed UnimplementedMetricPluginServer
 // for forward compatibility
@@ -98,6 +142,8 @@ type MetricPluginServer interface {
 	GetSupportedResources(context.Context, *emptypb.Empty) (*GetSupportedMetricResourcesResponse, error)
 	Query(context.Context, *QueryMetricsRequest) (*QueryMetricsResponse, error)
 	StreamMetrics(MetricPlugin_StreamMetricsServer) error
+	QueryResource(context.Context, *QueryMetricsRequest) (*ResourceQueryMetricsResponse, error)
+	StreamResourceMetrics(MetricPlugin_StreamResourceMetricsServer) error
 }
 
 // UnimplementedMetricPluginServer should be embedded to have forward compatible implementations.
@@ -112,6 +158,12 @@ func (UnimplementedMetricPluginServer) Query(context.Context, *QueryMetricsReque
 }
 func (UnimplementedMetricPluginServer) StreamMetrics(MetricPlugin_StreamMetricsServer) error {
 	return status.Errorf(codes.Unimplemented, "method StreamMetrics not implemented")
+}
+func (UnimplementedMetricPluginServer) QueryResource(context.Context, *QueryMetricsRequest) (*ResourceQueryMetricsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QueryResource not implemented")
+}
+func (UnimplementedMetricPluginServer) StreamResourceMetrics(MetricPlugin_StreamResourceMetricsServer) error {
+	return status.Errorf(codes.Unimplemented, "method StreamResourceMetrics not implemented")
 }
 
 // UnsafeMetricPluginServer may be embedded to opt out of forward compatibility for this service.
@@ -187,6 +239,50 @@ func (x *metricPluginStreamMetricsServer) Recv() (*MetricStreamInput, error) {
 	return m, nil
 }
 
+func _MetricPlugin_QueryResource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryMetricsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MetricPluginServer).QueryResource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MetricPlugin_QueryResource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MetricPluginServer).QueryResource(ctx, req.(*QueryMetricsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MetricPlugin_StreamResourceMetrics_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(MetricPluginServer).StreamResourceMetrics(&metricPluginStreamResourceMetricsServer{stream})
+}
+
+type MetricPlugin_StreamResourceMetricsServer interface {
+	Send(*ResourceMetricStreamOutput) error
+	Recv() (*MetricStreamInput, error)
+	grpc.ServerStream
+}
+
+type metricPluginStreamResourceMetricsServer struct {
+	grpc.ServerStream
+}
+
+func (x *metricPluginStreamResourceMetricsServer) Send(m *ResourceMetricStreamOutput) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *metricPluginStreamResourceMetricsServer) Recv() (*MetricStreamInput, error) {
+	m := new(MetricStreamInput)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // MetricPlugin_ServiceDesc is the grpc.ServiceDesc for MetricPlugin service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -202,11 +298,21 @@ var MetricPlugin_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "Query",
 			Handler:    _MetricPlugin_Query_Handler,
 		},
+		{
+			MethodName: "QueryResource",
+			Handler:    _MetricPlugin_QueryResource_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "StreamMetrics",
 			Handler:       _MetricPlugin_StreamMetrics_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "StreamResourceMetrics",
+			Handler:       _MetricPlugin_StreamResourceMetrics_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

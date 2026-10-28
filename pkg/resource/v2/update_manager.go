@@ -231,9 +231,18 @@ func (m *updateManager[T]) listen(ctx context.Context, sink WatchEventSink, onRe
 }
 
 func (m *updateManager[T]) start(ctx context.Context, target ReadTarget, registration *Registration[T], descriptor ResourceType) error {
-	base := context.WithoutCancel(ctx)
+	selectedRevision, _ := CatalogRevisionForRouteFromContext(ctx, target.Provider, target.Route)
+	if err := ValidateCatalogRevision(selectedRevision); err != nil {
+		return err
+	}
+	// Retain the admitted observation, never a later route-map selection.
+	base := WithCatalogRevision(context.WithoutCancel(ctx), selectedRevision)
 	leaseCtx, client, release, err := m.controller.lease(base, target.Route)
 	if err != nil {
+		return err
+	}
+	if err := m.controller.fenceCatalog(leaseCtx, target.Route); err != nil {
+		release()
 		return err
 	}
 	watchCtx, cancel := context.WithCancel(leaseCtx)
@@ -266,6 +275,14 @@ func (m *updateManager[T]) start(ctx context.Context, target ReadTarget, registr
 			return NewError("RESET_REQUIRED", "Update target changed; stop the existing resource watch first.")
 		}
 		if existing.running {
+			previousRevision, previousPinned := CatalogRevisionFromContext(existing.ctx)
+			requestedRevision, requestedPinned := CatalogRevisionForRouteFromContext(leaseCtx, target.Provider, target.Route)
+			if !previousPinned || !requestedPinned || previousRevision != requestedRevision {
+				m.mu.Unlock()
+				cancel()
+				release()
+				return NewError("RESET_REQUIRED", "Update catalog revision changed; stop the existing resource watch first.")
+			}
 			m.mu.Unlock()
 			cancel()
 			release()
@@ -292,6 +309,10 @@ func (m *updateManager[T]) start(ctx context.Context, target ReadTarget, registr
 	go m.run(watchCtx, client, release, watch, registration, representation, sink)
 	select {
 	case <-watch.ready:
+		if err := m.controller.fenceCatalog(leaseCtx, target.Route); err != nil {
+			cancel()
+			return err
+		}
 		return nil
 	case <-ctx.Done():
 		cancel()
@@ -448,8 +469,19 @@ func (s *updateSourceSink[T]) record(record Record) error {
 	target := s.watch.target
 	return checkRecord(record, s.descriptor, target.Provider, target.Authority, target.Representation, nil, target.Scope)
 }
-func (s *updateSourceSink[T]) OnAdd(payload WatchAddPayload) {
+func (s *updateSourceSink[T]) admitted() bool {
 	if s.watch.ctx.Err() != nil {
+		return false
+	}
+	if err := s.manager.controller.fenceCatalog(s.watch.ctx, s.watch.target.Route); err != nil {
+		s.reject(err)
+		return false
+	}
+	return true
+}
+
+func (s *updateSourceSink[T]) OnAdd(payload WatchAddPayload) {
+	if !s.admitted() {
 		return
 	}
 	if err := s.record(payload.Record); err != nil {
@@ -462,7 +494,7 @@ func (s *updateSourceSink[T]) OnAdd(payload WatchAddPayload) {
 	}
 }
 func (s *updateSourceSink[T]) OnUpdate(payload WatchUpdatePayload) {
-	if s.watch.ctx.Err() != nil {
+	if !s.admitted() {
 		return
 	}
 	if err := s.record(payload.Record); err != nil {
@@ -475,7 +507,7 @@ func (s *updateSourceSink[T]) OnUpdate(payload WatchUpdatePayload) {
 	}
 }
 func (s *updateSourceSink[T]) OnDelete(payload WatchDeletePayload) {
-	if s.watch.ctx.Err() != nil {
+	if !s.admitted() {
 		return
 	}
 	if err := validateReference(payload.Reference); err != nil {
@@ -491,8 +523,7 @@ func (s *updateSourceSink[T]) OnDelete(payload WatchDeletePayload) {
 		s.reject(err)
 		return
 	}
-	scope, err := exactScope(a, s.descriptor.QueryDimensions)
-	if err != nil || !scopeContains(target.Scope, scope) {
+	if !identityWithinQueryScope(a, target.Scope) {
 		s.reject(NewError("INTERNAL", "Update deletion escaped target scope."))
 		return
 	}
@@ -508,7 +539,7 @@ func (s *updateSourceSink[T]) OnDelete(payload WatchDeletePayload) {
 	}
 }
 func (s *updateSourceSink[T]) OnStateChange(event WatchStateEvent) {
-	if s.watch.ctx.Err() != nil {
+	if !s.admitted() {
 		return
 	}
 	if event.State < WatchStateIdle || event.State > WatchStateSkipped {
@@ -533,21 +564,27 @@ func (c *Controller[T]) StartConnectionWatch(ctx context.Context, targets []Read
 		target       ReadTarget
 		registration *Registration[T]
 		descriptor   ResourceType
+		ctx          context.Context
 	}
 	operations := make([]admitted, 0, len(targets))
 	for _, target := range targets {
 		if err := ValidateEnumerateRequest(EnumerateRequest{Target: target}); err != nil {
 			return err
 		}
-		r, descriptor, err := c.resolve(ctx, target.Route, target.Provider, target.Type, target.Representation, target.Scope, nil, OperationUpdate)
+		targetCtx, _, release, err := c.lease(ctx, target.Route)
 		if err != nil {
 			return err
 		}
-		operations = append(operations, admitted{target, r, descriptor})
+		defer release()
+		r, descriptor, err := c.resolve(targetCtx, target.Route, target.Provider, target.Type, target.Representation, target.Scope, nil, OperationUpdate)
+		if err != nil {
+			return err
+		}
+		operations = append(operations, admitted{target, r, descriptor, targetCtx})
 	}
 	for _, operation := range operations {
 		if operation.registration.SyncPolicy == SyncOnConnect {
-			if err := c.updates.start(ctx, operation.target, operation.registration, operation.descriptor); err != nil {
+			if err := c.updates.start(operation.ctx, operation.target, operation.registration, operation.descriptor); err != nil {
 				return err
 			}
 		}
@@ -560,6 +597,11 @@ func (c *Controller[T]) EnsureResourceWatch(ctx context.Context, target ReadTarg
 	if err := ValidateEnumerateRequest(EnumerateRequest{Target: target}); err != nil {
 		return err
 	}
+	ctx, _, release, err := c.lease(ctx, target.Route)
+	if err != nil {
+		return err
+	}
+	defer release()
 	registration, descriptor, err := c.resolve(ctx, target.Route, target.Provider, target.Type, target.Representation, target.Scope, nil, OperationUpdate)
 	if err != nil {
 		return err
@@ -573,19 +615,41 @@ func (c *Controller[T]) StopConnectionWatch(ctx context.Context, route AccessRou
 	if route.Connection == "" {
 		return NewError("INVALID_REQUEST", "An explicit connection route is required.")
 	}
+	ctx, _, release, err := c.lease(ctx, route)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err := c.fenceCatalog(ctx, route); err != nil {
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return c.classify(nil, err)
 	}
-	return c.updates.stopRoute(route.Connection)
+	if err := c.updates.stopRoute(route.Connection); err != nil {
+		return err
+	}
+	return c.fenceCatalog(ctx, route)
 }
 func (c *Controller[T]) StopResourceWatch(ctx context.Context, route AccessRoute, typ string) error {
 	if route.Connection == "" || typ == "" {
 		return NewError("INVALID_REQUEST", "An explicit route and resource type are required.")
 	}
+	ctx, _, release, err := c.lease(ctx, route)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err := c.fenceCatalog(ctx, route); err != nil {
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return c.classify(nil, err)
 	}
-	return c.updates.stopResource(route.Connection, typ)
+	if err := c.updates.stopResource(route.Connection, typ); err != nil {
+		return err
+	}
+	return c.fenceCatalog(ctx, route)
 }
 func (c *Controller[T]) RestartResourceWatch(ctx context.Context, target ReadTarget) error {
 	if _, err := AdmitBestEffortTarget(ctx, c, target); err != nil {
@@ -600,39 +664,72 @@ func (c *Controller[T]) HasWatch(ctx context.Context, route AccessRoute) bool {
 	if ctx.Err() != nil || route.Connection == "" {
 		return false
 	}
+	ctx, _, release, err := c.lease(ctx, route)
+	if err != nil {
+		return false
+	}
+	defer release()
+	if err := c.fenceCatalog(ctx, route); err != nil {
+		return false
+	}
 	c.updates.mu.Lock()
-	defer c.updates.mu.Unlock()
-	return len(c.updates.watches[route.Connection]) != 0
+	running := len(c.updates.watches[route.Connection]) != 0
+	c.updates.mu.Unlock()
+	return c.fenceCatalog(ctx, route) == nil && running
 }
 func (c *Controller[T]) IsResourceWatchRunning(ctx context.Context, route AccessRoute, typ string) (bool, error) {
 	if route.Connection == "" || typ == "" {
 		return false, NewError("INVALID_REQUEST", "An explicit route and resource type are required.")
 	}
+	ctx, _, release, err := c.lease(ctx, route)
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	if err := c.fenceCatalog(ctx, route); err != nil {
+		return false, err
+	}
 	if err := ctx.Err(); err != nil {
 		return false, c.classify(nil, err)
 	}
 	c.updates.mu.Lock()
-	defer c.updates.mu.Unlock()
 	watch := c.updates.watches[route.Connection][typ]
-	return watch != nil && watch.running, nil
+	running := watch != nil && watch.running
+	c.updates.mu.Unlock()
+	if err := c.fenceCatalog(ctx, route); err != nil {
+		return false, err
+	}
+	return running, nil
 }
 func (c *Controller[T]) GetWatchState(ctx context.Context, route AccessRoute) (*WatchConnectionSummary, error) {
 	if route.Connection == "" {
 		return nil, NewError("INVALID_REQUEST", "An explicit connection route is required.")
 	}
+	ctx, _, release, err := c.lease(ctx, route)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	if err := c.fenceCatalog(ctx, route); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, c.classify(nil, err)
 	}
 	c.updates.mu.Lock()
-	defer c.updates.mu.Unlock()
 	resources := c.updates.watches[route.Connection]
 	if resources == nil {
+		c.updates.mu.Unlock()
 		return nil, NewError("NOT_FOUND", "Connection has no registered updates.")
 	}
 	summary := &WatchConnectionSummary{Route: route, Resources: make(map[string]WatchState, len(resources)), ResourceCounts: make(map[string]Count, len(resources)), Guarantee: BestEffortGuarantee}
 	for typ, watch := range resources {
 		summary.Resources[typ] = watch.state
 		summary.ResourceCounts[typ] = watch.count
+	}
+	c.updates.mu.Unlock()
+	if err := c.fenceCatalog(ctx, route); err != nil {
+		return nil, err
 	}
 	return summary, nil
 }

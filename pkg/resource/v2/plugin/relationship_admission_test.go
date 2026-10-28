@@ -46,7 +46,8 @@ func TestActualGRPCRelationshipBindingAdmission(t *testing.T) {
 			}
 			s := grpc.NewServer()
 			RegisterServer(s, p)
-			out, err := NewClient(pipe(t, s)).ResolveRelationships(context.Background(), request)
+			client := NewClient(pipe(t, s))
+			out, err := client.ResolveRelationships(acceptedRelationshipContext(t, context.Background(), client, request), request)
 			if mode == "valid" {
 				if err != nil || len(out) != 1 || out[0].Targets[0].Reference.Address.Authority != "target-authority" || out[0].Targets[0].Reference.Address.Type != "opaque/linked-type" {
 					t.Fatalf("cross-type binding failed: %v %v", out, err)
@@ -74,7 +75,7 @@ func TestActualGRPCMalformedRelationshipRequestDoesNotDispatch(t *testing.T) {
 		RegisterServer(s, p)
 		conn := pipe(t, s)
 		var response resourcepb.AncillaryResponse
-		err := conn.Invoke(context.Background(), resourcepb.ResourceAncillary_Call_FullMethodName, request, &response)
+		err := conn.Invoke(acceptedWireContext(t, context.Background(), NewClient(conn), testGet().Route), resourcepb.ResourceAncillary_Call_FullMethodName, request, &response)
 		if err == nil || p.calls.Load() != 0 {
 			t.Fatalf("malformed request dispatched: calls=%d err=%v", p.calls.Load(), err)
 		}

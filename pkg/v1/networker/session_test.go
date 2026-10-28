@@ -83,28 +83,32 @@ func TestPortForwardSessionToProtoUnknownProtocol(t *testing.T) {
 	session := &networker.PortForwardSession{
 		Protocol: networker.PortForwardProtocol("SCTP"),
 	}
-	got := session.ToProto().GetProtocol()
+	wire, err := session.ToProto()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := wire.GetProtocol()
 	if int32(got) != -1 {
 		t.Fatalf("expected unknown enum value -1, got %d", got)
 	}
 }
 
 func TestNewPortForwardSessionFromProtoNil(t *testing.T) {
-	if got := networker.NewPortForwardSessionFromProto(nil); got != nil {
+	if got, err := networker.NewPortForwardSessionFromProto(nil); got != nil || err != nil {
 		t.Fatalf("expected nil, got %#v", got)
 	}
 }
 
 func TestNewPortForwardSessionOptionsFromProtoNil(t *testing.T) {
-	if got := networker.NewPortForwardSessionOptionsFromProto(nil); got != nil {
-		t.Fatalf("expected nil, got %#v", got)
+	if got, err := networker.NewPortForwardSessionOptionsFromProto(nil); got != nil || err == nil {
+		t.Fatalf("expected nil and error, got %#v, %v", got, err)
 	}
 }
 
 func TestPortForwardSessionOptions_UnmarshalJSON_Resource(t *testing.T) {
 	data := []byte(`{
 		"connection": {
-			"resource_data": {"apiVersion": "v1", "kind": "Service"},
+			"resource_data": {"kind":"map","value":{"apiVersion":{"kind":"string","value":"v1"},"kind":{"kind":"string","value":"Service"}}},
 			"connection_id": "kind-omniview-test",
 			"plugin_id": "kubernetes",
 			"resource_id": "eb043938-c5fd-426e-9012-f67d78e16fd1",

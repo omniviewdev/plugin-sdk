@@ -22,6 +22,7 @@ const _ = grpc.SupportPackageIsVersion7
 const (
 	LogPlugin_GetSupportedResources_FullMethodName = "/com.omniview.pluginsdk.LogPlugin/GetSupportedResources"
 	LogPlugin_CreateSession_FullMethodName         = "/com.omniview.pluginsdk.LogPlugin/CreateSession"
+	LogPlugin_CreateResourceSession_FullMethodName = "/com.omniview.pluginsdk.LogPlugin/CreateResourceSession"
 	LogPlugin_GetSession_FullMethodName            = "/com.omniview.pluginsdk.LogPlugin/GetSession"
 	LogPlugin_ListSessions_FullMethodName          = "/com.omniview.pluginsdk.LogPlugin/ListSessions"
 	LogPlugin_CloseSession_FullMethodName          = "/com.omniview.pluginsdk.LogPlugin/CloseSession"
@@ -35,6 +36,7 @@ const (
 type LogPluginClient interface {
 	GetSupportedResources(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetSupportedLogResourcesResponse, error)
 	CreateSession(ctx context.Context, in *CreateLogSessionRequest, opts ...grpc.CallOption) (*CreateLogSessionResponse, error)
+	CreateResourceSession(ctx context.Context, in *CreateLogSessionRequest, opts ...grpc.CallOption) (*ResourceLogSessionResponse, error)
 	GetSession(ctx context.Context, in *LogSessionByIdRequest, opts ...grpc.CallOption) (*LogSessionByIdResponse, error)
 	ListSessions(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListLogSessionsResponse, error)
 	CloseSession(ctx context.Context, in *LogSessionByIdRequest, opts ...grpc.CallOption) (*CloseLogSessionResponse, error)
@@ -62,6 +64,15 @@ func (c *logPluginClient) GetSupportedResources(ctx context.Context, in *emptypb
 func (c *logPluginClient) CreateSession(ctx context.Context, in *CreateLogSessionRequest, opts ...grpc.CallOption) (*CreateLogSessionResponse, error) {
 	out := new(CreateLogSessionResponse)
 	err := c.cc.Invoke(ctx, LogPlugin_CreateSession_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *logPluginClient) CreateResourceSession(ctx context.Context, in *CreateLogSessionRequest, opts ...grpc.CallOption) (*ResourceLogSessionResponse, error) {
+	out := new(ResourceLogSessionResponse)
+	err := c.cc.Invoke(ctx, LogPlugin_CreateResourceSession_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +152,7 @@ func (x *logPluginStreamClient) Recv() (*LogStreamOutput, error) {
 type LogPluginServer interface {
 	GetSupportedResources(context.Context, *emptypb.Empty) (*GetSupportedLogResourcesResponse, error)
 	CreateSession(context.Context, *CreateLogSessionRequest) (*CreateLogSessionResponse, error)
+	CreateResourceSession(context.Context, *CreateLogSessionRequest) (*ResourceLogSessionResponse, error)
 	GetSession(context.Context, *LogSessionByIdRequest) (*LogSessionByIdResponse, error)
 	ListSessions(context.Context, *emptypb.Empty) (*ListLogSessionsResponse, error)
 	CloseSession(context.Context, *LogSessionByIdRequest) (*CloseLogSessionResponse, error)
@@ -157,6 +169,9 @@ func (UnimplementedLogPluginServer) GetSupportedResources(context.Context, *empt
 }
 func (UnimplementedLogPluginServer) CreateSession(context.Context, *CreateLogSessionRequest) (*CreateLogSessionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateSession not implemented")
+}
+func (UnimplementedLogPluginServer) CreateResourceSession(context.Context, *CreateLogSessionRequest) (*ResourceLogSessionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateResourceSession not implemented")
 }
 func (UnimplementedLogPluginServer) GetSession(context.Context, *LogSessionByIdRequest) (*LogSessionByIdResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetSession not implemented")
@@ -217,6 +232,24 @@ func _LogPlugin_CreateSession_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(LogPluginServer).CreateSession(ctx, req.(*CreateLogSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LogPlugin_CreateResourceSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateLogSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LogPluginServer).CreateResourceSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LogPlugin_CreateResourceSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LogPluginServer).CreateResourceSession(ctx, req.(*CreateLogSessionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -333,6 +366,10 @@ var LogPlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateSession",
 			Handler:    _LogPlugin_CreateSession_Handler,
+		},
+		{
+			MethodName: "CreateResourceSession",
+			Handler:    _LogPlugin_CreateResourceSession_Handler,
 		},
 		{
 			MethodName: "GetSession",

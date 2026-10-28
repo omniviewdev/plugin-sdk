@@ -76,6 +76,7 @@ func TestDiagnosticsCrossAncillaryLifecycleAndActionStreams(t *testing.T) {
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
 	ctx := resourcev2.WithSession(context.Background(), resourcev2.Session{RequestID: "workflow-request", RequesterID: "diagnostic-requester"})
+	ctx = acceptedRelationshipContext(t, ctx, c, relationshipFixtureRequest())
 	if _, err := c.ListConnections(ctx); err != nil {
 		t.Fatal(err)
 	}

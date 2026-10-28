@@ -2,6 +2,7 @@ package logs
 
 import (
 	"fmt"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -13,7 +14,7 @@ import (
 type LogLineOrigin int
 
 const (
-	LogLineOriginCurrent  LogLineOrigin = iota
+	LogLineOriginCurrent LogLineOrigin = iota
 	LogLineOriginPrevious
 	LogLineOriginSystem
 )
@@ -336,7 +337,9 @@ type StreamOutput struct {
 type LogStreamRequest struct {
 	SourceID          string
 	Labels            map[string]string
-	ResourceData      map[string]interface{}
+	ResourceData      *resourcev2.Value             `json:"resource_data"`
+	Reference         *resourcev2.ResourceReference `json:"reference,omitempty"`
+	Route             *resourcev2.AccessRoute       `json:"route,omitempty"`
 	Target            string
 	Follow            bool
 	IncludePrevious   bool

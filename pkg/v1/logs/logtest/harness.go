@@ -2,6 +2,7 @@ package logtest
 
 import (
 	"context"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"testing"
 	"time"
 
@@ -104,7 +105,7 @@ func (h *Harness) CreateSession(resourceKey string, opts ...SessionOption) *logs
 
 	cfg := sessionConfig{
 		resourceID:   "test-resource",
-		resourceData: map[string]interface{}{},
+		resourceData: &resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{}},
 		options:      logs.LogSessionOptions{Follow: true, IncludeSourceEvents: true},
 	}
 	for _, opt := range opts {
@@ -112,12 +113,10 @@ func (h *Harness) CreateSession(resourceKey string, opts ...SessionOption) *logs
 	}
 
 	pctx := newTestPluginContext(h.ctx)
-	session, err := h.manager.CreateSession(pctx, logs.CreateSessionOptions{
-		ResourceKey:  resourceKey,
+	session, err := h.manager.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: resourceKey,
 		ResourceID:   cfg.resourceID,
 		ResourceData: cfg.resourceData,
-		Options:      cfg.options,
-	})
+		Options:      cfg.options})
 	if err != nil {
 		h.t.Fatalf("CreateSession failed: %v", err)
 	}
@@ -218,7 +217,7 @@ type SessionOption func(*sessionConfig)
 
 type sessionConfig struct {
 	resourceID   string
-	resourceData map[string]interface{}
+	resourceData *resourcev2.Value
 	options      logs.LogSessionOptions
 }
 
@@ -228,7 +227,7 @@ func WithResourceID(id string) SessionOption {
 }
 
 // WithResourceData sets the resource data for session creation.
-func WithResourceData(data map[string]interface{}) SessionOption {
+func WithResourceData(data *resourcev2.Value) SessionOption {
 	return func(c *sessionConfig) { c.resourceData = data }
 }
 

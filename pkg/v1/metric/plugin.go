@@ -8,6 +8,7 @@ import (
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
@@ -21,14 +22,30 @@ type Provider interface {
 	StreamMetrics(ctx context.Context, in chan StreamInput) (chan StreamOutput, error)
 }
 
+// ResourceQueryProvider accepts lossless resource queries on the explicit v2 RPC.
+type ResourceQueryProvider interface {
+	QueryResource(*types.PluginContext, QueryRequest) (*QueryResponse, error)
+}
+
+// ResourceStreamProvider accepts mixed resource and nonresource v2 frames.
+type ResourceStreamProvider interface {
+	StreamResourceMetrics(context.Context, chan StreamInput) (chan StreamOutput, error)
+}
+
 // Plugin implements the hashicorp go-plugin interfaces for metric capability.
 type Plugin struct {
 	plugin.Plugin
 	Impl Provider
 }
 
+func (p *Plugin) BindConnectionContextProvider(provider resourcev2.ConnectionContextProvider) {
+	if consumer, ok := p.Impl.(resourcev2.ConnectionContextConsumer); ok {
+		consumer.BindConnectionContextProvider(provider)
+	}
+}
+
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
-	metricpb.RegisterMetricPluginServer(s, &PluginServer{Impl: p.Impl})
+	RegisterMetricPluginServer(s, &PluginServer{Impl: p.Impl})
 	return nil
 }
 

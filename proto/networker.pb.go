@@ -7,11 +7,11 @@
 package proto
 
 import (
+	v2 "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	_ "google.golang.org/protobuf/types/known/durationpb"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
-	structpb "google.golang.org/protobuf/types/known/structpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
@@ -286,14 +286,17 @@ func (*PortForwardSession_StaticConnection) isPortForwardSession_Connection() {}
 // to a specific address and port. This message encapsulates the options for the connection
 // to a resource.
 type PortForwardResourceConnection struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ConnectionId  string                 `protobuf:"bytes,1,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
-	PluginId      string                 `protobuf:"bytes,2,opt,name=plugin_id,json=pluginId,proto3" json:"plugin_id,omitempty"`
-	ResourceId    string                 `protobuf:"bytes,3,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
-	ResourceKey   string                 `protobuf:"bytes,4,opt,name=resource_key,json=resourceKey,proto3" json:"resource_key,omitempty"`
-	ResourceData  *structpb.Struct       `protobuf:"bytes,5,opt,name=resource_data,json=resourceData,proto3" json:"resource_data,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	ConnectionId        string                 `protobuf:"bytes,1,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
+	PluginId            string                 `protobuf:"bytes,2,opt,name=plugin_id,json=pluginId,proto3" json:"plugin_id,omitempty"`
+	ResourceId          string                 `protobuf:"bytes,3,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
+	ResourceKey         string                 `protobuf:"bytes,4,opt,name=resource_key,json=resourceKey,proto3" json:"resource_key,omitempty"`
+	ResourceData        *v2.Value              `protobuf:"bytes,6,opt,name=resource_data,json=resourceData,proto3" json:"resource_data,omitempty"`
+	ResourceWireVersion uint32                 `protobuf:"varint,7,opt,name=resource_wire_version,json=resourceWireVersion,proto3" json:"resource_wire_version,omitempty"`
+	Reference           *v2.ResourceReference  `protobuf:"bytes,8,opt,name=reference,proto3" json:"reference,omitempty"`
+	Route               *v2.AccessRoute        `protobuf:"bytes,9,opt,name=route,proto3" json:"route,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *PortForwardResourceConnection) Reset() {
@@ -354,9 +357,30 @@ func (x *PortForwardResourceConnection) GetResourceKey() string {
 	return ""
 }
 
-func (x *PortForwardResourceConnection) GetResourceData() *structpb.Struct {
+func (x *PortForwardResourceConnection) GetResourceData() *v2.Value {
 	if x != nil {
 		return x.ResourceData
+	}
+	return nil
+}
+
+func (x *PortForwardResourceConnection) GetResourceWireVersion() uint32 {
+	if x != nil {
+		return x.ResourceWireVersion
+	}
+	return 0
+}
+
+func (x *PortForwardResourceConnection) GetReference() *v2.ResourceReference {
+	if x != nil {
+		return x.Reference
+	}
+	return nil
+}
+
+func (x *PortForwardResourceConnection) GetRoute() *v2.AccessRoute {
+	if x != nil {
+		return x.Route
 	}
 	return nil
 }
@@ -781,6 +805,58 @@ func (x *PortForwardSessionListResponse) GetSessions() []*PortForwardSession {
 	return nil
 }
 
+type ResourcePortForwardSessionResponse struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	ResourceWireVersion uint32                 `protobuf:"varint,1,opt,name=resource_wire_version,json=resourceWireVersion,proto3" json:"resource_wire_version,omitempty"`
+	Session             *PortForwardSession    `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *ResourcePortForwardSessionResponse) Reset() {
+	*x = ResourcePortForwardSessionResponse{}
+	mi := &file_proto_networker_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourcePortForwardSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourcePortForwardSessionResponse) ProtoMessage() {}
+
+func (x *ResourcePortForwardSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_networker_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourcePortForwardSessionResponse.ProtoReflect.Descriptor instead.
+func (*ResourcePortForwardSessionResponse) Descriptor() ([]byte, []int) {
+	return file_proto_networker_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ResourcePortForwardSessionResponse) GetResourceWireVersion() uint32 {
+	if x != nil {
+		return x.ResourceWireVersion
+	}
+	return 0
+}
+
+func (x *ResourcePortForwardSessionResponse) GetSession() *PortForwardSession {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
 type GetSupportedPortForwardTargetsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Resources     []string               `protobuf:"bytes,1,rep,name=resources,proto3" json:"resources,omitempty"`
@@ -790,7 +866,7 @@ type GetSupportedPortForwardTargetsResponse struct {
 
 func (x *GetSupportedPortForwardTargetsResponse) Reset() {
 	*x = GetSupportedPortForwardTargetsResponse{}
-	mi := &file_proto_networker_proto_msgTypes[9]
+	mi := &file_proto_networker_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -802,7 +878,7 @@ func (x *GetSupportedPortForwardTargetsResponse) String() string {
 func (*GetSupportedPortForwardTargetsResponse) ProtoMessage() {}
 
 func (x *GetSupportedPortForwardTargetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_networker_proto_msgTypes[9]
+	mi := &file_proto_networker_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -815,7 +891,7 @@ func (x *GetSupportedPortForwardTargetsResponse) ProtoReflect() protoreflect.Mes
 
 // Deprecated: Use GetSupportedPortForwardTargetsResponse.ProtoReflect.Descriptor instead.
 func (*GetSupportedPortForwardTargetsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_networker_proto_rawDescGZIP(), []int{9}
+	return file_proto_networker_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetSupportedPortForwardTargetsResponse) GetResources() []string {
@@ -829,7 +905,7 @@ var File_proto_networker_proto protoreflect.FileDescriptor
 
 const file_proto_networker_proto_rawDesc = "" +
 	"\n" +
-	"\x15proto/networker.proto\x12\x16com.omniview.pluginsdk\x1a\x1egoogle/protobuf/duration.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf0\x06\n" +
+	"\x15proto/networker.proto\x12\x16com.omniview.pluginsdk\x1a\x1egoogle/protobuf/duration.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1eproto/resource/v2/domain.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf0\x06\n" +
 	"\x12PortForwardSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -860,14 +936,17 @@ const file_proto_networker_proto_rawDesc = "" +
 	"\n" +
 	"\x06FAILED\x10\x03B\f\n" +
 	"\n" +
-	"connection\"\xe3\x01\n" +
+	"connection\"\xa1\x03\n" +
 	"\x1dPortForwardResourceConnection\x12#\n" +
 	"\rconnection_id\x18\x01 \x01(\tR\fconnectionId\x12\x1b\n" +
 	"\tplugin_id\x18\x02 \x01(\tR\bpluginId\x12\x1f\n" +
 	"\vresource_id\x18\x03 \x01(\tR\n" +
 	"resourceId\x12!\n" +
-	"\fresource_key\x18\x04 \x01(\tR\vresourceKey\x12<\n" +
-	"\rresource_data\x18\x05 \x01(\v2\x17.google.protobuf.StructR\fresourceData\"7\n" +
+	"\fresource_key\x18\x04 \x01(\tR\vresourceKey\x12@\n" +
+	"\rresource_data\x18\x06 \x01(\v2\x1b.omniview.resource.v2.ValueR\fresourceData\x122\n" +
+	"\x15resource_wire_version\x18\a \x01(\rR\x13resourceWireVersion\x12E\n" +
+	"\treference\x18\b \x01(\v2'.omniview.resource.v2.ResourceReferenceR\treference\x127\n" +
+	"\x05route\x18\t \x01(\v2!.omniview.resource.v2.AccessRouteR\x05routeJ\x04\b\x05\x10\x06\"7\n" +
 	"\x1bPortForwardStaticConnection\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\"h\n" +
 	"\x1cPortForwardSessionEncryption\x12\x18\n" +
@@ -905,18 +984,22 @@ const file_proto_networker_proto_rawDesc = "" +
 	"\x1ePortForwardSessionByIdResponse\x12D\n" +
 	"\asession\x18\x01 \x01(\v2*.com.omniview.pluginsdk.PortForwardSessionR\asession\"h\n" +
 	"\x1ePortForwardSessionListResponse\x12F\n" +
-	"\bsessions\x18\x01 \x03(\v2*.com.omniview.pluginsdk.PortForwardSessionR\bsessions\"F\n" +
+	"\bsessions\x18\x01 \x03(\v2*.com.omniview.pluginsdk.PortForwardSessionR\bsessions\"\x9e\x01\n" +
+	"\"ResourcePortForwardSessionResponse\x122\n" +
+	"\x15resource_wire_version\x18\x01 \x01(\rR\x13resourceWireVersion\x12D\n" +
+	"\asession\x18\x02 \x01(\v2*.com.omniview.pluginsdk.PortForwardSessionR\asession\"F\n" +
 	"&GetSupportedPortForwardTargetsResponse\x12\x1c\n" +
 	"\tresources\x18\x01 \x03(\tR\tresources*'\n" +
 	"\x13PortForwardProtocol\x12\a\n" +
 	"\x03TCP\x10\x00\x12\a\n" +
-	"\x03UDP\x10\x012\x9c\x06\n" +
+	"\x03UDP\x10\x012\xaf\a\n" +
 	"\x0fNetworkerPlugin\x12x\n" +
 	"\x1eGetSupportedPortForwardTargets\x12\x16.google.protobuf.Empty\x1a>.com.omniview.pluginsdk.GetSupportedPortForwardTargetsResponse\x12\x86\x01\n" +
 	"\x15GetPortForwardSession\x125.com.omniview.pluginsdk.PortForwardSessionByIdRequest\x1a6.com.omniview.pluginsdk.PortForwardSessionByIdResponse\x12i\n" +
 	"\x17ListPortForwardSessions\x12\x16.google.protobuf.Empty\x1a6.com.omniview.pluginsdk.PortForwardSessionListResponse\x12\x88\x01\n" +
 	"\x17FindPortForwardSessions\x125.com.omniview.pluginsdk.FindPortForwardSessionRequest\x1a6.com.omniview.pluginsdk.PortForwardSessionListResponse\x12\x84\x01\n" +
-	"\x17StartPortForwardSession\x121.com.omniview.pluginsdk.PortForwardSessionOptions\x1a6.com.omniview.pluginsdk.PortForwardSessionByIdResponse\x12\x88\x01\n" +
+	"\x17StartPortForwardSession\x121.com.omniview.pluginsdk.PortForwardSessionOptions\x1a6.com.omniview.pluginsdk.PortForwardSessionByIdResponse\x12\x90\x01\n" +
+	"\x1fStartResourcePortForwardSession\x121.com.omniview.pluginsdk.PortForwardSessionOptions\x1a:.com.omniview.pluginsdk.ResourcePortForwardSessionResponse\x12\x88\x01\n" +
 	"\x17ClosePortForwardSession\x125.com.omniview.pluginsdk.PortForwardSessionByIdRequest\x1a6.com.omniview.pluginsdk.PortForwardSessionByIdResponseB\tZ\a./protob\x06proto3"
 
 var (
@@ -932,7 +1015,7 @@ func file_proto_networker_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_networker_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_networker_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_proto_networker_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_proto_networker_proto_goTypes = []any{
 	(PortForwardProtocol)(0),                       // 0: com.omniview.pluginsdk.PortForwardProtocol
 	(PortForwardSession_SessionState)(0),           // 1: com.omniview.pluginsdk.PortForwardSession.SessionState
@@ -945,49 +1028,57 @@ var file_proto_networker_proto_goTypes = []any{
 	(*FindPortForwardSessionRequest)(nil),          // 8: com.omniview.pluginsdk.FindPortForwardSessionRequest
 	(*PortForwardSessionByIdResponse)(nil),         // 9: com.omniview.pluginsdk.PortForwardSessionByIdResponse
 	(*PortForwardSessionListResponse)(nil),         // 10: com.omniview.pluginsdk.PortForwardSessionListResponse
-	(*GetSupportedPortForwardTargetsResponse)(nil), // 11: com.omniview.pluginsdk.GetSupportedPortForwardTargetsResponse
-	nil,                           // 12: com.omniview.pluginsdk.PortForwardSession.LabelsEntry
-	nil,                           // 13: com.omniview.pluginsdk.PortForwardSessionOptions.LabelsEntry
-	nil,                           // 14: com.omniview.pluginsdk.PortForwardSessionOptions.ParamsEntry
-	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),       // 16: google.protobuf.Struct
-	(*emptypb.Empty)(nil),         // 17: google.protobuf.Empty
+	(*ResourcePortForwardSessionResponse)(nil),     // 11: com.omniview.pluginsdk.ResourcePortForwardSessionResponse
+	(*GetSupportedPortForwardTargetsResponse)(nil), // 12: com.omniview.pluginsdk.GetSupportedPortForwardTargetsResponse
+	nil,                           // 13: com.omniview.pluginsdk.PortForwardSession.LabelsEntry
+	nil,                           // 14: com.omniview.pluginsdk.PortForwardSessionOptions.LabelsEntry
+	nil,                           // 15: com.omniview.pluginsdk.PortForwardSessionOptions.ParamsEntry
+	(*timestamppb.Timestamp)(nil), // 16: google.protobuf.Timestamp
+	(*v2.Value)(nil),              // 17: omniview.resource.v2.Value
+	(*v2.ResourceReference)(nil),  // 18: omniview.resource.v2.ResourceReference
+	(*v2.AccessRoute)(nil),        // 19: omniview.resource.v2.AccessRoute
+	(*emptypb.Empty)(nil),         // 20: google.protobuf.Empty
 }
 var file_proto_networker_proto_depIdxs = []int32{
 	0,  // 0: com.omniview.pluginsdk.PortForwardSession.protocol:type_name -> com.omniview.pluginsdk.PortForwardProtocol
-	15, // 1: com.omniview.pluginsdk.PortForwardSession.created_at:type_name -> google.protobuf.Timestamp
-	15, // 2: com.omniview.pluginsdk.PortForwardSession.updated_at:type_name -> google.protobuf.Timestamp
-	12, // 3: com.omniview.pluginsdk.PortForwardSession.labels:type_name -> com.omniview.pluginsdk.PortForwardSession.LabelsEntry
+	16, // 1: com.omniview.pluginsdk.PortForwardSession.created_at:type_name -> google.protobuf.Timestamp
+	16, // 2: com.omniview.pluginsdk.PortForwardSession.updated_at:type_name -> google.protobuf.Timestamp
+	13, // 3: com.omniview.pluginsdk.PortForwardSession.labels:type_name -> com.omniview.pluginsdk.PortForwardSession.LabelsEntry
 	1,  // 4: com.omniview.pluginsdk.PortForwardSession.state:type_name -> com.omniview.pluginsdk.PortForwardSession.SessionState
 	5,  // 5: com.omniview.pluginsdk.PortForwardSession.encryption:type_name -> com.omniview.pluginsdk.PortForwardSessionEncryption
 	3,  // 6: com.omniview.pluginsdk.PortForwardSession.resource_connection:type_name -> com.omniview.pluginsdk.PortForwardResourceConnection
 	4,  // 7: com.omniview.pluginsdk.PortForwardSession.static_connection:type_name -> com.omniview.pluginsdk.PortForwardStaticConnection
-	16, // 8: com.omniview.pluginsdk.PortForwardResourceConnection.resource_data:type_name -> google.protobuf.Struct
-	0,  // 9: com.omniview.pluginsdk.PortForwardSessionOptions.protocol:type_name -> com.omniview.pluginsdk.PortForwardProtocol
-	13, // 10: com.omniview.pluginsdk.PortForwardSessionOptions.labels:type_name -> com.omniview.pluginsdk.PortForwardSessionOptions.LabelsEntry
-	14, // 11: com.omniview.pluginsdk.PortForwardSessionOptions.params:type_name -> com.omniview.pluginsdk.PortForwardSessionOptions.ParamsEntry
-	5,  // 12: com.omniview.pluginsdk.PortForwardSessionOptions.encryption:type_name -> com.omniview.pluginsdk.PortForwardSessionEncryption
-	3,  // 13: com.omniview.pluginsdk.PortForwardSessionOptions.resource_connection:type_name -> com.omniview.pluginsdk.PortForwardResourceConnection
-	4,  // 14: com.omniview.pluginsdk.PortForwardSessionOptions.static_connection:type_name -> com.omniview.pluginsdk.PortForwardStaticConnection
-	2,  // 15: com.omniview.pluginsdk.PortForwardSessionByIdResponse.session:type_name -> com.omniview.pluginsdk.PortForwardSession
-	2,  // 16: com.omniview.pluginsdk.PortForwardSessionListResponse.sessions:type_name -> com.omniview.pluginsdk.PortForwardSession
-	17, // 17: com.omniview.pluginsdk.NetworkerPlugin.GetSupportedPortForwardTargets:input_type -> google.protobuf.Empty
-	7,  // 18: com.omniview.pluginsdk.NetworkerPlugin.GetPortForwardSession:input_type -> com.omniview.pluginsdk.PortForwardSessionByIdRequest
-	17, // 19: com.omniview.pluginsdk.NetworkerPlugin.ListPortForwardSessions:input_type -> google.protobuf.Empty
-	8,  // 20: com.omniview.pluginsdk.NetworkerPlugin.FindPortForwardSessions:input_type -> com.omniview.pluginsdk.FindPortForwardSessionRequest
-	6,  // 21: com.omniview.pluginsdk.NetworkerPlugin.StartPortForwardSession:input_type -> com.omniview.pluginsdk.PortForwardSessionOptions
-	7,  // 22: com.omniview.pluginsdk.NetworkerPlugin.ClosePortForwardSession:input_type -> com.omniview.pluginsdk.PortForwardSessionByIdRequest
-	11, // 23: com.omniview.pluginsdk.NetworkerPlugin.GetSupportedPortForwardTargets:output_type -> com.omniview.pluginsdk.GetSupportedPortForwardTargetsResponse
-	9,  // 24: com.omniview.pluginsdk.NetworkerPlugin.GetPortForwardSession:output_type -> com.omniview.pluginsdk.PortForwardSessionByIdResponse
-	10, // 25: com.omniview.pluginsdk.NetworkerPlugin.ListPortForwardSessions:output_type -> com.omniview.pluginsdk.PortForwardSessionListResponse
-	10, // 26: com.omniview.pluginsdk.NetworkerPlugin.FindPortForwardSessions:output_type -> com.omniview.pluginsdk.PortForwardSessionListResponse
-	9,  // 27: com.omniview.pluginsdk.NetworkerPlugin.StartPortForwardSession:output_type -> com.omniview.pluginsdk.PortForwardSessionByIdResponse
-	9,  // 28: com.omniview.pluginsdk.NetworkerPlugin.ClosePortForwardSession:output_type -> com.omniview.pluginsdk.PortForwardSessionByIdResponse
-	23, // [23:29] is the sub-list for method output_type
-	17, // [17:23] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	17, // 8: com.omniview.pluginsdk.PortForwardResourceConnection.resource_data:type_name -> omniview.resource.v2.Value
+	18, // 9: com.omniview.pluginsdk.PortForwardResourceConnection.reference:type_name -> omniview.resource.v2.ResourceReference
+	19, // 10: com.omniview.pluginsdk.PortForwardResourceConnection.route:type_name -> omniview.resource.v2.AccessRoute
+	0,  // 11: com.omniview.pluginsdk.PortForwardSessionOptions.protocol:type_name -> com.omniview.pluginsdk.PortForwardProtocol
+	14, // 12: com.omniview.pluginsdk.PortForwardSessionOptions.labels:type_name -> com.omniview.pluginsdk.PortForwardSessionOptions.LabelsEntry
+	15, // 13: com.omniview.pluginsdk.PortForwardSessionOptions.params:type_name -> com.omniview.pluginsdk.PortForwardSessionOptions.ParamsEntry
+	5,  // 14: com.omniview.pluginsdk.PortForwardSessionOptions.encryption:type_name -> com.omniview.pluginsdk.PortForwardSessionEncryption
+	3,  // 15: com.omniview.pluginsdk.PortForwardSessionOptions.resource_connection:type_name -> com.omniview.pluginsdk.PortForwardResourceConnection
+	4,  // 16: com.omniview.pluginsdk.PortForwardSessionOptions.static_connection:type_name -> com.omniview.pluginsdk.PortForwardStaticConnection
+	2,  // 17: com.omniview.pluginsdk.PortForwardSessionByIdResponse.session:type_name -> com.omniview.pluginsdk.PortForwardSession
+	2,  // 18: com.omniview.pluginsdk.PortForwardSessionListResponse.sessions:type_name -> com.omniview.pluginsdk.PortForwardSession
+	2,  // 19: com.omniview.pluginsdk.ResourcePortForwardSessionResponse.session:type_name -> com.omniview.pluginsdk.PortForwardSession
+	20, // 20: com.omniview.pluginsdk.NetworkerPlugin.GetSupportedPortForwardTargets:input_type -> google.protobuf.Empty
+	7,  // 21: com.omniview.pluginsdk.NetworkerPlugin.GetPortForwardSession:input_type -> com.omniview.pluginsdk.PortForwardSessionByIdRequest
+	20, // 22: com.omniview.pluginsdk.NetworkerPlugin.ListPortForwardSessions:input_type -> google.protobuf.Empty
+	8,  // 23: com.omniview.pluginsdk.NetworkerPlugin.FindPortForwardSessions:input_type -> com.omniview.pluginsdk.FindPortForwardSessionRequest
+	6,  // 24: com.omniview.pluginsdk.NetworkerPlugin.StartPortForwardSession:input_type -> com.omniview.pluginsdk.PortForwardSessionOptions
+	6,  // 25: com.omniview.pluginsdk.NetworkerPlugin.StartResourcePortForwardSession:input_type -> com.omniview.pluginsdk.PortForwardSessionOptions
+	7,  // 26: com.omniview.pluginsdk.NetworkerPlugin.ClosePortForwardSession:input_type -> com.omniview.pluginsdk.PortForwardSessionByIdRequest
+	12, // 27: com.omniview.pluginsdk.NetworkerPlugin.GetSupportedPortForwardTargets:output_type -> com.omniview.pluginsdk.GetSupportedPortForwardTargetsResponse
+	9,  // 28: com.omniview.pluginsdk.NetworkerPlugin.GetPortForwardSession:output_type -> com.omniview.pluginsdk.PortForwardSessionByIdResponse
+	10, // 29: com.omniview.pluginsdk.NetworkerPlugin.ListPortForwardSessions:output_type -> com.omniview.pluginsdk.PortForwardSessionListResponse
+	10, // 30: com.omniview.pluginsdk.NetworkerPlugin.FindPortForwardSessions:output_type -> com.omniview.pluginsdk.PortForwardSessionListResponse
+	9,  // 31: com.omniview.pluginsdk.NetworkerPlugin.StartPortForwardSession:output_type -> com.omniview.pluginsdk.PortForwardSessionByIdResponse
+	11, // 32: com.omniview.pluginsdk.NetworkerPlugin.StartResourcePortForwardSession:output_type -> com.omniview.pluginsdk.ResourcePortForwardSessionResponse
+	9,  // 33: com.omniview.pluginsdk.NetworkerPlugin.ClosePortForwardSession:output_type -> com.omniview.pluginsdk.PortForwardSessionByIdResponse
+	27, // [27:34] is the sub-list for method output_type
+	20, // [20:27] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_proto_networker_proto_init() }
@@ -1009,7 +1100,7 @@ func file_proto_networker_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_networker_proto_rawDesc), len(file_proto_networker_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   13,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

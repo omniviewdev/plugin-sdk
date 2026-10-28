@@ -135,11 +135,9 @@ func BenchmarkLineThroughput_1Source(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 
-			session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-				ResourceKey: "pod",
-				ResourceID:  "bench-pod",
-				Options:     logs.LogSessionOptions{Follow: false},
-			})
+			session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+				ResourceID: "bench-pod",
+				Options:    logs.LogSessionOptions{Follow: false}})
 			if err != nil {
 				b.Fatalf("CreateSession: %v", err)
 			}
@@ -197,11 +195,9 @@ func BenchmarkMultiSourceFanOut(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 
-			_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-				ResourceKey: "pod",
-				ResourceID:  "bench-pod",
-				Options:     logs.LogSessionOptions{Follow: false},
-			})
+			_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+				ResourceID: "bench-pod",
+				Options:    logs.LogSessionOptions{Follow: false}})
 			if err != nil {
 				b.Fatalf("CreateSession: %v", err)
 			}
@@ -260,11 +256,9 @@ func BenchmarkMultiSession(b *testing.B) {
 			b.ReportAllocs()
 
 			for i := 0; i < numSessions; i++ {
-				_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-					ResourceKey: "pod",
-					ResourceID:  fmt.Sprintf("pod-%d", i),
-					Options:     logs.LogSessionOptions{Follow: false},
-				})
+				_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+					ResourceID: fmt.Sprintf("pod-%d", i),
+					Options:    logs.LogSessionOptions{Follow: false}})
 				if err != nil {
 					b.Fatalf("CreateSession[%d]: %v", i, err)
 				}
@@ -339,11 +333,9 @@ func BenchmarkStressCombined(b *testing.B) {
 			b.ReportAllocs()
 
 			for i := 0; i < sc.sessions; i++ {
-				_, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-					ResourceKey: "pod",
-					ResourceID:  fmt.Sprintf("pod-%d", i),
-					Options:     logs.LogSessionOptions{Follow: false},
-				})
+				_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+					ResourceID: fmt.Sprintf("pod-%d", i),
+					Options:    logs.LogSessionOptions{Follow: false}})
 				if err != nil {
 					b.Fatalf("CreateSession[%d]: %v", i, err)
 				}
@@ -410,11 +402,9 @@ func BenchmarkSustainedThroughputGC(b *testing.B) {
 
 	sessionIDs := make([]string, numSessions)
 	for i := 0; i < numSessions; i++ {
-		session, err := mgr.CreateSession(pctx, logs.CreateSessionOptions{
-			ResourceKey: "pod",
-			ResourceID:  fmt.Sprintf("pod-%d", i),
-			Options:     logs.LogSessionOptions{Follow: true},
-		})
+		session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+			ResourceID: fmt.Sprintf("pod-%d", i),
+			Options:    logs.LogSessionOptions{Follow: true}})
 		if err != nil {
 			b.Fatalf("CreateSession[%d]: %v", i, err)
 		}
@@ -577,11 +567,9 @@ func BenchmarkScannerBufferAlloc(b *testing.B) {
 				})
 
 				pctx := types.NewPluginContext(context.Background(), "bench", nil, nil, nil)
-				_, _ = mgr.CreateSession(pctx, logs.CreateSessionOptions{
-					ResourceKey: "pod",
-					ResourceID:  "bench-pod",
-					Options:     logs.LogSessionOptions{Follow: false},
-				})
+				_, _ = mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod",
+					ResourceID: "bench-pod",
+					Options:    logs.LogSessionOptions{Follow: false}})
 				mgr.Wait()
 				mgr.Close()
 

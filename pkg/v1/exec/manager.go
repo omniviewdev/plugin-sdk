@@ -47,12 +47,13 @@ type ManagerConfig struct {
 
 // Manager manages the lifecycle of terminal sessions within a plugin process.
 type Manager struct {
-	log              logging.Logger
-	settingsProvider settings.Provider
-	handlers         map[string]Handler
-	sink             OutputSink
-	terminalFactory  TerminalFactory
-	clock            timeutil.Clock
+	log                logging.Logger
+	settingsProvider   settings.Provider
+	handlers           map[string]Handler
+	sink               OutputSink
+	terminalFactory    TerminalFactory
+	clock              timeutil.Clock
+	connectionProvider resourcev2.ConnectionContextProvider
 
 	mu       sync.RWMutex
 	sessions map[string]*sessionState
@@ -93,6 +94,11 @@ func NewManager(cfg ManagerConfig) *Manager {
 		sessions:         make(map[string]*sessionState),
 		resize:           make(chan StreamResize),
 	}
+}
+
+// BindConnectionContextProvider binds resource utility admission to the active registry.
+func (m *Manager) BindConnectionContextProvider(provider resourcev2.ConnectionContextProvider) {
+	m.connectionProvider = provider
 }
 
 // Close cancels all active sessions and waits for their goroutines to finish.
@@ -257,7 +263,19 @@ func (m *Manager) CreateResourceSession(pluginctx *types.PluginContext, opts Ses
 	if normalized.Route != nil && (pluginctx == nil || pluginctx.Connection == nil || pluginctx.Connection.ID != normalized.Route.Connection) {
 		return nil, resourcev2.NewError("INVALID_INPUT", "resource session route must match the explicit caller connection")
 	}
-	return m.createSession(pluginctx, normalized, true)
+	var session *Session
+	err = resourcev2.WithUtilityConnection(pluginctx, m.connectionProvider, normalized.Reference, normalized.Route, func(bound *types.PluginContext) error {
+		var createErr error
+		session, createErr = m.createSession(bound, normalized, true)
+		return createErr
+	})
+	if err != nil {
+		if session != nil {
+			_ = m.CloseSession(pluginctx, session.ID)
+		}
+		return nil, err
+	}
+	return session, nil
 }
 
 func (m *Manager) createSession(pluginctx *types.PluginContext, opts SessionOptions, resource bool) (*Session, error) {
