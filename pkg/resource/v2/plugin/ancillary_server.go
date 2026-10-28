@@ -116,37 +116,48 @@ func (s *ancillaryServer) call(ctx context.Context, r *resourcepb.AncillaryReque
 			return nil, err
 		}
 		return presentationJSON(struct{}{})
-	case "listConnections", "updateConnection", "deleteConnection":
-		p, ok := impl.(resourcev2.ConnectionBrowser)
+	case "listConnections":
+		p, ok := impl.(interface {
+			ListConnections(context.Context) ([]types.Connection, error)
+		})
 		if !ok {
-			return nil, unsupported("connection browser unsupported")
+			return nil, unsupported("connection listing unsupported")
 		}
-		switch r.Operation {
-		case "listConnections":
-			v, err := p.ListConnections(ctx)
-			if err != nil {
-				return nil, err
-			}
-			return presentationJSON(v)
-		case "updateConnection":
-			var in types.Connection
-			if err := decodeConnection(r.ConnectionJson, &in); err != nil {
-				return nil, err
-			}
-			v, err := p.UpdateConnection(ctx, in)
-			if err != nil {
-				return nil, err
-			}
-			return presentationJSON(v)
-		case "deleteConnection":
-			if r.Id == "" {
-				return nil, invalid("missing connection id")
-			}
-			if err := p.DeleteConnection(ctx, r.Id); err != nil {
-				return nil, err
-			}
-			return presentationJSON(struct{}{})
+		v, err := p.ListConnections(ctx)
+		if err != nil {
+			return nil, err
 		}
+		return presentationJSON(v)
+	case "updateConnection":
+		p, ok := impl.(interface {
+			UpdateConnection(context.Context, types.Connection) (types.Connection, error)
+		})
+		if !ok {
+			return nil, unsupported("connection updates unsupported")
+		}
+		var in types.Connection
+		if err := decodeConnection(r.ConnectionJson, &in); err != nil {
+			return nil, err
+		}
+		v, err := p.UpdateConnection(ctx, in)
+		if err != nil {
+			return nil, err
+		}
+		return presentationJSON(v)
+	case "deleteConnection":
+		p, ok := impl.(interface {
+			DeleteConnection(context.Context, string) error
+		})
+		if !ok {
+			return nil, unsupported("connection deletion unsupported")
+		}
+		if r.Id == "" {
+			return nil, invalid("missing connection id")
+		}
+		if err := p.DeleteConnection(ctx, r.Id); err != nil {
+			return nil, err
+		}
+		return presentationJSON(struct{}{})
 	case "scopeValues":
 		if route.Connection == "" || r.Type == "" {
 			return nil, invalid("missing scope discovery target")

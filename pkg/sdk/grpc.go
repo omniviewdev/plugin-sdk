@@ -114,6 +114,25 @@ func ClientPluginContextInterceptor(log logging.Logger) grpc.UnaryClientIntercep
 	}
 }
 
+// StreamClientPluginContextInterceptor uses the same admitted utility context
+// transport as unary RPCs. Opening a stream must not drop its selected connection
+// or replace the outgoing catalog/session metadata already present.
+func StreamClientPluginContextInterceptor(log logging.Logger) grpc.StreamClientInterceptor {
+	if log == nil {
+		log = logging.Default()
+	}
+	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		next, err := UseClientPluginContext(ctx)
+		if err != nil {
+			if !errors.Is(err, ErrNoPluginContext) {
+				return nil, fmt.Errorf("%s: %w", method, err)
+			}
+			log.Debug(ctx, "UseClientPluginContext: no plugin context available")
+		}
+		return streamer(next, desc, cc, method, opts...)
+	}
+}
+
 func withClientOpts(opts []grpc.DialOption, log logging.Logger) []grpc.DialOption {
 	if log == nil {
 		log = logging.Default()
@@ -125,6 +144,7 @@ func withClientOpts(opts []grpc.DialOption, log logging.Logger) []grpc.DialOptio
 		otelgrpc.WithFilter(streamingMethodFilter()),
 	)))
 	opts = append(opts, grpc.WithChainUnaryInterceptor(ClientPluginContextInterceptor(log)))
+	opts = append(opts, grpc.WithChainStreamInterceptor(StreamClientPluginContextInterceptor(log)))
 	return opts
 }
 

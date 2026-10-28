@@ -6,6 +6,7 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/interceptors"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
+	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 	"google.golang.org/grpc"
@@ -29,7 +30,8 @@ func metricPipe(t *testing.T, s *grpc.Server) *grpc.ClientConn {
 	l := bufconn.Listen(1 << 20)
 	go s.Serve(l)
 	t.Cleanup(func() { s.Stop(); l.Close() })
-	c, e := grpc.NewClient("passthrough:///metric-test", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return l.Dial() }), grpc.WithChainUnaryInterceptor(metricTestUnaryContext), grpc.WithChainStreamInterceptor(metricTestStreamContext))
+	options := append(sdk.GRPCDialOptions(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return l.Dial() }))
+	c, e := grpc.NewClient("passthrough:///metric-test", options...)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -76,7 +78,10 @@ func TestMetricResourceActualGRPCQueryAndPolling(t *testing.T) {
 			reference := &resourcev2.ResourceReference{Address: resourcev2.ResourceAddress{Provider: "opaque", Authority: "authority", Type: "opaque::type", ID: "id", Scope: []resourcev2.ScopeEntry{}}}
 			route := &resourcev2.AccessRoute{Connection: "connection"}
 			req := QueryRequest{ResourceKey: "opaque::type", ResourceData: body, Reference: reference, Route: route}
-			if _, e := c.Query(&types.PluginContext{Context: resourcev2.WithCatalogRevision(metricConnectionContext("connection"), pin)}, req); e != nil {
+			pinned := resourcev2.WithCatalogRevision(metricConnectionContext("connection"), pin)
+			pc := types.PluginContextFromContext(pinned)
+			pc.Context = pinned
+			if _, e := c.Query(pc, req); e != nil {
 				t.Fatal(e)
 			}
 			r := <-seen

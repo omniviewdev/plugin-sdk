@@ -250,3 +250,20 @@ After this correction, both full normal and race SDK suites again passed:
 21 passing packages and 16 packages without tests each. Independent wire
 source re-review reported no findings and ran no checks. Cross-module native
 integration remains parent-owned.
+
+### Production stream context and managed connection UI correction
+
+Actual host integration exposed missing production stream PluginContext
+serialization and connection list/update/delete dispatch coupled to the full
+native watch interface. SDK dial options now register the shared stream
+interceptor using the existing unary serializer, preserving context, selected
+connection and accepted metadata. Metric RPC fixtures now use production
+`sdk.GRPCDialOptions` and typed PluginContext values; their manual metadata
+exporters were removed so they cannot hide this integration gap.
+
+Individual managed connection methods dispatch independently of native watch
+support. An actual Controller RPC regression loads/replays, lists, updates and
+deletes an unstarted profile without advertising a browser or creating a client.
+Both complete normal and race suites passed again: 21 passing packages and
+16 packages without tests each. Independent source re-review found no issues
+and ran no checks; parent host/native/app gates remain separate.

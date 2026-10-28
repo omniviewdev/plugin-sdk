@@ -405,6 +405,11 @@ fallback or metadata-only profile is accepted. Stopped connection admission is
 `CONNECTION_ERROR`; stop/configuration refresh cancels its generation. Metric
 streams have owner-scoped output/subscriptions, so equal local subscription IDs
 on different actual connections cannot steal output or cancel each other.
+Production SDK dial options serialize PluginContext on streaming as well as
+unary calls, preserving accepted catalog/session metadata and cancellation.
+Connection list/update/delete RPCs require only their actual individual methods;
+an unstarted managed connection does not need a native WatchConnections method
+or implicit client start to remain usable in the connection UI.
 
 Each metric lane retains immutable admission provenance and compact used-ID
 tombstones. Reusing a local subscription ID in that same lane is `CONFLICT`,

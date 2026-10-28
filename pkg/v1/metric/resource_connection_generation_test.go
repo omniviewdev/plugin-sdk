@@ -17,7 +17,6 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 // The fixture binds the real started registry only when a test needs references.
@@ -56,7 +55,7 @@ func metricRegistry(t *testing.T, profiles []types.Connection, query QueryFunc, 
 }
 
 func metricConnectionContext(id string) context.Context {
-	return metadata.AppendToOutgoingContext(context.Background(), "omniview-connection-id", id, "omniview-request-id", "metric-diagnostic")
+	return types.WithPluginContext(context.Background(), &types.PluginContext{RequestID: "metric-diagnostic", Connection: &types.Connection{ID: id}})
 }
 func metricPin(t *testing.T, c *resourcev2.Controller[string], id string) string {
 	t.Helper()
@@ -229,7 +228,9 @@ func TestMetricReferenceBeforeOpenAndABARejectStaleCatalog(t *testing.T) {
 	assertStale := func() {
 		t.Helper()
 		before := calls.Load()
-		pc := &types.PluginContext{Context: resourcev2.WithCatalogRevision(metricConnectionContext("connection"), pin)}
+		pinned := resourcev2.WithCatalogRevision(metricConnectionContext("connection"), pin)
+		pc := types.PluginContextFromContext(pinned)
+		pc.Context = pinned
 		_, err := client.Query(pc, QueryRequest{Reference: metricReference(), Route: &resourcev2.AccessRoute{Connection: "connection"}})
 		if resourcev2.ErrorCode(err) != "RESET_REQUIRED" {
 			t.Fatalf("stale reference admitted: %v", err)
@@ -327,26 +328,6 @@ func TestMetricCustomNativeStreamUsesOwnedConfiguredProfile(t *testing.T) {
 			t.Fatal("native context cancellation missing")
 		}
 	}
-}
-
-func metricTestOutgoingContext(ctx context.Context) context.Context {
-	pc := types.PluginContextFromContext(ctx)
-	if pc == nil {
-		return ctx
-	}
-	if pc.RequestID != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "omniview-request-id", pc.RequestID)
-	}
-	if pc.Connection != nil {
-		ctx = metadata.AppendToOutgoingContext(ctx, "omniview-connection-id", pc.Connection.ID)
-	}
-	return ctx
-}
-func metricTestUnaryContext(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoke grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-	return invoke(metricTestOutgoingContext(ctx), method, req, reply, cc, opts...)
-}
-func metricTestStreamContext(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-	return streamer(metricTestOutgoingContext(ctx), desc, cc, method, opts...)
 }
 
 func TestMetricRetiredReferenceCannotBeReusedOrPublishQueuedNativeSample(t *testing.T) {
