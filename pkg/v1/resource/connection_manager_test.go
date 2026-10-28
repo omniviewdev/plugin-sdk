@@ -362,15 +362,17 @@ func TestCM_CheckConnectionInactive(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			creates := cp.CreateClientCalls.Load()
 			checks := cp.CheckConnectionCalls.Load()
 			status, err := mgr.CheckConnection(ctx, "conn-1")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if status.Status != types.ConnectionStatusDisconnected || status.Connection == nil || status.Connection.ID != "conn-1" {
+			if status.Status != types.ConnectionStatusDisconnected || status.Connection == nil ||
+				status.Connection.ID != "conn-1" || status.Connection.Name != "Test" {
 				t.Fatalf("expected known disconnected connection, got %#v", status)
 			}
-			if mgr.IsStarted("conn-1") || cp.CheckConnectionCalls.Load() != checks {
+			if mgr.IsStarted("conn-1") || cp.CreateClientCalls.Load() != creates || cp.CheckConnectionCalls.Load() != checks {
 				t.Fatal("checking an inactive connection must not start a client or probe the provider")
 			}
 			if _, err := mgr.CheckConnection(ctx, "missing"); err == nil {
