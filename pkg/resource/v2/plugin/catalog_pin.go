@@ -8,10 +8,6 @@ import (
 
 // checkCatalogRoute compares the caller's observation without acquiring a new pin.
 func (s *server) checkCatalogRoute(ctx context.Context, route *resourcepb.AccessRoute) error {
-	revision, _ := resourcev2.CatalogRevisionFromContext(ctx)
-	if err := resourcev2.ValidateCatalogRevision(revision); err != nil {
-		return err
-	}
 	in, err := resourcev2.FromProtoAccessRoute(route)
 	if err != nil {
 		return err

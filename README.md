@@ -365,6 +365,9 @@ exempt. The default observation pins one route: split multi-route source starts
 by their actual accepted revisions. Cross-route relationships additionally use
 `WithCatalogRevisionForRoute(ctx, provider, route, revision)` for each independently
 admitted target. A different route cannot reuse the source observation.
+A source may also use that qualified helper without a default observation.
+Matching provider/route pins take precedence on both direct calls and RPCs:
+a wrong qualified pin cannot fall back to a correct default.
 `omniview-resource-catalog-route-revisions-bin` carries the SDK-owned versioned
 binary list; hosts never concatenate IDs or parse tokens. It admits at most 256
 entries, each pin at most 4096 bytes, with a conservative 32 KiB aggregate

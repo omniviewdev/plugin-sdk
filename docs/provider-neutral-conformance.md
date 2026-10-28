@@ -234,3 +234,19 @@ normal barrier passed before the full race suite ran. Independent source reviews
 closed the identified wire/provenance/watch-reuse and lease-completion findings.
 Neither these SDK results nor source reviews certify parent host/provider/app
 integration or authorize publication.
+
+### Qualified-source RPC parity correction
+
+Selected Kubernetes integration exposed an actual RPC-only default-pin
+precheck that rejected a qualified source observation accepted by direct
+Controller calls. The precheck is removed; direct and wire admission both use
+provider/route-qualified precedence. Qualified-only source Get/watch succeeds;
+correct qualified pins override wrong defaults, while wrong qualified pins
+cannot fall back to correct defaults. Actual RPC regressions also reject stale,
+missing-route, wrong-provider and missing observations before native resource
+work. Catalog discovery itself remains exempt.
+
+After this correction, both full normal and race SDK suites again passed:
+21 passing packages and 16 packages without tests each. Independent wire
+source re-review reported no findings and ran no checks. Cross-module native
+integration remains parent-owned.

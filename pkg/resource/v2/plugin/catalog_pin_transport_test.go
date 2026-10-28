@@ -37,7 +37,7 @@ func TestCatalogPinTypedDuplicateFailsClosed(t *testing.T) {
 
 func TestCatalogPinRawMalformedAndMissingFailClosed(t *testing.T) {
 	for _, values := range [][]string{nil, {"same", "same"}, {""}, {string([]byte{255})}, {strings.Repeat("x", 4097)}} {
-		p := &countProvider{}
+		p := &qualifiedProvider{allowed: true}
 		s := grpc.NewServer()
 		RegisterServer(s, p)
 		conn := pipe(t, s)
@@ -48,7 +48,7 @@ func TestCatalogPinRawMalformedAndMissingFailClosed(t *testing.T) {
 			t.Fatalf("metadata %q: %v", values, err)
 		}
 		if p.calls.Load() != 0 {
-			t.Fatal("invalid pin dispatched catalog or operation")
+			t.Fatal("invalid pin dispatched native resource Get")
 		}
 	}
 }

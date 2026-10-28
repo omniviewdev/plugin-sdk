@@ -16,8 +16,9 @@ type routeCatalogRevision struct {
 }
 type routeCatalogRevisionsKey struct{}
 
-// WithCatalogRevisionForRoute records an explicit observation for a qualified
-// relationship target. It never discovers or substitutes a current catalog.
+// WithCatalogRevisionForRoute records an explicit provider/route observation for
+// a source or relationship target. It takes precedence over the explicit default
+// and never discovers or substitutes a current catalog.
 func WithCatalogRevisionForRoute(ctx context.Context, provider string, route AccessRoute, revision string) context.Context {
 	previous, _ := ctx.Value(routeCatalogRevisionsKey{}).([]routeCatalogRevision)
 	entries := make([]routeCatalogRevision, len(previous)+1)
