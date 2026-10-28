@@ -203,6 +203,20 @@ numbers decode as `float64`, objects as `map[string]any`, arrays as `[]any`, and
 JSON null as `nil`. Malformed or unsupported wire payloads return decoding errors;
 RPC status errors propagate unchanged.
 
+## Connection readiness
+
+The v1 connection manager's `CheckConnection` returns `DISCONNECTED` with the
+saved connection metadata for a configured connection that has never started
+or has stopped. It does not construct a client or probe the provider in that
+state. Unknown connection IDs remain errors; active connections still delegate
+to the provider and preserve its status or error.
+
+Providers must report readiness without implicitly connecting, refreshing
+credentials, or mutating resources. Start connections explicitly. Retained watch
+inventory alone does not prove that a client is connected. Consumers can use
+typed readiness to offer recovery without interpreting an absent client as an
+unrelated provider failure.
+
 ## Releasing the Go module
 
 The module is `github.com/omniviewdev/plugin-sdk` at the repository root.
