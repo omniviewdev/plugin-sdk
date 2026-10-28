@@ -63,14 +63,15 @@ type Value struct {
 // SchemaBinding reports absence separately from failed acquisition. Source
 // revisions and schema revisions are opaque equality tokens, never identity.
 type SchemaBinding struct {
-	State       string                   `json:"state"`
-	Revision    *string                  `json:"revision,omitempty"`
-	Dialect     string                   `json:"dialect,omitempty"`
-	Root        string                   `json:"root,omitempty"`
-	DocumentRef *SchemaDocumentReference `json:"documentRef,omitempty"`
-	Document    json.RawMessage          `json:"document,omitempty"`
-	Validation  string                   `json:"validation"`
-	Unvalidated []string                 `json:"unvalidated"`
+	State             string                   `json:"state"`
+	Revision          *string                  `json:"revision,omitempty"`
+	Dialect           string                   `json:"dialect,omitempty"`
+	Root              string                   `json:"root,omitempty"`
+	DocumentRef       *SchemaDocumentReference `json:"documentRef,omitempty"`
+	Document          json.RawMessage          `json:"document,omitempty"`
+	Validation        string                   `json:"validation"`
+	Unvalidated       []string                 `json:"unvalidated"`
+	UnavailableReason *string                  `json:"unavailableReason,omitempty"`
 }
 
 // SchemaDocumentReference shares one bounded raw document across catalog roots.

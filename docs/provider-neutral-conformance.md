@@ -267,3 +267,24 @@ deletes an unstarted profile without advertising a browser or creating a client.
 Both complete normal and race suites passed again: 21 passing packages and
 16 packages without tests each. Independent source re-review found no issues
 and ran no checks; parent host/native/app gates remain separate.
+
+### Safe unavailable-schema reason
+
+Canonical SchemaBinding adds optional `unavailableReason` (protobuf field 9):
+only state `unavailable`, a reviewed domain machine code, nonempty when present,
+at most 64 ASCII uppercase/underscore characters. Absence stays absent; explicit
+null, invalid state, unknown codes and diagnostics/URLs reject. Adapters,
+encoded-size accounting and raw predecode admission enforce the same policy.
+
+A real local native HTTP schema succeeds while another returns 403; the actual
+SDK gRPC result retains the native document and a generic unavailable schema
+role with `FORBIDDEN`, never the native diagnostic. Strict negative cases
+exercise native/JSON admission and the registered raw codec before generated
+decode. Full normal and race SDK suites passed again, 21 passing packages and
+16 packages without tests each; independent wire source review found no issues.
+
+The helper-only `sdk/grpc_metadata_test.go` was removed rather than retained as
+copy/mock-forwarding proof. Production SDK dial-option native RPC/HTTP metric
+and canonical-reference unary flows remain the executable metadata regressions.
+Kubernetes mixed native/Helm schema behavior and runtime bindings remain
+separately exercised parent integration gates.

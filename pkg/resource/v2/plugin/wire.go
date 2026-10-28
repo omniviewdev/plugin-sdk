@@ -55,6 +55,7 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 	var version uint64
 	versionField := utilityVersionField(d)
 	var durationSeconds, durationNanos int64
+	var schemaUnavailable, schemaReason bool
 	var keys map[wireKey]struct{}
 	records := 0
 	relationshipTargets := 0
@@ -194,6 +195,19 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 					return resourcev2.NewError("RESET_REQUIRED", "Invalid metric catalog admission pin.")
 				}
 			}
+			if d.FullName() == "omniview.resource.v2.SchemaBinding" {
+				if number == 1 {
+					schemaUnavailable = string(v) == "unavailable"
+				} else if number == 9 {
+					schemaReason = true
+					if len(v) > 64 {
+						return invalid("invalid schema unavailable reason")
+					}
+					if err := resourcev2.ValidateSchemaUnavailableReason(string(v)); err != nil {
+						return err
+					}
+				}
+			}
 			if len(v) > MaxBodyBytes && (f.Kind() != protoreflect.MessageKind || f.Message().Name() == "Value") {
 				return limited("resource document exceeds byte limit")
 			}
@@ -227,6 +241,9 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 				}
 			}
 		}
+	}
+	if schemaReason && !schemaUnavailable {
+		return invalid("schema unavailable reason requires unavailable state")
 	}
 	if versionField != 0 && version != 2 {
 		return unsupported("resource utility wire version must be 2")

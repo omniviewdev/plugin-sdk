@@ -424,6 +424,24 @@ func validateReference(r ResourceReference) error {
 	return token(r.Incarnation)
 }
 func validateRoute(r AccessRoute) error { return text(r.Connection, true) }
+
+// ValidateSchemaUnavailableReason admits only bounded, safe machine codes.
+// It never transports provider messages, URLs, credentials or diagnostics.
+func ValidateSchemaUnavailableReason(reason string) error {
+	if len(reason) == 0 || len(reason) > 64 {
+		return invalid("invalid schema unavailable reason")
+	}
+	for _, value := range reason {
+		if value != '_' && (value < 'A' || value > 'Z') {
+			return invalid("invalid schema unavailable reason")
+		}
+	}
+	if !IsErrorCode(reason) {
+		return invalid("unknown schema unavailable reason")
+	}
+	return nil
+}
+
 func validateSchema(s SchemaBinding) error {
 	if err := admission(s); err != nil {
 		return err
@@ -433,6 +451,14 @@ func validateSchema(s SchemaBinding) error {
 	}
 	if err := validateSchemaRoot(s.Root); err != nil {
 		return err
+	}
+	if s.UnavailableReason != nil {
+		if s.State != "unavailable" {
+			return invalid("schema unavailable reason requires unavailable state")
+		}
+		if err := ValidateSchemaUnavailableReason(*s.UnavailableReason); err != nil {
+			return err
+		}
 	}
 	if s.DocumentRef != nil {
 		if err := validateSchemaDocumentReference(*s.DocumentRef); err != nil {
@@ -890,7 +916,7 @@ func referenceWireSize(r ResourceReference) int {
 	return messageFieldSize(addressWireSize(r.Address)) + optionalStringFieldSize(r.Incarnation)
 }
 func schemaWireSize(s SchemaBinding) int {
-	size := stringFieldSize(s.State) + optionalStringFieldSize(s.Revision) + stringFieldSize(s.Dialect) + stringFieldSize(s.Validation) + stringFieldSize(s.Root)
+	size := stringFieldSize(s.State) + optionalStringFieldSize(s.Revision) + stringFieldSize(s.Dialect) + stringFieldSize(s.Validation) + stringFieldSize(s.Root) + optionalStringFieldSize(s.UnavailableReason)
 	if len(s.Document) > 0 {
 		size += messageFieldSize(len(s.Document))
 	}

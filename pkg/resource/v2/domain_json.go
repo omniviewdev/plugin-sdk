@@ -328,7 +328,7 @@ func (v *SchemaBinding) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	if err := rejectNullTokens(object, "revision", "documentRef"); err != nil {
+	if err := rejectNullTokens(object, "revision", "documentRef", "unavailableReason"); err != nil {
 		return err
 	}
 	value := SchemaBinding(out)

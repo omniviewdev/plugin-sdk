@@ -261,6 +261,14 @@ Empty root selects the whole document; other roots are local RFC6901 URI-fragmen
 JSON pointers. No implicit external IO or normalization occurs. P07 owns schema
 normalization. Editor schemas carry the same binding. An omitted representation
 is resolved only through the provider's explicit `DefaultRepresentation`.
+Unavailable bindings may carry optional `UnavailableReason` /
+`unavailableReason` (protobuf optional string field 9). When present it is a
+nonempty reviewed domain error code, at most 64 ASCII uppercase/underscore
+characters, allowed only with state `unavailable`. It is a safe machine code
+such as `FORBIDDEN`, never a provider diagnostic, URL or credential. Absence
+remains absence. A denied optional editor-schema source must not erase available
+native schemas or pretend an unavailable schema is absent/full validation;
+cancellation and retired source generations still fail the operation.
 
 The optional `BestEffortUpdateProvider` preserves native informer readiness,
 state replay, cancellation, and teardown with canonical records. Every update
