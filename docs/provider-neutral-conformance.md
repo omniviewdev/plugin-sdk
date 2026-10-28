@@ -296,8 +296,11 @@ separately exercised parent integration gates.
 It snapshots the sole configured-client registry, without catalog lookup,
 client creation, native health checking, waiting or taking a source lease.
 Configured stopped/retiring clients are DISCONNECTED, startup is PENDING,
-registered active clients are CONNECTED (not network-health proof), and a
-registered failed client is FAILED. Missing routes remain typed NOT_FOUND;
+registered active clients are CONNECTED (not network-health proof), and failed
+starts remain FAILED during and after native cleanup. A safe boolean lifecycle
+outcome is bounded by configured IDs; no failed client or error is retained.
+Explicit retry/stop, meaningful configuration replacement or removal clears it;
+display-only rename preserves it. Missing routes remain typed NOT_FOUND;
 unsupported implementations remain explicitly unavailable rather than inferred
 from the transport client's method set. No provider diagnostic strings travel
 in this registered-state status.
@@ -312,3 +315,17 @@ fictitious binding for a stopped connection.
 After this source settled, `make proto`, the full normal suite and then the full
 race suite passed: 21 packages passing and 16 packages without tests in each
 suite. Host aggregate/UI/native integration remains a separate parent gate.
+
+Independent readiness review found that removing failed client slots initially
+lost FAILED status. The follow-up actual RPC test covers failed CreateClient
+and failed OnStart after a real native HTTP allocation, including blocked
+native cleanup, zero leaked allocations, retained FAILED snapshots, explicit
+retry/stop/configuration clearing and display-only rename preservation.
+The child generation fixture also retains the actual request's admitted host
+authority while returning independently fetched native HTTP data; a distinct
+opaque host authority is exercised in the disposable child process.
+
+Focused independent source re-review closed the FAILED-state finding with no
+remaining findings and ran no checks. After both follow-up source changes
+settled, `make proto` and full normal then race suites passed again: 21 passing
+packages and 16 packages without tests in each suite.

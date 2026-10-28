@@ -487,8 +487,11 @@ sole registered lifecycle state. The existing connection RPC uses operation
 `state`; no client creation, native health probe, catalog, resource read, waiting
 for startup or source lease occurs. Configured stopped/retiring connections are
 `DISCONNECTED`, starting clients `PENDING`, registered active clients `CONNECTED`,
-and a registered failed client `FAILED`. Unknown IDs are typed `NOT_FOUND`.
-Status has no provider diagnostic strings; `CONNECTED` is not network health.
+and failed starts remain `FAILED` through and after native client cleanup.
+Only a safe per-configured-ID outcome is retained, never a client or error.
+Explicit retry/stop or a meaningful configuration replacement clears it;
+display-only edits preserve it. Unknown IDs are typed `NOT_FOUND`. Status has
+no provider diagnostic strings; `CONNECTED` is not network health.
 
 Read this state before catalog-based watch diagnostics. Unstarted connections
 remain visible as `DISCONNECTED`; only active clients proceed to actual catalog

@@ -68,7 +68,7 @@ func TestGenerationChild(t *testing.T) {
 			},
 			DestroyClient: func(context.Context, *string) error { return nil },
 		},
-		Registrations: []resource.Registration[string]{{Type: "native/object", Get: func(ctx context.Context, endpoint *string, _ resource.GetRequest) (resource.Record, error) {
+		Registrations: []resource.Registration[string]{{Type: "native/object", Get: func(ctx context.Context, endpoint *string, request resource.GetRequest) (resource.Record, error) {
 			n := reads.Add(1)
 			if err := os.WriteFile(filepath.Join(control, fmt.Sprintf("entered-%d", n)), []byte(*endpoint), 0600); err != nil {
 				return resource.Record{}, err
@@ -90,7 +90,7 @@ func TestGenerationChild(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(control, fmt.Sprintf("returned-%d", n)), body, 0600); err != nil {
 				return resource.Record{}, err
 			}
-			return resource.Record{Reference: generationReference(), Body: resource.Value{Kind: "map", Map: map[string]resource.Value{"native": {Kind: "string", String: string(body)}}}, Representation: generationRepresentation(), Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}}, nil
+			return resource.Record{Reference: request.Reference, Body: resource.Value{Kind: "map", Map: map[string]resource.Value{"native": {Kind: "string", String: string(body)}}}, Representation: generationRepresentation(), Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}}, nil
 		}}},
 	})
 	require.NoError(t, err)
@@ -283,4 +283,11 @@ func TestCurrentSDKGenerationFence(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "native-B", record.Body.Map["native"].String)
 	require.EqualValues(t, 2, bReads.Load())
+	hostReference := generationReference()
+	hostReference.Address.Authority = "host-issued/opaque:α"
+	record, err = provider.(resource.Getter).Get(resource.WithCatalogRevision(ctx, currentB.Revision), resource.GetRequest{Route: route, Reference: hostReference, Representation: "document"})
+	require.NoError(t, err)
+	require.Equal(t, hostReference, record.Reference)
+	require.Equal(t, "native-B", record.Body.Map["native"].String, "admitted host authority must retain actual selected native data")
+	require.EqualValues(t, 3, bReads.Load())
 }

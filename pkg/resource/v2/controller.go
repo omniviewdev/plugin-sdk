@@ -26,10 +26,13 @@ type Controller[ClientT any] struct {
 	disabled          map[string]struct{}
 	changing          map[string]bool
 	clients           map[string]*clientSlot[ClientT]
-	closeOnce         sync.Once
-	closeErr          error
-	updates           *updateManager[ClientT]
-	catalogNonce      [32]byte
+	// failedStarts retains only safe lifecycle outcome, never clients or errors.
+	// Entries are bounded by configured IDs and survive failed-client cleanup.
+	failedStarts map[string]bool
+	closeOnce    sync.Once
+	closeErr     error
+	updates      *updateManager[ClientT]
+	catalogNonce [32]byte
 }
 
 type clientSlot[T any] struct {
@@ -75,7 +78,7 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	controller := &Controller[T]{cfg: cfg, ctx: ctx, cancel: cancel, connections: make(map[string]types.Connection), nativeConnections: make(map[string]types.Connection), overrides: make(map[string]types.Connection), disabled: make(map[string]struct{}), changing: make(map[string]bool), clients: make(map[string]*clientSlot[T])}
+	controller := &Controller[T]{cfg: cfg, ctx: ctx, cancel: cancel, connections: make(map[string]types.Connection), nativeConnections: make(map[string]types.Connection), overrides: make(map[string]types.Connection), disabled: make(map[string]struct{}), changing: make(map[string]bool), clients: make(map[string]*clientSlot[T]), failedStarts: make(map[string]bool)}
 	controller.catalogNonce = nonce
 	controller.updates = newUpdateManager(controller)
 	return controller, nil
@@ -1058,6 +1061,13 @@ func (c *Controller[T]) startClient(s *clientSlot[T]) {
 		if recover() != nil {
 			s.err = NewError("INTERNAL", "Connection start handler panicked.")
 		}
+		if s.err != nil {
+			c.mu.Lock()
+			if c.clients[s.connection.ID] == s && !s.stopping && !c.changing[s.connection.ID] && s.ctx.Err() == nil {
+				c.failedStarts[s.connection.ID] = true
+			}
+			c.mu.Unlock()
+		}
 	}()
 	connection := cloneConnection(s.connection)
 	session, _ := SessionFromContext(s.ctx)
@@ -1112,6 +1122,7 @@ func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status 
 		s = &clientSlot[T]{connection: connection, ctx: clientCtx, cancel: cancel, ready: make(chan struct{})}
 		s.catalogNonce = nonce
 		c.clients[id] = s
+		delete(c.failedStarts, id)
 	}
 	c.mu.Unlock()
 	if created {
@@ -1194,6 +1205,11 @@ func (c *Controller[T]) StopConnection(ctx context.Context, id string) (connecti
 	}
 	c.mu.Lock()
 	s := c.clients[id]
+	delete(c.failedStarts, id)
+	if s != nil {
+		s.stopping = true
+		s.cancel()
+	}
 	c.mu.Unlock()
 	if s == nil {
 		return connection, nil
@@ -1225,8 +1241,11 @@ func (c *Controller[T]) GetConnectionStatus(ctx context.Context, id string) (typ
 		return types.ConnectionStatus{}, NewError("NOT_FOUND", "Connection was not loaded.")
 	}
 	state := types.ConnectionStatusDisconnected
+	if c.failedStarts[id] {
+		state = types.ConnectionStatusFailed
+	}
 	slot := c.clients[id]
-	if slot != nil && !slot.stopping && !c.changing[id] && slot.ctx.Err() == nil {
+	if !c.failedStarts[id] && slot != nil && !slot.stopping && !c.changing[id] && slot.ctx.Err() == nil {
 		select {
 		case <-slot.ready:
 			if slot.err == nil {
@@ -1503,6 +1522,7 @@ func (c *Controller[T]) applyInventory(ctx context.Context, native, overrides ma
 	}
 	var retired []*clientSlot[T]
 	for _, id := range changed {
+		delete(c.failedStarts, id)
 		if slot := c.clients[id]; slot != nil {
 			slot.stopping = true
 			slot.cancel()
