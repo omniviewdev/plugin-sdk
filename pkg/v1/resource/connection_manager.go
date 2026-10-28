@@ -459,13 +459,22 @@ func (m *connectionManager[ClientT]) GetNamespaces(ctx context.Context, connecti
 	return m.provider.GetNamespaces(ctx, client)
 }
 
-// CheckConnection delegates to the ConnectionProvider.
+// CheckConnection reports configured inactive connections without probing an absent client.
 func (m *connectionManager[ClientT]) CheckConnection(ctx context.Context, connectionID string) (types.ConnectionStatus, error) {
 	m.mu.RLock()
 	state, ok := m.conns[connectionID]
 	if !ok {
+		conn, loaded := m.loaded[connectionID]
+		if !loaded {
+			m.mu.RUnlock()
+			return types.ConnectionStatus{}, fmt.Errorf("connection %q not started", connectionID)
+		}
+		conn = cloneConnection(conn)
 		m.mu.RUnlock()
-		return types.ConnectionStatus{}, fmt.Errorf("connection %q not started", connectionID)
+		return types.ConnectionStatus{
+			Connection: &conn,
+			Status:     types.ConnectionStatusDisconnected,
+		}, nil
 	}
 	client := state.client
 	conn := cloneConnection(state.conn)

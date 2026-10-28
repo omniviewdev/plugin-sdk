@@ -345,6 +345,43 @@ func TestCM_CheckConnection(t *testing.T) {
 	}
 }
 
+func TestCM_CheckConnectionInactive(t *testing.T) {
+	for _, stopped := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stopped=%t", stopped), func(t *testing.T) {
+			ctx := context.Background()
+			cp := &resourcetest.StubConnectionProvider[string]{}
+			mgr := resource.NewConnectionManagerForTest(ctx, cp)
+			if _, err := mgr.LoadConnections(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if stopped {
+				if _, err := mgr.StartConnection(ctx, "conn-1"); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := mgr.StopConnection(ctx, "conn-1"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			creates := cp.CreateClientCalls.Load()
+			checks := cp.CheckConnectionCalls.Load()
+			status, err := mgr.CheckConnection(ctx, "conn-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status.Status != types.ConnectionStatusDisconnected || status.Connection == nil ||
+				status.Connection.ID != "conn-1" || status.Connection.Name != "Test" {
+				t.Fatalf("expected known disconnected connection, got %#v", status)
+			}
+			if mgr.IsStarted("conn-1") || cp.CreateClientCalls.Load() != creates || cp.CheckConnectionCalls.Load() != checks {
+				t.Fatal("checking an inactive connection must not start a client or probe the provider")
+			}
+			if _, err := mgr.CheckConnection(ctx, "missing"); err == nil {
+				t.Fatal("unknown connection must remain an error")
+			}
+		})
+	}
+}
+
 // --- CM-015: ListConnections returns all ---
 func TestCM_ListConnections(t *testing.T) {
 	ctx := context.Background()
