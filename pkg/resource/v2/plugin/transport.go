@@ -1,0 +1,80 @@
+package plugin
+
+import (
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/mem"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+)
+
+// TransportEnvelope preserves admission errors before generated protobuf decoding.
+type TransportEnvelope = envelope
+
+func NewTransportEnvelope(message proto.Message, legacyExec bool) *TransportEnvelope {
+	return &envelope{message: message, legacyExec: legacyExec}
+}
+func (e *envelope) AdmissionError() error { return e.err }
+func ResourceRPCError(err error) error    { return rpcError(err) }
+func ResourceDomainError(err error) error { return domainError(err) }
+
+func strictRoot(d protoreflect.MessageDescriptor) bool {
+	return d.ParentFile().Package() == "omniview.resource.v2" || d.FullName() == "omniview.sdk.exec.v1.SessionOptions" || d.FullName() == "omniview.sdk.exec.v1.ResourceSessionResponse"
+}
+
+// ValidateLegacyExecWire detects resource intent without discarding reserved fields.
+// Nonresource utility messages retain the generated protobuf admission policy.
+func ValidateLegacyExecWire(data []byte) error {
+	for len(data) > 0 {
+		n, t, k := protowire.ConsumeTag(data)
+		if k < 0 {
+			return invalid("malformed exec protobuf")
+		}
+		data = data[k:]
+		size := protowire.ConsumeFieldValue(n, t, data)
+		if size < 0 {
+			return invalid("malformed exec protobuf")
+		}
+		if n >= 6 && n <= 12 {
+			if n == 8 || n >= 9 {
+				return unsupported("resource sessions require CreateResourceSession")
+			}
+			if t != protowire.BytesType {
+				return invalid("invalid resource selector")
+			}
+			value, _ := protowire.ConsumeBytes(data)
+			if len(value) > 0 {
+				return unsupported("resource sessions require CreateResourceSession")
+			}
+		}
+		data = data[size:]
+	}
+	return nil
+}
+
+// ResponseAdmission retains response admission failures within one unary call.
+func ResponseAdmission() (grpc.CallOption, func() error) {
+	c := &responseAdmissionCodec{codec: encoding.GetCodecV2("proto")}
+	return grpc.ForceCodecV2(c), func() error { return c.err }
+}
+
+type responseAdmissionCodec struct {
+	codec encoding.CodecV2
+	err   error
+}
+
+func (c *responseAdmissionCodec) Name() string                           { return "proto" }
+func (c *responseAdmissionCodec) Marshal(v any) (mem.BufferSlice, error) { return c.codec.Marshal(v) }
+func (c *responseAdmissionCodec) Unmarshal(data mem.BufferSlice, v any) error {
+	p, ok := v.(proto.Message)
+	if !ok {
+		return c.codec.Unmarshal(data, v)
+	}
+	e := NewTransportEnvelope(p, false)
+	if err := c.codec.Unmarshal(data, e); err != nil {
+		return err
+	}
+	c.err = e.AdmissionError()
+	return nil
+}

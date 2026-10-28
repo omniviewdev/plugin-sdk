@@ -31,7 +31,7 @@ func ValidateWire(data []byte, descriptor protoreflect.MessageDescriptor) error 
 	if len(data) > MaxWireBytes {
 		return limited("resource message exceeds byte limit")
 	}
-	if descriptor.ParentFile().Package() != "omniview.resource.v2" {
+	if !strictRoot(descriptor) {
 		return unsupported("not a resource v2 message")
 	}
 	b := wireBudget{}
@@ -46,6 +46,7 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 		return limited("resource nodes exceed limit")
 	}
 	var seen, selections uint64
+	var version uint64
 	var keys map[wireKey]struct{}
 	records := 0
 	relationshipTargets := 0
@@ -85,7 +86,7 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 			}
 		}
 		mask := uint64(1) << f.Index()
-		if !f.IsList() && seen&mask != 0 {
+		if !f.IsList() && !f.IsMap() && seen&mask != 0 {
 			return invalid("duplicate singular protobuf field")
 		}
 		seen |= mask
@@ -118,6 +119,9 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 				return invalid("malformed protobuf varint")
 			}
 			data = data[m:]
+			if (d.FullName() == "omniview.sdk.exec.v1.SessionOptions" && number == 10) || (d.Name() == "ResourceSessionResponse" && number == 1) {
+				version = v
+			}
 			if f.Kind() == protoreflect.BoolKind && v > 1 {
 				return invalid("invalid protobuf boolean")
 			}
@@ -135,6 +139,9 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 				if seconds < -62135596800 || seconds > 253402300799 {
 					return invalid("timestamp outside RFC3339 range")
 				}
+			}
+			if d.FullName() == "google.protobuf.Timestamp" && ((number == 1 && (int64(v) < -62135596800 || int64(v) > 253402300799)) || (number == 2 && v >= 1000000000)) {
+				return invalid("invalid session timestamp")
 			}
 			if (d.Name() == "EnumerateInput" && number == 2 || d.Name() == "NativeQueryInput" && number == 4) && v > MaxPageSize {
 				return limited("page size exceeds limit")
@@ -174,6 +181,9 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 				if err := b.message(v, f.Message(), depth+1); err != nil {
 					return err
 				}
+				if f.IsMap() && duplicateWireKey(&keys, number, rawEntryKey(v)) {
+					return invalid("duplicate protobuf map key")
+				}
 				if d.Name() == "Record" && number == 2 {
 					kind, _, _ := protowire.ConsumeTag(v)
 					if kind != 9 {
@@ -194,6 +204,9 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 				}
 			}
 		}
+	}
+	if (d.FullName() == "omniview.sdk.exec.v1.SessionOptions" || d.Name() == "ResourceSessionResponse") && version != 2 {
+		return unsupported("resource session wire version must be 2")
 	}
 	if d.Name() == "Value" && selections == 0 {
 		return invalid("missing value selection")

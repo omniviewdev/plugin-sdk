@@ -7,6 +7,11 @@ import (
 	"io"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -71,6 +76,9 @@ func (c *PluginClient) CreateSession(
 	ctx *types.PluginContext,
 	opts SessionOptions,
 ) (*Session, error) {
+	if opts.HasResourceIntent() {
+		return c.CreateResourceSession(ctx, opts)
+	}
 	proto, err := opts.ToProto()
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert session options: %w", err)
@@ -83,6 +91,40 @@ func (c *PluginClient) CreateSession(
 		return nil, err
 	}
 	return NewSessionFromProto(resp.GetSession()), nil
+}
+
+func (c *PluginClient) CreateResourceSession(ctx *types.PluginContext, opts SessionOptions) (*Session, error) {
+	if err := ValidateResourceSessionOptions(opts); err != nil {
+		return nil, err
+	}
+	request, err := opts.ToProto()
+	if err != nil {
+		return nil, err
+	}
+	admission, admissionError := resourceplugin.ResponseAdmission()
+	response, err := c.client.CreateResourceSession(types.WithPluginContext(context.Background(), ctx), request,
+		grpc.MaxCallSendMsgSize(resourceplugin.MaxWireBytes), grpc.MaxCallRecvMsgSize(resourceplugin.MaxWireBytes), admission)
+	if err != nil {
+		decoded := resourceplugin.ResourceDomainError(err)
+		if status.Code(err) == codes.Unimplemented && resourcev2.ErrorCode(decoded) == "INTERNAL" {
+			return nil, resourcev2.NewError("UNSUPPORTED", "resource exec RPC unavailable")
+		}
+		return nil, decoded
+	}
+	if err := admissionError(); err != nil {
+		return nil, err
+	}
+	if response == nil || response.ResourceWireVersion != ResourceSessionWireVersion || response.Session == nil {
+		return nil, resourcev2.NewError("INVALID_REQUEST", "invalid resource exec response")
+	}
+	if response.Session.CreatedAt == nil || response.Session.CreatedAt.CheckValid() != nil {
+		return nil, resourcev2.NewError("INVALID_REQUEST", "Invalid resource session creation timestamp.")
+	}
+	session := NewSessionFromProto(response.Session)
+	if err := validateResourceSessionResult(session, opts.ID); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 func (c *PluginClient) AttachSession(

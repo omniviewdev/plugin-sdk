@@ -15,8 +15,9 @@ import (
 
 // envelope retains admission failure within a single RPC, without global state.
 type envelope struct {
-	message proto.Message
-	err     error
+	message    proto.Message
+	err        error
+	legacyExec bool
 }
 type strictCodec struct{ fallback encoding.CodecV2 }
 
@@ -36,7 +37,10 @@ func (c strictCodec) Unmarshal(data mem.BufferSlice, v any) error {
 	} else {
 		p, _ = v.(proto.Message)
 	}
-	if p == nil || p.ProtoReflect().Descriptor().ParentFile().Package() != "omniview.resource.v2" {
+	if !wrapped && p != nil && p.ProtoReflect().Descriptor().FullName() == "omniview.sdk.exec.v1.SessionOptions" {
+		return c.fallback.Unmarshal(data, v)
+	}
+	if p == nil || (!strictRoot(p.ProtoReflect().Descriptor()) && !(wrapped && e.legacyExec)) {
 		return c.fallback.Unmarshal(data, v)
 	}
 	var err error
@@ -45,7 +49,11 @@ func (c strictCodec) Unmarshal(data mem.BufferSlice, v any) error {
 	} else {
 		buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
 		defer buf.Free()
-		err = ValidateWire(buf.ReadOnlyData(), p.ProtoReflect().Descriptor())
+		if wrapped && e.legacyExec {
+			err = ValidateLegacyExecWire(buf.ReadOnlyData())
+		} else {
+			err = ValidateWire(buf.ReadOnlyData(), p.ProtoReflect().Descriptor())
+		}
 		if err == nil {
 			err = proto.Unmarshal(buf.ReadOnlyData(), p)
 		}

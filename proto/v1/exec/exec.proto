@@ -5,7 +5,7 @@ option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/exec;execpb";
 
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
-import "google/protobuf/struct.proto";
+import "proto/resource/v2/domain.proto";
 import "proto/v1/common/common.proto";
 
 message Session {
@@ -25,7 +25,16 @@ message SessionOptions {
   map<string, string> labels = 5;
   string resource_plugin = 6;
   string resource_key = 7;
-  google.protobuf.Struct resource_data = 8;
+  reserved 8;
+  omniview.resource.v2.Value resource_data = 9;
+  uint32 resource_wire_version = 10;
+  omniview.resource.v2.ResourceReference reference = 11;
+  omniview.resource.v2.AccessRoute route = 12;
+}
+
+message ResourceSessionResponse {
+  uint32 resource_wire_version = 1;
+  Session session = 2;
 }
 
 message ExecHandler {
@@ -147,6 +156,7 @@ service ExecPlugin {
   rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
   rpc ListSessions(google.protobuf.Empty) returns (ListSessionsResponse);
   rpc CreateSession(SessionOptions) returns (CreateSessionResponse);
+  rpc CreateResourceSession(SessionOptions) returns (ResourceSessionResponse);
   rpc AttachSession(AttachSessionRequest) returns (AttachSessionResponse);
   rpc DetachSession(AttachSessionRequest) returns (AttachSessionResponse);
   rpc CloseSession(CloseSessionRequest) returns (CloseSessionResponse);

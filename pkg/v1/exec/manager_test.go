@@ -12,8 +12,8 @@ import (
 
 func defaultHandler() exec.Handler {
 	return exec.Handler{
-		Plugin:   "test",
-		Resource: "pod",
+		Plugin:     "test",
+		Resource:   "pod",
 		TTYHandler: exectest.NoopTTYHandler(),
 	}
 }

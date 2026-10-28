@@ -4,7 +4,7 @@
 
 `internal/resourceconformance/{corpus,native,oracles}.go` retains the P44 credential-free native records and independent finite semantic oracles unchanged. The `current_*_test.go` probes now target the new-major handwritten `pkg/resource/v2` domain through an actual disposable go-plugin child and `pkg/resource/v2/plugin.GRPCPlugin{Impl: provider}`. Generated protobuf remains transport-only. The fixture implements `Provider` directly, without the legacy resource controller, mandatory CRUD methods, GVK metadata or v1 imports.
 
-The integration barrier exposed two fixture mismatches: undeclared route-catalog types correctly return `UNSUPPORTED`, and advertised update support requires an explicit `bestEffort` capability guarantee. Both expectations are corrected; integration owns the next settled-slice execution and retained acceptance evidence. Earlier P44 verification receipts apply only to the old boundary and do not certify this port.
+The settled integration barrier caught two fixture mismatches: undeclared route-catalog types return `UNSUPPORTED`, and advertised update support requires an explicit `bestEffort` capability guarantee. Corrected expectations passed in the normal/race suites recorded below. Earlier P44 verification receipts apply only to the old boundary and do not certify this port.
 
 ## Native profiles
 
@@ -136,3 +136,36 @@ source corrections with no remaining findings in their bounded re-reviews.
 They did not run checks. Host/provider integration, native completeness,
 authorization, app smoke and final cross-repository acceptance remain parent
 gates; this SDK receipt does not certify them.
+
+## Resource exec correction receipt — 2026-10-28
+
+Resource exec now uses the same exec service's explicit `CreateResourceSession`
+RPC and session engine. Canonical Value field 9 and exact resource wire version
+`2` field 10 replace reserved Struct field 8. Any resource intent selects this
+operation, including body-free selectors. Optional actual C01 reference/route
+fields retain their canonical meaning; utility selectors remain opaque inputs
+and neither invent identity nor require an unrelated Get.
+
+Actual gRPC probes transport signed/unsigned boundaries, nested values,
+pre-epoch timestamps, positive and negative zero, and 70 KiB/3 MiB bodies.
+Adversarial raw request and response probes cover malformed tagged values,
+duplicate fields, invalid UTF-8/version, legacy field 8, and wire/body bounds.
+An actual old server returns unsupported without an old native-method call.
+Typed native C02 classes survive the new RPC; transport loss remains distinct.
+Independent SDK-server and malicious-generated-server probes reject missing or
+changed response IDs while accepting an actual generated ID when none was
+requested.
+
+Manager regressions exercise native admission cancellation/deadline, no orphan
+on rejection, and detached lifetime only after acceptance. A real Manager-backed
+nonresource gRPC probe performs ordinary creation, attachment, output streaming,
+closure and close-signal forwarding; resource admission does not replace that
+terminal lifecycle.
+
+The final settled SDK barrier passed both `GOWORK=off go test ./... -count=1`
+and `GOWORK=off go test -race ./... -count=1`: each reported 20 passing packages
+and 17 packages without tests. The first exec barrier exposed incorrect
+`int`/`uint` test fixture tags; canonical `int64`/`uint64` tags are corrected.
+Independent wire-admission and lifecycle source re-reviews reported no remaining
+findings; reviewers did not execute checks. Host/TypeScript bindings, native
+Kubernetes/app smoke, publication and coordinated acceptance remain parent gates.

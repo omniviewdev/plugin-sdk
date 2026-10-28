@@ -271,6 +271,38 @@ P05 owns stronger source continuity. The obsolete unversioned and v1 resource
 composition/Find/mandatory-CRUD APIs and RPCs are removed, not re-exported.
 
 
+## Resource-scoped exec
+
+Exec retains its existing session engine, IDs, terminal streams and lifecycle.
+Resource creation uses the explicit `CreateResourceSession` operation on that
+same service: `SessionOptions.ResourceData` is an optional canonical
+`*resourcev2.Value`, not a generic map or `google.protobuf.Struct`. Protobuf
+field 8 is reserved; canonical Value is field 9, resource wire version `2`
+is field 10, and optional actual C01 reference/access route are fields 11/12.
+Bodies, when supplied, are map values. Exact integers, timestamps and negative
+double zero cross this operation without a JSON-number/Struct conversion.
+
+`CreateSession` routes any resource intent—including opaque resource selectors
+without a body—to the new RPC. The old operation rejects resource intent and
+legacy field 8 before native dispatch. An older server returns `UNSUPPORTED`;
+there is no fallback to its old terminal method. Plain terminal creation remains
+the nonresource operation. The go-plugin transport protocol remains `1`.
+
+`ResourceSessionProvider.CreateResourceSession` is the optional native creation
+trait. Existing opaque utility selectors/parameter builders are inputs, not
+canonical identity or permission grants. An actual reference may supply routing
+selectors; the SDK never invents a reference, authority, resource body or Get
+permission. Explicit routes must agree with the admitted connection context.
+Native admission observes caller cancellation/deadline; accepted sessions then
+retain the existing detached terminal lifetime.
+
+Both new RPC directions enforce bounded raw protobuf admission before generated
+decoding, including canonical Value, duplicate/unknown fields, UTF-8 and exact
+wire version. Source adapters preflight body/frame allocation under the resource
+16 MiB/32 MiB ceilings. Responses must contain a nonempty session ID, matching
+an explicit requested ID, and a valid creation timestamp. Typed C02 errors are
+preserved; malformed input and unsupported operations cannot invoke native exec.
+
 ## Resource invocation and action migration (C02)
 
 Catalog discovery and ancillary calls return explicit errors. Transport/discovery

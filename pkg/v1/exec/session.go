@@ -2,16 +2,15 @@ package exec
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"slices"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
 
@@ -71,7 +70,7 @@ type sessionState struct {
 	cancel   context.CancelFunc
 	stopChan chan error
 	resize   chan SessionResizeInput
-	done     chan struct{}   // closed when wg reaches zero
+	done     chan struct{}  // closed when wg reaches zero
 	wg       sync.WaitGroup // tracks handleStream + handleSignals
 
 	ttyResize bool // if true, manager calls terminal.Resize(); else sends to resize chan
@@ -95,7 +94,6 @@ func (ss *sessionState) setAttached(v bool) {
 	ss.mu.Unlock()
 }
 
-
 func (ss *sessionState) getBufferData() []byte {
 	if ss.buffer == nil {
 		return nil
@@ -114,52 +112,16 @@ func (ss *sessionState) waitDone() <-chan struct{} {
 
 // SessionOptions contains options for creating a new terminal session.
 type SessionOptions struct {
-	Params         map[string]string      `json:"params"`
-	Labels         map[string]string      `json:"labels"`
-	ID             string                 `json:"id"`
-	ResourcePlugin string                 `json:"resource_plugin"`
-	ResourceKey    string                 `json:"resource_key"`
-	ResourceData   map[string]interface{} `json:"resource_data"`
-	Command        []string               `json:"command"`
-	TTY            bool                   `json:"tty"`
-}
-
-func NewSessionOptionsFromProto(opts *execpb.SessionOptions) *SessionOptions {
-	var resourceData map[string]interface{}
-	if rd := opts.GetResourceData(); rd != nil {
-		resourceData = rd.AsMap()
-	}
-	return &SessionOptions{
-		ID:             opts.GetId(),
-		Command:        opts.GetCommand(),
-		TTY:            opts.GetTty(),
-		Params:         opts.GetParams(),
-		Labels:         opts.GetLabels(),
-		ResourcePlugin: opts.GetResourcePlugin(),
-		ResourceKey:    opts.GetResourceKey(),
-		ResourceData:   resourceData,
-	}
-}
-
-func (o *SessionOptions) ToProto() (*execpb.SessionOptions, error) {
-	if o == nil {
-		return nil, fmt.Errorf("nil SessionOptions receiver")
-	}
-	data, err := structpb.NewStruct(o.ResourceData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert resource data: %w", err)
-	}
-
-	return &execpb.SessionOptions{
-		Id:             o.ID,
-		Command:        o.Command,
-		Tty:            o.TTY,
-		Params:         o.Params,
-		Labels:         o.Labels,
-		ResourcePlugin: o.ResourcePlugin,
-		ResourceKey:    o.ResourceKey,
-		ResourceData:   data,
-	}, nil
+	Params         map[string]string             `json:"params"`
+	Labels         map[string]string             `json:"labels"`
+	ID             string                        `json:"id"`
+	ResourcePlugin string                        `json:"resource_plugin"`
+	ResourceKey    string                        `json:"resource_key"`
+	ResourceData   *resourcev2.Value             `json:"resource_data,omitempty"`
+	Reference      *resourcev2.ResourceReference `json:"reference,omitempty"`
+	Route          *resourcev2.AccessRoute       `json:"route,omitempty"`
+	Command        []string                      `json:"command"`
+	TTY            bool                          `json:"tty"`
 }
 
 // SessionResizeInput carries resize dimensions for a session.

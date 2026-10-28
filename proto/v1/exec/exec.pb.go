@@ -7,11 +7,11 @@
 package execpb
 
 import (
+	v2 "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 	common "github.com/omniviewdev/plugin-sdk/proto/v1/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
-	structpb "google.golang.org/protobuf/types/known/structpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
@@ -141,7 +141,7 @@ func (x StreamOutput_Target) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use StreamOutput_Target.Descriptor instead.
 func (StreamOutput_Target) EnumDescriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{16, 0}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{17, 0}
 }
 
 type Session struct {
@@ -229,17 +229,20 @@ func (x *Session) GetCreatedAt() *timestamppb.Timestamp {
 }
 
 type SessionOptions struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Command        []string               `protobuf:"bytes,2,rep,name=command,proto3" json:"command,omitempty"`
-	Tty            bool                   `protobuf:"varint,3,opt,name=tty,proto3" json:"tty,omitempty"`
-	Params         map[string]string      `protobuf:"bytes,4,rep,name=params,proto3" json:"params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Labels         map[string]string      `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	ResourcePlugin string                 `protobuf:"bytes,6,opt,name=resource_plugin,json=resourcePlugin,proto3" json:"resource_plugin,omitempty"`
-	ResourceKey    string                 `protobuf:"bytes,7,opt,name=resource_key,json=resourceKey,proto3" json:"resource_key,omitempty"`
-	ResourceData   *structpb.Struct       `protobuf:"bytes,8,opt,name=resource_data,json=resourceData,proto3" json:"resource_data,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Id                  string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Command             []string               `protobuf:"bytes,2,rep,name=command,proto3" json:"command,omitempty"`
+	Tty                 bool                   `protobuf:"varint,3,opt,name=tty,proto3" json:"tty,omitempty"`
+	Params              map[string]string      `protobuf:"bytes,4,rep,name=params,proto3" json:"params,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Labels              map[string]string      `protobuf:"bytes,5,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ResourcePlugin      string                 `protobuf:"bytes,6,opt,name=resource_plugin,json=resourcePlugin,proto3" json:"resource_plugin,omitempty"`
+	ResourceKey         string                 `protobuf:"bytes,7,opt,name=resource_key,json=resourceKey,proto3" json:"resource_key,omitempty"`
+	ResourceData        *v2.Value              `protobuf:"bytes,9,opt,name=resource_data,json=resourceData,proto3" json:"resource_data,omitempty"`
+	ResourceWireVersion uint32                 `protobuf:"varint,10,opt,name=resource_wire_version,json=resourceWireVersion,proto3" json:"resource_wire_version,omitempty"`
+	Reference           *v2.ResourceReference  `protobuf:"bytes,11,opt,name=reference,proto3" json:"reference,omitempty"`
+	Route               *v2.AccessRoute        `protobuf:"bytes,12,opt,name=route,proto3" json:"route,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *SessionOptions) Reset() {
@@ -321,9 +324,82 @@ func (x *SessionOptions) GetResourceKey() string {
 	return ""
 }
 
-func (x *SessionOptions) GetResourceData() *structpb.Struct {
+func (x *SessionOptions) GetResourceData() *v2.Value {
 	if x != nil {
 		return x.ResourceData
+	}
+	return nil
+}
+
+func (x *SessionOptions) GetResourceWireVersion() uint32 {
+	if x != nil {
+		return x.ResourceWireVersion
+	}
+	return 0
+}
+
+func (x *SessionOptions) GetReference() *v2.ResourceReference {
+	if x != nil {
+		return x.Reference
+	}
+	return nil
+}
+
+func (x *SessionOptions) GetRoute() *v2.AccessRoute {
+	if x != nil {
+		return x.Route
+	}
+	return nil
+}
+
+type ResourceSessionResponse struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	ResourceWireVersion uint32                 `protobuf:"varint,1,opt,name=resource_wire_version,json=resourceWireVersion,proto3" json:"resource_wire_version,omitempty"`
+	Session             *Session               `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *ResourceSessionResponse) Reset() {
+	*x = ResourceSessionResponse{}
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceSessionResponse) ProtoMessage() {}
+
+func (x *ResourceSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceSessionResponse.ProtoReflect.Descriptor instead.
+func (*ResourceSessionResponse) Descriptor() ([]byte, []int) {
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ResourceSessionResponse) GetResourceWireVersion() uint32 {
+	if x != nil {
+		return x.ResourceWireVersion
+	}
+	return 0
+}
+
+func (x *ResourceSessionResponse) GetSession() *Session {
+	if x != nil {
+		return x.Session
 	}
 	return nil
 }
@@ -340,7 +416,7 @@ type ExecHandler struct {
 
 func (x *ExecHandler) Reset() {
 	*x = ExecHandler{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[2]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -352,7 +428,7 @@ func (x *ExecHandler) String() string {
 func (*ExecHandler) ProtoMessage() {}
 
 func (x *ExecHandler) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[2]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -365,7 +441,7 @@ func (x *ExecHandler) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecHandler.ProtoReflect.Descriptor instead.
 func (*ExecHandler) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{2}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ExecHandler) GetPlugin() string {
@@ -405,7 +481,7 @@ type GetSupportedResourcesResponse struct {
 
 func (x *GetSupportedResourcesResponse) Reset() {
 	*x = GetSupportedResourcesResponse{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[3]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -417,7 +493,7 @@ func (x *GetSupportedResourcesResponse) String() string {
 func (*GetSupportedResourcesResponse) ProtoMessage() {}
 
 func (x *GetSupportedResourcesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[3]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -430,7 +506,7 @@ func (x *GetSupportedResourcesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSupportedResourcesResponse.ProtoReflect.Descriptor instead.
 func (*GetSupportedResourcesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{3}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GetSupportedResourcesResponse) GetHandlers() []*ExecHandler {
@@ -453,7 +529,7 @@ type CreateSessionRequest struct {
 
 func (x *CreateSessionRequest) Reset() {
 	*x = CreateSessionRequest{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[4]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -465,7 +541,7 @@ func (x *CreateSessionRequest) String() string {
 func (*CreateSessionRequest) ProtoMessage() {}
 
 func (x *CreateSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[4]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -478,7 +554,7 @@ func (x *CreateSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSessionRequest.ProtoReflect.Descriptor instead.
 func (*CreateSessionRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{4}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CreateSessionRequest) GetId() string {
@@ -527,7 +603,7 @@ type CreateSessionResponse struct {
 
 func (x *CreateSessionResponse) Reset() {
 	*x = CreateSessionResponse{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[5]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -539,7 +615,7 @@ func (x *CreateSessionResponse) String() string {
 func (*CreateSessionResponse) ProtoMessage() {}
 
 func (x *CreateSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[5]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -552,7 +628,7 @@ func (x *CreateSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateSessionResponse.ProtoReflect.Descriptor instead.
 func (*CreateSessionResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{5}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CreateSessionResponse) GetSession() *Session {
@@ -585,7 +661,7 @@ type GetSessionRequest struct {
 
 func (x *GetSessionRequest) Reset() {
 	*x = GetSessionRequest{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[6]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -597,7 +673,7 @@ func (x *GetSessionRequest) String() string {
 func (*GetSessionRequest) ProtoMessage() {}
 
 func (x *GetSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[6]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -610,7 +686,7 @@ func (x *GetSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionRequest.ProtoReflect.Descriptor instead.
 func (*GetSessionRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{6}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetSessionRequest) GetId() string {
@@ -631,7 +707,7 @@ type GetSessionResponse struct {
 
 func (x *GetSessionResponse) Reset() {
 	*x = GetSessionResponse{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[7]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -643,7 +719,7 @@ func (x *GetSessionResponse) String() string {
 func (*GetSessionResponse) ProtoMessage() {}
 
 func (x *GetSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[7]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -656,7 +732,7 @@ func (x *GetSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSessionResponse.ProtoReflect.Descriptor instead.
 func (*GetSessionResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{7}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetSessionResponse) GetSession() *Session {
@@ -691,7 +767,7 @@ type ListSessionsResponse struct {
 
 func (x *ListSessionsResponse) Reset() {
 	*x = ListSessionsResponse{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[8]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -703,7 +779,7 @@ func (x *ListSessionsResponse) String() string {
 func (*ListSessionsResponse) ProtoMessage() {}
 
 func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[8]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -716,7 +792,7 @@ func (x *ListSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionsResponse.ProtoReflect.Descriptor instead.
 func (*ListSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{8}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListSessionsResponse) GetSessions() []*Session {
@@ -749,7 +825,7 @@ type AttachSessionRequest struct {
 
 func (x *AttachSessionRequest) Reset() {
 	*x = AttachSessionRequest{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[9]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -761,7 +837,7 @@ func (x *AttachSessionRequest) String() string {
 func (*AttachSessionRequest) ProtoMessage() {}
 
 func (x *AttachSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[9]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -774,7 +850,7 @@ func (x *AttachSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachSessionRequest.ProtoReflect.Descriptor instead.
 func (*AttachSessionRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{9}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AttachSessionRequest) GetId() string {
@@ -794,7 +870,7 @@ type AttachSessionResponse struct {
 
 func (x *AttachSessionResponse) Reset() {
 	*x = AttachSessionResponse{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[10]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -806,7 +882,7 @@ func (x *AttachSessionResponse) String() string {
 func (*AttachSessionResponse) ProtoMessage() {}
 
 func (x *AttachSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[10]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -819,7 +895,7 @@ func (x *AttachSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttachSessionResponse.ProtoReflect.Descriptor instead.
 func (*AttachSessionResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{10}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AttachSessionResponse) GetSession() *Session {
@@ -845,7 +921,7 @@ type CloseSessionRequest struct {
 
 func (x *CloseSessionRequest) Reset() {
 	*x = CloseSessionRequest{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[11]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -857,7 +933,7 @@ func (x *CloseSessionRequest) String() string {
 func (*CloseSessionRequest) ProtoMessage() {}
 
 func (x *CloseSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[11]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -870,7 +946,7 @@ func (x *CloseSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseSessionRequest.ProtoReflect.Descriptor instead.
 func (*CloseSessionRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{11}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CloseSessionRequest) GetId() string {
@@ -890,7 +966,7 @@ type CloseSessionResponse struct {
 
 func (x *CloseSessionResponse) Reset() {
 	*x = CloseSessionResponse{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[12]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -902,7 +978,7 @@ func (x *CloseSessionResponse) String() string {
 func (*CloseSessionResponse) ProtoMessage() {}
 
 func (x *CloseSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[12]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -915,7 +991,7 @@ func (x *CloseSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseSessionResponse.ProtoReflect.Descriptor instead.
 func (*CloseSessionResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{12}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CloseSessionResponse) GetSuccess() bool {
@@ -943,7 +1019,7 @@ type ResizeSessionRequest struct {
 
 func (x *ResizeSessionRequest) Reset() {
 	*x = ResizeSessionRequest{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[13]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -955,7 +1031,7 @@ func (x *ResizeSessionRequest) String() string {
 func (*ResizeSessionRequest) ProtoMessage() {}
 
 func (x *ResizeSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[13]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -968,7 +1044,7 @@ func (x *ResizeSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResizeSessionRequest.ProtoReflect.Descriptor instead.
 func (*ResizeSessionRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{13}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ResizeSessionRequest) GetId() string {
@@ -1002,7 +1078,7 @@ type ResizeSessionResponse struct {
 
 func (x *ResizeSessionResponse) Reset() {
 	*x = ResizeSessionResponse{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[14]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1014,7 +1090,7 @@ func (x *ResizeSessionResponse) String() string {
 func (*ResizeSessionResponse) ProtoMessage() {}
 
 func (x *ResizeSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[14]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1027,7 +1103,7 @@ func (x *ResizeSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResizeSessionResponse.ProtoReflect.Descriptor instead.
 func (*ResizeSessionResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{14}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ResizeSessionResponse) GetSuccess() bool {
@@ -1054,7 +1130,7 @@ type StreamInput struct {
 
 func (x *StreamInput) Reset() {
 	*x = StreamInput{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[15]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1066,7 +1142,7 @@ func (x *StreamInput) String() string {
 func (*StreamInput) ProtoMessage() {}
 
 func (x *StreamInput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[15]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1079,7 +1155,7 @@ func (x *StreamInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamInput.ProtoReflect.Descriptor instead.
 func (*StreamInput) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{15}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *StreamInput) GetId() string {
@@ -1110,7 +1186,7 @@ type StreamOutput struct {
 
 func (x *StreamOutput) Reset() {
 	*x = StreamOutput{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[16]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1122,7 +1198,7 @@ func (x *StreamOutput) String() string {
 func (*StreamOutput) ProtoMessage() {}
 
 func (x *StreamOutput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[16]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1135,7 +1211,7 @@ func (x *StreamOutput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamOutput.ProtoReflect.Descriptor instead.
 func (*StreamOutput) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{16}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *StreamOutput) GetId() string {
@@ -1193,7 +1269,7 @@ type StreamError struct {
 
 func (x *StreamError) Reset() {
 	*x = StreamError{}
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[17]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1205,7 +1281,7 @@ func (x *StreamError) String() string {
 func (*StreamError) ProtoMessage() {}
 
 func (x *StreamError) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_exec_exec_proto_msgTypes[17]
+	mi := &file_proto_v1_exec_exec_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1218,7 +1294,7 @@ func (x *StreamError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamError.ProtoReflect.Descriptor instead.
 func (*StreamError) Descriptor() ([]byte, []int) {
-	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{17}
+	return file_proto_v1_exec_exec_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *StreamError) GetTitle() string {
@@ -1260,7 +1336,7 @@ var File_proto_v1_exec_exec_proto protoreflect.FileDescriptor
 
 const file_proto_v1_exec_exec_proto_rawDesc = "" +
 	"\n" +
-	"\x18proto/v1/exec/exec.proto\x12\x14omniview.sdk.exec.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1cproto/v1/common/common.proto\"\x86\x03\n" +
+	"\x18proto/v1/exec/exec.proto\x12\x14omniview.sdk.exec.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1eproto/resource/v2/domain.proto\x1a\x1cproto/v1/common/common.proto\"\x86\x03\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\battached\x18\x02 \x01(\bR\battached\x12\x18\n" +
@@ -1274,7 +1350,7 @@ const file_proto_v1_exec_exec_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe0\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9e\x05\n" +
 	"\x0eSessionOptions\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12\x10\n" +
@@ -1282,14 +1358,21 @@ const file_proto_v1_exec_exec_proto_rawDesc = "" +
 	"\x06params\x18\x04 \x03(\v20.omniview.sdk.exec.v1.SessionOptions.ParamsEntryR\x06params\x12H\n" +
 	"\x06labels\x18\x05 \x03(\v20.omniview.sdk.exec.v1.SessionOptions.LabelsEntryR\x06labels\x12'\n" +
 	"\x0fresource_plugin\x18\x06 \x01(\tR\x0eresourcePlugin\x12!\n" +
-	"\fresource_key\x18\a \x01(\tR\vresourceKey\x12<\n" +
-	"\rresource_data\x18\b \x01(\v2\x17.google.protobuf.StructR\fresourceData\x1a9\n" +
+	"\fresource_key\x18\a \x01(\tR\vresourceKey\x12@\n" +
+	"\rresource_data\x18\t \x01(\v2\x1b.omniview.resource.v2.ValueR\fresourceData\x122\n" +
+	"\x15resource_wire_version\x18\n" +
+	" \x01(\rR\x13resourceWireVersion\x12E\n" +
+	"\treference\x18\v \x01(\v2'.omniview.resource.v2.ResourceReferenceR\treference\x127\n" +
+	"\x05route\x18\f \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\x1a9\n" +
 	"\vParamsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbe\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\b\x10\t\"\x86\x01\n" +
+	"\x17ResourceSessionResponse\x122\n" +
+	"\x15resource_wire_version\x18\x01 \x01(\rR\x13resourceWireVersion\x127\n" +
+	"\asession\x18\x02 \x01(\v2\x1d.omniview.sdk.exec.v1.SessionR\asession\"\xbe\x01\n" +
 	"\vExecHandler\x12\x16\n" +
 	"\x06plugin\x18\x01 \x01(\tR\x06plugin\x12\x1a\n" +
 	"\bresource\x18\x02 \x01(\tR\bresource\x12R\n" +
@@ -1375,14 +1458,15 @@ const file_proto_v1_exec_exec_proto_rawDesc = "" +
 	"\x15STREAM_SIGNAL_SIGUSR2\x10\b\x12\x1a\n" +
 	"\x16STREAM_SIGNAL_SIGWINCH\x10\t\x12\x17\n" +
 	"\x13STREAM_SIGNAL_ERROR\x10\n" +
-	"2\x85\a\n" +
+	"2\xf3\a\n" +
 	"\n" +
 	"ExecPlugin\x12d\n" +
 	"\x15GetSupportedResources\x12\x16.google.protobuf.Empty\x1a3.omniview.sdk.exec.v1.GetSupportedResourcesResponse\x12_\n" +
 	"\n" +
 	"GetSession\x12'.omniview.sdk.exec.v1.GetSessionRequest\x1a(.omniview.sdk.exec.v1.GetSessionResponse\x12R\n" +
 	"\fListSessions\x12\x16.google.protobuf.Empty\x1a*.omniview.sdk.exec.v1.ListSessionsResponse\x12b\n" +
-	"\rCreateSession\x12$.omniview.sdk.exec.v1.SessionOptions\x1a+.omniview.sdk.exec.v1.CreateSessionResponse\x12h\n" +
+	"\rCreateSession\x12$.omniview.sdk.exec.v1.SessionOptions\x1a+.omniview.sdk.exec.v1.CreateSessionResponse\x12l\n" +
+	"\x15CreateResourceSession\x12$.omniview.sdk.exec.v1.SessionOptions\x1a-.omniview.sdk.exec.v1.ResourceSessionResponse\x12h\n" +
 	"\rAttachSession\x12*.omniview.sdk.exec.v1.AttachSessionRequest\x1a+.omniview.sdk.exec.v1.AttachSessionResponse\x12h\n" +
 	"\rDetachSession\x12*.omniview.sdk.exec.v1.AttachSessionRequest\x1a+.omniview.sdk.exec.v1.AttachSessionResponse\x12e\n" +
 	"\fCloseSession\x12).omniview.sdk.exec.v1.CloseSessionRequest\x1a*.omniview.sdk.exec.v1.CloseSessionResponse\x12h\n" +
@@ -1402,80 +1486,88 @@ func file_proto_v1_exec_exec_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_v1_exec_exec_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_v1_exec_exec_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_proto_v1_exec_exec_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_proto_v1_exec_exec_proto_goTypes = []any{
 	(StreamSignal)(0),                     // 0: omniview.sdk.exec.v1.StreamSignal
 	(StreamOutput_Target)(0),              // 1: omniview.sdk.exec.v1.StreamOutput.Target
 	(*Session)(nil),                       // 2: omniview.sdk.exec.v1.Session
 	(*SessionOptions)(nil),                // 3: omniview.sdk.exec.v1.SessionOptions
-	(*ExecHandler)(nil),                   // 4: omniview.sdk.exec.v1.ExecHandler
-	(*GetSupportedResourcesResponse)(nil), // 5: omniview.sdk.exec.v1.GetSupportedResourcesResponse
-	(*CreateSessionRequest)(nil),          // 6: omniview.sdk.exec.v1.CreateSessionRequest
-	(*CreateSessionResponse)(nil),         // 7: omniview.sdk.exec.v1.CreateSessionResponse
-	(*GetSessionRequest)(nil),             // 8: omniview.sdk.exec.v1.GetSessionRequest
-	(*GetSessionResponse)(nil),            // 9: omniview.sdk.exec.v1.GetSessionResponse
-	(*ListSessionsResponse)(nil),          // 10: omniview.sdk.exec.v1.ListSessionsResponse
-	(*AttachSessionRequest)(nil),          // 11: omniview.sdk.exec.v1.AttachSessionRequest
-	(*AttachSessionResponse)(nil),         // 12: omniview.sdk.exec.v1.AttachSessionResponse
-	(*CloseSessionRequest)(nil),           // 13: omniview.sdk.exec.v1.CloseSessionRequest
-	(*CloseSessionResponse)(nil),          // 14: omniview.sdk.exec.v1.CloseSessionResponse
-	(*ResizeSessionRequest)(nil),          // 15: omniview.sdk.exec.v1.ResizeSessionRequest
-	(*ResizeSessionResponse)(nil),         // 16: omniview.sdk.exec.v1.ResizeSessionResponse
-	(*StreamInput)(nil),                   // 17: omniview.sdk.exec.v1.StreamInput
-	(*StreamOutput)(nil),                  // 18: omniview.sdk.exec.v1.StreamOutput
-	(*StreamError)(nil),                   // 19: omniview.sdk.exec.v1.StreamError
-	nil,                                   // 20: omniview.sdk.exec.v1.Session.ParamsEntry
-	nil,                                   // 21: omniview.sdk.exec.v1.Session.LabelsEntry
-	nil,                                   // 22: omniview.sdk.exec.v1.SessionOptions.ParamsEntry
-	nil,                                   // 23: omniview.sdk.exec.v1.SessionOptions.LabelsEntry
-	nil,                                   // 24: omniview.sdk.exec.v1.CreateSessionRequest.ParamsEntry
-	nil,                                   // 25: omniview.sdk.exec.v1.CreateSessionRequest.LabelsEntry
-	(*timestamppb.Timestamp)(nil),         // 26: google.protobuf.Timestamp
-	(*structpb.Struct)(nil),               // 27: google.protobuf.Struct
-	(*common.ActionTargetBuilder)(nil),    // 28: omniview.sdk.common.v1.ActionTargetBuilder
-	(*emptypb.Empty)(nil),                 // 29: google.protobuf.Empty
+	(*ResourceSessionResponse)(nil),       // 4: omniview.sdk.exec.v1.ResourceSessionResponse
+	(*ExecHandler)(nil),                   // 5: omniview.sdk.exec.v1.ExecHandler
+	(*GetSupportedResourcesResponse)(nil), // 6: omniview.sdk.exec.v1.GetSupportedResourcesResponse
+	(*CreateSessionRequest)(nil),          // 7: omniview.sdk.exec.v1.CreateSessionRequest
+	(*CreateSessionResponse)(nil),         // 8: omniview.sdk.exec.v1.CreateSessionResponse
+	(*GetSessionRequest)(nil),             // 9: omniview.sdk.exec.v1.GetSessionRequest
+	(*GetSessionResponse)(nil),            // 10: omniview.sdk.exec.v1.GetSessionResponse
+	(*ListSessionsResponse)(nil),          // 11: omniview.sdk.exec.v1.ListSessionsResponse
+	(*AttachSessionRequest)(nil),          // 12: omniview.sdk.exec.v1.AttachSessionRequest
+	(*AttachSessionResponse)(nil),         // 13: omniview.sdk.exec.v1.AttachSessionResponse
+	(*CloseSessionRequest)(nil),           // 14: omniview.sdk.exec.v1.CloseSessionRequest
+	(*CloseSessionResponse)(nil),          // 15: omniview.sdk.exec.v1.CloseSessionResponse
+	(*ResizeSessionRequest)(nil),          // 16: omniview.sdk.exec.v1.ResizeSessionRequest
+	(*ResizeSessionResponse)(nil),         // 17: omniview.sdk.exec.v1.ResizeSessionResponse
+	(*StreamInput)(nil),                   // 18: omniview.sdk.exec.v1.StreamInput
+	(*StreamOutput)(nil),                  // 19: omniview.sdk.exec.v1.StreamOutput
+	(*StreamError)(nil),                   // 20: omniview.sdk.exec.v1.StreamError
+	nil,                                   // 21: omniview.sdk.exec.v1.Session.ParamsEntry
+	nil,                                   // 22: omniview.sdk.exec.v1.Session.LabelsEntry
+	nil,                                   // 23: omniview.sdk.exec.v1.SessionOptions.ParamsEntry
+	nil,                                   // 24: omniview.sdk.exec.v1.SessionOptions.LabelsEntry
+	nil,                                   // 25: omniview.sdk.exec.v1.CreateSessionRequest.ParamsEntry
+	nil,                                   // 26: omniview.sdk.exec.v1.CreateSessionRequest.LabelsEntry
+	(*timestamppb.Timestamp)(nil),         // 27: google.protobuf.Timestamp
+	(*v2.Value)(nil),                      // 28: omniview.resource.v2.Value
+	(*v2.ResourceReference)(nil),          // 29: omniview.resource.v2.ResourceReference
+	(*v2.AccessRoute)(nil),                // 30: omniview.resource.v2.AccessRoute
+	(*common.ActionTargetBuilder)(nil),    // 31: omniview.sdk.common.v1.ActionTargetBuilder
+	(*emptypb.Empty)(nil),                 // 32: google.protobuf.Empty
 }
 var file_proto_v1_exec_exec_proto_depIdxs = []int32{
-	20, // 0: omniview.sdk.exec.v1.Session.params:type_name -> omniview.sdk.exec.v1.Session.ParamsEntry
-	21, // 1: omniview.sdk.exec.v1.Session.labels:type_name -> omniview.sdk.exec.v1.Session.LabelsEntry
-	26, // 2: omniview.sdk.exec.v1.Session.created_at:type_name -> google.protobuf.Timestamp
-	22, // 3: omniview.sdk.exec.v1.SessionOptions.params:type_name -> omniview.sdk.exec.v1.SessionOptions.ParamsEntry
-	23, // 4: omniview.sdk.exec.v1.SessionOptions.labels:type_name -> omniview.sdk.exec.v1.SessionOptions.LabelsEntry
-	27, // 5: omniview.sdk.exec.v1.SessionOptions.resource_data:type_name -> google.protobuf.Struct
-	28, // 6: omniview.sdk.exec.v1.ExecHandler.target_builder:type_name -> omniview.sdk.common.v1.ActionTargetBuilder
-	4,  // 7: omniview.sdk.exec.v1.GetSupportedResourcesResponse.handlers:type_name -> omniview.sdk.exec.v1.ExecHandler
-	24, // 8: omniview.sdk.exec.v1.CreateSessionRequest.params:type_name -> omniview.sdk.exec.v1.CreateSessionRequest.ParamsEntry
-	25, // 9: omniview.sdk.exec.v1.CreateSessionRequest.labels:type_name -> omniview.sdk.exec.v1.CreateSessionRequest.LabelsEntry
-	2,  // 10: omniview.sdk.exec.v1.CreateSessionResponse.session:type_name -> omniview.sdk.exec.v1.Session
-	2,  // 11: omniview.sdk.exec.v1.GetSessionResponse.session:type_name -> omniview.sdk.exec.v1.Session
-	2,  // 12: omniview.sdk.exec.v1.ListSessionsResponse.sessions:type_name -> omniview.sdk.exec.v1.Session
-	2,  // 13: omniview.sdk.exec.v1.AttachSessionResponse.session:type_name -> omniview.sdk.exec.v1.Session
-	1,  // 14: omniview.sdk.exec.v1.StreamOutput.target:type_name -> omniview.sdk.exec.v1.StreamOutput.Target
-	0,  // 15: omniview.sdk.exec.v1.StreamOutput.signal:type_name -> omniview.sdk.exec.v1.StreamSignal
-	19, // 16: omniview.sdk.exec.v1.StreamOutput.error:type_name -> omniview.sdk.exec.v1.StreamError
-	29, // 17: omniview.sdk.exec.v1.ExecPlugin.GetSupportedResources:input_type -> google.protobuf.Empty
-	8,  // 18: omniview.sdk.exec.v1.ExecPlugin.GetSession:input_type -> omniview.sdk.exec.v1.GetSessionRequest
-	29, // 19: omniview.sdk.exec.v1.ExecPlugin.ListSessions:input_type -> google.protobuf.Empty
-	3,  // 20: omniview.sdk.exec.v1.ExecPlugin.CreateSession:input_type -> omniview.sdk.exec.v1.SessionOptions
-	11, // 21: omniview.sdk.exec.v1.ExecPlugin.AttachSession:input_type -> omniview.sdk.exec.v1.AttachSessionRequest
-	11, // 22: omniview.sdk.exec.v1.ExecPlugin.DetachSession:input_type -> omniview.sdk.exec.v1.AttachSessionRequest
-	13, // 23: omniview.sdk.exec.v1.ExecPlugin.CloseSession:input_type -> omniview.sdk.exec.v1.CloseSessionRequest
-	15, // 24: omniview.sdk.exec.v1.ExecPlugin.ResizeSession:input_type -> omniview.sdk.exec.v1.ResizeSessionRequest
-	17, // 25: omniview.sdk.exec.v1.ExecPlugin.Stream:input_type -> omniview.sdk.exec.v1.StreamInput
-	5,  // 26: omniview.sdk.exec.v1.ExecPlugin.GetSupportedResources:output_type -> omniview.sdk.exec.v1.GetSupportedResourcesResponse
-	9,  // 27: omniview.sdk.exec.v1.ExecPlugin.GetSession:output_type -> omniview.sdk.exec.v1.GetSessionResponse
-	10, // 28: omniview.sdk.exec.v1.ExecPlugin.ListSessions:output_type -> omniview.sdk.exec.v1.ListSessionsResponse
-	7,  // 29: omniview.sdk.exec.v1.ExecPlugin.CreateSession:output_type -> omniview.sdk.exec.v1.CreateSessionResponse
-	12, // 30: omniview.sdk.exec.v1.ExecPlugin.AttachSession:output_type -> omniview.sdk.exec.v1.AttachSessionResponse
-	12, // 31: omniview.sdk.exec.v1.ExecPlugin.DetachSession:output_type -> omniview.sdk.exec.v1.AttachSessionResponse
-	14, // 32: omniview.sdk.exec.v1.ExecPlugin.CloseSession:output_type -> omniview.sdk.exec.v1.CloseSessionResponse
-	16, // 33: omniview.sdk.exec.v1.ExecPlugin.ResizeSession:output_type -> omniview.sdk.exec.v1.ResizeSessionResponse
-	18, // 34: omniview.sdk.exec.v1.ExecPlugin.Stream:output_type -> omniview.sdk.exec.v1.StreamOutput
-	26, // [26:35] is the sub-list for method output_type
-	17, // [17:26] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	21, // 0: omniview.sdk.exec.v1.Session.params:type_name -> omniview.sdk.exec.v1.Session.ParamsEntry
+	22, // 1: omniview.sdk.exec.v1.Session.labels:type_name -> omniview.sdk.exec.v1.Session.LabelsEntry
+	27, // 2: omniview.sdk.exec.v1.Session.created_at:type_name -> google.protobuf.Timestamp
+	23, // 3: omniview.sdk.exec.v1.SessionOptions.params:type_name -> omniview.sdk.exec.v1.SessionOptions.ParamsEntry
+	24, // 4: omniview.sdk.exec.v1.SessionOptions.labels:type_name -> omniview.sdk.exec.v1.SessionOptions.LabelsEntry
+	28, // 5: omniview.sdk.exec.v1.SessionOptions.resource_data:type_name -> omniview.resource.v2.Value
+	29, // 6: omniview.sdk.exec.v1.SessionOptions.reference:type_name -> omniview.resource.v2.ResourceReference
+	30, // 7: omniview.sdk.exec.v1.SessionOptions.route:type_name -> omniview.resource.v2.AccessRoute
+	2,  // 8: omniview.sdk.exec.v1.ResourceSessionResponse.session:type_name -> omniview.sdk.exec.v1.Session
+	31, // 9: omniview.sdk.exec.v1.ExecHandler.target_builder:type_name -> omniview.sdk.common.v1.ActionTargetBuilder
+	5,  // 10: omniview.sdk.exec.v1.GetSupportedResourcesResponse.handlers:type_name -> omniview.sdk.exec.v1.ExecHandler
+	25, // 11: omniview.sdk.exec.v1.CreateSessionRequest.params:type_name -> omniview.sdk.exec.v1.CreateSessionRequest.ParamsEntry
+	26, // 12: omniview.sdk.exec.v1.CreateSessionRequest.labels:type_name -> omniview.sdk.exec.v1.CreateSessionRequest.LabelsEntry
+	2,  // 13: omniview.sdk.exec.v1.CreateSessionResponse.session:type_name -> omniview.sdk.exec.v1.Session
+	2,  // 14: omniview.sdk.exec.v1.GetSessionResponse.session:type_name -> omniview.sdk.exec.v1.Session
+	2,  // 15: omniview.sdk.exec.v1.ListSessionsResponse.sessions:type_name -> omniview.sdk.exec.v1.Session
+	2,  // 16: omniview.sdk.exec.v1.AttachSessionResponse.session:type_name -> omniview.sdk.exec.v1.Session
+	1,  // 17: omniview.sdk.exec.v1.StreamOutput.target:type_name -> omniview.sdk.exec.v1.StreamOutput.Target
+	0,  // 18: omniview.sdk.exec.v1.StreamOutput.signal:type_name -> omniview.sdk.exec.v1.StreamSignal
+	20, // 19: omniview.sdk.exec.v1.StreamOutput.error:type_name -> omniview.sdk.exec.v1.StreamError
+	32, // 20: omniview.sdk.exec.v1.ExecPlugin.GetSupportedResources:input_type -> google.protobuf.Empty
+	9,  // 21: omniview.sdk.exec.v1.ExecPlugin.GetSession:input_type -> omniview.sdk.exec.v1.GetSessionRequest
+	32, // 22: omniview.sdk.exec.v1.ExecPlugin.ListSessions:input_type -> google.protobuf.Empty
+	3,  // 23: omniview.sdk.exec.v1.ExecPlugin.CreateSession:input_type -> omniview.sdk.exec.v1.SessionOptions
+	3,  // 24: omniview.sdk.exec.v1.ExecPlugin.CreateResourceSession:input_type -> omniview.sdk.exec.v1.SessionOptions
+	12, // 25: omniview.sdk.exec.v1.ExecPlugin.AttachSession:input_type -> omniview.sdk.exec.v1.AttachSessionRequest
+	12, // 26: omniview.sdk.exec.v1.ExecPlugin.DetachSession:input_type -> omniview.sdk.exec.v1.AttachSessionRequest
+	14, // 27: omniview.sdk.exec.v1.ExecPlugin.CloseSession:input_type -> omniview.sdk.exec.v1.CloseSessionRequest
+	16, // 28: omniview.sdk.exec.v1.ExecPlugin.ResizeSession:input_type -> omniview.sdk.exec.v1.ResizeSessionRequest
+	18, // 29: omniview.sdk.exec.v1.ExecPlugin.Stream:input_type -> omniview.sdk.exec.v1.StreamInput
+	6,  // 30: omniview.sdk.exec.v1.ExecPlugin.GetSupportedResources:output_type -> omniview.sdk.exec.v1.GetSupportedResourcesResponse
+	10, // 31: omniview.sdk.exec.v1.ExecPlugin.GetSession:output_type -> omniview.sdk.exec.v1.GetSessionResponse
+	11, // 32: omniview.sdk.exec.v1.ExecPlugin.ListSessions:output_type -> omniview.sdk.exec.v1.ListSessionsResponse
+	8,  // 33: omniview.sdk.exec.v1.ExecPlugin.CreateSession:output_type -> omniview.sdk.exec.v1.CreateSessionResponse
+	4,  // 34: omniview.sdk.exec.v1.ExecPlugin.CreateResourceSession:output_type -> omniview.sdk.exec.v1.ResourceSessionResponse
+	13, // 35: omniview.sdk.exec.v1.ExecPlugin.AttachSession:output_type -> omniview.sdk.exec.v1.AttachSessionResponse
+	13, // 36: omniview.sdk.exec.v1.ExecPlugin.DetachSession:output_type -> omniview.sdk.exec.v1.AttachSessionResponse
+	15, // 37: omniview.sdk.exec.v1.ExecPlugin.CloseSession:output_type -> omniview.sdk.exec.v1.CloseSessionResponse
+	17, // 38: omniview.sdk.exec.v1.ExecPlugin.ResizeSession:output_type -> omniview.sdk.exec.v1.ResizeSessionResponse
+	19, // 39: omniview.sdk.exec.v1.ExecPlugin.Stream:output_type -> omniview.sdk.exec.v1.StreamOutput
+	30, // [30:40] is the sub-list for method output_type
+	20, // [20:30] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_exec_exec_proto_init() }
@@ -1489,7 +1581,7 @@ func file_proto_v1_exec_exec_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_exec_exec_proto_rawDesc), len(file_proto_v1_exec_exec_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   24,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

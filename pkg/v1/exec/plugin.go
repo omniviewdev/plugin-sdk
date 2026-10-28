@@ -45,7 +45,7 @@ type Plugin struct {
 }
 
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
-	execpb.RegisterExecPluginServer(s, &PluginServer{
+	RegisterExecPluginServer(s, &PluginServer{
 		log:  logging.Default().Named("exec.plugin.server"),
 		Impl: p.Impl,
 	})

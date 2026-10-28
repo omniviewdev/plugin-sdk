@@ -24,6 +24,7 @@ const (
 	ExecPlugin_GetSession_FullMethodName            = "/omniview.sdk.exec.v1.ExecPlugin/GetSession"
 	ExecPlugin_ListSessions_FullMethodName          = "/omniview.sdk.exec.v1.ExecPlugin/ListSessions"
 	ExecPlugin_CreateSession_FullMethodName         = "/omniview.sdk.exec.v1.ExecPlugin/CreateSession"
+	ExecPlugin_CreateResourceSession_FullMethodName = "/omniview.sdk.exec.v1.ExecPlugin/CreateResourceSession"
 	ExecPlugin_AttachSession_FullMethodName         = "/omniview.sdk.exec.v1.ExecPlugin/AttachSession"
 	ExecPlugin_DetachSession_FullMethodName         = "/omniview.sdk.exec.v1.ExecPlugin/DetachSession"
 	ExecPlugin_CloseSession_FullMethodName          = "/omniview.sdk.exec.v1.ExecPlugin/CloseSession"
@@ -39,6 +40,7 @@ type ExecPluginClient interface {
 	GetSession(ctx context.Context, in *GetSessionRequest, opts ...grpc.CallOption) (*GetSessionResponse, error)
 	ListSessions(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListSessionsResponse, error)
 	CreateSession(ctx context.Context, in *SessionOptions, opts ...grpc.CallOption) (*CreateSessionResponse, error)
+	CreateResourceSession(ctx context.Context, in *SessionOptions, opts ...grpc.CallOption) (*ResourceSessionResponse, error)
 	AttachSession(ctx context.Context, in *AttachSessionRequest, opts ...grpc.CallOption) (*AttachSessionResponse, error)
 	DetachSession(ctx context.Context, in *AttachSessionRequest, opts ...grpc.CallOption) (*AttachSessionResponse, error)
 	CloseSession(ctx context.Context, in *CloseSessionRequest, opts ...grpc.CallOption) (*CloseSessionResponse, error)
@@ -85,6 +87,15 @@ func (c *execPluginClient) ListSessions(ctx context.Context, in *emptypb.Empty, 
 func (c *execPluginClient) CreateSession(ctx context.Context, in *SessionOptions, opts ...grpc.CallOption) (*CreateSessionResponse, error) {
 	out := new(CreateSessionResponse)
 	err := c.cc.Invoke(ctx, ExecPlugin_CreateSession_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *execPluginClient) CreateResourceSession(ctx context.Context, in *SessionOptions, opts ...grpc.CallOption) (*ResourceSessionResponse, error) {
+	out := new(ResourceSessionResponse)
+	err := c.cc.Invoke(ctx, ExecPlugin_CreateResourceSession_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +177,7 @@ type ExecPluginServer interface {
 	GetSession(context.Context, *GetSessionRequest) (*GetSessionResponse, error)
 	ListSessions(context.Context, *emptypb.Empty) (*ListSessionsResponse, error)
 	CreateSession(context.Context, *SessionOptions) (*CreateSessionResponse, error)
+	CreateResourceSession(context.Context, *SessionOptions) (*ResourceSessionResponse, error)
 	AttachSession(context.Context, *AttachSessionRequest) (*AttachSessionResponse, error)
 	DetachSession(context.Context, *AttachSessionRequest) (*AttachSessionResponse, error)
 	CloseSession(context.Context, *CloseSessionRequest) (*CloseSessionResponse, error)
@@ -189,6 +201,9 @@ func (UnimplementedExecPluginServer) ListSessions(context.Context, *emptypb.Empt
 }
 func (UnimplementedExecPluginServer) CreateSession(context.Context, *SessionOptions) (*CreateSessionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateSession not implemented")
+}
+func (UnimplementedExecPluginServer) CreateResourceSession(context.Context, *SessionOptions) (*ResourceSessionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateResourceSession not implemented")
 }
 func (UnimplementedExecPluginServer) AttachSession(context.Context, *AttachSessionRequest) (*AttachSessionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AttachSession not implemented")
@@ -285,6 +300,24 @@ func _ExecPlugin_CreateSession_Handler(srv interface{}, ctx context.Context, dec
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ExecPluginServer).CreateSession(ctx, req.(*SessionOptions))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ExecPlugin_CreateResourceSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionOptions)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExecPluginServer).CreateResourceSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExecPlugin_CreateResourceSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExecPluginServer).CreateResourceSession(ctx, req.(*SessionOptions))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -409,6 +442,10 @@ var ExecPlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateSession",
 			Handler:    _ExecPlugin_CreateSession_Handler,
+		},
+		{
+			MethodName: "CreateResourceSession",
+			Handler:    _ExecPlugin_CreateResourceSession_Handler,
 		},
 		{
 			MethodName: "AttachSession",

@@ -7,8 +7,11 @@ import (
 	"io"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -115,9 +118,16 @@ func (s *PluginServer) CreateSession(
 	if in == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "request is nil")
 	}
+	opts, err := NewSessionOptionsFromProto(in)
+	if err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	if opts.HasResourceIntent() {
+		return nil, resourceplugin.ResourceRPCError(resourcev2.NewError("UNSUPPORTED", "resource sessions require CreateResourceSession"))
+	}
 	resp, err := s.Impl.CreateSession(
 		types.PluginContextFromContext(ctx),
-		*NewSessionOptionsFromProto(in),
+		*opts,
 	)
 	if err != nil {
 		return nil, status.Errorf(grpcCodeForError(err), "%v", err)
@@ -127,6 +137,35 @@ func (s *PluginServer) CreateSession(
 		Session: resp.ToProto(),
 		Success: true,
 	}, nil
+}
+
+func (s *PluginServer) CreateResourceSession(ctx context.Context, in *execpb.SessionOptions) (*execpb.ResourceSessionResponse, error) {
+	if in == nil || in.ResourceWireVersion != ResourceSessionWireVersion {
+		return nil, resourceplugin.ResourceRPCError(resourcev2.NewError("UNSUPPORTED", "resource session wire version must be 2"))
+	}
+	opts, err := NewSessionOptionsFromProto(in)
+	if err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	if err := ValidateResourceSessionOptions(*opts); err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	provider, ok := s.Impl.(ResourceSessionProvider)
+	if !ok {
+		return nil, resourceplugin.ResourceRPCError(resourcev2.NewError("UNSUPPORTED", "resource exec provider unavailable"))
+	}
+	session, err := provider.CreateResourceSession(types.PluginContextFromContext(ctx), *opts)
+	if err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	if err := validateResourceSessionResult(session, opts.ID); err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	response := &execpb.ResourceSessionResponse{ResourceWireVersion: ResourceSessionWireVersion, Session: session.ToProto()}
+	if proto.Size(response) > resourcev2.MaxMessageBytes {
+		return nil, resourceplugin.ResourceRPCError(resourcev2.NewError("RESOURCE_LIMIT", "Resource exec response exceeds wire limit."))
+	}
+	return response, nil
 }
 
 func (s *PluginServer) AttachSession(

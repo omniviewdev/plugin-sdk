@@ -8,10 +8,12 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
 	"github.com/omniviewdev/plugin-sdk/settings"
@@ -207,11 +209,58 @@ func (m *Manager) ListSessions(_ *types.PluginContext) ([]*Session, error) {
 	return sessions, nil
 }
 
+// resourceAdmissionContext retains the caller's deadline until native creation
+// accepts the session. Its cancellation channel remains the session lifetime.
+type resourceAdmissionContext struct {
+	context.Context
+	parent   context.Context
+	accepted atomic.Bool
+}
+
+func (c *resourceAdmissionContext) Deadline() (time.Time, bool) {
+	if !c.accepted.Load() {
+		return c.parent.Deadline()
+	}
+	return time.Time{}, false
+}
+
+func (c *resourceAdmissionContext) Err() error {
+	if !c.accepted.Load() {
+		if err := c.parent.Err(); err != nil {
+			return err
+		}
+	}
+	return c.Context.Err()
+}
+
 // CreateSession creates a new terminal session with a given command.
 func (m *Manager) CreateSession(
 	pluginctx *types.PluginContext,
 	opts SessionOptions,
 ) (*Session, error) {
+	if opts.HasResourceIntent() {
+		return nil, resourcev2.NewError("UNSUPPORTED", "resource session requires CreateResourceSession")
+	}
+	if err := ValidateSessionOptions(opts); err != nil {
+		return nil, err
+	}
+	return m.createSession(pluginctx, opts, false)
+}
+
+// CreateResourceSession admits resource inputs before invoking the shared
+// terminal engine. The body is utility input, never an authorization grant.
+func (m *Manager) CreateResourceSession(pluginctx *types.PluginContext, opts SessionOptions) (*Session, error) {
+	normalized, err := NormalizeResourceSessionOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+	if normalized.Route != nil && (pluginctx == nil || pluginctx.Connection == nil || pluginctx.Connection.ID != normalized.Route.Connection) {
+		return nil, resourcev2.NewError("INVALID_INPUT", "resource session route must match the explicit caller connection")
+	}
+	return m.createSession(pluginctx, normalized, true)
+}
+
+func (m *Manager) createSession(pluginctx *types.PluginContext, opts SessionOptions, resource bool) (*Session, error) {
 	logger := m.log.With(
 		logging.String("resource", opts.ResourceKey),
 		logging.Any("param_keys", sanitizeMapKeys(opts.Params)),
@@ -253,7 +302,21 @@ func (m *Manager) CreateSession(
 	// cancellation (e.g. the gRPC unary-call context) while keeping context
 	// values (logging, tracing) intact.
 	ctx, cancel := context.WithCancel(context.WithoutCancel(baseCtx))
+	var admission *resourceAdmissionContext
+	stopAdmission := func() bool { return true }
+	if resource {
+		if err := baseCtx.Err(); err != nil {
+			cancel()
+			return nil, err
+		}
+		admission = &resourceAdmissionContext{Context: ctx, parent: baseCtx}
+		stopAdmission = context.AfterFunc(baseCtx, cancel)
+		defer stopAdmission()
+	}
 	pctxCopy.Context = ctx
+	if admission != nil {
+		pctxCopy.Context = admission
+	}
 	if m.settingsProvider != nil {
 		pctxCopy.SetSettingsProvider(m.settingsProvider)
 	}
@@ -273,6 +336,11 @@ func (m *Manager) CreateSession(
 		return nil, NewTerminalError(opts.ID, fmt.Errorf("terminal factory returned nil"))
 	}
 
+	if resource && baseCtx.Err() != nil {
+		cancel()
+		terminal.Close()
+		return nil, baseCtx.Err()
+	}
 	resizeChan := make(chan SessionResizeInput)
 	stopChan := make(chan error, 1)
 
@@ -280,6 +348,9 @@ func (m *Manager) CreateSession(
 	if err = handler.TTYHandler(&pctxCopy, opts, terminal.SlaveFd(), stopChan, resizeChan); err != nil {
 		cancel()
 		terminal.Close()
+		if resource && baseCtx.Err() != nil {
+			return nil, baseCtx.Err()
+		}
 		return nil, NewTerminalError(opts.ID, err)
 	}
 
@@ -308,6 +379,18 @@ func (m *Manager) CreateSession(
 		cancel()
 		terminal.Close()
 		return nil, NewSessionExistsError(opts.ID)
+	}
+	if resource {
+		if !stopAdmission() || baseCtx.Err() != nil {
+			m.mu.Unlock()
+			cancel()
+			terminal.Close()
+			if err := baseCtx.Err(); err != nil {
+				return nil, err
+			}
+			return nil, context.Canceled
+		}
+		admission.accepted.Store(true)
 	}
 	m.sessions[opts.ID] = ss
 	m.mu.Unlock()

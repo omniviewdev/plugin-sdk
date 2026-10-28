@@ -111,8 +111,17 @@ func Mount(t *testing.T, opts ...HarnessOption) *Harness {
 // CreateSession creates a session using the harness context.
 func (h *Harness) CreateSession(opts exec.SessionOptions) (*exec.Session, error) {
 	h.t.Helper()
+	if opts.HasResourceIntent() {
+		return h.CreateResourceSession(opts)
+	}
 	pctx := newTestPluginContext(h.ctx)
 	return h.Manager.CreateSession(pctx, opts)
+}
+
+// CreateResourceSession explicitly creates a resource-scoped session.
+func (h *Harness) CreateResourceSession(opts exec.SessionOptions) (*exec.Session, error) {
+	h.t.Helper()
+	return h.Manager.CreateResourceSession(newTestPluginContext(h.ctx), opts)
 }
 
 // CloseSession closes a session by ID.
