@@ -29,9 +29,12 @@ func (*mismatchConnectionProvider) StartConnection(context.Context, string) (typ
 func (*mismatchConnectionProvider) CheckConnection(context.Context, string) (types.ConnectionStatus, error) {
 	return types.ConnectionStatus{Connection: &types.Connection{ID: "other"}}, nil
 }
+func (*mismatchConnectionProvider) GetConnectionStatus(context.Context, string) (types.ConnectionStatus, error) {
+	return types.ConnectionStatus{Connection: &types.Connection{ID: "other"}, Status: types.ConnectionStatusDisconnected}, nil
+}
 func assertConnectionMismatch(t *testing.T, c *Client) {
 	t.Helper()
-	for _, operation := range []string{"get", "stop", "start", "check"} {
+	for _, operation := range []string{"get", "stop", "start", "check", "state"} {
 		t.Run(operation, func(t *testing.T) {
 			var err error
 			switch operation {
@@ -43,6 +46,8 @@ func assertConnectionMismatch(t *testing.T, c *Client) {
 				_, err = c.StartConnection(context.Background(), "requested")
 			case "check":
 				_, err = c.CheckConnection(context.Background(), "requested")
+			case "state":
+				_, err = c.GetConnectionStatus(context.Background(), "requested")
 			}
 			if resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
 				t.Fatalf("connection mismatch accepted: %v", err)
@@ -66,7 +71,7 @@ func (s *maliciousConnectionServer) Call(_ context.Context, in *resourcepb.Reque
 	operation := in.GetConnection().Operation
 	if s.json != nil {
 		out.ConnectionJson = s.json
-	} else if operation == "start" || operation == "check" {
+	} else if operation == "start" || operation == "check" || operation == "state" {
 		out.StatusJson = []byte(`{"connection":{"id":"other"},"status":0,"error":"","details":""}`)
 	} else {
 		out.ConnectionJson = []byte(`{"id":"other"}`)

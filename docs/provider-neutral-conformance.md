@@ -288,3 +288,27 @@ copy/mock-forwarding proof. Production SDK dial-option native RPC/HTTP metric
 and canonical-reference unary flows remain the executable metadata regressions.
 Kubernetes mixed native/Helm schema behavior and runtime bindings remain
 separately exercised parent integration gates.
+
+### Registered-state readiness without probing
+
+`ConnectionReadinessProvider.GetConnectionStatus` is independently negotiated by
+`connectionReadiness`; the existing connection RPC uses operation `state`.
+It snapshots the sole configured-client registry, without catalog lookup,
+client creation, native health checking, waiting or taking a source lease.
+Configured stopped/retiring clients are DISCONNECTED, startup is PENDING,
+registered active clients are CONNECTED (not network-health proof), and a
+registered failed client is FAILED. Missing routes remain typed NOT_FOUND;
+unsupported implementations remain explicitly unavailable rather than inferred
+from the transport client's method set. No provider diagnostic strings travel
+in this registered-state status.
+
+The actual gRPC/HTTP regression observes stopped, blocked startup, active and
+blocked retirement states while counting native creation, HTTP and health
+callbacks. A retarget remains disconnected until explicit restart, publishes a
+fresh catalog binding, and rejects the retired pin on watch diagnostics.
+Catalog admission still requires an actual active client and never issues a
+fictitious binding for a stopped connection.
+
+After this source settled, `make proto`, the full normal suite and then the full
+race suite passed: 21 packages passing and 16 packages without tests in each
+suite. Host aggregate/UI/native integration remains a separate parent gate.

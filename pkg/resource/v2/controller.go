@@ -1201,6 +1201,48 @@ func (c *Controller[T]) StopConnection(ctx context.Context, id string) (connecti
 	return connection, c.stopSlot(s)
 }
 
+// GetConnectionStatus snapshots the sole configured-client registry without
+// starting, waiting, probing or performing catalog/resource work. CONNECTED
+// means registration only, not network health or resource-source readiness.
+func (c *Controller[T]) GetConnectionStatus(ctx context.Context, id string) (types.ConnectionStatus, error) {
+	if err := c.requireLifecycle(); err != nil {
+		return types.ConnectionStatus{}, err
+	}
+	if id == "" {
+		return types.ConnectionStatus{}, NewError("INVALID_REQUEST", "An explicit connection ID is required.")
+	}
+	if err := ctx.Err(); err != nil {
+		return types.ConnectionStatus{}, c.classify(nil, err)
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return types.ConnectionStatus{}, NewError("CANCELLED", "Provider is closed.")
+	}
+	connection, exists := c.connections[id]
+	if !exists {
+		c.mu.Unlock()
+		return types.ConnectionStatus{}, NewError("NOT_FOUND", "Connection was not loaded.")
+	}
+	state := types.ConnectionStatusDisconnected
+	slot := c.clients[id]
+	if slot != nil && !slot.stopping && !c.changing[id] && slot.ctx.Err() == nil {
+		select {
+		case <-slot.ready:
+			if slot.err == nil {
+				state = types.ConnectionStatusConnected
+			} else {
+				state = types.ConnectionStatusFailed
+			}
+		default:
+			state = types.ConnectionStatusPending
+		}
+	}
+	c.mu.Unlock()
+	owned := cloneConnection(connection)
+	return types.ConnectionStatus{Connection: &owned, Status: state}, nil
+}
+
 func (c *Controller[T]) CheckConnection(ctx context.Context, id string) (status types.ConnectionStatus, err error) {
 	var r *Registration[T]
 	defer c.guard(&r, &err)
@@ -1262,6 +1304,7 @@ func (c *Controller[T]) Close() error {
 
 var _ Provider = (*Controller[struct{}])(nil)
 var _ ConnectionLifecycle = (*Controller[struct{}])(nil)
+var _ ConnectionReadinessProvider = (*Controller[struct{}])(nil)
 var _ Closer = (*Controller[struct{}])(nil)
 
 // AdmitCatalogOperation uses an already acquired catalog without another
@@ -1565,7 +1608,7 @@ func (c *Controller[T]) Features(ctx context.Context) (FeatureSet, error) {
 	}
 	features := FeatureSet{Traits: []Feature{}}
 	if c.cfg.Lifecycle != nil {
-		features.Traits = append(features.Traits, FeatureConnections, FeatureConnectionOverlay)
+		features.Traits = append(features.Traits, FeatureConnections, FeatureConnectionReadiness, FeatureConnectionOverlay)
 	}
 	updates := c.cfg.DynamicUpdates
 	for _, registration := range c.cfg.Registrations {

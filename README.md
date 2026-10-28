@@ -481,17 +481,23 @@ RPC status errors propagate unchanged.
 
 ## Connection readiness
 
-The v2 controller's `CheckConnection` returns `DISCONNECTED` with the
-saved connection metadata for a configured connection that has never started
-or has stopped. It does not construct a client or probe the provider in that
-state. Unknown connection IDs remain errors; active connections still delegate
-to the provider and preserve its status or error.
+The optional `ConnectionReadinessProvider.GetConnectionStatus(ctx, id)` and
+negotiated `FeatureConnectionReadiness` (`connectionReadiness`) report only the
+sole registered lifecycle state. The existing connection RPC uses operation
+`state`; no client creation, native health probe, catalog, resource read, waiting
+for startup or source lease occurs. Configured stopped/retiring connections are
+`DISCONNECTED`, starting clients `PENDING`, registered active clients `CONNECTED`,
+and a registered failed client `FAILED`. Unknown IDs are typed `NOT_FOUND`.
+Status has no provider diagnostic strings; `CONNECTED` is not network health.
 
-Providers must report readiness without implicitly connecting, refreshing
-credentials, or mutating resources. Start connections explicitly. Retained watch
-inventory alone does not prove that a client is connected. Consumers can use
-typed readiness to offer recovery without interpreting an absent client as an
-unrelated provider failure.
+Read this state before catalog-based watch diagnostics. Unstarted connections
+remain visible as `DISCONNECTED`; only active clients proceed to actual catalog
+observation/pinning and fenced watch status. Unsupported custom
+providers remain explicitly unknown/unavailable; never infer support from the
+remote client's broad method set or fall back to a probe. Catalog admission
+continues to require a real active binding and cannot mint a token for a stopped
+client. `CheckConnection` remains an explicit optional native health operation,
+not the registered-state gate.
 
 ## Releasing the Go module
 

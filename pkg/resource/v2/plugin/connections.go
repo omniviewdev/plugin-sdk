@@ -26,7 +26,7 @@ func (s *server) connection(ctx context.Context, in *resourcepb.ConnectionInput)
 		return &resourcepb.ConnectionOutput{}, p.Close()
 	}
 	p, ok := s.impl.(resourcev2.ConnectionLifecycle)
-	if !ok {
+	if !ok && in.Operation != "state" {
 		return nil, unsupported("connection lifecycle unsupported")
 	}
 	var value any
@@ -36,6 +36,13 @@ func (s *server) connection(ctx context.Context, in *resourcepb.ConnectionInput)
 		return nil, invalid("missing connection id")
 	}
 	switch in.Operation {
+	case "state":
+		readiness, supported := s.impl.(resourcev2.ConnectionReadinessProvider)
+		if !supported {
+			return nil, unsupported("registered connection readiness unsupported")
+		}
+		value, err = readiness.GetConnectionStatus(ctx, in.Id)
+		isStatus = true
 	case "load":
 		if in.Id != "" {
 			return nil, invalid("load does not accept connection id")
@@ -139,11 +146,21 @@ func bindConnectionResult(operation, id string, result any) error {
 		}
 	case types.ConnectionStatus:
 		if v.Connection != nil && v.Connection.ID == id {
+			if operation == "state" {
+				switch v.Status {
+				case types.ConnectionStatusDisconnected, types.ConnectionStatusPending, types.ConnectionStatusConnected, types.ConnectionStatusFailed:
+				default:
+					return invalid("invalid registered connection state")
+				}
+				if v.Error != "" || v.Details != "" {
+					return invalid("registered connection state contains diagnostics")
+				}
+			}
 			return nil
 		}
 	case *types.ConnectionStatus:
-		if v != nil && v.Connection != nil && v.Connection.ID == id {
-			return nil
+		if v != nil {
+			return bindConnectionResult(operation, id, *v)
 		}
 	}
 	return invalid("connection response id mismatch")
@@ -171,6 +188,13 @@ func (c *Client) StopConnection(ctx context.Context, id string) (types.Connectio
 func (c *Client) CheckConnection(ctx context.Context, id string) (types.ConnectionStatus, error) {
 	var out types.ConnectionStatus
 	err := c.connection(ctx, "check", id, &out, true)
+	return out, err
+}
+
+// GetConnectionStatus reports registered lifecycle state, never a health probe.
+func (c *Client) GetConnectionStatus(ctx context.Context, id string) (types.ConnectionStatus, error) {
+	var out types.ConnectionStatus
+	err := c.connection(ctx, "state", id, &out, true)
 	return out, err
 }
 

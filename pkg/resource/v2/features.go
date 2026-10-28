@@ -7,18 +7,19 @@ import "context"
 type Feature string
 
 const (
-	FeatureConnections       Feature = "connections"
-	FeatureConnectionBrowser Feature = "connectionBrowser"
-	FeatureConnectionOverlay Feature = "connectionOverlay"
-	FeatureScopeValues       Feature = "scopeValues"
-	FeaturePresentation      Feature = "presentation"
-	FeatureEditorSchemas     Feature = "editorSchemas"
-	FeatureSchemaDocuments   Feature = "schemaDocuments"
-	FeatureRelationships     Feature = "relationships"
-	FeatureHealth            Feature = "health"
-	FeatureActionCatalog     Feature = "actionCatalog"
-	FeatureStreamingActions  Feature = "streamingActions"
-	FeatureBestEffortUpdates Feature = "bestEffortUpdates"
+	FeatureConnections         Feature = "connections"
+	FeatureConnectionReadiness Feature = "connectionReadiness"
+	FeatureConnectionBrowser   Feature = "connectionBrowser"
+	FeatureConnectionOverlay   Feature = "connectionOverlay"
+	FeatureScopeValues         Feature = "scopeValues"
+	FeaturePresentation        Feature = "presentation"
+	FeatureEditorSchemas       Feature = "editorSchemas"
+	FeatureSchemaDocuments     Feature = "schemaDocuments"
+	FeatureRelationships       Feature = "relationships"
+	FeatureHealth              Feature = "health"
+	FeatureActionCatalog       Feature = "actionCatalog"
+	FeatureStreamingActions    Feature = "streamingActions"
+	FeatureBestEffortUpdates   Feature = "bestEffortUpdates"
 )
 
 type FeatureSet struct {
@@ -49,7 +50,7 @@ func ValidateFeatures(f FeatureSet) error {
 		}
 		seen[feature] = true
 		switch feature {
-		case FeatureConnections, FeatureConnectionBrowser, FeatureConnectionOverlay, FeatureScopeValues, FeaturePresentation, FeatureEditorSchemas, FeatureSchemaDocuments, FeatureRelationships, FeatureHealth, FeatureActionCatalog, FeatureStreamingActions, FeatureBestEffortUpdates:
+		case FeatureConnections, FeatureConnectionReadiness, FeatureConnectionBrowser, FeatureConnectionOverlay, FeatureScopeValues, FeaturePresentation, FeatureEditorSchemas, FeatureSchemaDocuments, FeatureRelationships, FeatureHealth, FeatureActionCatalog, FeatureStreamingActions, FeatureBestEffortUpdates:
 		default:
 			return NewError("UNSUPPORTED", "unknown ancillary feature")
 		}
@@ -70,6 +71,9 @@ func DetectFeatures(ctx context.Context, p Provider) (FeatureSet, error) {
 	f := FeatureSet{Traits: []Feature{}}
 	if _, ok := p.(ConnectionLifecycle); ok {
 		f.Traits = append(f.Traits, FeatureConnections)
+	}
+	if _, ok := p.(ConnectionReadinessProvider); ok {
+		f.Traits = append(f.Traits, FeatureConnectionReadiness)
 	}
 	if _, ok := p.(ConnectionBrowser); ok {
 		f.Traits = append(f.Traits, FeatureConnectionBrowser)

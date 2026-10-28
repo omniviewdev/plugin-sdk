@@ -237,6 +237,12 @@ type ConnectionLifecycle interface {
 	StopConnection(context.Context, string) (types.Connection, error)
 	CheckConnection(context.Context, string) (types.ConnectionStatus, error)
 }
+
+// ConnectionReadinessProvider reports only registered native lifecycle state.
+// It never creates a client, probes network health or acquires a resource lease.
+type ConnectionReadinessProvider interface {
+	GetConnectionStatus(context.Context, string) (types.ConnectionStatus, error)
+}
 type Closer interface{ Close() error }
 
 // Session holds diagnostic and route context. RequesterID is never a grant.
