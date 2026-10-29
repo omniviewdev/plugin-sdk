@@ -44,6 +44,10 @@ func validateQuery(r QueryRequest, ctx *types.PluginContext) error {
 		if r.Route.Connection == "" {
 			return metricError("INVALID_REQUEST", "Empty route connection.")
 		}
+		// A nil context validates encoding only; dispatch must supply its selected connection.
+		if ctx != nil && (ctx.Connection == nil || ctx.Connection.ID == "") {
+			return metricError("INVALID_REQUEST", "Resource route requires an actual selected connection.")
+		}
 		if ctx != nil && ctx.Connection != nil && ctx.Connection.ID != r.Route.Connection {
 			return metricError("INVALID_REQUEST", "Route conflicts with trusted connection.")
 		}

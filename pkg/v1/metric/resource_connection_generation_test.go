@@ -80,6 +80,81 @@ func metricReceive(t *testing.T, out chan StreamOutput, value float64) {
 	}
 }
 
+func TestMetricRouteOnlyQueryAdmission(t *testing.T) {
+	var calls atomic.Int32
+	query := func(ctx *QueryContext, _ QueryRequest) (*QueryResponse, error) {
+		calls.Add(1)
+		if ctx.Connection == nil || ctx.ConnectionID != "selected" || ctx.Connection.Data["endpoint"] != "configured" {
+			t.Errorf("native query did not receive configured connection: %+v", ctx)
+		}
+		return &QueryResponse{Success: true}, nil
+	}
+	client, controller := metricRegistry(t, []types.Connection{{ID: "selected", Data: map[string]interface{}{"endpoint": "configured"}}}, query, nil)
+	manager := NewManager(nil, nil, ProviderInfo{ID: "metric"}, nil, query, nil)
+	manager.BindConnectionContextProvider(controller)
+	request := QueryRequest{Route: &resourcev2.AccessRoute{Connection: "selected"}}
+	wire, err := queryToProto(request, true)
+	if err != nil {
+		t.Fatalf("context-free encoding rejected route: %v", err)
+	}
+	for _, test := range []struct {
+		name string
+		pc   *types.PluginContext
+		want string
+	}{
+		{name: "missing", pc: &types.PluginContext{}, want: "INVALID_REQUEST"},
+		{name: "empty", pc: &types.PluginContext{Connection: &types.Connection{}}, want: "INVALID_REQUEST"},
+		{name: "mismatch", pc: &types.PluginContext{Connection: &types.Connection{ID: "other"}}, want: "INVALID_REQUEST"},
+		{name: "matching", pc: &types.PluginContext{Connection: &types.Connection{ID: "selected"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// The transport interceptor extracts connection metadata only for identified requests.
+			test.pc.RequestID = "metric-route-admission"
+			before := calls.Load()
+			_, err := manager.QueryResource(test.pc, request)
+			if resourcev2.ErrorCode(err) != test.want {
+				t.Fatalf("manager admission: %v", err)
+			}
+			// Use the raw RPC client so local client validation cannot hide server admission bugs.
+			_, err = client.client.QueryResource(types.WithPluginContext(context.Background(), test.pc), wire)
+			if resourcev2.ErrorCode(metricDomainError(err)) != test.want {
+				t.Fatalf("server admission: %v", err)
+			}
+			wantCalls := int32(0)
+			if test.want == "" {
+				wantCalls = 2
+			}
+			if got := calls.Load() - before; got != wantCalls {
+				t.Fatalf("native calls = %d, want %d", got, wantCalls)
+			}
+		})
+	}
+	before := calls.Load()
+	if _, err := manager.QueryResource(nil, request); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatalf("nil manager context admitted: %v", err)
+	}
+	if calls.Load() != before {
+		t.Fatal("nil context reached native query")
+	}
+}
+
+func TestUtilityRouteRequiresSelectedConnection(t *testing.T) {
+	for _, pc := range []*types.PluginContext{nil, {}} {
+		called := false
+		callback := func(*types.PluginContext) error {
+			called = true
+			return nil
+		}
+		err := resourcev2.WithUtilityConnection(pc, nil, nil, &resourcev2.AccessRoute{Connection: "selected"}, callback)
+		if resourcev2.ErrorCode(err) != "INVALID_REQUEST" || called {
+			t.Fatalf("route-only utility reached native callback: called=%v err=%v", called, err)
+		}
+		if err := resourcev2.WithUtilityConnection(pc, nil, nil, nil, callback); err != nil || !called {
+			t.Fatalf("ordinary nonreference utility rejected: called=%v err=%v", called, err)
+		}
+	}
+}
+
 func TestMetricActualConnectionGenerationIsolation(t *testing.T) {
 	blocked := make(chan struct{}, 1)
 	canceled := make(chan struct{}, 1)
