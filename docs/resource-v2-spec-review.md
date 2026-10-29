@@ -58,10 +58,13 @@ Paths are relative to the managed cohort. `S` is `plugin-sdk`; `H` is `omniview`
 - Independent domain comparison found C01 identity/value alignment; flagged public policy/capability choices.
 - Independent provider comparison flagged generation/pin/framing and overlay APIs as implementation-added contracts, not automatically approved specification text.
 - SDK08421dc: full normal/race21 test packages each; receipt artifact975. This is source/test settlement only.
-- Host: full normal42 packages and bounded resource/invocation/utility race9 packages passed; artifact990.
-- Kubernetes native full race11 packages passed; artifact945.
-- Runtime typecheck/production build and runtime-derived Vite shims built. Subsequent host frontend build exposed an omitted canonical graph-helper export; integration is still in progress.
-- Actual managed app/owned-kind cohort smoke, downstream UI verification, publication pins and user SDK review remain gates.
+- Host Go source `09bf38f9`: all 42 normal-test packages and 11 expanded resource/invocation/utility race-test packages passed (artifact 1251). The host frontend passed 76 files/1,118 tests; the runtime passed 22 files/288 tests, including the real Go-produced C02 error corpus.
+- Kubernetes `35e2650`: native Go source `27ceda1` passed all 11 normal-test and 11 race-test packages (artifact 1336). The final frontend passed 52 files/416 tests and the existing eight-test route suite. Obsolete wording assertions were removed, not repinned.
+- The final clean managed launch attested host `0ec42cfe`, Kubernetes `35e2650`, SDK `a8416f8`, and UI `11a55a53` (artifact 1425). Build, dependencies, served source, and authentication were ready. Source reload remains unverified because this run disabled graph watching.
+- The owned kind cluster exercised native Get/enumeration, explicit cursor paging, schemas/YAML, computed red/green diffs, a four-node relationship graph, canonical linked-resource contributions, dynamic-resource fallback, scoped current-resource search, live logs, exec input/output and exit, and real TCP forwarding/Stop. Scoped search ranks one acquired page; it is not a host query engine.
+- Exact wire/body revisions agreed on a successful contextual write. A stale-incarnation attempt returned `CONFLICT`/409, preserved the draft, and left the recreated native object untouched. Malformed YAML failed locally with no native write. One earlier uninstrumented `INVALID_REQUEST` remains unexplained; no speculative error-taxonomy change was made.
+- Exec output was observed in the real terminal buffer; headless WebGL pixel rendering is not claimed. Browser-helper worker interception was isolated using an equivalent native local-only egress policy; no application workaround was added. Temporary mutation diagnostics were removed. The owned application and kind sandbox were stopped after acceptance; private evidence was retained.
+- Coordinated publication pins and this user SDK-spec review remain completion/merge gates. Native integration receipts do not approve the added public admission/framing/lifecycle contracts.
 - No production historical resource store/query/follower/timeline is claimed.
 
 ## Review requested
