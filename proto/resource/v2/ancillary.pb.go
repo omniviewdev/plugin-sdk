@@ -21,7 +21,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// JSON fields contain only bounded shared connection data or presentation documents.
 type RelationshipResolutionInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Source        *GetInput              `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
@@ -1240,6 +1239,8 @@ func (x *ActionStreamRequest) GetAction() *ActionInput {
 	return nil
 }
 
+// First event has type="ready" exactly once after native establishment.
+// Readiness carries no error; output before readiness and EOF without it fail.
 type ActionStreamEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Version       uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`

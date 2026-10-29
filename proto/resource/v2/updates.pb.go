@@ -835,6 +835,9 @@ func (*UpdateResponse_Summary) isUpdateResponse_Result() {}
 
 func (*UpdateResponse_Success) isUpdateResponse_Result() {}
 
+// First event is ready=true exactly once, after listener registration.
+// No add/update/delete/state event may precede readiness. Readiness does not
+// promise an atomic snapshot, replay, gap detection, or source continuity.
 type UpdateStreamEvent struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Version uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`

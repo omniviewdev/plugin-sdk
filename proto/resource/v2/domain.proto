@@ -2,45 +2,283 @@ syntax = "proto3";
 package omniview.resource.v2;
 option go_package = "github.com/omniviewdev/plugin-sdk/proto/resource/v2;resourcepb";
 
-message ScopeEntry { string dimension = 1; string value = 2; }
-message ResourceAddress { string provider = 1; string authority = 2; string type = 3; repeated ScopeEntry scope = 4; string id = 5; }
-message AccessRoute { string connection = 1; }
-message ResourceReference { ResourceAddress address = 1; optional string incarnation = 2; }
-message AnyScope {}
-message OneOfScope { repeated string values = 1; }
-message ScopeConstraint { string dimension = 1; oneof selection { AnyScope any = 2; OneOfScope one_of = 3; } }
-message QueryScope { repeated ScopeConstraint constraints = 1; }
-message NullValue {}
-message TimestampValue { sint64 seconds = 1; uint32 nanos = 2; }
-message ListValue { repeated Value values = 1; }
-message MapValue { repeated ValueEntry entries = 1; }
-message ValueEntry { string key = 1; Value value = 2; }
-message Value { oneof selection { NullValue null_value = 1; bool bool_value = 2; string string_value = 3; sint64 int64_value = 4; uint64 uint64_value = 5; double double_value = 6; TimestampValue timestamp_value = 7; ListValue list_value = 8; MapValue map_value = 9; } }
-message SchemaDocumentReference { string id = 1; string revision = 2; }
-message SchemaDocument { SchemaDocumentReference reference = 1; string dialect = 2; bytes document = 3; }
-message SchemaBinding { string state = 1; optional string revision = 2; string dialect = 3; bytes document = 4; string validation = 5; repeated string unvalidated = 6; SchemaDocumentReference document_ref = 7; string root = 8; optional string unavailable_reason = 9; }
-message Representation { string id = 1; string revision = 2; SchemaBinding schema = 3; }
-message Dimension { string name = 1; bool allow_empty = 2; }
-message Capability { string operation = 1; QueryScope scope = 2; string guarantee = 3; }
-message ResourceType { string type = 1; string display_name = 2; repeated Dimension identity_dimensions = 3; repeated Dimension query_dimensions = 4; repeated Representation representations = 5; repeated Capability capabilities = 6; string default_representation = 7; NativeAuthorityHint native_authority_hint = 8; }
-message NativeAuthorityHint { string scheme = 1; string id = 2; string continuity = 3; }
-message Catalog { string provider = 1; repeated ResourceType types = 2; string revision = 3; reserved 4; Coverage coverage = 5; }
-message ReadTarget { AccessRoute route = 1; string provider = 2; string authority = 3; string type = 4; QueryScope scope = 5; string representation = 6; }
-message GetInput { AccessRoute route = 1; ResourceReference reference = 2; string representation = 3; }
-message EnumerateInput { ReadTarget target = 1; uint32 page_size = 2; optional string cursor = 3; }
-message NativeQueryInput { ReadTarget target = 1; string language = 2; Value query = 3; uint32 page_size = 4; optional string cursor = 5; }
-message Coverage { string kind = 1; repeated string paths = 2; string reason = 3; }
-message Count { string kind = 1; optional string value = 2; }
-message Record { ResourceReference reference = 1; Value body = 2; Representation representation = 3; Coverage coverage = 4; optional string source_revision = 5; }
-message SourcePage { repeated Record records = 1; optional string next_cursor = 2; Count count = 3; Coverage coverage = 4; string consistency = 5; optional string source_revision = 6; }
-message MutationInput { AccessRoute route = 1; ResourceReference reference = 2; string operation = 3; Value input = 4; optional string expected_revision = 5; }
-message ActionInput { AccessRoute route = 1; ResourceReference reference = 2; string action = 3; Value input = 4; }
+// Resource-v2 admission rejects unknown fields, duplicate singular fields, and
+// repeated selections of a oneof before generated protobuf decoding. Repeated
+// entries remain ordered; duplicate scope dimensions and map keys are invalid.
+// Required semantic messages and oneof selections must be present. Optional
+// strings preserve absence independently of an explicitly present empty string;
+// domain validation decides whether that empty value is legal.
+// Protobuf-tree bounds include wrapper messages; JSON-tree bounds apply only to
+// embedded JSON documents. Semantic Value depth counts Value nesting, not either
+// transport tree. None of these bounds substitutes for another.
+
+message ScopeEntry {
+  string dimension = 1;
+  string value = 2;
+}
+
+message ResourceAddress {
+  string provider = 1;
+  string authority = 2;
+  string type = 3;
+  repeated ScopeEntry scope = 4;
+  string id = 5;
+}
+
+message AccessRoute {
+  string connection = 1;
+}
+
+message ResourceReference {
+  ResourceAddress address = 1;
+  optional string incarnation = 2;
+}
+
+message AnyScope {
+}
+
+message OneOfScope {
+  repeated string values = 1;
+}
+
+message ScopeConstraint {
+  string dimension = 1;
+  oneof selection {
+    AnyScope any = 2;
+    OneOfScope one_of = 3;
+  }
+}
+
+message QueryScope {
+  repeated ScopeConstraint constraints = 1;
+}
+
+message NullValue {
+}
+
+message TimestampValue {
+  sint64 seconds = 1;
+  uint32 nanos = 2;
+}
+
+message ListValue {
+  repeated Value values = 1;
+}
+
+message MapValue {
+  repeated ValueEntry entries = 1;
+}
+
+message ValueEntry {
+  string key = 1;
+  Value value = 2;
+}
+
+message Value {
+  oneof selection {
+    NullValue null_value = 1;
+    bool bool_value = 2;
+    string string_value = 3;
+    sint64 int64_value = 4;
+    uint64 uint64_value = 5;
+    double double_value = 6;
+    TimestampValue timestamp_value = 7;
+    ListValue list_value = 8;
+    MapValue map_value = 9;
+  }
+}
+
+message SchemaDocumentReference {
+  string id = 1;
+  string revision = 2;
+}
+
+message SchemaDocument {
+  SchemaDocumentReference reference = 1;
+  string dialect = 2;
+  bytes document = 3;
+}
+
+message SchemaBinding {
+  string state = 1;
+  optional string revision = 2;
+  string dialect = 3;
+  bytes document = 4;
+  string validation = 5;
+  repeated string unvalidated = 6;
+  SchemaDocumentReference document_ref = 7;
+  string root = 8;
+  optional string unavailable_reason = 9;
+}
+
+message Representation {
+  string id = 1;
+  string revision = 2;
+  SchemaBinding schema = 3;
+}
+
+message Dimension {
+  string name = 1;
+  bool allow_empty = 2;
+}
+
+// Finite write operations are independently declared as create, mutationUpdate,
+// and delete. The update operation exclusively describes advisory watches.
+// Each declaration owns its scope; no coarse mutation fallback exists.
+message Capability {
+  string operation = 1;
+  QueryScope scope = 2;
+  string guarantee = 3;
+}
+
+message ResourceType {
+  string type = 1;
+  string display_name = 2;
+  repeated Dimension identity_dimensions = 3;
+  repeated Dimension query_dimensions = 4;
+  repeated Representation representations = 5;
+  repeated Capability capabilities = 6;
+  string default_representation = 7;
+  NativeAuthorityHint native_authority_hint = 8;
+}
+
+message NativeAuthorityHint {
+  string scheme = 1;
+  string id = 2;
+  string continuity = 3;
+}
+
+message Catalog {
+  string provider = 1;
+  repeated ResourceType types = 2;
+  string revision = 3;
+  // Retired catalog field; never reuse its tag.
+  reserved 4;
+  Coverage coverage = 5;
+}
+
+message ReadTarget {
+  AccessRoute route = 1;
+  string provider = 2;
+  string authority = 3;
+  string type = 4;
+  QueryScope scope = 5;
+  string representation = 6;
+}
+
+message GetInput {
+  AccessRoute route = 1;
+  ResourceReference reference = 2;
+  string representation = 3;
+}
+
+message EnumerateInput {
+  ReadTarget target = 1;
+  uint32 page_size = 2;
+  optional string cursor = 3;
+}
+
+message NativeQueryInput {
+  ReadTarget target = 1;
+  string language = 2;
+  Value query = 3;
+  uint32 page_size = 4;
+  optional string cursor = 5;
+}
+
+message Coverage {
+  string kind = 1;
+  repeated string paths = 2;
+  string reason = 3;
+}
+
+message Count {
+  string kind = 1;
+  optional string value = 2;
+}
+
+message Record {
+  ResourceReference reference = 1;
+  Value body = 2;
+  Representation representation = 3;
+  Coverage coverage = 4;
+  optional string source_revision = 5;
+}
+
+message SourcePage {
+  repeated Record records = 1;
+  optional string next_cursor = 2;
+  Count count = 3;
+  Coverage coverage = 4;
+  string consistency = 5;
+  optional string source_revision = 6;
+}
+
+message MutationInput {
+  AccessRoute route = 1;
+  ResourceReference reference = 2;
+  string operation = 3;
+  Value input = 4;
+  optional string expected_revision = 5;
+}
+
+message ActionInput {
+  AccessRoute route = 1;
+  ResourceReference reference = 2;
+  string action = 3;
+  Value input = 4;
+}
+
 // Every call negotiates resource wire version independently of utility transports.
-message FeatureRequest {}
-message FeatureSet { repeated string traits = 1; }
-message Request { uint32 version = 1; oneof operation { AccessRoute catalog = 2; GetInput get = 3; EnumerateInput enumerate = 4; NativeQueryInput native_query = 5; MutationInput mutate = 6; ActionInput action = 7; ConnectionInput connection = 8; FeatureRequest features = 9; } }
-message ConnectionInput { string operation = 1; string id = 2; }
+message FeatureRequest {
+}
+
+message FeatureSet {
+  repeated string traits = 1;
+}
+
+// Call response correspondence: catalog -> catalog; get/mutate -> record;
+// enumerate/native_query -> page; action -> value; connection -> connection;
+// features -> features. Connection load/get/stop use connection_json;
+// state/start/check use status_json.
+message Request {
+  uint32 version = 1;
+  oneof operation {
+    AccessRoute catalog = 2;
+    GetInput get = 3;
+    EnumerateInput enumerate = 4;
+    NativeQueryInput native_query = 5;
+    MutationInput mutate = 6;
+    ActionInput action = 7;
+    ConnectionInput connection = 8;
+    FeatureRequest features = 9;
+  }
+}
+
+message ConnectionInput {
+  string operation = 1;
+  string id = 2;
+}
+
 // Connections remain shared SDK domain, encoded independently from tagged bodies.
-message ConnectionOutput { bytes connection_json = 1; bytes status_json = 2; }
-message Response { uint32 version = 1; oneof result { Catalog catalog = 2; Record record = 3; SourcePage page = 4; Value value = 5; ConnectionOutput connection = 6; FeatureSet features = 7; } }
-service ResourceProvider { rpc Call(Request) returns (Response); }
+message ConnectionOutput {
+  bytes connection_json = 1;
+  bytes status_json = 2;
+}
+
+message Response {
+  uint32 version = 1;
+  oneof result {
+    Catalog catalog = 2;
+    Record record = 3;
+    SourcePage page = 4;
+    Value value = 5;
+    ConnectionOutput connection = 6;
+    FeatureSet features = 7;
+  }
+}
+
+service ResourceProvider {
+  rpc Call(Request) returns (Response);
+}
+

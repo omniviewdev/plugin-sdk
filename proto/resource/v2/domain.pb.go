@@ -1213,6 +1213,9 @@ func (x *Dimension) GetAllowEmpty() bool {
 	return false
 }
 
+// Finite write operations are independently declared as create, mutationUpdate,
+// and delete. The update operation exclusively describes advisory watches.
+// Each declaration owns its scope; no coarse mutation fallback exists.
 type Capability struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Operation     string                 `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
@@ -2278,6 +2281,10 @@ func (x *FeatureSet) GetTraits() []string {
 	return nil
 }
 
+// Call response correspondence: catalog -> catalog; get/mutate -> record;
+// enumerate/native_query -> page; action -> value; connection -> connection;
+// features -> features. Connection load/get/stop use connection_json;
+// state/start/check use status_json.
 type Request struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Version uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`

@@ -4,25 +4,153 @@ option go_package = "github.com/omniviewdev/plugin-sdk/proto/resource/v2;resourc
 import "proto/resource/v2/domain.proto";
 
 // JSON fields contain only bounded shared connection data or presentation documents.
-message RelationshipResolutionInput { GetInput source = 1; repeated ReadTarget targets = 2; }
-message AncillaryRequest { uint32 version = 1; string operation = 2; AccessRoute route = 3; string type = 4; GetInput get = 5; Value value = 6; bytes connection_json = 7; string id = 8; uint32 limit = 9; SchemaDocumentReference document_ref = 10; RelationshipResolutionInput relationship_resolution = 11; }
-message AncillaryResponse { uint32 version = 1; oneof result { bytes json = 2; RelationshipDescriptors relationships = 3; ResolvedRelationships resolved = 4; OptionalHealth health = 5; ResourceEvents events = 6; SchemaDocument document = 7; EditorSchemas editor_schemas = 8; } }
-message EditorSchema { string type = 1; string file_match = 2; string uri = 3; string language = 4; SchemaBinding binding = 5; }
-message EditorSchemas { repeated EditorSchema schemas = 1; }
-message OptionalHealth { ResourceHealth health = 1; }
-message RelationshipDescriptor { string type = 1; string target_type = 2; string label = 3; string inverse_label = 4; string cardinality = 5; string direction = 6; bytes extractor_json = 7; repeated ScopeEntry target_scope = 8; repeated ScopeExtractor scope_extractors = 9; }
-message ScopeExtractor { string dimension = 1; string field_path = 2; }
-message RelationshipDescriptors { repeated RelationshipDescriptor descriptors = 1; }
-message RelationshipTarget { ResourceReference reference = 1; AccessRoute route = 2; string display_name = 3; }
-message ResolvedRelationship { RelationshipDescriptor descriptor = 1; repeated RelationshipTarget targets = 2; }
-message ResolvedRelationships { repeated ResolvedRelationship relationships = 1; }
-message HealthCondition { string type = 1; string status = 2; string reason = 3; string message = 4; TimestampValue last_probe_time = 5; TimestampValue last_transition_time = 6; }
-message ResourceHealth { string status = 1; string reason = 2; string message = 3; TimestampValue since = 4; repeated HealthCondition conditions = 5; }
-message ResourceEvent { string type = 1; string reason = 2; string message = 3; string source = 4; int32 count = 5; TimestampValue first_seen = 6; TimestampValue last_seen = 7; }
-message ResourceEvents { repeated ResourceEvent events = 1; }
-message ActionStreamRequest { uint32 version = 1; ActionInput action = 2; }
-message ActionStreamEvent { uint32 version = 1; string type = 2; Value data = 3; string error_code = 4; }
-message ConnectionStreamEvent { uint32 version = 1; bytes connections_json = 2; }
+// Operation names determine payloads: health uses get/value; events uses get/
+// limit. resolveRelationships uses relationship_resolution, not legacy get.
+// schemaDocument uses route/document_ref; relationships/actions/scopeValues/
+// definition use route/type; groups/editorSchemas use route. updateConnection and
+// applyConnectionOverlay use connection_json; deleteConnection uses id.
+// listConnections/nativeConnections carry no operation-specific input.
+// Results correspond respectively to health/events/resolved/document/
+// relationships/editor_schemas; presentation and connection results use json.
+// OptionalHealth with absent health represents unavailable health, not success
+// with an empty ResourceHealth. Missing required messages or result selections
+// fail admission. Unknown fields, singular duplicates, and multiple oneof
+// selections fail raw-wire admission before generated decoding loses evidence.
+
+message RelationshipResolutionInput {
+  GetInput source = 1;
+  repeated ReadTarget targets = 2;
+}
+
+message AncillaryRequest {
+  uint32 version = 1;
+  string operation = 2;
+  AccessRoute route = 3;
+  string type = 4;
+  GetInput get = 5;
+  Value value = 6;
+  bytes connection_json = 7;
+  string id = 8;
+  uint32 limit = 9;
+  SchemaDocumentReference document_ref = 10;
+  RelationshipResolutionInput relationship_resolution = 11;
+}
+
+message AncillaryResponse {
+  uint32 version = 1;
+  oneof result {
+    bytes json = 2;
+    RelationshipDescriptors relationships = 3;
+    ResolvedRelationships resolved = 4;
+    OptionalHealth health = 5;
+    ResourceEvents events = 6;
+    SchemaDocument document = 7;
+    EditorSchemas editor_schemas = 8;
+  }
+}
+
+message EditorSchema {
+  string type = 1;
+  string file_match = 2;
+  string uri = 3;
+  string language = 4;
+  SchemaBinding binding = 5;
+}
+
+message EditorSchemas {
+  repeated EditorSchema schemas = 1;
+}
+
+message OptionalHealth {
+  ResourceHealth health = 1;
+}
+
+message RelationshipDescriptor {
+  string type = 1;
+  string target_type = 2;
+  string label = 3;
+  string inverse_label = 4;
+  string cardinality = 5;
+  string direction = 6;
+  bytes extractor_json = 7;
+  repeated ScopeEntry target_scope = 8;
+  repeated ScopeExtractor scope_extractors = 9;
+}
+
+message ScopeExtractor {
+  string dimension = 1;
+  string field_path = 2;
+}
+
+message RelationshipDescriptors {
+  repeated RelationshipDescriptor descriptors = 1;
+}
+
+message RelationshipTarget {
+  ResourceReference reference = 1;
+  AccessRoute route = 2;
+  string display_name = 3;
+}
+
+message ResolvedRelationship {
+  RelationshipDescriptor descriptor = 1;
+  repeated RelationshipTarget targets = 2;
+}
+
+message ResolvedRelationships {
+  repeated ResolvedRelationship relationships = 1;
+}
+
+message HealthCondition {
+  string type = 1;
+  string status = 2;
+  string reason = 3;
+  string message = 4;
+  TimestampValue last_probe_time = 5;
+  TimestampValue last_transition_time = 6;
+}
+
+message ResourceHealth {
+  string status = 1;
+  string reason = 2;
+  string message = 3;
+  TimestampValue since = 4;
+  repeated HealthCondition conditions = 5;
+}
+
+message ResourceEvent {
+  string type = 1;
+  string reason = 2;
+  string message = 3;
+  string source = 4;
+  int32 count = 5;
+  TimestampValue first_seen = 6;
+  TimestampValue last_seen = 7;
+}
+
+message ResourceEvents {
+  repeated ResourceEvent events = 1;
+}
+
+message ActionStreamRequest {
+  uint32 version = 1;
+  ActionInput action = 2;
+}
+
+// First event has type="ready" exactly once after native establishment.
+// Readiness carries no error; output before readiness and EOF without it fail.
+message ActionStreamEvent {
+  uint32 version = 1;
+  string type = 2;
+  Value data = 3;
+  string error_code = 4;
+}
+
+message ConnectionStreamEvent {
+  uint32 version = 1;
+  bytes connections_json = 2;
+}
+
 service ResourceAncillary {
  rpc Call(AncillaryRequest) returns (AncillaryResponse);
  rpc WatchConnections(AncillaryRequest) returns (stream ConnectionStreamEvent);
