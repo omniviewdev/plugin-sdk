@@ -12,6 +12,7 @@ const (
 	CapabilityLog       Capability = "log"
 	CapabilityMetric    Capability = "metric"
 	CapabilitySettings  Capability = "settings"
+	CapabilityTools     Capability = "tools"
 	CapabilityUI        Capability = "ui"
 )
 
@@ -19,7 +20,7 @@ const (
 func (c Capability) IsBackend() bool {
 	switch c {
 	case CapabilityResource, CapabilityExec, CapabilityNetworker,
-		CapabilityLog, CapabilityMetric, CapabilitySettings:
+		CapabilityLog, CapabilityMetric, CapabilitySettings, CapabilityTools:
 		return true
 	default:
 		return false
@@ -40,6 +41,7 @@ func AllCapabilities() []Capability {
 		CapabilityLog,
 		CapabilityMetric,
 		CapabilitySettings,
+		CapabilityTools,
 		CapabilityUI,
 	}
 }
@@ -50,7 +52,7 @@ func ParseCapability(s string) (Capability, bool) {
 	c := Capability(s)
 	switch c {
 	case CapabilityResource, CapabilityExec, CapabilityNetworker,
-		CapabilityLog, CapabilityMetric, CapabilitySettings, CapabilityUI:
+		CapabilityLog, CapabilityMetric, CapabilitySettings, CapabilityTools, CapabilityUI:
 		return c, true
 	default:
 		return "", false
