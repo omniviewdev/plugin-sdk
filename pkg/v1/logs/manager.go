@@ -202,6 +202,14 @@ func (m *Manager) CreateSession(
 	return m.createSession(pluginctx, opts)
 }
 
+// CreateResourceSession admits a configured connection and registers a connecting
+// session; native handler/resolver acquisition proceeds asynchronously. The
+// returned session is not a readiness receipt. Its lifetime is independent of the
+// initiating RPC and ends through CloseSession or manager shutdown.
+//
+// The configured-generation lease covers admission, not asynchronous acquisition
+// or the accepted session. Integrators must close affected sessions when retiring
+// a connection; registry retirement alone does not cancel or await this work.
 func (m *Manager) CreateResourceSession(pluginctx *types.PluginContext, opts CreateSessionOptions) (*LogSession, error) {
 	if err := opts.Validate(); err != nil {
 		return nil, err

@@ -158,318 +158,35 @@ to secret settings.
 
 ## Resource v2 boundary
 
-Resource providers use the handwritten `pkg/resource/v2` domain and
-`sdk.RegisterResourcePlugin(plugin, provider)`. `Provider` requires only
-`Catalog(context.Context, CatalogRequest) (Catalog, error)`. `Getter`,
-`Enumerator`, `NativeQuerier`, `Mutator`, and `Actioner` are independent optional
-interfaces. Catalog capabilities qualify support by explicit connection, type,
-and scope; method presence alone does not advertise support.
+Resource v2 is an **implementation candidate awaiting public API review**, not
+an approved contract. Providers use handwritten `pkg/resource/v2` values and
+`sdk.RegisterResourcePlugin(plugin, provider)`. Only catalog discovery is required;
+finite operations, lifecycle, ancillary traits and advisory updates are optional.
+Catalog declarations qualify each operation independently, including create,
+mutation update and delete. Advisory `OperationUpdate` never authorizes writes.
 
-`ResourceAddress` contains provider, host-issued authority, opaque type, scope
-entries, and opaque ID. Connection is an access route, not identity. Incarnation
-and source revision remain optional opaque tokens; neither is fabricated.
-Namespace, GVK, CRUD, enumeration, and live acquisition are not universal
-requirements. Requests never choose the first active connection implicitly.
+Start with the [architecture and API guide](docs/resource-v2-api.md), which owns
+the responsibility/export map, route admission, lifecycle/overlay rules,
+concurrency, utility lifetimes, result semantics, errors and candidate ceilings.
+The [Go package overview](pkg/resource/v2/doc.go) links those concepts to the
+[compiling public examples](pkg/resource/v2/example_test.go): catalog-only,
+get-only, controller lifecycle and custom-provider generation issuance.
 
-Documents use recursive tagged `Value` maps, not `google.protobuf.Struct`.
-JSON values use `{ "kind": "int64", "value": "9223372036854775807" }`, with
-analogous null, bool, string, uint64, double, timestamp, list, and map tags.
-The adapters reject duplicate members, ambiguous protobuf fields, invalid Unicode,
-unknown fields, nonfinite numbers, invalid integer/timestamp ranges, and bounded
-work exhaustion. Generated protobuf messages remain transport-only.
+Read the [code review](docs/resource-v2-code-review.md) and
+[specification comparison](docs/resource-v2-spec-review.md) before freezing or
+claiming approval. Connection routes and catalog pins are not permission grants;
+the host owns authority and public error policy. Generated messages and binary
+framing are transport details, not provider construction APIs.
 
-`SourcePage` is a bounded source acquisition page, not a host query result or
-cursor. Unknown count stays unknown. Partial coverage, schema unavailability,
-representation provenance, consistency, and source revision remain explicit.
-P05 owns live continuity; finite enumeration does not claim a live subscription
-or an atomic snapshot/update cutover.
-
-The resource service negotiates wire version `2` independently of the shared
-go-plugin transport, which remains version `1` for active utility services.
-Both incoming resource requests and incoming client responses pass raw-wire
-validation before generated protobuf decoding. Selecting the default protobuf
-content subtype does not disable resource admission.
-
-Before optional ancillary startup, call
-`FeatureNegotiator.Features(context.Context) (FeatureSet, error)` and inspect
-`FeatureSet.Has`. A remote client's static Go method set does not prove that its
-provider supports connections, best-effort updates, action streams, or other
-ancillary traits. Finite-operation support still comes only from the qualified
-catalog. No unsupported listener is treated as ready.
-
-`NewController(Config[T])` supplies exact-type optional registrations, explicit
-client lifecycle ownership, cancellation, classification, and shared catalog
-admission. `AdmitCatalogOperation` reuses the same rules when a host already owns
-an admitted catalog. `ValidateOperationResult` rejects identity, scope, or
-representation escape. `ValueFromNative` and `NativeFromValue` preserve native
-scalar intent without a JSON float roundtrip; `JSONToValue` admits native JSON
-under its documented exact-integer policy.
-
-`ConnectionOverlayProvider.ApplyConnectionOverlay` atomically replaces the
-host's explicit in-memory desired connection overlay: `Upserts` contains only
-manual profiles or overrides, and `DisabledIDs` contains tombstones. Native
-discovery remains separate and subsequent refreshes cannot erase overrides or
-resurrect tombstones. An empty overlay restores native configuration. Changed
-effective routes stop/drain old clients before success. The host owns durable
-storage and startup replay; the SDK never rewrites kubeconfig or duplicates the
-host's profile store. A failed durable save can reapply the previous overlay.
-
-The controller owns deep copies of admitted mutable connection configuration at
-native/overlay ingress, returned inventory/status snapshots, and provider
-callback/session boundaries. Nested containers, exact native numbers and nil
-values are preserved without a JSON roundtrip. Editing a returned snapshot has
-no effect until explicitly applied; a changed endpoint cannot silently retain
-its previous active client.
-
-
-The implementation-candidate policy `omniview.resource-wire-policy.v1` caps a
-decoded frame at 32 MiB, one body at 16 MiB, nesting at 64, nodes at 262144,
-fields at 1048576, and source pages at 256 records. Aggregate page/frame work is
-bounded before generated decoding; per-record limits do not multiply the frame
-budget. Hosts may lower effective limits. These safety ceilings require policy
-review and measurements before final freeze; they are not latency promises.
-The separate predicate/projection policy remains unchanged at 64 KiB.
-`ValueWireSize` and `RecordWireSize` permit bounded page construction without
-allocating transport messages.
-
-Catalog discovery coverage is `complete`, `partial`, or `unknown`, qualified by
-the actual connection and declared scopes. Failed or denied discovery returns an
-error, not an empty complete catalog. Each exact `ResourceType` may declare an
-optional `NativeAuthorityHint`; catalogs have no shared hint or fallback.
-Mixed catalogs can therefore identify cluster-native and local Helm backing
-independently, while an unhinted type remains unknown. This is nonauthoritative
-provider metadata: its scheme, opaque ID, and connection-local/stable-native
-continuity claim never issue authority or permission. Only the host binds
-AuthorityID; unknown backing identity remains isolated. Resource addresses and
-identity dimensions do not change.
-
-`RelationshipProvider.ResolveRelationships` takes
-`RelationshipResolutionRequest{Source: GetRequest, Targets: []ReadTarget}`.
-The host admits target catalogs and authorities before calling the provider.
-Bindings are bounded to 256 and must be unique and unambiguous; they are not
-permission grants or authorization to scan. Providers follow observed native
-links only. Returned canonical references must match an explicit target's
-provider, authority, opaque type, route and scope. Missing or out-of-scope links
-return an explicit `UNSUPPORTED` error, never a fabricated address, source
-authority fallback, host-side repair, or silently filtered complete result.
-
-Schema bindings distinguish available, absent, and unavailable, retaining actual
-revision and local-root provenance. A shared `SchemaDocumentReference` plus
-`Root` identifies a catalog schema without copying an OpenAPI group document into
-each type. Fetch a bounded raw document once through `SchemaDocumentProvider`.
-Empty root selects the whole document; other roots are local RFC6901 URI-fragment
-JSON pointers. No implicit external IO or normalization occurs. P07 owns schema
-normalization. Editor schemas carry the same binding. An omitted representation
-is resolved only through the provider's explicit `DefaultRepresentation`.
-Unavailable bindings may carry optional `UnavailableReason` /
-`unavailableReason` (protobuf optional string field 9). When present it is a
-nonempty reviewed domain error code, at most 64 ASCII uppercase/underscore
-characters, allowed only with state `unavailable`. It is a safe machine code
-such as `FORBIDDEN`, never a provider diagnostic, URL or credential. Absence
-remains absence. A denied optional editor-schema source must not erase available
-native schemas or pretend an unavailable schema is absent/full validation;
-cancellation and retired source generations still fail the operation.
-
-The optional `BestEffortUpdateProvider` preserves native informer readiness,
-state replay, cancellation, and teardown with canonical records. Every update
-capability/event explicitly says `bestEffort`: no atomic snapshot/watch boundary,
-replay continuity, or gap-free source claim is implied. Hosts supply explicit
-admitted `ReadTarget`s, including host-issued authority, before sources start.
-P05 owns stronger source continuity. The obsolete unversioned and v1 resource
-composition/Find/mandatory-CRUD APIs and RPCs are removed, not re-exported.
-
-
-## Resource-scoped exec
-
-Exec retains its existing session engine, IDs, terminal streams and lifecycle.
-Resource creation uses the explicit `CreateResourceSession` operation on that
-same service: `SessionOptions.ResourceData` is an optional canonical
-`*resourcev2.Value`, not a generic map or `google.protobuf.Struct`. Protobuf
-field 8 is reserved; canonical Value is field 9, resource wire version `2`
-is field 10, and optional actual C01 reference/access route are fields 11/12.
-Bodies, when supplied, are map values. Exact integers, timestamps and negative
-double zero cross this operation without a JSON-number/Struct conversion.
-
-`CreateSession` routes any resource intent—including opaque resource selectors
-without a body—to the new RPC. The old operation rejects resource intent and
-legacy field 8 before native dispatch. An older server returns `UNSUPPORTED`;
-there is no fallback to its old terminal method. Plain terminal creation remains
-the nonresource operation. The go-plugin transport protocol remains `1`.
-
-`ResourceSessionProvider.CreateResourceSession` is the optional native creation
-trait. Existing opaque utility selectors/parameter builders are inputs, not
-canonical identity or permission grants. An actual reference may supply routing
-selectors; the SDK never invents a reference, authority, resource body or Get
-permission. Explicit routes must agree with the admitted connection context.
-Native admission observes caller cancellation/deadline; accepted sessions then
-retain the existing detached terminal lifetime.
-
-Both new RPC directions enforce bounded raw protobuf admission before generated
-decoding, including canonical Value, duplicate/unknown fields, UTF-8 and exact
-wire version. Source adapters preflight body/frame allocation under the resource
-16 MiB/32 MiB ceilings. Responses must contain a nonempty session ID, matching
-an explicit requested ID, and a valid creation timestamp. Typed C02 errors are
-preserved; malformed input and unsupported operations cannot invoke native exec.
-
-## Resource logs, metrics and forwarding
-
-Resource-scoped logs, metric queries/subscriptions and port forwarding also use
-canonical `*resourcev2.Value` bodies and optional actual `Reference`/`Route`.
-Their native callbacks/helpers consume those exact values, not generic maps or
-Struct. Existing utility engines and nonresource methods remain in place.
-
-| Existing service / new operation | Canonical transport fields |
-| --- | --- |
-| Logs `CreateResourceSession` | Request reserves old body 3; Value 5, wire version 6, reference 7, route 8 |
-| Metrics `QueryResource` | Request reserves old body 4; Value 11, wire version 12, reference 13, route 14 |
-| Metrics `StreamResourceMetrics` | Input reserves old body 6; Value 9, wire version 10, reference 11, route 12 |
-| Network `StartResourcePortForwardSession` | Nested resource connection reserves old body 5; Value 6, wire version 7, reference 8, route 9 |
-
-New unary response wrappers carry wire version 2 in field 1 and their result in
-field 2. New calls have strict bounded raw request/response admission, typed C02
-errors and no old-method fallback. Old operations reject resource intent and
-legacy bodies before native work. Static forwarding and ordinary nonresource
-query/stream methods keep their existing semantics. Resource-bearing forwarding
-session snapshots remain canonical on get/list/find/close as well as creation;
-conversion failures return errors, never an empty replacement body.
-
-Metric resource intent is an explicit body/reference/route, **not a nonempty
-key**: `cluster::metrics` remains nonresource. The explicit optional
-`metric.ResourceStreamProvider.StreamResourceMetrics` mixed lane can carry
-resource subscriptions, ordinary cluster subscriptions and control frames.
-Every frame negotiates version 2. A bounded open/ready handshake completes
-before its SDK client publishes the output channel; constructing a gRPC stream
-alone is not readiness. Legacy `StreamMetrics` is explicitly nonresource-only.
-Typed asynchronous failures populate `StreamOutput.OperationError`; stream
-retirement must fence its actual subscriptions rather than silently report
-success. `ValidateStreamInput` admits a command before host tracking/enqueue.
-
-Metric `QueryContext.Context` and `StreamContext.Context` carry actual native
-request/poll/stream cancellation. Subscription `Params` (protobuf field 14)
-survive polling into `QueryRequest.Params`; connection-specific source options
-belong there, never in a fabricated resource body. Utility inputs do not grant
-permission, synthesize identity or require an unrelated Get.
-
-`ScopeForAddress` validates identity dimensions and projects only shared
-identity/query dimensions. Query-only dimensions stay explicit any/unknown for
-support qualification, not permission or proven narrow membership. Restricted
-Get support must reject that unknown scope. Get cannot use it to start an
-implicit broad source. Enumerate/native-query targets keep explicit selection
-scope; the native adapter owns query-only filtering and honest page coverage.
-
-## Catalog observation and source-generation admission
-
-Hosts pin the **exact catalog observation** used for authority/type/scope
-admission with `resourcev2.WithCatalogRevision(ctx, catalog.Revision)`.
-The SDK client must never replace it with a later cached token. Binary metadata
-`omniview-resource-catalog-revision-bin` transports that context, bounded to
-4096 UTF-8 bytes; missing, duplicate, malformed, stale or oversized required
-pins fail closed with `RESET_REQUIRED`. This context is not a permission grant.
-
-Finite reads, mutations/actions, resource ancillary calls and targeted
-best-effort sources require the pin. Catalog/feature discovery, connection
-browser/lifecycle/overlay operations and pin-free native connection leasing are
-exempt. The default observation pins one route: split multi-route source starts
-by their actual accepted revisions. Cross-route relationships additionally use
-`WithCatalogRevisionForRoute(ctx, provider, route, revision)` for each independently
-admitted target. A different route cannot reuse the source observation.
-A source may also use that qualified helper without a default observation.
-Matching provider/route pins take precedence on both direct calls and RPCs:
-a wrong qualified pin cannot fall back to a correct default.
-`omniview-resource-catalog-route-revisions-bin` carries the SDK-owned versioned
-binary list; hosts never concatenate IDs or parse tokens. It admits at most 256
-entries, each pin at most 4096 bytes, with a conservative 32 KiB aggregate
-catalog-header ceiling including source observation and framing. Malformed or
-duplicate entries fail `RESET_REQUIRED`; aggregate excess is `RESOURCE_LIMIT`.
-Global listeners have no invented route; admitted sources retain their fences.
-
-`CatalogBindingEpoch` is the SDK-owned accessor for the actual source/client
-binding epoch embedded in opaque `Catalog.Revision`. It is distinct from native
-catalog metadata revision: CRD/schema churn must not by itself reidentify an
-unchanged source. Controllers use cryptographic per-client-slot epochs and
-unambiguous framing, hold the actual connected lease during catalog publication
-and native dispatch, and fence returned results/events. Native refresh completed
-before a request, ignored cancellation, and retired A→B→A epochs cannot reuse
-an earlier observation. Catalog discovery does not implicitly start a client.
-
-Custom providers are not required to use Controller. They issue an epoch with
-`NewCatalogBindingEpoch` once for an actual source/configuration generation and
-frame native metadata revision with `BindCatalogRevision`. They must rotate the
-epoch when that binding changes, not use a constant fictitious epoch or rotate
-it for ordinary catalog churn. The host owns authority issuance, restart policy
-and retiring assignments when the observed binding changes.
-
-Canonical-reference-bearing exec/logs/forwarding and metric query RPCs carry the
-same admitted context without an extra Get. A reference-bearing metric
-SUBSCRIBE carries host-derived `StreamInput.CatalogRevision` (protobuf field
-15), checked before native subscription/poll and publication. Ordinary cluster
-metrics and opaque nonreference utilities need no fabricated catalog or ref.
-
-Native utility work binds through `ConnectionContextProvider.WithConnection`
-to the sole already-started registry. SDK capability composition connects its
-consumers automatically; explicit fixtures/custom composition use
-`BindConnectionContextProvider`. No probe, implicit start, first-connection
-fallback or metadata-only profile is accepted. Stopped connection admission is
-`CONNECTION_ERROR`; stop/configuration refresh cancels its generation. Metric
-streams have owner-scoped output/subscriptions, so equal local subscription IDs
-on different actual connections cannot steal output or cancel each other.
-Production SDK dial options serialize PluginContext on streaming as well as
-unary calls, preserving accepted catalog/session metadata and cancellation.
-Connection list/update/delete RPCs require only their actual individual methods;
-an unstarted managed connection does not need a native WatchConnections method
-or implicit client start to remain usable in the connection UI.
-
-Each metric lane retains immutable admission provenance and compact used-ID
-tombstones. Reusing a local subscription ID in that same lane is `CONFLICT`,
-even after unsubscribe; late retired outputs are dropped. Hosts mint fresh
-opaque wire IDs and map them to current public interests without parsing them.
-The candidate ceilings are 4096 used IDs and 32 MiB total retained admission
-metadata per lane, checked before native work; retired bindings do not retain
-resource bodies. Excess is `RESOURCE_LIMIT`, not an automatic retry/downgrade.
-
-`SameConnectionClientConfig` compares ID/UID/Data/private credentials, not
-display/runtime/IDE orchestration. Display-only edits preserve active clients,
-runtime state and source epochs. Nil private override data may inherit only
-source-owned credentials for unchanged public client configuration; explicit
-empty data clears them, and endpoint/auth changes do not inherit old secrets.
-The host does not persist native private credentials.
-
-## Resource invocation and action migration (C02)
-
-Catalog discovery and ancillary calls return explicit errors. Transport/discovery
-failure is not an empty successful catalog; missing support is `UNSUPPORTED`.
-Diagnostic Session request/requester labels are bounded to 256 UTF-8 bytes and
-transported using binary gRPC metadata. They survive finite and lifecycle
-connection enrichment, including recreation/deletion, without mutating the
-incoming Session. Neither these labels nor connection IDs authenticate an actor
-or confer host authority.
-
-Resource RPCs preserve typed `ResourceOperationError` classification, including
-stream termination through typed gRPC status details. Cancellation and deadline
-remain `CANCELLED` and `TIMEOUT`. The host converts provider classification into
-its canonical AppError and supplies trusted provenance and recovery policy.
-Raw diagnostics are not safe public error text; the host redacts provider denial,
-internal and unknown failures and owns public correlation.
-
-Streaming action providers must emit exactly one `ActionEvent{Type: "ready"}`
-only after authoritative native establishment/admission succeeds, before any
-progress/output/completion. Method entry or gRPC headers are not readiness.
-Return pre-establishment failures without emitting ready; error events carry
-typed `Error`, not raw diagnostic `Data`. The framework owns its outgoing stream
-channel and handles producer return independently of channel closure. Use the
-request context for native work and cancellation-aware event sends.
-A successful stream return without a relayed `ready` is rejected as
-`PROVIDER_ERROR`, including an empty closed stream.
-
-Providers must rebuild for this contract; no progress-as-ready compatibility
-inference is supported. Consumers must pin the reviewed publicly reachable SDK
-revision and finish coordinated source/transport/host checks before claiming the
-new semantics. Local replacements alone are not a consumable release receipt.
+Providers must rebuild for the resource v2 contract. Existing nonresource utility
+engines remain; resource-bearing operations use canonical values and strict
+versioned admission without legacy-method fallback. Resource wire version is
+`2`; the shared go-plugin transport remains `1`. Local replacements alone are
+not a consumable release receipt.
 
 `buf.gen.yaml` pins protoc-gen-go `v1.36.11` and protoc-gen-go-grpc `v1.3.0`.
-Use `make proto` for full regeneration, including resource v2 and shared
-non-resource utility declarations.
-These remote Buf generators do not require an ambient native `protoc` binary.
+Use `make proto` for regeneration; remote Buf generators require no ambient
+native `protoc` binary.
 
 ## Settings value reads
 
@@ -479,28 +196,6 @@ numbers decode as `float64`, objects as `map[string]any`, arrays as `[]any`, and
 JSON null as `nil`. Malformed or unsupported wire payloads return decoding errors;
 RPC status errors propagate unchanged.
 
-## Connection readiness
-
-The optional `ConnectionReadinessProvider.GetConnectionStatus(ctx, id)` and
-negotiated `FeatureConnectionReadiness` (`connectionReadiness`) report only the
-sole registered lifecycle state. The existing connection RPC uses operation
-`state`; no client creation, native health probe, catalog, resource read, waiting
-for startup or source lease occurs. Configured stopped/retiring connections are
-`DISCONNECTED`, starting clients `PENDING`, registered active clients `CONNECTED`,
-and failed starts remain `FAILED` through and after native client cleanup.
-Only a safe per-configured-ID outcome is retained, never a client or error.
-Explicit retry/stop or a meaningful configuration replacement clears it;
-display-only edits preserve it. Unknown IDs are typed `NOT_FOUND`. Status has
-no provider diagnostic strings; `CONNECTED` is not network health.
-
-Read this state before catalog-based watch diagnostics. Unstarted connections
-remain visible as `DISCONNECTED`; only active clients proceed to actual catalog
-observation/pinning and fenced watch status. Unsupported custom
-providers remain explicitly unknown/unavailable; never infer support from the
-remote client's broad method set or fall back to a probe. Catalog admission
-continues to require a real active binding and cannot mint a token for a stopped
-client. `CheckConnection` remains an explicit optional native health operation,
-not the registered-state gate.
 
 ## Releasing the Go module
 

@@ -11,8 +11,13 @@ package resourcev2
 // query dimension; additional identity dimensions remain part of the reference.
 // An empty target list admits no links. JSON admission rejects unknown or
 // duplicate members and null arrays.
+// Targets and their nested scope/value slices are borrowed for resolution; copy
+// them before retaining or changing them. Results must own mutable containers
+// independently and must not silently drop links outside an explicit binding.
 type RelationshipResolutionRequest struct {
-	Source  GetRequest   `json:"source"`
+	Source GetRequest `json:"source"`
+	// Targets may be empty to admit no links. Each target Scope must be nonnil,
+	// even when its declared query space has no dimensions.
 	Targets []ReadTarget `json:"targets"`
 }
 

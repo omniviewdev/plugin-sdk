@@ -22,10 +22,15 @@ const (
 	FeatureBestEffortUpdates   Feature = "bestEffortUpdates"
 )
 
+// FeatureSet lists ancillary traits available on this provider or transport.
+// Nil or empty Traits advertises none; duplicates and unknown traits are invalid.
+// Callers must not mutate returned Traits concurrently with SDK use.
 type FeatureSet struct {
 	Traits []Feature `json:"traits"`
 }
 
+// Has tests only the advertised trait list. It does not authorize an operation
+// or replace scope-qualified catalog admission.
 func (f FeatureSet) Has(trait Feature) bool {
 	for _, candidate := range f.Traits {
 		if candidate == trait {
@@ -42,6 +47,8 @@ type FeatureNegotiator interface {
 	Features(context.Context) (FeatureSet, error)
 }
 
+// ValidateFeatures rejects duplicate or unknown trait names without changing f.
+// Unknown traits return UNSUPPORTED; malformed duplicates return INVALID_REQUEST.
 func ValidateFeatures(f FeatureSet) error {
 	seen := map[Feature]bool{}
 	for _, feature := range f.Traits {

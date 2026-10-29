@@ -7,8 +7,12 @@ import (
 )
 
 // ResourceOperationError preserves provider classification across the resource
-// transport. The host converts it into its canonical AppError with host-owned
-// provenance; provider titles, messages and suggestions are never trusted grants.
+// transport. Title, Message, and Suggestions must contain public-safe text:
+// never include credentials, private configuration, or raw native diagnostics.
+// Put native diagnostics in Err, which is excluded from JSON and exposed only
+// through Unwrap. Error serializes classification and public text, not Err.
+// The host still owns redaction, canonical AppError provenance, and recovery
+// policy; provider text and classification never grant permission.
 type ResourceOperationError struct {
 	Err         error    `json:"-"`
 	Code        string   `json:"code"`
@@ -35,6 +39,12 @@ func (e *ResourceOperationError) Unwrap() error {
 	}
 	return e.Err
 }
+
+// NewError constructs a classified error whose Message is detail. Both code and
+// detail are provider assertions, not host authority. Use a reviewed IsErrorCode
+// code and public-safe detail; attach raw native diagnostics through
+// ResourceOperationError.Err instead. This function does not validate or redact
+// detail, and host redaction remains authoritative.
 func NewError(code, detail string) error { return &ResourceOperationError{Code: code, Message: detail} }
 func ErrorCode(err error) string {
 	if err == nil {
