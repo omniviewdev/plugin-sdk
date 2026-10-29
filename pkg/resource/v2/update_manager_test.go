@@ -392,3 +392,209 @@ func TestControllerRestartReplacesDrainedUpdateTarget(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateListenerDropsPreReadyAdvisoryData(t *testing.T) {
+	for _, reject := range []bool{false, true} {
+		t.Run(map[bool]string{false: "accepted", true: "rejected"}[reject], func(t *testing.T) {
+			c := newTestController(t, controllerUpdateConfig())
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			entered, release := make(chan struct{}), make(chan struct{})
+			done := make(chan error, 1)
+			var data atomic.Int32
+			sink := controllerUpdateSink{
+				add:    func(WatchAddPayload) { data.Add(1) },
+				update: func(WatchUpdatePayload) { data.Add(1) },
+				remove: func(WatchDeletePayload) { data.Add(1) },
+			}
+			go func() {
+				done <- c.updates.listen(ctx, sink, func() error {
+					close(entered)
+					<-release
+					if reject {
+						return errors.New("readiness rejected")
+					}
+					return nil
+				})
+			}()
+			<-entered
+			listener := c.updates.snapshot()[0]
+			deliver := func() {
+				listener.data(func() { listener.sink.OnAdd(WatchAddPayload{}) })
+				listener.data(func() { listener.sink.OnUpdate(WatchUpdatePayload{}) })
+				listener.data(func() { listener.sink.OnDelete(WatchDeletePayload{}) })
+			}
+			deliver()
+			if data.Load() != 0 {
+				t.Fatal("data crossed blocked readiness")
+			}
+			// Replay completion signals data admission without polling or sleeps.
+			listener.state(WatchStateEvent{State: WatchStateSynced})
+			replayed := make(chan struct{})
+			listener.mu.Lock()
+			listener.sink = controllerUpdateSink{
+				add: sink.add, update: sink.update, remove: sink.remove,
+				state: func(WatchStateEvent) { close(replayed) },
+			}
+			listener.mu.Unlock()
+			close(release)
+			if reject {
+				if <-done == nil {
+					t.Fatal("readiness rejection succeeded")
+				}
+				deliver()
+				if data.Load() != 0 || len(c.updates.snapshot()) != 0 {
+					t.Fatal("rejected listener retained data admission")
+				}
+				return
+			}
+			<-replayed
+			cancel()
+			<-done
+			if data.Load() != 0 {
+				t.Fatal("pre-ready data replayed")
+			}
+		})
+	}
+}
+
+func TestUpdateTargetAndRepresentationCopiesOwnContainers(t *testing.T) {
+	values := []string{"east"}
+	target := controllerTarget()
+	target.Scope = QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &values}}
+	retained := cloneReadTarget(target)
+	representation := Representation{ID: "json", Schema: SchemaBinding{
+		Document: []byte(`{"type":"object"}`), Unvalidated: []string{"original"},
+		Revision: copyToken(&target.Type),
+	}}
+	registration := &Registration[string]{Watch: func(_ context.Context, _ *string, callback ReadTarget, rep Representation, _ WatchEventSink) error {
+		(*callback.Scope[0].Values)[0] = "callback"
+		callback.Scope[0].Dimension = "changed"
+		rep.Schema.Document[0] = '!'
+		rep.Schema.Unvalidated[0] = "changed"
+		*rep.Schema.Revision = "changed"
+		return nil
+	}}
+	values[0] = "west"
+	target.Scope[0].Dimension = "caller"
+	for range 2 {
+		if err := invokeUpdate(context.Background(), new(string), retained, registration, representation, controllerUpdateSink{}); err != nil {
+			t.Fatal(err)
+		}
+		if retained.Scope[0].Dimension != "region" || (*retained.Scope[0].Values)[0] != "east" {
+			t.Fatal("caller or callback changed retained admission")
+		}
+	}
+	if representation.Schema.Document[0] != '{' || representation.Schema.Unvalidated[0] != "original" || *representation.Schema.Revision != target.Type {
+		t.Fatal("callback changed retained representation")
+	}
+	descriptor := ResourceType{IdentityDimensions: []Dimension{{Name: "region"}}, Representations: []Representation{representation}}
+	owned := copyUpdateDescriptor(descriptor)
+	descriptor.IdentityDimensions[0].Name = "changed"
+	descriptor.Representations[0].Schema.Document[0] = '!'
+	if owned.IdentityDimensions[0].Name != "region" || owned.Representations[0].Schema.Document[0] != '{' {
+		t.Fatal("descriptor admission shares mutable containers")
+	}
+}
+
+func TestUpdateRetryFencesRetainedCatalog(t *testing.T) {
+	cfg := controllerUpdateConfig()
+	nativeCatalog := cfg.Catalog
+	var changed atomic.Bool
+	cfg.Catalog = func(ctx context.Context, request CatalogRequest) (Catalog, error) {
+		catalog, err := nativeCatalog(ctx, request)
+		if changed.Load() {
+			catalog.Revision = "changed-before-retry"
+		}
+		return catalog, err
+	}
+	firstRelease := make(chan struct{})
+	var calls atomic.Int32
+	cfg.Registrations[0].Watch = func(context.Context, *string, ReadTarget, Representation, WatchEventSink) error {
+		calls.Add(1)
+		<-firstRelease
+		return errors.New("retry")
+	}
+	c := newTestController(t, cfg)
+	c.updates.baseBackoff = 0
+	ctx := acceptedControllerContext(t, context.Background(), c)
+	// A synchronous state observer changes metadata between attempts, before
+	// backoff completes. No timing window or native generation retirement needed.
+	c.updates.listeners = []*updateListener{{ctx: context.Background(), failed: make(chan error, 1), sink: controllerUpdateSink{state: func(event WatchStateEvent) {
+		if event.State == WatchStateError {
+			changed.Store(true)
+		}
+	}}}}
+	target := controllerTarget()
+	if err := c.EnsureResourceWatch(ctx, target); err != nil {
+		t.Fatal(err)
+	}
+	c.updates.mu.Lock()
+	watch := c.updates.watches[target.Route.Connection][target.Type]
+	c.updates.mu.Unlock()
+	close(firstRelease)
+	<-watch.done
+	if calls.Load() != 1 || watch.state != WatchStateFailed {
+		t.Fatalf("calls=%d state=%v", calls.Load(), watch.state)
+	}
+	// Terminal state must carry an explicit reset, not the retryable source error.
+	c.updates.listenersMu.Lock()
+	pending := append([]WatchStateEvent(nil), c.updates.pending...)
+	c.updates.listenersMu.Unlock()
+	if len(pending) == 0 || pending[len(pending)-1].Error == nil {
+		t.Fatal("missing terminal reset outcome")
+	}
+	assertControllerCode(t, pending[len(pending)-1].Error, "RESET_REQUIRED")
+}
+
+func TestUpdateWatchRetainsScopeAfterCallerAndProviderMutation(t *testing.T) {
+	for _, owner := range []string{"caller", "provider"} {
+		t.Run(owner, func(t *testing.T) {
+			cfg := controllerUpdateConfig()
+			baseCatalog := cfg.Catalog
+			cfg.Catalog = func(ctx context.Context, request CatalogRequest) (Catalog, error) {
+				catalog, err := baseCatalog(ctx, request)
+				catalog.Types[0].IdentityDimensions = []Dimension{{Name: "region"}}
+				catalog.Types[0].QueryDimensions = []Dimension{{Name: "region"}}
+				for i := range catalog.Types[0].Capabilities {
+					catalog.Types[0].Capabilities[i].Scope = QueryScope{{Dimension: "region", Match: ScopeAny}}
+				}
+				return catalog, err
+			}
+			callback := make(chan ReadTarget, 1)
+			emit := make(chan struct{})
+			cfg.Registrations[0].Watch = func(ctx context.Context, _ *string, target ReadTarget, _ Representation, sink WatchEventSink) error {
+				callback <- target
+				<-emit
+				record := controllerRecord()
+				record.Reference.Address.Scope = []ScopeEntry{{Dimension: "region", Value: "west"}}
+				sink.OnAdd(WatchAddPayload{Record: record})
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			c := newTestController(t, cfg)
+			ctx := acceptedControllerContext(t, context.Background(), c)
+			target := controllerTarget()
+			values := []string{"east"}
+			target.Scope = QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &values}}
+			if err := c.EnsureResourceWatch(ctx, target); err != nil {
+				t.Fatal(err)
+			}
+			providerTarget := <-callback
+			if owner == "caller" {
+				values[0] = "west"
+			} else {
+				(*providerTarget.Scope[0].Values)[0] = "west"
+			}
+			c.updates.mu.Lock()
+			watch := c.updates.watches[target.Route.Connection][target.Type]
+			c.updates.mu.Unlock()
+			close(emit)
+			<-watch.done
+			assertControllerCode(t, watch.validationErr, "INTERNAL")
+			if (*watch.target.Scope[0].Values)[0] != "east" {
+				t.Fatal("retained scope changed")
+			}
+		})
+	}
+}

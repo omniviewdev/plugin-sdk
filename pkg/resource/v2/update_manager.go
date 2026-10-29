@@ -18,6 +18,7 @@ type updateListener struct {
 	retired   atomic.Bool
 	accepted  bool
 	mu        sync.Mutex
+	dataReady bool
 	replaying bool
 	overflow  bool
 	pending   []WatchStateEvent
@@ -37,9 +38,15 @@ func (l *updateListener) terminalError() error {
 	}
 	return context.Canceled
 }
-func (l *updateListener) call(fn func()) {
+func (l *updateListener) call(fn func()) { l.dispatch(false, fn) }
+
+// Data received before readiness and state replay completes is dropped. Updates
+// are advisory, so this barrier retains no data and makes no continuity claim.
+func (l *updateListener) data(fn func()) { l.dispatch(true, fn) }
+
+func (l *updateListener) dispatch(data bool, fn func()) {
 	l.mu.Lock()
-	if !l.active() {
+	if !l.active() || (data && !l.dataReady) {
 		l.mu.Unlock()
 		return
 	}
@@ -92,6 +99,7 @@ func (l *updateListener) replay() error {
 		l.pending = nil
 		if len(pending) == 0 {
 			l.replaying = false
+			l.dataReady = true
 			l.mu.Unlock()
 			return nil
 		}
@@ -230,7 +238,40 @@ func (m *updateManager[T]) listen(ctx context.Context, sink WatchEventSink, onRe
 	}
 }
 
+func copyUpdateRepresentation(representation Representation) Representation {
+	schema := &representation.Schema
+	schema.Revision = copyToken(schema.Revision)
+	schema.UnavailableReason = copyToken(schema.UnavailableReason)
+	schema.Document = append(schema.Document[:0:0], schema.Document...)
+	schema.Unvalidated = copyStrings(schema.Unvalidated)
+	if schema.DocumentRef != nil {
+		ref := *schema.DocumentRef
+		schema.DocumentRef = &ref
+	}
+	return representation
+}
+
+func copyUpdateDescriptor(descriptor ResourceType) ResourceType {
+	descriptor.IdentityDimensions = append([]Dimension(nil), descriptor.IdentityDimensions...)
+	descriptor.QueryDimensions = append([]Dimension(nil), descriptor.QueryDimensions...)
+	descriptor.Representations = append([]Representation(nil), descriptor.Representations...)
+	for i := range descriptor.Representations {
+		descriptor.Representations[i] = copyUpdateRepresentation(descriptor.Representations[i])
+	}
+	descriptor.Capabilities = append([]Capability(nil), descriptor.Capabilities...)
+	for i := range descriptor.Capabilities {
+		descriptor.Capabilities[i].Scope = cloneReadTarget(ReadTarget{Scope: descriptor.Capabilities[i].Scope}).Scope
+	}
+	if descriptor.NativeAuthorityHint != nil {
+		hint := *descriptor.NativeAuthorityHint
+		descriptor.NativeAuthorityHint = &hint
+	}
+	return descriptor
+}
+
 func (m *updateManager[T]) start(ctx context.Context, target ReadTarget, registration *Registration[T], descriptor ResourceType) error {
+	target = cloneReadTarget(target)
+	descriptor = copyUpdateDescriptor(descriptor)
 	selectedRevision, _ := CatalogRevisionForRouteFromContext(ctx, target.Provider, target.Route)
 	if err := ValidateCatalogRevision(selectedRevision); err != nil {
 		return err
@@ -327,7 +368,7 @@ func invokeUpdate[T any](ctx context.Context, client *T, target ReadTarget, regi
 			err = NewError("INTERNAL", "Provider update handler panicked.")
 		}
 	}()
-	return registration.Watch(ctx, client, target, representation, sink)
+	return registration.Watch(ctx, client, cloneReadTarget(target), copyUpdateRepresentation(representation), sink)
 }
 func (m *updateManager[T]) run(ctx context.Context, client *T, release func(), watch *updateWatch, registration *Registration[T], representation Representation, sink WatchEventSink) {
 	defer close(watch.done)
@@ -337,6 +378,10 @@ func (m *updateManager[T]) run(ctx context.Context, client *T, release func(), w
 	for attempt := 0; ; attempt++ {
 		if ctx.Err() != nil {
 			m.finish(watch, WatchStateStopped, nil)
+			return
+		}
+		if err := m.controller.fenceCatalog(ctx, watch.target.Route); err != nil {
+			m.finish(watch, WatchStateFailed, err)
 			return
 		}
 		err := invokeUpdate(ctx, client, watch.target, registration, representation, sink)
@@ -490,7 +535,7 @@ func (s *updateSourceSink[T]) OnAdd(payload WatchAddPayload) {
 	}
 	payload.Route, payload.Guarantee = s.watch.target.Route, BestEffortGuarantee
 	for _, listener := range s.manager.snapshot() {
-		listener.call(func() { listener.sink.OnAdd(payload) })
+		listener.data(func() { listener.sink.OnAdd(payload) })
 	}
 }
 func (s *updateSourceSink[T]) OnUpdate(payload WatchUpdatePayload) {
@@ -503,7 +548,7 @@ func (s *updateSourceSink[T]) OnUpdate(payload WatchUpdatePayload) {
 	}
 	payload.Route, payload.Guarantee = s.watch.target.Route, BestEffortGuarantee
 	for _, listener := range s.manager.snapshot() {
-		listener.call(func() { listener.sink.OnUpdate(payload) })
+		listener.data(func() { listener.sink.OnUpdate(payload) })
 	}
 }
 func (s *updateSourceSink[T]) OnDelete(payload WatchDeletePayload) {
@@ -535,7 +580,7 @@ func (s *updateSourceSink[T]) OnDelete(payload WatchDeletePayload) {
 	}
 	payload.Route, payload.Guarantee = target.Route, BestEffortGuarantee
 	for _, listener := range s.manager.snapshot() {
-		listener.call(func() { listener.sink.OnDelete(payload) })
+		listener.data(func() { listener.sink.OnDelete(payload) })
 	}
 }
 func (s *updateSourceSink[T]) OnStateChange(event WatchStateEvent) {
@@ -556,6 +601,13 @@ func (s *updateSourceSink[T]) OnStateChange(event WatchStateEvent) {
 	s.manager.publishState(s.watch, event)
 }
 
+// StartConnectionWatch admits every supplied target before starting sources whose
+// registration uses SyncOnConnect. Nil/empty targets are a no-op. Each target
+// needs its accepted catalog observation; no connection starts implicitly.
+// If starting a later source fails, earlier sources are not rolled back.
+// Success means source registration, not native readiness or gap-free continuity.
+// Retained targets/descriptors are copied. Sources outlive this request after
+// acceptance and end on explicit stop, generation retirement, or controller close.
 func (c *Controller[T]) StartConnectionWatch(ctx context.Context, targets []ReadTarget) (err error) {
 	var registration *Registration[T]
 	defer c.guard(&registration, &err)
@@ -591,6 +643,17 @@ func (c *Controller[T]) StartConnectionWatch(ctx context.Context, targets []Read
 	}
 	return nil
 }
+
+// EnsureResourceWatch admits and starts or reuses one advisory resource source.
+// It requires exact update capability, a Watch callback, and an accepted catalog
+// observation; SyncNever disables support. A running source can cover a narrower
+// requested scope only with matching identity, representation, and revision.
+// Changed targets/revisions require explicit stop and fresh admission.
+//
+// Success registers the source, not native readiness or replay continuity.
+// Admission copies retained target/descriptor containers. Accepted sources outlive
+// request completion, retain their generation lease, and recheck admission before
+// native retries. Explicit stop or generation retirement cancels and drains them.
 func (c *Controller[T]) EnsureResourceWatch(ctx context.Context, target ReadTarget) (err error) {
 	var registration *Registration[T]
 	defer c.guard(&registration, &err)
@@ -611,6 +674,12 @@ func (c *Controller[T]) EnsureResourceWatch(ctx context.Context, target ReadTarg
 	}
 	return c.updates.start(ctx, target, registration, descriptor)
 }
+
+// StopConnectionWatch cancels and drains every advisory source on an explicit
+// route without stopping its client. It holds a generation lease and checks the
+// accepted catalog observation before and after stopping; missing watches are a
+// no-op. Cancellation after retirement begins does not skip draining.
+// Do not call synchronously from a source callback or sink delivery being drained.
 func (c *Controller[T]) StopConnectionWatch(ctx context.Context, route AccessRoute) error {
 	if route.Connection == "" {
 		return NewError("INVALID_REQUEST", "An explicit connection route is required.")
@@ -631,6 +700,11 @@ func (c *Controller[T]) StopConnectionWatch(ctx context.Context, route AccessRou
 	}
 	return c.fenceCatalog(ctx, route)
 }
+
+// StopResourceWatch cancels and drains the route/type source without stopping its
+// client. Missing sources are a no-op. Exact route, type, generation lease, and
+// accepted catalog observation are required; final admission can fail after the
+// source has already stopped. Do not call synchronously from that source or sink.
 func (c *Controller[T]) StopResourceWatch(ctx context.Context, route AccessRoute, typ string) error {
 	if route.Connection == "" || typ == "" {
 		return NewError("INVALID_REQUEST", "An explicit route and resource type are required.")
@@ -651,6 +725,11 @@ func (c *Controller[T]) StopResourceWatch(ctx context.Context, route AccessRoute
 	}
 	return c.fenceCatalog(ctx, route)
 }
+
+// RestartResourceWatch admits the target, stops its route/type source, then
+// ensures a new source. It is not an atomic handoff: a failed restart may leave
+// no running source, and no replay or gap-free delivery is promised.
+// StopResourceWatch and EnsureResourceWatch lifetime/reentrancy rules apply.
 func (c *Controller[T]) RestartResourceWatch(ctx context.Context, target ReadTarget) error {
 	if _, err := AdmitBestEffortTarget(ctx, c, target); err != nil {
 		return err
@@ -660,6 +739,12 @@ func (c *Controller[T]) RestartResourceWatch(ctx context.Context, target ReadTar
 	}
 	return c.EnsureResourceWatch(ctx, target)
 }
+
+// HasWatch reports whether any source entry exists for an admitted route,
+// including completed entries retained for state inspection. It does not mean a
+// native source is currently running or healthy. Invalid routes, cancellation,
+// lease failures, and stale/missing catalog observations all return false.
+// Use IsResourceWatchRunning or GetWatchState when that distinction matters.
 func (c *Controller[T]) HasWatch(ctx context.Context, route AccessRoute) bool {
 	if ctx.Err() != nil || route.Connection == "" {
 		return false
@@ -677,6 +762,11 @@ func (c *Controller[T]) HasWatch(ctx context.Context, route AccessRoute) bool {
 	c.updates.mu.Unlock()
 	return c.fenceCatalog(ctx, route) == nil && running
 }
+
+// IsResourceWatchRunning snapshots the advisory manager's running flag for one
+// explicit route/type under a generation lease and accepted catalog observation.
+// Missing entries return false, nil; acquisition/admission errors remain errors.
+// Running means manager activity, not native readiness, health, or continuity.
 func (c *Controller[T]) IsResourceWatchRunning(ctx context.Context, route AccessRoute, typ string) (bool, error) {
 	if route.Connection == "" || typ == "" {
 		return false, NewError("INVALID_REQUEST", "An explicit route and resource type are required.")
@@ -701,6 +791,11 @@ func (c *Controller[T]) IsResourceWatchRunning(ctx context.Context, route Access
 	}
 	return running, nil
 }
+
+// GetWatchState returns an independently owned advisory summary under a
+// generation lease and accepted catalog observation. A route with no retained
+// source entries returns nil, NOT_FOUND. Counts remain native observations:
+// unknown is not zero, and BestEffortGuarantee does not promise replay continuity.
 func (c *Controller[T]) GetWatchState(ctx context.Context, route AccessRoute) (*WatchConnectionSummary, error) {
 	if route.Connection == "" {
 		return nil, NewError("INVALID_REQUEST", "An explicit connection route is required.")
@@ -733,6 +828,17 @@ func (c *Controller[T]) GetWatchState(ctx context.Context, route AccessRoute) (*
 	}
 	return summary, nil
 }
+
+// ListenForEvents registers a listener until caller/controller cancellation or a
+// listener failure. A nil sink is invalid; nil onReady accepts without a callback.
+// It does not start sources. onReady must succeed before state replay and data
+// delivery; pre-ready advisory data is dropped, not buffered for replay.
+//
+// Sink callbacks can run concurrently and must return promptly. Cancellation
+// retires this listener and waits for its admitted callbacks, not the underlying
+// generation-owned sources. Do not synchronously stop a delivering source from
+// its sink callback or wait there for this listener to return.
+// Framework code owns delivery/completion; the sink must not close its channels.
 func (c *Controller[T]) ListenForEvents(ctx context.Context, sink WatchEventSink, onReady func() error) (err error) {
 	var registration *Registration[T]
 	defer c.guard(&registration, &err)
@@ -768,4 +874,15 @@ func (c *Controller[T]) ensureOnFirstQuery(ctx context.Context, target ReadTarge
 		return err
 	}
 	return nil
+}
+
+func cloneReadTarget(target ReadTarget) ReadTarget {
+	target.Scope = append(QueryScope(nil), target.Scope...)
+	for i := range target.Scope {
+		if target.Scope[i].Values != nil {
+			values := copyStrings(*target.Scope[i].Values)
+			target.Scope[i].Values = &values
+		}
+	}
+	return target
 }
