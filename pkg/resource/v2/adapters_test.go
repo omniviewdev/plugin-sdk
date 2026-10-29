@@ -47,6 +47,20 @@ func adapterRoundTrip[D any, P proto.Message](t *testing.T, value D, to func(D) 
 	}
 }
 
+func TestMutationCapabilitiesKeepIndependentWireScopes(t *testing.T) {
+	for _, operation := range []Operation{OperationCreate, OperationMutationUpdate, OperationDelete} {
+		values := []string{string(operation)}
+		capability := Capability{Operation: operation, Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &values}}}
+		adapterRoundTrip(t, capability, ToProtoCapability, FromProtoCapability)
+	}
+	if _, err := ToProtoCapability(Capability{Operation: Operation("mutation"), Scope: QueryScope{}}); err == nil {
+		t.Fatal("coarse mutation capability accepted")
+	}
+	if _, err := FromProtoCapability(&resourcepb.Capability{Operation: "mutation", Scope: &resourcepb.QueryScope{}}); err == nil {
+		t.Fatal("coarse mutation wire capability accepted")
+	}
+}
+
 func TestEveryFiniteDomainAdapter(t *testing.T) {
 	r := codecRecord()
 	route := AccessRoute{Connection: "route"}
@@ -57,19 +71,8 @@ func TestEveryFiniteDomainAdapter(t *testing.T) {
 	typ.NativeAuthorityHint = &NativeAuthorityHint{Scheme: "fixture.v1", ID: "provider-native-id", Continuity: ContinuityConnectionLocal}
 	catalog := Catalog{Provider: target.Provider, Revision: "catalog-1", Types: []ResourceType{typ, {Type: "localHelm/release", IdentityDimensions: []Dimension{}, QueryDimensions: []Dimension{}, Representations: []Representation{}, Capabilities: []Capability{}}}, Coverage: Coverage{Kind: "complete"}}
 	adapterRoundTrip(t, r.Body, ToProtoValue, FromProtoValue)
-	adapterRoundTrip(t, r.Reference.Address.Scope[0], ToProtoScopeEntry, FromProtoScopeEntry)
-	adapterRoundTrip(t, r.Reference.Address, ToProtoResourceAddress, FromProtoResourceAddress)
 	adapterRoundTrip(t, route, ToProtoAccessRoute, FromProtoAccessRoute)
 	adapterRoundTrip(t, r.Reference, ToProtoResourceReference, FromProtoResourceReference)
-	adapterRoundTrip(t, scope[0], ToProtoScopeConstraint, FromProtoScopeConstraint)
-	adapterRoundTrip(t, scope, ToProtoQueryScope, FromProtoQueryScope)
-	adapterRoundTrip(t, r.Representation.Schema, ToProtoSchemaBinding, FromProtoSchemaBinding)
-	adapterRoundTrip(t, r.Representation, ToProtoRepresentation, FromProtoRepresentation)
-	adapterRoundTrip(t, typ.IdentityDimensions[0], ToProtoDimension, FromProtoDimension)
-	adapterRoundTrip(t, typ.Capabilities[0], ToProtoCapability, FromProtoCapability)
-	adapterRoundTrip(t, typ.Capabilities[1], ToProtoCapability, FromProtoCapability)
-	adapterRoundTrip(t, typ, ToProtoResourceType, FromProtoResourceType)
-	adapterRoundTrip(t, *typ.NativeAuthorityHint, ToProtoNativeAuthorityHint, FromProtoNativeAuthorityHint)
 	adapterRoundTrip(t, catalog, ToProtoCatalog, FromProtoCatalog)
 	wireCatalog, err := ToProtoCatalog(catalog)
 	if err != nil {
@@ -95,7 +98,6 @@ func TestEveryFiniteDomainAdapter(t *testing.T) {
 	adapterRoundTrip(t, GetRequest{Route: route, Reference: r.Reference, Representation: r.Representation.ID}, ToProtoGetRequest, FromProtoGetRequest)
 	adapterRoundTrip(t, EnumerateRequest{Target: target, PageSize: 256, Cursor: codecToken("cursor")}, ToProtoEnumerateRequest, FromProtoEnumerateRequest)
 	adapterRoundTrip(t, NativeQueryRequest{Target: target, Language: "native.v1", Query: r.Body, PageSize: 1}, ToProtoNativeQueryRequest, FromProtoNativeQueryRequest)
-	adapterRoundTrip(t, r.Coverage, ToProtoCoverage, FromProtoCoverage)
 	adapterRoundTrip(t, Count{Kind: "exact", Value: codecToken("18446744073709551615")}, ToProtoCount, FromProtoCount)
 	adapterRoundTrip(t, r, ToProtoRecord, FromProtoRecord)
 	adapterRoundTrip(t, SourcePage{Records: []Record{r}, Count: Count{Kind: "unknown"}, Coverage: r.Coverage, Consistency: "bestEffort", SourceRevision: codecToken("independent-page-revision")}, ToProtoSourcePage, FromProtoSourcePage)

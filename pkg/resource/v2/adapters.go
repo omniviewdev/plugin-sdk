@@ -672,7 +672,7 @@ func validateAddressOnly(v ResourceAddress) error { return ValidateAddress(v) }
 func validateScopeOnly(v QueryScope) error        { return ValidateScope(v) }
 func validateCapability(v Capability) error {
 	switch v.Operation {
-	case OperationGet, OperationEnumerate, OperationNativeQuery, OperationMutation, OperationAction:
+	case OperationGet, OperationEnumerate, OperationNativeQuery, OperationCreate, OperationMutationUpdate, OperationDelete, OperationAction:
 		if v.Guarantee != "" {
 			return invalid("finite capability has update guarantee")
 		}

@@ -3,16 +3,36 @@ package resourcev2
 import (
 	"context"
 	"errors"
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"reflect"
 	"sort"
 	"sync"
-
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
 // Controller dispatches finite source operations and independently optional
 // best-effort updates. Strong continuity remains P05's separate contract;
 // neither a finite handler nor advisory updates imply that guarantee.
+// Construct it with NewController; the zero value and nil receiver are not usable.
+// Methods require nonnil contexts. Request/result containers remain borrowed
+// during SDK use unless a method explicitly returns a connection snapshot.
+// Its broad method set does not advertise operations: catalog declarations,
+// installed registrations, and ancillary feature negotiation determine support.
+//
+// The controller owns one configured-client registry. configMu serializes desired
+// inventory changes; when both locks are needed, acquire configMu before mu.
+// mu protects registry membership, retirement flags and inventory publication.
+// Never hold mu while invoking provider callbacks, waiting for readiness or
+// leases, or stopping update sources. Inventory teardown still holds configMu:
+// callbacks must not reenter inventory mutations.
+//
+// Lease admission increments users under mu before retirement can begin.
+// Retirement marks the slot stopping and cancels its context under mu, then
+// waits outside mu for readiness, update sources and all leases before teardown.
+// Each lease combines caller, controller and client-generation cancellation and
+// releases its user count exactly once. Callbacks must honor cancellation and
+// must not synchronously stop or close their own leased generation, or wait for
+// an operation that does so. Callbacks may run concurrently across requests and
+// connections; shared provider state needs its own synchronization.
 type Controller[ClientT any] struct {
 	cfg               Config[ClientT]
 	ctx               context.Context
@@ -49,6 +69,15 @@ type clientSlot[T any] struct {
 	catalogNonce [32]byte
 }
 
+// NewController constructs the optional controller without starting connections.
+// It copies the registration slice, but retains nested registration scopes,
+// lifecycle configuration and callback-owned state. Callers must keep these
+// retained inputs immutable after construction; callbacks remain responsible
+// for synchronizing their own mutable implementation state.
+// Catalog is required. A nonnil Lifecycle requires load, create, and destroy
+// callbacks; dynamic update declarations require ResolveRegistration. Invalid
+// construction inputs return an error and no controller. Connections remain
+// absent until explicitly loaded/applied, and unstarted until explicitly started.
 func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 	if cfg.Catalog == nil {
 		return nil, NewError("INVALID_REQUEST", "Catalog handler is required.")
@@ -120,130 +149,48 @@ func (c *Controller[T]) guard(r **Registration[T], err *error) {
 	*err = c.classify(*r, *err)
 }
 
-func (c *Controller[T]) routeContext(ctx context.Context, route AccessRoute) (context.Context, context.CancelFunc, error) {
-	if route.Connection == "" {
-		return nil, nil, NewError("INVALID_REQUEST", "An explicit connection route is required.")
+var _ Provider = (*Controller[struct{}])(nil)
+
+var _ ConnectionLifecycle = (*Controller[struct{}])(nil)
+
+var _ ConnectionReadinessProvider = (*Controller[struct{}])(nil)
+
+var _ Closer = (*Controller[struct{}])(nil)
+
+// Features reports installed ancillary implementations rather than Controller's
+// static method set. Wrappers with additional native traits extend this result.
+// An empty Traits slice means no optional ancillary implementation is installed,
+// not lack of finite catalog support. This method does not start or probe clients.
+func (c *Controller[T]) Features(ctx context.Context) (FeatureSet, error) {
+	if err := ctx.Err(); err != nil {
+		return FeatureSet{}, c.classify(nil, err)
 	}
 	c.mu.Lock()
 	closed := c.closed
 	c.mu.Unlock()
 	if closed {
-		return nil, nil, NewError("CANCELLED", "Provider is closed.")
+		return FeatureSet{}, NewError("CANCELLED", "Provider is closed.")
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
+	features := FeatureSet{Traits: []Feature{}}
+	if c.cfg.Lifecycle != nil {
+		features.Traits = append(features.Traits, FeatureConnections, FeatureConnectionReadiness, FeatureConnectionOverlay)
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	stop := context.AfterFunc(c.ctx, cancel)
-	return ctx, func() { stop(); cancel() }, nil
+	updates := c.cfg.DynamicUpdates
+	for _, registration := range c.cfg.Registrations {
+		if handles(registration, OperationUpdate) {
+			updates = true
+			break
+		}
+	}
+	if updates {
+		features.Traits = append(features.Traits, FeatureBestEffortUpdates)
+	}
+	return features, nil
 }
 
-func (c *Controller[T]) lease(ctx context.Context, route AccessRoute) (context.Context, *T, func(), error) {
-	ctx, cancel, err := c.routeContext(ctx, route)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if c.cfg.Lifecycle == nil {
-		return ctx, nil, cancel, nil
-	}
-	if held, ok := ctx.Value(catalogSlotKey{}).(*clientSlot[T]); ok {
-		c.mu.Lock()
-		current := c.clients[route.Connection] == held && !held.stopping && held.ctx.Err() == nil
-		if current {
-			held.users.Add(1)
-		}
-		c.mu.Unlock()
-		if !current {
-			cancel()
-			return nil, nil, nil, NewError("RESET_REQUIRED", "The admitted client generation has retired.")
-		}
-		stop := context.AfterFunc(held.ctx, cancel)
-		return ctx, held.client, func() { stop(); cancel(); held.users.Done() }, nil
-	}
-	c.mu.Lock()
-	s := c.clients[route.Connection]
-	if s == nil || s.stopping {
-		c.mu.Unlock()
-		cancel()
-		return nil, nil, nil, NewError("INVALID_REQUEST", "Connection is not started.")
-	}
-	c.mu.Unlock()
-	select {
-	case <-s.ready:
-	case <-ctx.Done():
-		cancel()
-		return nil, nil, nil, ctx.Err()
-	}
-	c.mu.Lock()
-	if s.err != nil || s.stopping || c.closed || c.clients[route.Connection] != s {
-		c.mu.Unlock()
-		cancel()
-		return nil, nil, nil, NewError("CANCELLED", "Connection is stopping or failed to start.")
-	}
-	s.users.Add(1)
-	connection := cloneConnection(c.connections[route.Connection])
-	c.mu.Unlock()
-	stop := context.AfterFunc(s.ctx, cancel)
-	session, _ := SessionFromContext(ctx)
-	session.Connection = &connection
-	ctx = WithSession(ctx, session)
-	ctx = context.WithValue(ctx, catalogSlotKey{}, s)
-	return ctx, s.client, func() { stop(); cancel(); s.users.Done() }, nil
-}
+var _ FeatureNegotiator = (*Controller[struct{}])(nil)
 
-// WithConnection holds an already-connected native client generation for
-// utility work. Metadata is only a selector; the callback receives the actual
-// configured profile. No probe, implicit start or default selection occurs.
-func (c *Controller[T]) WithConnection(ctx context.Context, route AccessRoute, fn func(context.Context, types.Connection) error) (err error) {
-	var registration *Registration[T]
-	defer c.guard(&registration, &err)
-	if c.cfg.Lifecycle == nil {
-		return NewError("UNSUPPORTED", "Connected utility context is unavailable.")
-	}
-	if fn == nil {
-		return NewError("INVALID_REQUEST", "Utility callback is required.")
-	}
-	if _, err = c.connection(ctx, route.Connection); err != nil {
-		return err
-	}
-	native, _, done, err := c.lease(ctx, route)
-	if err != nil {
-		if ErrorCode(err) == "INVALID_REQUEST" {
-			return NewError("CONNECTION_ERROR", "Selected connection is not started.")
-		}
-		return err
-	}
-	defer done()
-	session, _ := SessionFromContext(native)
-	if session.Connection == nil {
-		return NewError("INTERNAL", "Active client has no configured profile.")
-	}
-	err = fn(native, *session.Connection)
-	if err == nil {
-		err = native.Err()
-	}
-	return err
-}
-
-// WithClient holds an active client lease for discovery or provider-specific
-// work. Stop and Close cancel the callback and wait before destroying its client.
-func (c *Controller[T]) WithClient(ctx context.Context, route AccessRoute, fn func(context.Context, *T) error) (err error) {
-	var registration *Registration[T]
-	defer c.guard(&registration, &err)
-	ctx, client, done, err := c.lease(ctx, route)
-	if err != nil {
-		return err
-	}
-	defer done()
-	if fn == nil {
-		return NewError("INVALID_REQUEST", "Client callback is required.")
-	}
-	err = fn(ctx, client)
-	if err == nil {
-		err = ctx.Err()
-	}
-	return err
-}
+var _ ConnectionOverlayProvider = (*Controller[struct{}])(nil)
 
 func (c *Controller[T]) registrations(ctx context.Context, route AccessRoute, typ string) ([]Registration[T], error) {
 	var result []Registration[T]
@@ -276,7 +223,7 @@ func handles[T any](r Registration[T], op Operation) bool {
 		return r.Enumerate != nil
 	case OperationNativeQuery:
 		return r.NativeQuery != nil
-	case OperationMutation:
+	case OperationCreate, OperationMutationUpdate, OperationDelete:
 		return r.Mutate != nil
 	case OperationAction:
 		return r.Action != nil
@@ -373,6 +320,13 @@ func scopeContains(outer, inner QueryScope) bool {
 	return true
 }
 
+// Catalog discovers one explicit route under a generation lease without starting
+// clients or requiring an accepted catalog observation. It validates callback
+// output, intersects advertised capabilities with installed registrations/scopes,
+// and binds the revision to this controller or native generation.
+// Callback containers must remain stable during SDK use; the result is not a
+// blanket deep copy. Catalog callbacks may reenter WithClient using the supplied
+// context, but must not synchronously retire their leased generation.
 func (c *Controller[T]) Catalog(ctx context.Context, request CatalogRequest) (catalog Catalog, err error) {
 	var registration *Registration[T]
 	defer c.guard(&registration, &err)
@@ -584,6 +538,20 @@ func admitTarget(catalog Catalog, target operationTarget) (ResourceType, QuerySc
 	return ResourceType{}, nil, NewError("UNSUPPORTED", "Operation is not declared for this type and scope.")
 }
 
+// mutationOperation keeps mutation update distinct from advisory watch delivery.
+func mutationOperation(verb string) Operation {
+	switch verb {
+	case "create":
+		return OperationCreate
+	case "update":
+		return OperationMutationUpdate
+	case "delete":
+		return OperationDelete
+	default:
+		return ""
+	}
+}
+
 func describeOperation(request any) (operationTarget, error) {
 	switch request := request.(type) {
 	case GetRequest:
@@ -597,7 +565,7 @@ func describeOperation(request any) (operationTarget, error) {
 		return operationTarget{route: t.Route, provider: t.Provider, typ: t.Type, representation: t.Representation, scope: t.Scope, operation: OperationNativeQuery}, ValidateNativeQueryRequest(request)
 	case MutationRequest:
 		a := request.Reference.Address
-		return operationTarget{route: request.Route, provider: a.Provider, typ: a.Type, address: &a, operation: OperationMutation}, ValidateMutationRequest(request)
+		return operationTarget{route: request.Route, provider: a.Provider, typ: a.Type, address: &a, operation: mutationOperation(request.Operation)}, ValidateMutationRequest(request)
 	case ActionRequest:
 		a := request.Reference.Address
 		return operationTarget{route: request.Route, provider: a.Provider, typ: a.Type, address: &a, operation: OperationAction}, ValidateActionRequest(request)
@@ -611,6 +579,11 @@ func describeOperation(request any) (operationTarget, error) {
 // AdmitOperation is shared by controller and transport admission. Direct
 // providers must declare the route/type/scope and implement the optional method.
 // Requests are domain values, not generated transport messages or pointers.
+// Use a nonnil provider and context. Finite request values, not pointers, are
+// accepted; unsupported shapes or missing optional traits return UNSUPPORTED.
+// This calls Catalog and requires the exact accepted route observation. It does
+// not invoke the operation, retain a lease after return, or authorize the caller.
+// Providers/callers must still fence dispatch and results against retirement.
 func AdmitOperation(ctx context.Context, provider Provider, request any) (descriptor ResourceType, err error) {
 	defer func() {
 		if recover() != nil {
@@ -632,7 +605,7 @@ func AdmitOperation(ctx context.Context, provider Provider, request any) (descri
 		_, supported = provider.(Enumerator)
 	case OperationNativeQuery:
 		_, supported = provider.(NativeQuerier)
-	case OperationMutation:
+	case OperationCreate, OperationMutationUpdate, OperationDelete:
 		_, supported = provider.(Mutator)
 	case OperationAction:
 		_, supported = provider.(Actioner)
@@ -645,6 +618,9 @@ func AdmitOperation(ctx context.Context, provider Provider, request any) (descri
 
 // AdmitStreamingAction admits the independent streaming action interface without
 // requiring a finite Action method or fabricating finite action support.
+// It requires a nonnil provider/context and an accepted route catalog observation.
+// It calls Catalog but not StreamAction, acquires no lasting lease, and grants no
+// authority. Admission success cannot replace a result or generation fence.
 func AdmitStreamingAction(ctx context.Context, provider Provider, request ActionRequest) (descriptor ResourceType, err error) {
 	defer func() {
 		if recover() != nil {
@@ -688,6 +664,9 @@ func admitProviderTarget(ctx context.Context, provider Provider, target operatio
 
 // ValidateOperationResult binds finite provider output to its admitted request
 // and catalog descriptor. Native source cursors remain opaque source tokens.
+// Pass matching domain request/result values, not pointers; nil or mismatched
+// result types fail validation. This checks shapes and binding, not authorization,
+// current catalog equality, side-effect success, or source continuity.
 func ValidateOperationResult(request any, result any, descriptor ResourceType) error {
 	switch request := request.(type) {
 	case GetRequest:
@@ -726,6 +705,7 @@ func ValidateOperationResult(request any, result any, descriptor ResourceType) e
 		return NewError("UNSUPPORTED", "Unsupported finite resource operation.")
 	}
 }
+
 func (c *Controller[T]) fenceCatalog(ctx context.Context, route AccessRoute) error {
 	if ctx.Err() != nil {
 		return NewError("RESET_REQUIRED", "The admitted catalog generation retired during the operation.")
@@ -845,6 +825,52 @@ func checkPage(page SourcePage, descriptor ResourceType, target ReadTarget, size
 	return nil
 }
 
+// AdmitCatalogOperation uses an already acquired catalog without another
+// discovery RPC. A ReadTarget requests advisory update capability admission.
+// It validates domain request values against declared support only; it neither
+// checks a provider's optional Go traits nor an accepted/current revision pair.
+// No native work, lasting lease, or access authorization occurs. Keep catalog
+// containers stable while using the returned descriptor, which can share them.
+func AdmitCatalogOperation(catalog Catalog, request any) (ResourceType, error) {
+	if err := ValidateCatalog(catalog); err != nil {
+		return ResourceType{}, err
+	}
+	target, err := describeOperation(request)
+	if err != nil {
+		return ResourceType{}, err
+	}
+	descriptor, _, err := admitTarget(catalog, target)
+	return descriptor, err
+}
+
+// AdmitBestEffortTarget checks the independently optional advisory update
+// interface and its exact catalog scope. It makes no P05 continuity promise.
+// A nonnil provider/context and accepted route catalog observation are required.
+// It calls Catalog without starting a source or retaining a lease; callers must
+// separately fence native startup, retries, and delivery. It grants no authority.
+func AdmitBestEffortTarget(ctx context.Context, provider Provider, target ReadTarget) (descriptor ResourceType, err error) {
+	defer func() {
+		if recover() != nil {
+			err = NewError("INTERNAL", "Provider admission handler panicked.")
+		}
+	}()
+	operation, err := describeOperation(target)
+	if err != nil {
+		return descriptor, err
+	}
+	if _, ok := provider.(BestEffortUpdateProvider); !ok {
+		return descriptor, NewError("UNSUPPORTED", "Best-effort update handler is not implemented.")
+	}
+	return admitProviderTarget(ctx, provider, operation)
+}
+
+// Get acquires one canonical record using an explicit representation and accepted
+// route catalog observation. It leases the native client, requires both catalog
+// capability and a matching Get registration, then fences the catalog and validates
+// result identity/provenance before success. It never starts a connection.
+// Callback inputs/results follow Registration's ownership and concurrency rules.
+// Cancellation or a retired admission can reject a callback's otherwise successful
+// result; a nonnil error means the returned record is not accepted.
 func (c *Controller[T]) Get(ctx context.Context, request GetRequest) (record Record, err error) {
 	var r *Registration[T]
 	defer c.guard(&r, &err)
@@ -880,6 +906,12 @@ func (c *Controller[T]) Get(ctx context.Context, request GetRequest) (record Rec
 	return record, err
 }
 
+// Enumerate acquires one bounded source page for an admitted target, not a host
+// query result or snapshot/live handoff. It leases an already-started generation
+// when Lifecycle is configured and requires an exact catalog capability and
+// callback. Page size, identity, membership, representation, and catalog fences
+// apply before success. Source cursors retain native semantics.
+// Inputs/results follow Registration's ownership rules; ignore the page on error.
 func (c *Controller[T]) Enumerate(ctx context.Context, request EnumerateRequest) (page SourcePage, err error) {
 	var r *Registration[T]
 	defer c.guard(&r, &err)
@@ -910,6 +942,12 @@ func (c *Controller[T]) Enumerate(ctx context.Context, request EnumerateRequest)
 	return page, err
 }
 
+// NativeQuery invokes one admitted provider-native query and validates its bounded
+// source page. Native query support is independent of enumeration; it is not a
+// universal query planner. Catalog capability and a matching callback are both
+// required. The call leases the generation without implicitly starting it and
+// rejects stale catalog or generation results.
+// Inputs/results follow Registration's ownership rules; ignore the page on error.
 func (c *Controller[T]) NativeQuery(ctx context.Context, request NativeQueryRequest) (page SourcePage, err error) {
 	var r *Registration[T]
 	defer c.guard(&r, &err)
@@ -940,6 +978,13 @@ func (c *Controller[T]) NativeQuery(ctx context.Context, request NativeQueryRequ
 	return page, err
 }
 
+// Mutate dispatches only the requested create, update, or delete verb after exact
+// catalog and registration admission. One Mutate callback does not advertise all
+// verbs. The call leases the native generation and validates returned identity
+// after the catalog fence. It never starts clients or grants resource authority.
+// Inputs/results follow Registration's ownership rules. An error can occur after
+// the native write, so it does not prove the side effect failed or permit blind
+// replay; the returned record is not accepted on error.
 func (c *Controller[T]) Mutate(ctx context.Context, request MutationRequest) (record Record, err error) {
 	var r *Registration[T]
 	defer c.guard(&r, &err)
@@ -953,7 +998,7 @@ func (c *Controller[T]) Mutate(ctx context.Context, request MutationRequest) (re
 	defer done()
 	a := request.Reference.Address
 	var descriptor ResourceType
-	r, descriptor, err = c.resolve(ctx, request.Route, a.Provider, a.Type, "", nil, &a, OperationMutation)
+	r, descriptor, err = c.resolve(ctx, request.Route, a.Provider, a.Type, "", nil, &a, mutationOperation(request.Operation))
 	if err != nil {
 		return record, err
 	}
@@ -967,6 +1012,11 @@ func (c *Controller[T]) Mutate(ctx context.Context, request MutationRequest) (re
 	return record, err
 }
 
+// Action dispatches a finite action under exact catalog/registration admission and
+// a native lease, then fences the catalog and validates the returned Value.
+// StreamingActioner is independent and is not invoked here. Inputs/results follow
+// Registration's ownership rules. An error can follow a native side effect and is
+// not evidence that replay is safe; ignore the returned Value on error.
 func (c *Controller[T]) Action(ctx context.Context, request ActionRequest) (value Value, err error) {
 	var r *Registration[T]
 	defer c.guard(&r, &err)
@@ -993,13 +1043,12 @@ func (c *Controller[T]) Action(ctx context.Context, request ActionRequest) (valu
 	return value, err
 }
 
-func (c *Controller[T]) requireLifecycle() error {
-	if c.cfg.Lifecycle == nil {
-		return NewError("UNSUPPORTED", "Provider does not own connection lifecycle.")
-	}
-	return nil
-}
-
+// LoadConnections refreshes native discovery through Lifecycle.LoadConnections,
+// applies that snapshot beneath the retained host overlay, and returns the
+// effective inventory as independent snapshots sorted by ID. It never starts
+// clients. Native discovery failure leaves the previous inventory in place;
+// application failure follows ApplyConnections retirement semantics.
+// A nil discovered slice is a successful empty native snapshot, not a failure.
 func (c *Controller[T]) LoadConnections(ctx context.Context) (connections []types.Connection, err error) {
 	var r *Registration[T]
 	defer c.guard(&r, &err)
@@ -1024,6 +1073,9 @@ func (c *Controller[T]) LoadConnections(ctx context.Context) (connections []type
 	return c.ListConnections(ctx)
 }
 
+// GetConnection returns an independently owned configured-profile snapshot, not a
+// native client or a lease. Editing it does not apply configuration. Empty IDs
+// are invalid, unknown IDs are NOT_FOUND, and absent Lifecycle is UNSUPPORTED.
 func (c *Controller[T]) GetConnection(ctx context.Context, id string) (types.Connection, error) {
 	connection, err := c.connection(ctx, id)
 	if err != nil {
@@ -1032,334 +1084,10 @@ func (c *Controller[T]) GetConnection(ctx context.Context, id string) (types.Con
 	return cloneConnection(connection), nil
 }
 
-// connection returns an immutable controller-owned value for internal use only.
-func (c *Controller[T]) connection(ctx context.Context, id string) (types.Connection, error) {
-	if err := c.requireLifecycle(); err != nil {
-		return types.Connection{}, err
-	}
-	if id == "" {
-		return types.Connection{}, NewError("INVALID_REQUEST", "An explicit connection ID is required.")
-	}
-	if err := ctx.Err(); err != nil {
-		return types.Connection{}, c.classify(nil, err)
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.closed {
-		return types.Connection{}, NewError("CANCELLED", "Provider is closed.")
-	}
-	connection, ok := c.connections[id]
-	if !ok {
-		return types.Connection{}, NewError("NOT_FOUND", "Connection was not loaded.")
-	}
-	return connection, nil
-}
-
-func (c *Controller[T]) startClient(s *clientSlot[T]) {
-	defer close(s.ready)
-	defer func() {
-		if recover() != nil {
-			s.err = NewError("INTERNAL", "Connection start handler panicked.")
-		}
-		if s.err != nil {
-			c.mu.Lock()
-			if c.clients[s.connection.ID] == s && !s.stopping && !c.changing[s.connection.ID] && s.ctx.Err() == nil {
-				c.failedStarts[s.connection.ID] = true
-			}
-			c.mu.Unlock()
-		}
-	}()
-	connection := cloneConnection(s.connection)
-	session, _ := SessionFromContext(s.ctx)
-	session.Connection = &connection
-	ctx := WithSession(s.ctx, session)
-	s.client, s.err = c.cfg.Lifecycle.CreateClient(ctx, connection)
-	if s.err == nil && s.client == nil {
-		s.err = NewError("INTERNAL", "CreateClient returned a nil client.")
-	}
-	if s.err == nil && c.cfg.Lifecycle.OnStart != nil {
-		s.err = c.cfg.Lifecycle.OnStart(ctx, connection, s.client)
-	}
-	if s.err == nil {
-		s.err = s.ctx.Err()
-	}
-}
-
-func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status types.ConnectionStatus, err error) {
-	var r *Registration[T]
-	defer c.guard(&r, &err)
-	connection, err := c.connection(ctx, id)
-	if err != nil {
-		return status, err
-	}
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return status, NewError("CANCELLED", "Provider is closed.")
-	}
-	if c.changing[id] {
-		c.mu.Unlock()
-		return status, NewError("CANCELLED", "Connection configuration is changing.")
-	}
-	var exists bool
-	connection, exists = c.connections[id]
-	if !exists {
-		c.mu.Unlock()
-		return status, NewError("NOT_FOUND", "Connection was removed.")
-	}
-	s := c.clients[id]
-	created := s == nil
-	if created {
-		nonce, nonceErr := newCatalogNonce()
-		if nonceErr != nil {
-			c.mu.Unlock()
-			return status, nonceErr
-		}
-		clientCtx, cancel := context.WithCancel(c.ctx)
-		session, _ := SessionFromContext(ctx)
-		session.Connection = nil
-		clientCtx = WithSession(clientCtx, session)
-		s = &clientSlot[T]{connection: connection, ctx: clientCtx, cancel: cancel, ready: make(chan struct{})}
-		s.catalogNonce = nonce
-		c.clients[id] = s
-		delete(c.failedStarts, id)
-	}
-	c.mu.Unlock()
-	if created {
-		stop := context.AfterFunc(ctx, s.cancel)
-		c.startClient(s)
-		stop()
-	}
-	select {
-	case <-s.ready:
-	case <-ctx.Done():
-		if created {
-			cleanupErr := c.stopSlot(s)
-			return status, errors.Join(ctx.Err(), cleanupErr)
-		}
-		return status, ctx.Err()
-	}
-	if s.err != nil {
-		cleanupErr := c.stopSlot(s)
-		return status, errors.Join(s.err, cleanupErr)
-	}
-	if clientErr := s.ctx.Err(); clientErr != nil {
-		cleanupErr := c.stopSlot(s)
-		return status, errors.Join(clientErr, cleanupErr)
-	}
-	c.mu.Lock()
-	stopping := s.stopping || c.closed
-	c.mu.Unlock()
-	if stopping {
-		return status, NewError("CANCELLED", "Connection is stopping.")
-	}
-	connection = cloneConnection(connection)
-	return types.ConnectionStatus{Connection: &connection, Status: types.ConnectionStatusConnected}, nil
-}
-
-func lifecycleCall(fn func() error) (err error) {
-	defer func() {
-		if recover() != nil {
-			err = NewError("INTERNAL", "Connection teardown handler panicked.")
-		}
-	}()
-	return fn()
-}
-
-func (c *Controller[T]) stopSlot(s *clientSlot[T]) error {
-	c.mu.Lock()
-	s.stopping = true
-	s.cancel()
-	c.mu.Unlock()
-	s.destroy.Do(func() {
-		<-s.ready
-		s.destroyErr = errors.Join(s.destroyErr, c.updates.stopRoute(s.connection.ID))
-		s.users.Wait()
-		if s.client != nil {
-			// Cleanup must not inherit the canceled client context.
-			ctx := context.WithoutCancel(s.ctx)
-			connection := cloneConnection(s.connection)
-			session, _ := SessionFromContext(ctx)
-			session.Connection = &connection
-			ctx = WithSession(ctx, session)
-			if c.cfg.Lifecycle.OnStop != nil {
-				s.destroyErr = lifecycleCall(func() error { return c.cfg.Lifecycle.OnStop(ctx, connection, s.client) })
-			}
-			s.destroyErr = errors.Join(s.destroyErr, lifecycleCall(func() error { return c.cfg.Lifecycle.DestroyClient(ctx, s.client) }))
-		}
-		c.mu.Lock()
-		if c.clients[s.connection.ID] == s {
-			delete(c.clients, s.connection.ID)
-		}
-		c.mu.Unlock()
-	})
-	return s.destroyErr
-}
-
-func (c *Controller[T]) StopConnection(ctx context.Context, id string) (connection types.Connection, err error) {
-	var r *Registration[T]
-	defer c.guard(&r, &err)
-	connection, err = c.GetConnection(ctx, id)
-	if err != nil {
-		return connection, err
-	}
-	c.mu.Lock()
-	s := c.clients[id]
-	delete(c.failedStarts, id)
-	if s != nil {
-		s.stopping = true
-		s.cancel()
-	}
-	c.mu.Unlock()
-	if s == nil {
-		return connection, nil
-	}
-	return connection, c.stopSlot(s)
-}
-
-// GetConnectionStatus snapshots the sole configured-client registry without
-// starting, waiting, probing or performing catalog/resource work. CONNECTED
-// means registration only, not network health or resource-source readiness.
-func (c *Controller[T]) GetConnectionStatus(ctx context.Context, id string) (types.ConnectionStatus, error) {
-	if err := c.requireLifecycle(); err != nil {
-		return types.ConnectionStatus{}, err
-	}
-	if id == "" {
-		return types.ConnectionStatus{}, NewError("INVALID_REQUEST", "An explicit connection ID is required.")
-	}
-	if err := ctx.Err(); err != nil {
-		return types.ConnectionStatus{}, c.classify(nil, err)
-	}
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return types.ConnectionStatus{}, NewError("CANCELLED", "Provider is closed.")
-	}
-	connection, exists := c.connections[id]
-	if !exists {
-		c.mu.Unlock()
-		return types.ConnectionStatus{}, NewError("NOT_FOUND", "Connection was not loaded.")
-	}
-	state := types.ConnectionStatusDisconnected
-	if c.failedStarts[id] {
-		state = types.ConnectionStatusFailed
-	}
-	slot := c.clients[id]
-	if !c.failedStarts[id] && slot != nil && !slot.stopping && !c.changing[id] && slot.ctx.Err() == nil {
-		select {
-		case <-slot.ready:
-			if slot.err == nil {
-				state = types.ConnectionStatusConnected
-			} else {
-				state = types.ConnectionStatusFailed
-			}
-		default:
-			state = types.ConnectionStatusPending
-		}
-	}
-	c.mu.Unlock()
-	owned := cloneConnection(connection)
-	return types.ConnectionStatus{Connection: &owned, Status: state}, nil
-}
-
-func (c *Controller[T]) CheckConnection(ctx context.Context, id string) (status types.ConnectionStatus, err error) {
-	var r *Registration[T]
-	defer c.guard(&r, &err)
-	connection, err := c.connection(ctx, id)
-	if err != nil {
-		return status, err
-	}
-	c.mu.Lock()
-	s := c.clients[id]
-	c.mu.Unlock()
-	if s == nil {
-		connection = cloneConnection(connection)
-		return types.ConnectionStatus{Connection: &connection, Status: types.ConnectionStatusDisconnected}, nil
-	}
-	ctx, client, done, err := c.lease(ctx, AccessRoute{Connection: id})
-	if err != nil {
-		return status, err
-	}
-	defer done()
-	session, _ := SessionFromContext(ctx)
-	connection = *session.Connection
-	if c.cfg.Lifecycle.CheckConnection == nil {
-		return types.ConnectionStatus{Connection: &connection, Status: types.ConnectionStatusConnected}, nil
-	}
-	status, err = c.cfg.Lifecycle.CheckConnection(ctx, connection, client)
-	if err == nil {
-		err = ctx.Err()
-	}
-	if err == nil && (status.Connection == nil || status.Connection.ID != id) {
-		err = NewError("INTERNAL", "Connection check changed the requested connection.")
-	}
-	if status.Connection != nil {
-		owned := cloneConnection(*status.Connection)
-		status.Connection = &owned
-	}
-	return status, err
-}
-
-func (c *Controller[T]) Close() error {
-	c.closeOnce.Do(func() {
-		c.mu.Lock()
-		c.closed = true
-		c.cancel()
-		slots := make([]*clientSlot[T], 0, len(c.clients))
-		for _, s := range c.clients {
-			s.stopping = true
-			s.cancel()
-			slots = append(slots, s)
-		}
-		c.mu.Unlock()
-		c.updates.stopAll()
-		for _, s := range slots {
-			c.closeErr = errors.Join(c.closeErr, c.stopSlot(s))
-		}
-		c.closeErr = c.classify(nil, c.closeErr)
-	})
-	return c.closeErr
-}
-
-var _ Provider = (*Controller[struct{}])(nil)
-var _ ConnectionLifecycle = (*Controller[struct{}])(nil)
-var _ ConnectionReadinessProvider = (*Controller[struct{}])(nil)
-var _ Closer = (*Controller[struct{}])(nil)
-
-// AdmitCatalogOperation uses an already acquired catalog without another
-// discovery RPC. A ReadTarget requests advisory update capability admission.
-func AdmitCatalogOperation(catalog Catalog, request any) (ResourceType, error) {
-	if err := ValidateCatalog(catalog); err != nil {
-		return ResourceType{}, err
-	}
-	target, err := describeOperation(request)
-	if err != nil {
-		return ResourceType{}, err
-	}
-	descriptor, _, err := admitTarget(catalog, target)
-	return descriptor, err
-}
-
-// AdmitBestEffortTarget checks the independently optional advisory update
-// interface and its exact catalog scope. It makes no P05 continuity promise.
-func AdmitBestEffortTarget(ctx context.Context, provider Provider, target ReadTarget) (descriptor ResourceType, err error) {
-	defer func() {
-		if recover() != nil {
-			err = NewError("INTERNAL", "Provider admission handler panicked.")
-		}
-	}()
-	operation, err := describeOperation(target)
-	if err != nil {
-		return descriptor, err
-	}
-	if _, ok := provider.(BestEffortUpdateProvider); !ok {
-		return descriptor, NewError("UNSUPPORTED", "Best-effort update handler is not implemented.")
-	}
-	return admitProviderTarget(ctx, provider, operation)
-}
-
 // ListConnections returns the managed connection inventory, not an implicit
 // selection. Native inventory watching belongs to a ConnectionBrowser provider.
+// Profiles are independently owned and sorted by ID. No discovery refresh, client
+// start, or health probe occurs; absent Lifecycle returns UNSUPPORTED.
 func (c *Controller[T]) ListConnections(ctx context.Context) ([]types.Connection, error) {
 	if err := c.requireLifecycle(); err != nil {
 		return nil, err
@@ -1377,6 +1105,8 @@ func (c *Controller[T]) ListConnections(ctx context.Context) ([]types.Connection
 
 // NativeConnections snapshots the latest successful native discovery before
 // overlay application. It neither reloads discovery nor exposes manual profiles.
+// Returned profiles are independent snapshots sorted by ID, including private
+// configuration; hosts must not persist source-owned credentials in overlays.
 func (c *Controller[T]) NativeConnections(ctx context.Context) ([]types.Connection, error) {
 	if err := c.requireLifecycle(); err != nil {
 		return nil, err
@@ -1407,6 +1137,13 @@ func connectionSnapshot(inventory map[string]types.Connection) []types.Connectio
 
 // ApplyConnections replaces only the native discovery snapshot. Explicit host
 // overrides and disabled IDs survive refreshes and native disappearance.
+// Nil replaces discovery with an empty snapshot. Inputs are copied, but callers
+// must not mutate them during the call. Display-only edits preserve clients;
+// changed client configuration cancels and drains old generations before
+// publication. Teardown failure or cancellation preserves prior desired inventory,
+// but cannot resurrect retired clients. No new clients start automatically.
+// Do not reenter this method from inventory-teardown callbacks or leased work
+// whose generation the replacement can retire.
 func (c *Controller[T]) ApplyConnections(ctx context.Context, connections []types.Connection) error {
 	if err := c.requireLifecycle(); err != nil {
 		return err
@@ -1432,6 +1169,13 @@ func (c *Controller[T]) ApplyConnections(ctx context.Context, connections []type
 // ApplyConnectionOverlay replaces the entire host-owned desired overlay.
 // Validation and client teardown must succeed before the new desired state is
 // published. The controller never writes native configuration files.
+// A zero overlay restores native discovery; inputs are copied. Nil private
+// override data may inherit source credentials only for unchanged public client
+// configuration; explicit empty private data clears it. Hosts own durable storage
+// and startup replay and must not persist native private credentials.
+// Failure keeps prior desired state, but canceled/drained clients remain retired.
+// Reapplication cannot resurrect a generation. Calls serialize inventory mutation
+// and must not reenter it from teardown callbacks or affected leased work.
 func (c *Controller[T]) ApplyConnectionOverlay(ctx context.Context, overlay ConnectionOverlay) error {
 	if err := c.requireLifecycle(); err != nil {
 		return err
@@ -1568,6 +1312,11 @@ func copyConnectionOverlay(upserts map[string]types.Connection, disabledIDs map[
 
 // UpdateConnection upserts an explicitly identified desired record. Native
 // refreshes cannot overwrite it; ApplyConnectionOverlay owns reset/restore.
+// The input and returned profile own independent mutable configuration. This
+// replaces the whole desired record, not a field patch, and clears its tombstone.
+// Changed client configuration drains its generation before publishing; failure
+// retains prior desired state but may leave that generation retired. See
+// ApplyConnectionOverlay for credential inheritance and reentrancy restrictions.
 func (c *Controller[T]) UpdateConnection(ctx context.Context, connection types.Connection) (types.Connection, error) {
 	if err := c.requireLifecycle(); err != nil {
 		return types.Connection{}, err
@@ -1589,6 +1338,10 @@ func (c *Controller[T]) UpdateConnection(ctx context.Context, connection types.C
 
 // DeleteConnection hides a native route or removes a manual desired profile.
 // Its tombstone survives native refresh until the host replaces the overlay.
+// Unknown IDs return NOT_FOUND. Existing clients are canceled and drained before
+// publication; failure retains prior desired state but not retired clients.
+// This does not delete native configuration or durable host storage. Inventory
+// teardown reentrancy restrictions from ApplyConnectionOverlay also apply.
 func (c *Controller[T]) DeleteConnection(ctx context.Context, id string) error {
 	if err := c.requireLifecycle(); err != nil {
 		return err
@@ -1614,35 +1367,468 @@ func (c *Controller[T]) DeleteConnection(ctx context.Context, id string) error {
 	return c.applyInventory(ctx, c.nativeConnections, overrides, disabled)
 }
 
-// Features reports installed ancillary implementations rather than Controller's
-// static method set. Wrappers with additional native traits extend this result.
-func (c *Controller[T]) Features(ctx context.Context) (FeatureSet, error) {
-	if err := ctx.Err(); err != nil {
-		return FeatureSet{}, c.classify(nil, err)
+func (c *Controller[T]) routeContext(ctx context.Context, route AccessRoute) (context.Context, context.CancelFunc, error) {
+	if route.Connection == "" {
+		return nil, nil, NewError("INVALID_REQUEST", "An explicit connection route is required.")
 	}
 	c.mu.Lock()
 	closed := c.closed
 	c.mu.Unlock()
 	if closed {
-		return FeatureSet{}, NewError("CANCELLED", "Provider is closed.")
+		return nil, nil, NewError("CANCELLED", "Provider is closed.")
 	}
-	features := FeatureSet{Traits: []Feature{}}
-	if c.cfg.Lifecycle != nil {
-		features.Traits = append(features.Traits, FeatureConnections, FeatureConnectionReadiness, FeatureConnectionOverlay)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
 	}
-	updates := c.cfg.DynamicUpdates
-	for _, registration := range c.cfg.Registrations {
-		if handles(registration, OperationUpdate) {
-			updates = true
-			break
-		}
-	}
-	if updates {
-		features.Traits = append(features.Traits, FeatureBestEffortUpdates)
-	}
-	return features, nil
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(c.ctx, cancel)
+	return ctx, func() { stop(); cancel() }, nil
 }
 
-var _ FeatureNegotiator = (*Controller[struct{}])(nil)
+func (c *Controller[T]) lease(ctx context.Context, route AccessRoute) (context.Context, *T, func(), error) {
+	ctx, cancel, err := c.routeContext(ctx, route)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if c.cfg.Lifecycle == nil {
+		return ctx, nil, cancel, nil
+	}
+	if held, ok := ctx.Value(catalogSlotKey{}).(*clientSlot[T]); ok {
+		c.mu.Lock()
+		current := c.clients[route.Connection] == held && !held.stopping && held.ctx.Err() == nil
+		if current {
+			held.users.Add(1)
+		}
+		c.mu.Unlock()
+		if !current {
+			cancel()
+			return nil, nil, nil, NewError("RESET_REQUIRED", "The admitted client generation has retired.")
+		}
+		stop := context.AfterFunc(held.ctx, cancel)
+		return ctx, held.client, func() { stop(); cancel(); held.users.Done() }, nil
+	}
+	c.mu.Lock()
+	s := c.clients[route.Connection]
+	if s == nil || s.stopping {
+		c.mu.Unlock()
+		cancel()
+		return nil, nil, nil, NewError("INVALID_REQUEST", "Connection is not started.")
+	}
+	c.mu.Unlock()
+	select {
+	case <-s.ready:
+	case <-ctx.Done():
+		cancel()
+		return nil, nil, nil, ctx.Err()
+	}
+	c.mu.Lock()
+	if s.err != nil || s.stopping || c.closed || c.clients[route.Connection] != s {
+		c.mu.Unlock()
+		cancel()
+		return nil, nil, nil, NewError("CANCELLED", "Connection is stopping or failed to start.")
+	}
+	s.users.Add(1)
+	connection := cloneConnection(c.connections[route.Connection])
+	c.mu.Unlock()
+	stop := context.AfterFunc(s.ctx, cancel)
+	session, _ := SessionFromContext(ctx)
+	session.Connection = &connection
+	ctx = WithSession(ctx, session)
+	ctx = context.WithValue(ctx, catalogSlotKey{}, s)
+	return ctx, s.client, func() { stop(); cancel(); s.users.Done() }, nil
+}
 
-var _ ConnectionOverlayProvider = (*Controller[struct{}])(nil)
+// WithConnection holds an already-connected native client generation for
+// utility work. Metadata is only a selector; the callback receives the actual
+// configured profile. No probe, implicit start or default selection occurs.
+// The callback and context are lease-bound: return before retiring this generation,
+// and do not retain native work beyond the lease without explicit session cleanup.
+// The supplied profile owns its mutable configuration; editing it changes no
+// registry state. A nil callback is invalid; absent Lifecycle is UNSUPPORTED.
+// Unknown profiles are NOT_FOUND and configured unstarted profiles are
+// CONNECTION_ERROR. Callback success still fails if its lease context was canceled.
+func (c *Controller[T]) WithConnection(ctx context.Context, route AccessRoute, fn func(context.Context, types.Connection) error) (err error) {
+	var registration *Registration[T]
+	defer c.guard(&registration, &err)
+	if c.cfg.Lifecycle == nil {
+		return NewError("UNSUPPORTED", "Connected utility context is unavailable.")
+	}
+	if fn == nil {
+		return NewError("INVALID_REQUEST", "Utility callback is required.")
+	}
+	if _, err = c.connection(ctx, route.Connection); err != nil {
+		return err
+	}
+	native, _, done, err := c.lease(ctx, route)
+	if err != nil {
+		if ErrorCode(err) == "INVALID_REQUEST" {
+			return NewError("CONNECTION_ERROR", "Selected connection is not started.")
+		}
+		return err
+	}
+	defer done()
+	session, _ := SessionFromContext(native)
+	if session.Connection == nil {
+		return NewError("INTERNAL", "Active client has no configured profile.")
+	}
+	err = fn(native, *session.Connection)
+	if err == nil {
+		err = native.Err()
+	}
+	return err
+}
+
+// WithClient holds an active client lease for discovery or provider-specific
+// work. Stop and Close cancel the callback and wait before destroying its client.
+// No implicit start, probe, default route, or resource authorization occurs.
+// With no Lifecycle the callback receives nil; otherwise the selected generation
+// must already be started. A nil callback is invalid. The client is borrowed only
+// until callback return, and concurrent callbacks can share it. Honor the supplied
+// context and never synchronously retire the same generation while holding its
+// lease. A nil callback error does not suppress lease-context cancellation.
+func (c *Controller[T]) WithClient(ctx context.Context, route AccessRoute, fn func(context.Context, *T) error) (err error) {
+	var registration *Registration[T]
+	defer c.guard(&registration, &err)
+	ctx, client, done, err := c.lease(ctx, route)
+	if err != nil {
+		return err
+	}
+	defer done()
+	if fn == nil {
+		return NewError("INVALID_REQUEST", "Client callback is required.")
+	}
+	err = fn(ctx, client)
+	if err == nil {
+		err = ctx.Err()
+	}
+	return err
+}
+
+func (c *Controller[T]) requireLifecycle() error {
+	if c.cfg.Lifecycle == nil {
+		return NewError("UNSUPPORTED", "Provider does not own connection lifecycle.")
+	}
+	return nil
+}
+
+// connection returns an immutable controller-owned value for internal use only.
+func (c *Controller[T]) connection(ctx context.Context, id string) (types.Connection, error) {
+	if err := c.requireLifecycle(); err != nil {
+		return types.Connection{}, err
+	}
+	if id == "" {
+		return types.Connection{}, NewError("INVALID_REQUEST", "An explicit connection ID is required.")
+	}
+	if err := ctx.Err(); err != nil {
+		return types.Connection{}, c.classify(nil, err)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return types.Connection{}, NewError("CANCELLED", "Provider is closed.")
+	}
+	connection, ok := c.connections[id]
+	if !ok {
+		return types.Connection{}, NewError("NOT_FOUND", "Connection was not loaded.")
+	}
+	return connection, nil
+}
+
+func (c *Controller[T]) startClient(s *clientSlot[T]) {
+	defer close(s.ready)
+	defer func() {
+		if recover() != nil {
+			s.err = NewError("INTERNAL", "Connection start handler panicked.")
+		}
+		if s.err != nil {
+			c.mu.Lock()
+			if c.clients[s.connection.ID] == s && !s.stopping && !c.changing[s.connection.ID] && s.ctx.Err() == nil {
+				c.failedStarts[s.connection.ID] = true
+			}
+			c.mu.Unlock()
+		}
+	}()
+	connection := cloneConnection(s.connection)
+	session, _ := SessionFromContext(s.ctx)
+	session.Connection = &connection
+	ctx := WithSession(s.ctx, session)
+	s.client, s.err = c.cfg.Lifecycle.CreateClient(ctx, connection)
+	if s.err == nil && s.client == nil {
+		s.err = NewError("INTERNAL", "CreateClient returned a nil client.")
+	}
+	if s.err == nil && c.cfg.Lifecycle.OnStart != nil {
+		s.err = c.cfg.Lifecycle.OnStart(ctx, connection, s.client)
+	}
+	if s.err == nil {
+		s.err = s.ctx.Err()
+	}
+}
+
+// StartConnection starts one configured profile or joins its in-flight startup.
+// The creator's cancellation cancels startup until construction completes;
+// cancellation of another waiter only ends that wait. Accepted generations then
+// outlive the initiating request. CreateClient and OnStart must both succeed
+// before CONNECTED, which reports lifecycle registration, not network health.
+//
+// Failure drains and destroys any returned client and retains only safe FAILED
+// status. A later explicit call retries with a fresh generation. Unknown IDs are
+// NOT_FOUND; lifecycle-less controllers return UNSUPPORTED. Calls may overlap
+// readiness inspection, but callbacks must not wait on their own pending start.
+func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status types.ConnectionStatus, err error) {
+	var r *Registration[T]
+	defer c.guard(&r, &err)
+	connection, err := c.connection(ctx, id)
+	if err != nil {
+		return status, err
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return status, NewError("CANCELLED", "Provider is closed.")
+	}
+	if c.changing[id] {
+		c.mu.Unlock()
+		return status, NewError("CANCELLED", "Connection configuration is changing.")
+	}
+	var exists bool
+	connection, exists = c.connections[id]
+	if !exists {
+		c.mu.Unlock()
+		return status, NewError("NOT_FOUND", "Connection was removed.")
+	}
+	s := c.clients[id]
+	created := s == nil
+	if created {
+		nonce, nonceErr := newCatalogNonce()
+		if nonceErr != nil {
+			c.mu.Unlock()
+			return status, nonceErr
+		}
+		clientCtx, cancel := context.WithCancel(c.ctx)
+		session, _ := SessionFromContext(ctx)
+		session.Connection = nil
+		clientCtx = WithSession(clientCtx, session)
+		s = &clientSlot[T]{connection: connection, ctx: clientCtx, cancel: cancel, ready: make(chan struct{})}
+		s.catalogNonce = nonce
+		c.clients[id] = s
+		delete(c.failedStarts, id)
+	}
+	c.mu.Unlock()
+	if created {
+		stop := context.AfterFunc(ctx, s.cancel)
+		c.startClient(s)
+		stop()
+	}
+	select {
+	case <-s.ready:
+	case <-ctx.Done():
+		if created {
+			cleanupErr := c.stopSlot(s)
+			return status, errors.Join(ctx.Err(), cleanupErr)
+		}
+		return status, ctx.Err()
+	}
+	if s.err != nil {
+		cleanupErr := c.stopSlot(s)
+		return status, errors.Join(s.err, cleanupErr)
+	}
+	if clientErr := s.ctx.Err(); clientErr != nil {
+		cleanupErr := c.stopSlot(s)
+		return status, errors.Join(clientErr, cleanupErr)
+	}
+	c.mu.Lock()
+	stopping := s.stopping || c.closed
+	c.mu.Unlock()
+	if stopping {
+		return status, NewError("CANCELLED", "Connection is stopping.")
+	}
+	connection = cloneConnection(connection)
+	return types.ConnectionStatus{Connection: &connection, Status: types.ConnectionStatusConnected}, nil
+}
+
+func lifecycleCall(fn func() error) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = NewError("INTERNAL", "Connection teardown handler panicked.")
+		}
+	}()
+	return fn()
+}
+
+func (c *Controller[T]) stopSlot(s *clientSlot[T]) error {
+	c.mu.Lock()
+	s.stopping = true
+	s.cancel()
+	c.mu.Unlock()
+	s.destroy.Do(func() {
+		<-s.ready
+		s.destroyErr = errors.Join(s.destroyErr, c.updates.stopRoute(s.connection.ID))
+		s.users.Wait()
+		if s.client != nil {
+			// Cleanup must not inherit the canceled client context.
+			ctx := context.WithoutCancel(s.ctx)
+			connection := cloneConnection(s.connection)
+			session, _ := SessionFromContext(ctx)
+			session.Connection = &connection
+			ctx = WithSession(ctx, session)
+			if c.cfg.Lifecycle.OnStop != nil {
+				s.destroyErr = lifecycleCall(func() error { return c.cfg.Lifecycle.OnStop(ctx, connection, s.client) })
+			}
+			s.destroyErr = errors.Join(s.destroyErr, lifecycleCall(func() error { return c.cfg.Lifecycle.DestroyClient(ctx, s.client) }))
+		}
+		c.mu.Lock()
+		if c.clients[s.connection.ID] == s {
+			delete(c.clients, s.connection.ID)
+		}
+		c.mu.Unlock()
+	})
+	return s.destroyErr
+}
+
+// StopConnection cancels a configured profile's generation, stops advisory sources,
+// waits for startup and leases, then runs teardown. The profile remains configured;
+// an already-stopped profile succeeds and clears retained startup failure status.
+// Unknown IDs are NOT_FOUND. The returned profile is an independent snapshot.
+//
+// After retirement begins, caller cancellation does not skip draining or cleanup.
+// This can block on callbacks that ignore cancellation; never call synchronously
+// from work holding this generation's lease or from its lifecycle callbacks.
+func (c *Controller[T]) StopConnection(ctx context.Context, id string) (connection types.Connection, err error) {
+	var r *Registration[T]
+	defer c.guard(&r, &err)
+	connection, err = c.GetConnection(ctx, id)
+	if err != nil {
+		return connection, err
+	}
+	c.mu.Lock()
+	s := c.clients[id]
+	delete(c.failedStarts, id)
+	if s != nil {
+		s.stopping = true
+		s.cancel()
+	}
+	c.mu.Unlock()
+	if s == nil {
+		return connection, nil
+	}
+	return connection, c.stopSlot(s)
+}
+
+// GetConnectionStatus snapshots the sole configured-client registry without
+// starting, waiting, probing or performing catalog/resource work. CONNECTED
+// means registration only, not network health or resource-source readiness.
+// Configured unstarted profiles are DISCONNECTED, construction is PENDING, and
+// failed startup remains FAILED until retry, stop, or meaningful replacement.
+// Unknown IDs are NOT_FOUND; returned connection configuration is independently
+// owned. This is a local readiness snapshot, not a lease or permission grant.
+func (c *Controller[T]) GetConnectionStatus(ctx context.Context, id string) (types.ConnectionStatus, error) {
+	if err := c.requireLifecycle(); err != nil {
+		return types.ConnectionStatus{}, err
+	}
+	if id == "" {
+		return types.ConnectionStatus{}, NewError("INVALID_REQUEST", "An explicit connection ID is required.")
+	}
+	if err := ctx.Err(); err != nil {
+		return types.ConnectionStatus{}, c.classify(nil, err)
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return types.ConnectionStatus{}, NewError("CANCELLED", "Provider is closed.")
+	}
+	connection, exists := c.connections[id]
+	if !exists {
+		c.mu.Unlock()
+		return types.ConnectionStatus{}, NewError("NOT_FOUND", "Connection was not loaded.")
+	}
+	state := types.ConnectionStatusDisconnected
+	if c.failedStarts[id] {
+		state = types.ConnectionStatusFailed
+	}
+	slot := c.clients[id]
+	if !c.failedStarts[id] && slot != nil && !slot.stopping && !c.changing[id] && slot.ctx.Err() == nil {
+		select {
+		case <-slot.ready:
+			if slot.err == nil {
+				state = types.ConnectionStatusConnected
+			} else {
+				state = types.ConnectionStatusFailed
+			}
+		default:
+			state = types.ConnectionStatusPending
+		}
+	}
+	c.mu.Unlock()
+	owned := cloneConnection(connection)
+	return types.ConnectionStatus{Connection: &owned, Status: state}, nil
+}
+
+// CheckConnection optionally probes a configured profile under an active lease.
+// An unstarted profile returns DISCONNECTED without starting it. A nil lifecycle
+// CheckConnection callback reports CONNECTED registration without probing network
+// health. A supplied callback must return the selected profile's ID; its returned
+// profile is copied before exposure. Unknown IDs are NOT_FOUND.
+// Cancellation includes the caller and generation; callbacks must honor it.
+func (c *Controller[T]) CheckConnection(ctx context.Context, id string) (status types.ConnectionStatus, err error) {
+	var r *Registration[T]
+	defer c.guard(&r, &err)
+	connection, err := c.connection(ctx, id)
+	if err != nil {
+		return status, err
+	}
+	c.mu.Lock()
+	s := c.clients[id]
+	c.mu.Unlock()
+	if s == nil {
+		connection = cloneConnection(connection)
+		return types.ConnectionStatus{Connection: &connection, Status: types.ConnectionStatusDisconnected}, nil
+	}
+	ctx, client, done, err := c.lease(ctx, AccessRoute{Connection: id})
+	if err != nil {
+		return status, err
+	}
+	defer done()
+	session, _ := SessionFromContext(ctx)
+	connection = *session.Connection
+	if c.cfg.Lifecycle.CheckConnection == nil {
+		return types.ConnectionStatus{Connection: &connection, Status: types.ConnectionStatusConnected}, nil
+	}
+	status, err = c.cfg.Lifecycle.CheckConnection(ctx, connection, client)
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err == nil && (status.Connection == nil || status.Connection.ID != id) {
+		err = NewError("INTERNAL", "Connection check changed the requested connection.")
+	}
+	if status.Connection != nil {
+		owned := cloneConnection(*status.Connection)
+		status.Connection = &owned
+	}
+	return status, err
+}
+
+// Close permanently rejects new work, cancels generations and advisory sources,
+// drains leases, and destroys clients. Repeated and concurrent calls return the
+// same accumulated teardown error. Close has no timeout: callbacks must observe
+// cancellation and cleanup must terminate. Never call it synchronously from a
+// leased callback or lifecycle callback whose completion Close must await.
+func (c *Controller[T]) Close() error {
+	c.closeOnce.Do(func() {
+		c.mu.Lock()
+		c.closed = true
+		c.cancel()
+		slots := make([]*clientSlot[T], 0, len(c.clients))
+		for _, s := range c.clients {
+			s.stopping = true
+			s.cancel()
+			slots = append(slots, s)
+		}
+		c.mu.Unlock()
+		c.updates.stopAll()
+		for _, s := range slots {
+			c.closeErr = errors.Join(c.closeErr, c.stopSlot(s))
+		}
+		c.closeErr = c.classify(nil, c.closeErr)
+	})
+	return c.closeErr
+}

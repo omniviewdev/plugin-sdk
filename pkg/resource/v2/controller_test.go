@@ -33,7 +33,7 @@ func controllerConfig() Config[string] {
 			return Catalog{}, errors.New("missing route")
 		}
 		return Catalog{Provider: "test", Revision: "catalog-1", Coverage: Coverage{Kind: "complete", Paths: []string{}}, Types: []ResourceType{{Type: "opaque/type", IdentityDimensions: []Dimension{}, QueryDimensions: []Dimension{}, Representations: []Representation{controllerRepresentation()}, Capabilities: []Capability{
-			{Operation: OperationGet, Scope: QueryScope{}}, {Operation: OperationEnumerate, Scope: QueryScope{}}, {Operation: OperationNativeQuery, Scope: QueryScope{}}, {Operation: OperationMutation, Scope: QueryScope{}}, {Operation: OperationAction, Scope: QueryScope{}}, {Operation: OperationUpdate, Scope: QueryScope{}, Guarantee: BestEffortGuarantee},
+			{Operation: OperationGet, Scope: QueryScope{}}, {Operation: OperationEnumerate, Scope: QueryScope{}}, {Operation: OperationNativeQuery, Scope: QueryScope{}}, {Operation: OperationCreate, Scope: QueryScope{}}, {Operation: OperationMutationUpdate, Scope: QueryScope{}}, {Operation: OperationDelete, Scope: QueryScope{}}, {Operation: OperationAction, Scope: QueryScope{}}, {Operation: OperationUpdate, Scope: QueryScope{}, Guarantee: BestEffortGuarantee},
 		}}}}, nil
 	}}
 }
@@ -108,6 +108,70 @@ func TestControllerGetOnlyProvider(t *testing.T) {
 	}
 	_, err = c.Enumerate(acceptedControllerContext(t, context.Background(), c), EnumerateRequest{Target: controllerTarget()})
 	assertControllerCode(t, err, "UNSUPPORTED")
+}
+
+func TestControllerCreateOnlyRejectsOtherMutationsBeforeDispatch(t *testing.T) {
+	cfg := controllerConfig()
+	base := cfg.Catalog
+	cfg.Catalog = func(ctx context.Context, request CatalogRequest) (Catalog, error) {
+		catalog, err := base(ctx, request)
+		catalog.Types[0].Capabilities = []Capability{{Operation: OperationCreate, Scope: QueryScope{}}}
+		return catalog, err
+	}
+	calls := 0
+	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Mutate: func(context.Context, *string, MutationRequest) (Record, error) {
+		calls++
+		return controllerRecord(), nil
+	}}}
+	c := newTestController(t, cfg)
+	ctx := acceptedControllerContext(t, context.Background(), c)
+	catalog, err := c.Catalog(ctx, CatalogRequest{Route: controllerTarget().Route})
+	if err != nil || len(catalog.Types[0].Capabilities) != 1 || catalog.Types[0].Capabilities[0].Operation != OperationCreate {
+		t.Fatalf("create-only discovery widened: %+v, %v", catalog, err)
+	}
+	for _, verb := range []string{"update", "delete", "replace"} {
+		request := MutationRequest{Route: controllerTarget().Route, Reference: controllerRecord().Reference, Operation: verb, Input: Value{Kind: "null"}}
+		_, err := AdmitOperation(ctx, c, request)
+		assertControllerCode(t, err, "UNSUPPORTED")
+		_, err = c.Mutate(ctx, request)
+		assertControllerCode(t, err, "UNSUPPORTED")
+	}
+	if calls != 0 {
+		t.Fatal("unsupported mutation reached callback")
+	}
+	_, err = c.Mutate(ctx, MutationRequest{Route: controllerTarget().Route, Reference: controllerRecord().Reference, Operation: "create", Input: Value{Kind: "null"}})
+	if err != nil || calls != 1 {
+		t.Fatalf("create failed: %v; calls %d", err, calls)
+	}
+}
+
+func TestMutationAdmissionUsesEachVerbScope(t *testing.T) {
+	catalog, err := controllerConfig().Catalog(context.Background(), CatalogRequest{Route: controllerTarget().Route})
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor := &catalog.Types[0]
+	descriptor.IdentityDimensions = []Dimension{{Name: "region"}}
+	descriptor.QueryDimensions = []Dimension{{Name: "region"}}
+	descriptor.Capabilities = nil
+	for _, operation := range []Operation{OperationCreate, OperationMutationUpdate, OperationDelete} {
+		values := []string{string(operation)}
+		descriptor.Capabilities = append(descriptor.Capabilities, Capability{Operation: operation, Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &values}}})
+	}
+	for _, operation := range []Operation{OperationCreate, OperationMutationUpdate, OperationDelete} {
+		for _, region := range []string{"create", "mutationUpdate", "delete"} {
+			address := controllerAddress()
+			address.Scope = []ScopeEntry{{Dimension: "region", Value: region}}
+			_, _, err := admitTarget(catalog, operationTarget{provider: address.Provider, typ: address.Type, address: &address, operation: operation})
+			if region == string(operation) {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				assertControllerCode(t, err, "UNSUPPORTED")
+			}
+		}
+	}
 }
 
 func TestControllerNativeQueryOnlySourceCursor(t *testing.T) {
