@@ -191,11 +191,62 @@ func (m *Manager) StartResourcePortForwardSession(pluginctx *types.PluginContext
 	}
 	connection, _ := resourceConnection(opts.Connection)
 	var session *PortForwardSession
+	var stopRequest func() bool
 	err := resourcev2.WithUtilityConnection(pluginctx, m.connectionProvider, connection.Reference, connection.Route, func(bound *types.PluginContext) error {
-		var err error
-		session, err = m.startPortForwardSession(bound, opts)
-		return err
+		// Keep a separate generation lease for the accepted tunnel. The outer
+		// lease still owns request admission and its post-creation catalog fence.
+		if bound == nil || bound.Connection == nil {
+			var err error
+			session, err = m.startPortForwardSession(bound, opts)
+			return err
+		}
+		lifetime, cancel := context.WithCancel(context.WithoutCancel(bound.Context))
+		request := pluginctx.Context
+		if request == nil {
+			request = context.Background()
+		}
+		stopRequest = context.AfterFunc(request, cancel)
+		type outcome struct {
+			session *PortForwardSession
+			err     error
+		}
+		created := make(chan outcome, 1)
+		go func() {
+			defer cancel()
+			published := false
+			err := m.connectionProvider.WithConnection(lifetime, resourcev2.AccessRoute{Connection: bound.Connection.ID}, func(ctx context.Context, configured types.Connection) error {
+				copy := *bound
+				copy.Context = ctx
+				copy.Connection = &configured
+				entry, err := m.createPortForwardSession(&copy, opts, true)
+				if err != nil {
+					return err
+				}
+				session := entry.snapshot()
+				created <- outcome{session: &session}
+				published = true
+				// Close/StopAll cancels the session; retirement cancels ctx.
+				select {
+				case <-entry.ctx.Done():
+				case <-ctx.Done():
+					entry.cancel(context.Cause(ctx))
+				}
+				return nil
+			})
+			if !published {
+				created <- outcome{err: err}
+			}
+		}()
+		result := <-created
+		session = result.session
+		return result.err
 	})
+	if stopRequest != nil {
+		stopRequest()
+		if err == nil && pluginctx.Context != nil {
+			err = pluginctx.Context.Err()
+		}
+	}
 	if err != nil {
 		if session != nil {
 			_, _ = m.ClosePortForwardSession(pluginctx, session.ID)
@@ -206,16 +257,28 @@ func (m *Manager) StartResourcePortForwardSession(pluginctx *types.PluginContext
 }
 
 func (m *Manager) startPortForwardSession(pluginctx *types.PluginContext, opts PortForwardSessionOptions) (*PortForwardSession, error) {
-	// Read from pluginctx without mutating it.
+	entry, err := m.createPortForwardSession(pluginctx, opts, false)
+	if err != nil {
+		return nil, err
+	}
+	session := entry.snapshot()
+	return &session, nil
+}
+
+// createPortForwardSession keeps cancellation attached through creation and
+// readiness. Resource sessions retain their generation lease after acceptance;
+// standalone sessions detach only the initiating request at acceptance.
+func (m *Manager) createPortForwardSession(pluginctx *types.PluginContext, opts PortForwardSessionOptions, retainCancellation bool) (*sessionEntry, error) {
 	if pluginctx == nil {
 		pluginctx = &types.PluginContext{}
 	}
-	// Port-forward sessions are long-lived and must outlive the initiating
-	// RPC call. Use WithoutCancel to detach from the RPC deadline while
-	// preserving any request-scoped values (e.g. middleware metadata).
-	baseCtx := context.Background()
-	if pluginctx.Context != nil {
-		baseCtx = context.WithoutCancel(pluginctx.Context)
+	request := pluginctx.Context
+	if request == nil {
+		request = context.Background()
+	}
+	baseCtx := request
+	if !retainCancellation {
+		baseCtx = context.WithoutCancel(request)
 	}
 
 	logger := m.log.With(logging.String("connection_type", string(opts.ConnectionType)))
@@ -241,6 +304,11 @@ func (m *Manager) startPortForwardSession(pluginctx *types.PluginContext, opts P
 	pctxCopy := *pluginctx
 	ctx, cancel := context.WithCancelCause(baseCtx)
 	pctxCopy.Context = ctx
+	stopRequest := func() bool { return false }
+	if !retainCancellation {
+		stopRequest = context.AfterFunc(request, func() { cancel(context.Cause(request)) })
+		defer stopRequest()
+	}
 	if m.settingsProvider != nil {
 		pctxCopy.SetSettingsProvider(m.settingsProvider)
 	}
@@ -322,6 +390,12 @@ func (m *Manager) startPortForwardSession(pluginctx *types.PluginContext, opts P
 			}
 		}
 	}
+	// Readiness can race cancellation, including an already-closed Ready.
+	stopRequest()
+	if err := request.Err(); err != nil {
+		cancel(context.Cause(request))
+		return nil, NewForwarderFailedError(sessionID, err)
+	}
 
 	// Defensive copy of labels to prevent external mutation.
 	labels := maps.Clone(opts.Labels)
@@ -360,16 +434,13 @@ func (m *Manager) startPortForwardSession(pluginctx *types.PluginContext, opts P
 	}
 	m.sessions[sessionID] = entry
 	// Start monitor inside the lock to prevent races with StopAll's wg.Wait().
-	if result.ErrCh != nil {
-		m.wg.Add(1)
-		go m.monitorSession(entry, result.ErrCh)
-	}
+	m.wg.Add(1)
+	go m.monitorSession(entry, result.ErrCh)
 	m.mu.Unlock()
 
 	logger.Debugw(ctx, "port forward session started", "session_id", sessionID)
 
-	snap := entry.snapshot()
-	return &snap, nil
+	return entry, nil
 }
 
 func (m *Manager) handleResourceForward(
@@ -437,6 +508,8 @@ func (m *Manager) handleStaticForward(
 // monitorSession watches for post-start failures from a forwarder's ErrCh.
 func (m *Manager) monitorSession(entry *sessionEntry, errCh <-chan error) {
 	defer m.wg.Done()
+	// Native completion also releases the retained generation lease.
+	defer entry.cancel(nil)
 
 	select {
 	case <-entry.ctx.Done():
