@@ -6,8 +6,13 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
-// CloneConnection gives native utility callbacks independent ownership of the
-// configured profile without coercing exact scalars or private credentials.
+// CloneConnection copies mutable configured-profile containers without JSON
+// roundtripping or scalar coercion. It preserves nils and concrete scalar types
+// and copies exported credential fields even when tagged json:"-".
+// Unexported implementation state and opaque runtime handles retain native
+// ownership; this is not a general-purpose native-client clone. Map/slice/array
+// containers in Client are copied. Do not mutate input concurrently with copying.
+// Cloning neither validates configuration nor applies it to a registry.
 func CloneConnection(connection types.Connection) types.Connection {
 	return cloneConnection(connection)
 }
@@ -17,6 +22,9 @@ func CloneConnection(connection types.Connection) types.Connection {
 // display fields, refresh/expiry bookkeeping and opaque runtime Client are not
 // source identity. Native client builders must keep endpoint/auth in Data or
 // private sensitive data. This does not establish native authority continuity.
+// Nil and empty configuration containers are distinct under this comparison.
+// Keep both inputs stable during comparison. Equality only decides client reuse;
+// it neither compares current network state nor authorizes resource access.
 func SameConnectionClientConfig(a, b types.Connection) bool {
 	return a.ID == b.ID && a.UID == b.UID &&
 		reflect.DeepEqual(a.Data, b.Data) &&
@@ -126,7 +134,9 @@ func (c *metadataCopy) value(v reflect.Value) reflect.Value {
 		out.Set(v)
 		for i := range v.NumField() {
 			field := v.Type().Field(i)
-			if field.PkgPath == "" && field.Tag.Get("json") != "-" {
+			// Serialization visibility does not determine configuration ownership.
+			// Unexported implementation state remains opaque and shallow-copied.
+			if field.PkgPath == "" {
 				out.Field(i).Set(c.value(v.Field(i)))
 			}
 		}
