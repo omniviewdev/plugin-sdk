@@ -16,10 +16,7 @@ func TestAncillaryDomainAdapters(t *testing.T) {
 	target := RelationshipTarget{Reference: r.Reference, Route: route, DisplayName: "target"}
 	condition := HealthCondition{Type: "Ready", Status: "True", LastProbeTime: &instant, LastTransitionTime: &instant}
 	adapterRoundTrip(t, descriptor, ToProtoRelationshipDescriptor, FromProtoRelationshipDescriptor)
-	adapterRoundTrip(t, descriptor.ScopeExtractors[0], ToProtoScopeExtractor, FromProtoScopeExtractor)
-	adapterRoundTrip(t, target, ToProtoRelationshipTarget, FromProtoRelationshipTarget)
 	adapterRoundTrip(t, ResolvedRelationship{Descriptor: descriptor, Targets: []RelationshipTarget{target}}, ToProtoResolvedRelationship, FromProtoResolvedRelationship)
-	adapterRoundTrip(t, condition, ToProtoHealthCondition, FromProtoHealthCondition)
 	adapterRoundTrip(t, ResourceHealth{Status: HealthHealthy, Since: &instant, Conditions: []HealthCondition{condition}}, ToProtoResourceHealth, FromProtoResourceHealth)
 	adapterRoundTrip(t, ResourceEvent{Type: SeverityNormal, Reason: "reason", Message: "message", Count: 1, FirstSeen: instant, LastSeen: instant}, ToProtoResourceEvent, FromProtoResourceEvent)
 	adapterRoundTrip(t, EditorSchema{Type: r.Reference.Address.Type, FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: r.Representation.Schema}, ToProtoEditorSchema, FromProtoEditorSchema)
@@ -51,7 +48,6 @@ func TestBestEffortUpdateAdapters(t *testing.T) {
 	route := AccessRoute{Connection: "route"}
 	instant := time.Unix(-1, 999999999).UTC()
 	metadata := ResourceMetadata{Labels: map[string]string{"z": "2", "a": "1"}, CreatedAt: &instant}
-	adapterRoundTrip(t, metadata, ToProtoResourceMetadata, FromProtoResourceMetadata)
 	adapterRoundTrip(t, WatchAddPayload{Route: route, Record: r, Metadata: metadata, Guarantee: BestEffortGuarantee}, ToProtoWatchAddPayload, FromProtoWatchAddPayload)
 	adapterRoundTrip(t, WatchUpdatePayload{Route: route, Record: r, Metadata: metadata, Guarantee: BestEffortGuarantee}, ToProtoWatchUpdatePayload, FromProtoWatchUpdatePayload)
 	adapterRoundTrip(t, WatchDeletePayload{Route: route, Reference: r.Reference, LastKnown: &r, Guarantee: BestEffortGuarantee}, ToProtoWatchDeletePayload, FromProtoWatchDeletePayload)
@@ -61,8 +57,12 @@ func TestBestEffortUpdateAdapters(t *testing.T) {
 }
 
 func TestUpdateDuplicateMapsAndGuaranteesReject(t *testing.T) {
-	metadata := &resourcepb.ResourceMetadata{Labels: []*resourcepb.LabelEntry{{Key: "x", Value: "1"}, {Key: "x", Value: "2"}}}
-	if _, err := FromProtoResourceMetadata(metadata); ErrorCode(err) != "INVALID_REQUEST" {
+	payload, err := ToProtoWatchAddPayload(WatchAddPayload{Route: AccessRoute{Connection: "route"}, Record: codecRecord(), Metadata: ResourceMetadata{Labels: map[string]string{}}, Guarantee: BestEffortGuarantee})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload.Metadata.Labels = []*resourcepb.LabelEntry{{Key: "x", Value: "1"}, {Key: "x", Value: "2"}}
+	if _, err := FromProtoWatchAddPayload(payload); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("duplicate label: %v", err)
 	}
 	summary := &resourcepb.WatchConnectionSummary{Route: &resourcepb.AccessRoute{Connection: "route"}, Guarantee: BestEffortGuarantee, Resources: []*resourcepb.ResourceWatchState{{Type: "x", State: 0}, {Type: "x", State: 0}}}

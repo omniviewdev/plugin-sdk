@@ -56,7 +56,7 @@ func TestQualifiedCatalogMetadataRejectsMalformedBeforeDispatch(t *testing.T) {
 	request := relationshipFixtureRequest()
 	target := request.Targets[0]
 	ctx := resourcev2.WithCatalogRevisionForRoute(context.Background(), target.Provider, target.Route, "accepted")
-	frame, err := resourcev2.MarshalCatalogRevisionRoutes(ctx)
+	frame, err := marshalCatalogRevisionRoutes(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

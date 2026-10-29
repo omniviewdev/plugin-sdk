@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"context"
+
+	"github.com/omniviewdev/plugin-sdk/internal/catalogadmission"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"google.golang.org/grpc/metadata"
 )
@@ -16,11 +18,11 @@ func outgoingCatalogRoutes(ctx context.Context, md metadata.MD) (context.Context
 		return nil, resourcev2.NewError("RESET_REQUIRED", "Duplicate route catalog revision metadata.")
 	}
 	if len(frames) == 1 {
-		if _, err := resourcev2.UnmarshalCatalogRevisionRoutes(validation, []byte(frames[0])); err != nil {
+		if _, err := unmarshalCatalogRevisionRoutes(validation, []byte(frames[0])); err != nil {
 			return nil, err
 		}
 	}
-	frame, err := resourcev2.MarshalCatalogRevisionRoutes(validation)
+	frame, err := marshalCatalogRevisionRoutes(validation)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +43,34 @@ func incomingCatalogRoutes(ctx context.Context, md metadata.MD) (context.Context
 		return nil, resourcev2.NewError("RESET_REQUIRED", "Duplicate route catalog revision metadata.")
 	}
 	if len(frames) == 0 {
-		return resourcev2.ClearCatalogRevisionRoutes(ctx), nil
+		return catalogadmission.Clear(ctx), nil
 	}
-	return resourcev2.UnmarshalCatalogRevisionRoutes(ctx, []byte(frames[0]))
+	return unmarshalCatalogRevisionRoutes(ctx, []byte(frames[0]))
+}
+
+// Qualified observations cross RPC only through this SDK-private frame.
+func catalogAdmissionLimits() catalogadmission.Limits {
+	return catalogadmission.Limits{
+		RevisionBytes: resourcev2.MaxCatalogRevisionBytes,
+		MetadataBytes: resourcev2.MaxCatalogRevisionMetadataBytes,
+		Observations:  resourcev2.MaxRelationshipTargets,
+	}
+}
+
+func marshalCatalogRevisionRoutes(ctx context.Context) ([]byte, error) {
+	defaultRevision, _ := resourcev2.CatalogRevisionFromContext(ctx)
+	frame, violation := catalogadmission.Marshal(ctx, defaultRevision, catalogAdmissionLimits())
+	if violation != nil {
+		return nil, resourcev2.NewError(violation.Code, violation.Message)
+	}
+	return frame, nil
+}
+
+func unmarshalCatalogRevisionRoutes(ctx context.Context, frame []byte) (context.Context, error) {
+	defaultRevision, _ := resourcev2.CatalogRevisionFromContext(ctx)
+	result, violation := catalogadmission.Unmarshal(ctx, frame, defaultRevision, catalogAdmissionLimits())
+	if violation != nil {
+		return nil, resourcev2.NewError(violation.Code, violation.Message)
+	}
+	return result, nil
 }

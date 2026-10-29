@@ -109,7 +109,7 @@ func TestSchemaUnavailableReasonStrictAdmissionBeforeDecode(t *testing.T) {
 				t.Fatalf("invalid schema materialized before admission: %+v %v", decoded, envelope.AdmissionError())
 			}
 			value := resourcev2.SchemaBinding{State: tc.state, Validation: "none", Unvalidated: []string{}, UnavailableReason: &reason}
-			if _, err := resourcev2.ToProtoSchemaBinding(value); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+			if _, err := resourcev2.ToProtoEditorSchema(resourcev2.EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: value}); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
 				t.Fatalf("native invalid reason admitted: %v", err)
 			}
 			input, _ := json.Marshal(map[string]any{"state": tc.state, "validation": "none", "unvalidated": []string{}, "unavailableReason": tc.reason})

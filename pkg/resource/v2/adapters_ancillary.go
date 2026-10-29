@@ -255,6 +255,8 @@ func (d *adapterDecoder) resourceEvent(p *resourcepb.ResourceEvent) ResourceEven
 	return ResourceEvent{Type: EventSeverity(p.Type), Reason: p.Reason, Message: p.Message, Source: p.Source, Count: p.Count, FirstSeen: d.timestamp(p.FirstSeen), LastSeen: d.timestamp(p.LastSeen)}
 }
 
+// ToProtoRelationshipDescriptor encodes relationship metadata and validated extractor JSON without resolving targets.
+// It validates before encoding, returns nil on error, and owns output storage.
 func ToProtoRelationshipDescriptor(v RelationshipDescriptor) (*resourcepb.RelationshipDescriptor, error) {
 	p, err := toProto(v, validateRelationshipDescriptor, toRelationshipDescriptor)
 	if err != nil {
@@ -267,15 +269,15 @@ func ToProtoRelationshipDescriptor(v RelationshipDescriptor) (*resourcepb.Relati
 	}
 	return p, nil
 }
+
+// FromProtoRelationshipDescriptor decodes relationship metadata and validated extractor JSON without resolving targets.
+// It rejects nil or invalid messages; successful output owns mutable storage.
 func FromProtoRelationshipDescriptor(p *resourcepb.RelationshipDescriptor) (RelationshipDescriptor, error) {
 	return fromProto(p, (*adapterDecoder).relationshipDescriptor, validateRelationshipDescriptor)
 }
-func ToProtoRelationshipTarget(v RelationshipTarget) (*resourcepb.RelationshipTarget, error) {
-	return toProto(v, validateRelationshipTarget, toRelationshipTarget)
-}
-func FromProtoRelationshipTarget(p *resourcepb.RelationshipTarget) (RelationshipTarget, error) {
-	return fromProto(p, (*adapterDecoder).relationshipTarget, validateRelationshipTarget)
-}
+
+// ToProtoResolvedRelationship encodes a descriptor and explicit targets without cross-route admission.
+// It validates before encoding, returns nil on error, and owns output storage.
 func ToProtoResolvedRelationship(v ResolvedRelationship) (*resourcepb.ResolvedRelationship, error) {
 	p, err := toProto(v, validateResolvedRelationship, toResolvedRelationship)
 	if err != nil {
@@ -288,24 +290,33 @@ func ToProtoResolvedRelationship(v ResolvedRelationship) (*resourcepb.ResolvedRe
 	}
 	return p, nil
 }
+
+// FromProtoResolvedRelationship decodes a descriptor and explicit targets without cross-route admission.
+// It rejects nil or invalid messages; successful output owns mutable storage.
 func FromProtoResolvedRelationship(p *resourcepb.ResolvedRelationship) (ResolvedRelationship, error) {
 	return fromProto(p, (*adapterDecoder).resolvedRelationship, validateResolvedRelationship)
 }
-func ToProtoHealthCondition(v HealthCondition) (*resourcepb.HealthCondition, error) {
-	return toProto(v, validateHealthCondition, toHealthCondition)
-}
-func FromProtoHealthCondition(p *resourcepb.HealthCondition) (HealthCondition, error) {
-	return fromProto(p, (*adapterDecoder).healthCondition, validateHealthCondition)
-}
+
+// ToProtoResourceHealth encodes health conditions and observation times without probing native health.
+// It validates before encoding, returns nil on error, and owns output storage.
 func ToProtoResourceHealth(v ResourceHealth) (*resourcepb.ResourceHealth, error) {
 	return toProto(v, validateResourceHealth, toResourceHealth)
 }
+
+// FromProtoResourceHealth decodes health conditions and observation times without probing native health.
+// It rejects nil or invalid messages; successful output owns mutable storage.
 func FromProtoResourceHealth(p *resourcepb.ResourceHealth) (ResourceHealth, error) {
 	return fromProto(p, (*adapterDecoder).resourceHealth, validateResourceHealth)
 }
+
+// ToProtoResourceEvent encodes event severity and timestamps without establishing replay continuity.
+// It validates before encoding, returns nil on error, and owns output storage.
 func ToProtoResourceEvent(v ResourceEvent) (*resourcepb.ResourceEvent, error) {
 	return toProto(v, validateResourceEvent, toResourceEvent)
 }
+
+// FromProtoResourceEvent decodes event severity and timestamps without establishing replay continuity.
+// It rejects nil or invalid messages; successful output owns mutable storage.
 func FromProtoResourceEvent(p *resourcepb.ResourceEvent) (ResourceEvent, error) {
 	return fromProto(p, (*adapterDecoder).resourceEvent, validateResourceEvent)
 }
@@ -326,12 +337,7 @@ func (d *adapterDecoder) scopeExtractor(p *resourcepb.ScopeExtractor) ScopeExtra
 	}
 	return ScopeExtractor{Dimension: p.Dimension, FieldPath: p.FieldPath}
 }
-func ToProtoScopeExtractor(v ScopeExtractor) (*resourcepb.ScopeExtractor, error) {
-	return toProto(v, validateScopeExtractor, toScopeExtractor)
-}
-func FromProtoScopeExtractor(p *resourcepb.ScopeExtractor) (ScopeExtractor, error) {
-	return fromProto(p, (*adapterDecoder).scopeExtractor, validateScopeExtractor)
-}
+
 func validateEditorSchema(v EditorSchema) error {
 	if err := admission(v); err != nil {
 		return err
@@ -353,9 +359,15 @@ func (d *adapterDecoder) editorSchema(p *resourcepb.EditorSchema) EditorSchema {
 	}
 	return EditorSchema{Type: p.Type, FileMatch: p.FileMatch, URI: p.Uri, Language: p.Language, Binding: d.schema(p.Binding)}
 }
+
+// ToProtoEditorSchema encodes editor metadata and schema availability without fetching document references.
+// It validates before encoding, returns nil on error, and owns output storage.
 func ToProtoEditorSchema(v EditorSchema) (*resourcepb.EditorSchema, error) {
 	return toProto(v, validateEditorSchema, toEditorSchema)
 }
+
+// FromProtoEditorSchema decodes editor metadata and schema availability without fetching document references.
+// It rejects nil or invalid messages; successful output owns mutable storage.
 func FromProtoEditorSchema(p *resourcepb.EditorSchema) (EditorSchema, error) {
 	return fromProto(p, (*adapterDecoder).editorSchema, validateEditorSchema)
 }

@@ -2,6 +2,8 @@ package resourcev2
 
 import resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 
+// ToProtoRelationshipResolutionRequest encodes source and explicit target bindings without admitting their catalog observations.
+// It validates before encoding, returns nil on error, and owns output storage.
 func ToProtoRelationshipResolutionRequest(v RelationshipResolutionRequest) (*resourcepb.RelationshipResolutionInput, error) {
 	if err := ValidateRelationshipResolutionRequest(v); err != nil {
 		return nil, err
@@ -21,6 +23,8 @@ func ToProtoRelationshipResolutionRequest(v RelationshipResolutionRequest) (*res
 	return out, nil
 }
 
+// FromProtoRelationshipResolutionRequest decodes source and explicit target bindings without admitting their catalog observations.
+// It rejects nil or invalid messages; successful output owns mutable storage.
 func FromProtoRelationshipResolutionRequest(p *resourcepb.RelationshipResolutionInput) (RelationshipResolutionRequest, error) {
 	var out RelationshipResolutionRequest
 	if p != nil && len(p.Targets) > MaxRelationshipTargets {

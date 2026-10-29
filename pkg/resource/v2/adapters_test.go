@@ -51,12 +51,13 @@ func TestMutationCapabilitiesKeepIndependentWireScopes(t *testing.T) {
 	for _, operation := range []Operation{OperationCreate, OperationMutationUpdate, OperationDelete} {
 		values := []string{string(operation)}
 		capability := Capability{Operation: operation, Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &values}}}
-		adapterRoundTrip(t, capability, ToProtoCapability, FromProtoCapability)
+		catalog := Catalog{Provider: "provider", Revision: "catalog-1", Coverage: Coverage{Kind: "complete"}, Types: []ResourceType{{Type: "resource/type", QueryDimensions: []Dimension{{Name: "region"}}, Capabilities: []Capability{capability}}}}
+		adapterRoundTrip(t, catalog, ToProtoCatalog, FromProtoCatalog)
 	}
-	if _, err := ToProtoCapability(Capability{Operation: Operation("mutation"), Scope: QueryScope{}}); err == nil {
+	if _, err := ToProtoCatalog(Catalog{Provider: "provider", Revision: "catalog-1", Coverage: Coverage{Kind: "complete"}, Types: []ResourceType{{Type: "resource/type", Capabilities: []Capability{{Operation: Operation("mutation"), Scope: QueryScope{}}}}}}); err == nil {
 		t.Fatal("coarse mutation capability accepted")
 	}
-	if _, err := FromProtoCapability(&resourcepb.Capability{Operation: "mutation", Scope: &resourcepb.QueryScope{}}); err == nil {
+	if _, err := FromProtoCatalog(&resourcepb.Catalog{Provider: "provider", Revision: "catalog-1", Coverage: &resourcepb.Coverage{Kind: "complete"}, Types: []*resourcepb.ResourceType{{Type: "resource/type", Capabilities: []*resourcepb.Capability{{Operation: "mutation", Scope: &resourcepb.QueryScope{}}}}}}); err == nil {
 		t.Fatal("coarse mutation wire capability accepted")
 	}
 }
@@ -98,7 +99,7 @@ func TestEveryFiniteDomainAdapter(t *testing.T) {
 	adapterRoundTrip(t, GetRequest{Route: route, Reference: r.Reference, Representation: r.Representation.ID}, ToProtoGetRequest, FromProtoGetRequest)
 	adapterRoundTrip(t, EnumerateRequest{Target: target, PageSize: 256, Cursor: codecToken("cursor")}, ToProtoEnumerateRequest, FromProtoEnumerateRequest)
 	adapterRoundTrip(t, NativeQueryRequest{Target: target, Language: "native.v1", Query: r.Body, PageSize: 1}, ToProtoNativeQueryRequest, FromProtoNativeQueryRequest)
-	adapterRoundTrip(t, Count{Kind: "exact", Value: codecToken("18446744073709551615")}, ToProtoCount, FromProtoCount)
+	adapterRoundTrip(t, SourcePage{Records: []Record{r}, Count: Count{Kind: "exact", Value: codecToken("18446744073709551615")}, Coverage: r.Coverage, Consistency: "bestEffort"}, ToProtoSourcePage, FromProtoSourcePage)
 	adapterRoundTrip(t, r, ToProtoRecord, FromProtoRecord)
 	adapterRoundTrip(t, SourcePage{Records: []Record{r}, Count: Count{Kind: "unknown"}, Coverage: r.Coverage, Consistency: "bestEffort", SourceRevision: codecToken("independent-page-revision")}, ToProtoSourcePage, FromProtoSourcePage)
 	adapterRoundTrip(t, MutationRequest{Route: route, Reference: r.Reference, Operation: "patch", Input: r.Body, ExpectedRevision: codecToken("expected")}, ToProtoMutationRequest, FromProtoMutationRequest)
@@ -106,7 +107,8 @@ func TestEveryFiniteDomainAdapter(t *testing.T) {
 	reference := SchemaDocumentReference{ID: "schema/document", Revision: "document-1"}
 	adapterRoundTrip(t, reference, ToProtoSchemaDocumentReference, FromProtoSchemaDocumentReference)
 	adapterRoundTrip(t, SchemaDocument{Reference: reference, Dialect: "https://json-schema.org/draft/2020-12/schema", Document: []byte(`{"$defs":{"x":{"type":"object"}}}`)}, ToProtoSchemaDocument, FromProtoSchemaDocument)
-	adapterRoundTrip(t, SchemaBinding{State: "available", Revision: codecToken("schema-1"), Dialect: "https://json-schema.org/draft/2020-12/schema", DocumentRef: &reference, Root: "#/$defs/x", Validation: "none"}, ToProtoSchemaBinding, FromProtoSchemaBinding)
+	r.Representation.Schema = SchemaBinding{State: "available", Revision: codecToken("schema-1"), Dialect: "https://json-schema.org/draft/2020-12/schema", DocumentRef: &reference, Root: "#/$defs/x", Validation: "none"}
+	adapterRoundTrip(t, r, ToProtoRecord, FromProtoRecord)
 }
 
 func TestProtoScalarBoundariesAndSize(t *testing.T) {
@@ -177,7 +179,7 @@ func TestProtoAdmissionRejectsInvalidValues(t *testing.T) {
 		t.Fatalf("unknown field class: %v", err)
 	}
 	duplicate := &resourcepb.ResourceAddress{Provider: "p", Authority: "a", Type: "t", Id: "id", Scope: []*resourcepb.ScopeEntry{{Dimension: "x", Value: "a"}, {Dimension: "x", Value: "b"}}}
-	if _, err := FromProtoResourceAddress(duplicate); ErrorCode(err) != "INVALID_REQUEST" {
+	if _, err := FromProtoResourceReference(&resourcepb.ResourceReference{Address: duplicate}); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("duplicate dimension: %v", err)
 	}
 }

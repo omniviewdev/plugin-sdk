@@ -273,39 +273,62 @@ func (d *adapterDecoder) watchSummary(p *resourcepb.WatchConnectionSummary) Watc
 	return v
 }
 
-func ToProtoResourceMetadata(v ResourceMetadata) (*resourcepb.ResourceMetadata, error) {
-	return toProto(v, validateMetadata, toResourceMetadata)
-}
-func FromProtoResourceMetadata(p *resourcepb.ResourceMetadata) (ResourceMetadata, error) {
-	return fromProto(p, (*adapterDecoder).metadata, validateMetadata)
-}
+// ToProtoWatchAddPayload encodes advisory ADD data without establishing listener readiness or continuity.
+// It validates before encoding, returns nil on error, and owns output storage.
 func ToProtoWatchAddPayload(v WatchAddPayload) (*resourcepb.WatchAddPayload, error) {
 	return toProto(v, validateWatchAdd, toWatchAddPayload)
 }
+
+// FromProtoWatchAddPayload decodes advisory ADD data without establishing listener readiness or continuity.
+// It rejects nil or invalid messages; successful output owns mutable storage.
 func FromProtoWatchAddPayload(p *resourcepb.WatchAddPayload) (WatchAddPayload, error) {
 	return fromProto(p, (*adapterDecoder).watchAdd, validateWatchAdd)
 }
+
+// ToProtoWatchUpdatePayload encodes advisory UPDATE data without establishing listener readiness or continuity.
+// It validates before encoding, returns nil on error, and owns output storage.
 func ToProtoWatchUpdatePayload(v WatchUpdatePayload) (*resourcepb.WatchUpdatePayload, error) {
 	return toProto(v, validateWatchUpdate, toWatchUpdatePayload)
 }
+
+// FromProtoWatchUpdatePayload decodes advisory UPDATE data without establishing listener readiness or continuity.
+// It rejects nil or invalid messages; successful output owns mutable storage.
 func FromProtoWatchUpdatePayload(p *resourcepb.WatchUpdatePayload) (WatchUpdatePayload, error) {
 	return fromProto(p, (*adapterDecoder).watchUpdate, validateWatchUpdate)
 }
+
+// ToProtoWatchDeletePayload encodes advisory DELETE identity and optional last-known record without replay guarantees.
+// It validates before encoding, returns nil on error, and owns output storage.
 func ToProtoWatchDeletePayload(v WatchDeletePayload) (*resourcepb.WatchDeletePayload, error) {
 	return toProto(v, validateWatchDelete, toWatchDeletePayload)
 }
+
+// FromProtoWatchDeletePayload decodes advisory DELETE identity and optional last-known record without replay guarantees.
+// It rejects nil or invalid messages; successful output owns mutable storage.
 func FromProtoWatchDeletePayload(p *resourcepb.WatchDeletePayload) (WatchDeletePayload, error) {
 	return fromProto(p, (*adapterDecoder).watchDelete, validateWatchDelete)
 }
+
+// ToProtoWatchStateEvent encodes advisory source state without changing source lifecycle.
+// It validates before encoding, returns nil on error, and owns output storage.
 func ToProtoWatchStateEvent(v WatchStateEvent) (*resourcepb.WatchStateEvent, error) {
 	return toProto(v, validateWatchStateEvent, toWatchStateEvent)
 }
+
+// FromProtoWatchStateEvent decodes advisory source state without changing source lifecycle.
+// It rejects nil or invalid messages; successful output owns mutable storage.
 func FromProtoWatchStateEvent(p *resourcepb.WatchStateEvent) (WatchStateEvent, error) {
 	return fromProto(p, (*adapterDecoder).watchState, validateWatchStateEvent)
 }
+
+// ToProtoWatchConnectionSummary encodes per-type advisory states and counts without starting watches.
+// It validates before encoding, returns nil on error, and owns output storage.
 func ToProtoWatchConnectionSummary(v WatchConnectionSummary) (*resourcepb.WatchConnectionSummary, error) {
 	return toProto(v, validateWatchSummary, toWatchConnectionSummary)
 }
+
+// FromProtoWatchConnectionSummary decodes per-type advisory states and counts without starting watches.
+// It rejects nil or invalid messages; successful output owns mutable storage.
 func FromProtoWatchConnectionSummary(p *resourcepb.WatchConnectionSummary) (WatchConnectionSummary, error) {
 	return fromProto(p, (*adapterDecoder).watchSummary, validateWatchSummary)
 }

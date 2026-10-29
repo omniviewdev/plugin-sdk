@@ -875,14 +875,3 @@ func (c *Controller[T]) ensureOnFirstQuery(ctx context.Context, target ReadTarge
 	}
 	return nil
 }
-
-func cloneReadTarget(target ReadTarget) ReadTarget {
-	target.Scope = append(QueryScope(nil), target.Scope...)
-	for i := range target.Scope {
-		if target.Scope[i].Values != nil {
-			values := copyStrings(*target.Scope[i].Values)
-			target.Scope[i].Values = &values
-		}
-	}
-	return target
-}

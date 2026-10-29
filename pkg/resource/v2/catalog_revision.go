@@ -7,7 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"strings"
-	"unicode/utf8"
+
+	"github.com/omniviewdev/plugin-sdk/internal/catalogadmission"
 )
 
 // MaxCatalogRevisionBytes bounds trusted admission context and its wire encoding.
@@ -27,9 +28,10 @@ func CatalogRevisionFromContext(ctx context.Context) (string, bool) {
 	return revision, ok
 }
 
+// ValidateCatalogRevision checks bounded observation syntax, not authorization.
 func ValidateCatalogRevision(revision string) error {
-	if revision == "" || len(revision) > MaxCatalogRevisionBytes || !utf8.ValidString(revision) {
-		return NewError("RESET_REQUIRED", "An explicit valid accepted catalog revision is required.")
+	if violation := catalogadmission.ValidateRevision(revision, MaxCatalogRevisionBytes); violation != nil {
+		return NewError(violation.Code, violation.Message)
 	}
 	return nil
 }
