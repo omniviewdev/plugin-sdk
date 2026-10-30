@@ -115,19 +115,33 @@ func TestToolNativeAdmission(t *testing.T) {
 	// Raw RPC bypasses client validation and proves present-empty routes reach server admission.
 	_, err = client.client.CallTool(
 		context.Background(),
-		&toolspb.CallToolRequest{ContractVersion: ContractVersion, Arguments: []byte(`{}`), Name: "scoped", Route: &resourcepb.AccessRoute{}},
+		&toolspb.CallToolRequest{
+			ContractVersion: ContractVersion,
+			Arguments:       []byte(`{}`),
+			Name:            "scoped",
+			Route:           &resourcepb.AccessRoute{},
+		},
 	)
 	require.Error(t, err)
 	_, err = client.client.CallTool(
 		metadata.NewOutgoingContext(context.Background(), metadata.Pairs("omniview-connection-id", "")),
-		&toolspb.CallToolRequest{ContractVersion: ContractVersion, Arguments: []byte(`{}`), Name: "scoped", Route: &resourcepb.AccessRoute{Connection: "conn-1"}},
+		&toolspb.CallToolRequest{
+			ContractVersion: ContractVersion,
+			Arguments:       []byte(`{}`),
+			Name:            "scoped",
+			Route:           &resourcepb.AccessRoute{Connection: "conn-1"},
+		},
 	)
 	require.Error(t, err)
 	unbound, err := NewManager(logging.NewNop(), PluginOpts{Tools: []Tool{tool, validTool("plain", ScopePlugin)}})
 	require.NoError(t, err)
 	result, err := unbound.CallTool(
 		nil,
-		CallInput{Name: "scoped", Arguments: json.RawMessage(`{}`), Route: &resourcev2.AccessRoute{Connection: "conn-1"}},
+		CallInput{
+			Name:      "scoped",
+			Arguments: json.RawMessage(`{}`),
+			Route:     &resourcev2.AccessRoute{Connection: "conn-1"},
+		},
 	)
 	require.Error(t, err)
 	require.Nil(t, result)
@@ -162,7 +176,11 @@ func TestToolLeaseRejectsLateSuccess(t *testing.T) {
 			go func() {
 				result, err := manager.CallTool(
 					&types.PluginContext{Context: ctx},
-					CallInput{Name: "scoped", Arguments: json.RawMessage(`{}`), Route: &resourcev2.AccessRoute{Connection: "conn-1"}},
+					CallInput{
+						Name:      "scoped",
+						Arguments: json.RawMessage(`{}`),
+						Route:     &resourcev2.AccessRoute{Connection: "conn-1"},
+					},
 				)
 				done <- outcome{result, err}
 			}()

@@ -161,7 +161,7 @@ type Manager struct {
 
 	mu       sync.RWMutex
 	sessions map[string]*sessionState
-	closed bool
+	closed   bool
 	out      chan StreamOutput // nil when Sink provided via config
 	wg       sync.WaitGroup
 }
@@ -241,7 +241,7 @@ func (m *Manager) CreateResourceSession(
 	// generation lease, rather than the creation RPC, then owns producer lifetime.
 	accepted := make(chan struct {
 		session *LogSession
-		err error
+		err     error
 	}, 1)
 	copyContext := *pluginctx
 	if copyContext.Context == nil {
@@ -280,7 +280,7 @@ func (m *Manager) CreateResourceSession(
 				}
 				accepted <- struct {
 					session *LogSession
-					err error
+					err     error
 				}{session: session}
 				published = true
 				<-state.done
@@ -290,7 +290,7 @@ func (m *Manager) CreateResourceSession(
 		if !published {
 			accepted <- struct {
 				session *LogSession
-				err error
+				err     error
 			}{err: err}
 		}
 	}()
@@ -298,7 +298,10 @@ func (m *Manager) CreateResourceSession(
 	return result.session, result.err
 }
 
-func (m *Manager) createSession(pluginctx *types.PluginContext, opts CreateSessionOptions) (*LogSession, *sessionState, error) {
+func (m *Manager) createSession(
+	pluginctx *types.PluginContext,
+	opts CreateSessionOptions,
+) (*LogSession, *sessionState, error) {
 	opts.Options.Reference = opts.Reference
 	opts.Options.Route = opts.Route
 	if pluginctx == nil {
@@ -508,8 +511,8 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 		}
 		if ss.ctx.Err() == nil {
 			m.emitEvent(ss.session.ID, LogStreamEvent{
-				Type: StreamEventStreamEnded,
-				Message: "Log session ended.",
+				Type:      StreamEventStreamEnded,
+				Message:   "Log session ended.",
 				Timestamp: m.clock.Now(),
 			})
 		}

@@ -4,11 +4,12 @@ package tools
 
 import (
 	"context"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"errors"
 	"fmt"
 	"regexp"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -32,8 +33,8 @@ type Manager struct {
 	tools              map[string]Tool
 	order              []string
 	connectionProvider resourcev2.ConnectionContextProvider
-	inputs map[string]*compiledSchema
-	outputs map[string]*compiledSchema
+	inputs             map[string]*compiledSchema
+	outputs            map[string]*compiledSchema
 }
 
 var _ Provider = (*Manager)(nil)
@@ -41,10 +42,10 @@ var _ Provider = (*Manager)(nil)
 // NewManager validates every tool and returns the provider.
 func NewManager(log logging.Logger, opts PluginOpts) (*Manager, error) {
 	m := &Manager{
-		log:   log,
-		tools: make(map[string]Tool, len(opts.Tools)),
-		order: make([]string, 0, len(opts.Tools)),
-		inputs: make(map[string]*compiledSchema),
+		log:     log,
+		tools:   make(map[string]Tool, len(opts.Tools)),
+		order:   make([]string, 0, len(opts.Tools)),
+		inputs:  make(map[string]*compiledSchema),
 		outputs: make(map[string]*compiledSchema),
 	}
 	for i := range opts.Tools {
@@ -56,11 +57,15 @@ func NewManager(log logging.Logger, opts PluginOpts) (*Manager, error) {
 			return nil, fmt.Errorf("tool %q: duplicate name", tool.Name)
 		}
 		input, err := compileSchema(tool.InputSchema, true)
-		if err != nil { return nil, fmt.Errorf("tool %q input schema: %w", tool.Name, err) }
+		if err != nil {
+			return nil, fmt.Errorf("tool %q input schema: %w", tool.Name, err)
+		}
 		m.inputs[tool.Name] = input
 		if len(tool.OutputSchema) != 0 {
 			output, err := compileSchema(tool.OutputSchema, true)
-			if err != nil { return nil, fmt.Errorf("tool %q output schema: %w", tool.Name, err) }
+			if err != nil {
+				return nil, fmt.Errorf("tool %q output schema: %w", tool.Name, err)
+			}
 			m.outputs[tool.Name] = output
 		}
 		m.tools[tool.Name] = *tool
@@ -147,17 +152,25 @@ func (m *Manager) CallTool(ctx *types.PluginContext, input CallInput) (*Result, 
 
 func (m *Manager) finish(tool Tool, handler Handler, ctx *types.PluginContext, arguments []byte) (*Result, error) {
 	result, err := handler(ctx, arguments)
-	if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled { return nil, context.Canceled }
-	if errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.DeadlineExceeded { return nil, context.DeadlineExceeded }
+	if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
+		return nil, context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.DeadlineExceeded {
+		return nil, context.DeadlineExceeded
+	}
 	if err != nil {
 		code := ErrorExecutionFailed
 		switch resourcev2.ErrorCode(err) {
-		case ErrorUnavailable: code = ErrorUnavailable
-		case ErrorPermissionDenied, "FORBIDDEN": code = ErrorPermissionDenied
+		case ErrorUnavailable:
+			code = ErrorUnavailable
+		case ErrorPermissionDenied, "FORBIDDEN":
+			code = ErrorPermissionDenied
 		}
 		switch status.Code(err) {
-		case codes.Unavailable: code = ErrorUnavailable
-		case codes.PermissionDenied: code = ErrorPermissionDenied
+		case codes.Unavailable:
+			code = ErrorUnavailable
+		case codes.PermissionDenied:
+			code = ErrorPermissionDenied
 		}
 		return safeFailure(&Result{ErrorCode: code}), nil
 	}
@@ -169,7 +182,9 @@ func (m *Manager) finish(tool Tool, handler Handler, ctx *types.PluginContext, a
 			return safeFailure(nil), nil
 		}
 	} else if len(result.StructuredContent) != 0 {
-		if _, err := decodeObject(result.StructuredContent); err != nil { return safeFailure(nil), nil }
+		if _, err := decodeObject(result.StructuredContent); err != nil {
+			return safeFailure(nil), nil
+		}
 	}
 	return result, nil
 }

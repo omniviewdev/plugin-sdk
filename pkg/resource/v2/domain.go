@@ -177,10 +177,11 @@ type Capability struct {
 	// empty. BestEffortGuarantee does not promise replay or source continuity.
 	Guarantee string `json:"guarantee,omitempty"`
 }
+
 // NativeQueryDescriptor declares one provider-native language and its object input.
 // It does not grant query capability or change source-page semantics.
 type NativeQueryDescriptor struct {
-	Language string `json:"language"`
+	Language    string `json:"language"`
 	Description string `json:"description,omitempty"`
 	InputSchema Schema `json:"inputSchema"`
 }
@@ -195,13 +196,13 @@ type ResourceType struct {
 	Representations    []Representation `json:"representations"`
 	// DefaultRepresentation is optional catalog selection metadata, not an
 	// implicit provider default. When set it must name a declared representation.
-	DefaultRepresentation string               `json:"defaultRepresentation,omitempty"`
+	DefaultRepresentation string `json:"defaultRepresentation,omitempty"`
 	// ModelRepresentation optionally selects a provider projection for model consumers.
 	// It never changes DefaultRepresentation or grants operation capability.
-	ModelRepresentation string `json:"modelRepresentation,omitempty"`
-	NativeQueries []NativeQueryDescriptor `json:"nativeQueries,omitempty"`
-	Capabilities          []Capability         `json:"capabilities"`
-	NativeAuthorityHint   *NativeAuthorityHint `json:"nativeAuthorityHint,omitempty"`
+	ModelRepresentation string                  `json:"modelRepresentation,omitempty"`
+	NativeQueries       []NativeQueryDescriptor `json:"nativeQueries,omitempty"`
+	Capabilities        []Capability            `json:"capabilities"`
+	NativeAuthorityHint *NativeAuthorityHint    `json:"nativeAuthorityHint,omitempty"`
 }
 
 // CatalogRequest discovers support through one explicit access route. Discovery
@@ -348,11 +349,11 @@ type TypeActionTarget struct {
 // ActionRequest invokes an independently declared named operation on exactly one target.
 // Input preserves canonical Value scalar kinds and remains borrowed for the call.
 type ActionRequest struct {
-	Route     AccessRoute       `json:"route"`
-	Reference ResourceReference `json:"reference"`
+	Route      AccessRoute       `json:"route"`
+	Reference  ResourceReference `json:"reference"`
 	TypeTarget *TypeActionTarget `json:"typeTarget,omitempty"`
-	Action    string            `json:"action"`
-	Input     Value             `json:"input"`
+	Action     string            `json:"action"`
+	Input      Value             `json:"input"`
 	// ExpectedDescriptor retains an advertised action observation across transport.
 	// Nil supplies no expectation; replacement metadata requires rediscovery.
 	ExpectedDescriptor *ActionDescriptor `json:"expectedDescriptor,omitempty"`

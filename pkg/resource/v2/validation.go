@@ -876,7 +876,8 @@ func ValidateActionRequest(v ActionRequest) error {
 	}
 	if v.TypeTarget != nil {
 		a := v.Reference.Address
-		if a.Provider != "" || a.Authority != "" || a.Type != "" || a.ID != "" || len(a.Scope) != 0 || v.Reference.Incarnation != nil {
+		if a.Provider != "" || a.Authority != "" || a.Type != "" || a.ID != "" || len(a.Scope) != 0 ||
+			v.Reference.Incarnation != nil {
 			return invalid("action requires exactly one target")
 		}
 		t := v.TypeTarget

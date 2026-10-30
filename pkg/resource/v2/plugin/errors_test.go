@@ -129,8 +129,13 @@ type unknownActionCodeServer struct {
 	resourcepb.UnimplementedResourceAncillaryServer
 }
 
-func (*unknownActionCodeServer) Call(context.Context, *resourcepb.AncillaryRequest) (*resourcepb.AncillaryResponse, error) {
-	return presentationJSON([]resourcev2.ActionDescriptor{{ID: "test", Scope: resourcev2.ActionScopeInstance, Streaming: true}})
+func (*unknownActionCodeServer) Call(
+	context.Context,
+	*resourcepb.AncillaryRequest,
+) (*resourcepb.AncillaryResponse, error) {
+	return presentationJSON(
+		[]resourcev2.ActionDescriptor{{ID: "test", Scope: resourcev2.ActionScopeInstance, Streaming: true}},
+	)
 }
 
 func (*unknownActionCodeServer) StreamAction(

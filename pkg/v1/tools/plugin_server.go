@@ -51,12 +51,17 @@ func (s *PluginServer) ListTools(
 	ctx context.Context,
 	in *toolspb.ListToolsRequest,
 ) (*toolspb.ListToolsResponse, error) {
-	if in.GetContractVersion() != ContractVersion { return nil, status.Error(codes.FailedPrecondition, "Unsupported tools contract.") }
+	if in.GetContractVersion() != ContractVersion {
+		return nil, status.Error(codes.FailedPrecondition, "Unsupported tools contract.")
+	}
 	descriptors, err := s.Impl.ListTools(types.PluginContextFromContext(ctx))
 	if err != nil {
 		return nil, status.Error(grpcCodeForToolsError(err), "Tool discovery failed.")
 	}
-	out := &toolspb.ListToolsResponse{ContractVersion: ContractVersion, Tools: make([]*toolspb.ToolDescriptor, 0, len(descriptors))}
+	out := &toolspb.ListToolsResponse{
+		ContractVersion: ContractVersion,
+		Tools:           make([]*toolspb.ToolDescriptor, 0, len(descriptors)),
+	}
 	for _, d := range descriptors {
 		out.Tools = append(out.Tools, descriptorToProto(d))
 	}
@@ -68,7 +73,9 @@ func (s *PluginServer) CallTool(
 	ctx context.Context,
 	in *toolspb.CallToolRequest,
 ) (*toolspb.CallToolResponse, error) {
-	if in.GetContractVersion() != ContractVersion { return nil, status.Error(codes.FailedPrecondition, "Unsupported tools contract.") }
+	if in.GetContractVersion() != ContractVersion {
+		return nil, status.Error(codes.FailedPrecondition, "Unsupported tools contract.")
+	}
 	// Empty metadata selectors must not disappear during context extraction.
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if ids, present := md["omniview-connection-id"]; present && (len(ids) != 1 || ids[0] == "") {
@@ -92,6 +99,8 @@ func (s *PluginServer) CallTool(
 	if err != nil {
 		return nil, status.Error(grpcCodeForToolsError(err), "Tool call failed.")
 	}
-	if result == nil || result.IsError { result = safeFailure(result) }
+	if result == nil || result.IsError {
+		result = safeFailure(result)
+	}
 	return resultToProto(result), nil
 }

@@ -351,12 +351,12 @@ func (v ActionRequest) MarshalJSON() ([]byte, error) {
 		reference = &v.Reference
 	}
 	return json.Marshal(struct {
-		Route AccessRoute `json:"route"`
-		Reference *ResourceReference `json:"reference,omitempty"`
-		TypeTarget *TypeActionTarget `json:"typeTarget,omitempty"`
-		Action string `json:"action"`
-		Input Value `json:"input"`
-		ExpectedDescriptor *ActionDescriptor `json:"expectedDescriptor,omitempty"`
+		Route              AccessRoute        `json:"route"`
+		Reference          *ResourceReference `json:"reference,omitempty"`
+		TypeTarget         *TypeActionTarget  `json:"typeTarget,omitempty"`
+		Action             string             `json:"action"`
+		Input              Value              `json:"input"`
+		ExpectedDescriptor *ActionDescriptor  `json:"expectedDescriptor,omitempty"`
 	}{v.Route, reference, v.TypeTarget, v.Action, v.Input, v.ExpectedDescriptor})
 }
 

@@ -2,10 +2,10 @@ package tools
 
 import (
 	"context"
-
 	"fmt"
-	"google.golang.org/grpc/status"
+
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -40,16 +40,29 @@ func rpcContext(ctx *types.PluginContext) (context.Context, *types.PluginContext
 // ListTools retrieves the remote tool descriptors using the caller's context.
 func (p *PluginClient) ListTools(ctx *types.PluginContext) ([]Descriptor, error) {
 	grpcCtx, pctx := rpcContext(ctx)
-	resp, err := p.client.ListTools(types.WithPluginContext(grpcCtx, pctx), &toolspb.ListToolsRequest{ContractVersion: ContractVersion})
+	resp, err := p.client.ListTools(
+		types.WithPluginContext(grpcCtx, pctx),
+		&toolspb.ListToolsRequest{ContractVersion: ContractVersion},
+	)
 	if err != nil {
 		return nil, status.Error(status.Code(err), "Tool discovery failed.")
 	}
-	if resp.GetContractVersion() != ContractVersion { return nil, fmt.Errorf("unsupported tools contract") }
+	if resp.GetContractVersion() != ContractVersion {
+		return nil, fmt.Errorf("unsupported tools contract")
+	}
 	out := make([]Descriptor, 0, len(resp.GetTools()))
 	for _, d := range resp.GetTools() {
-		if d == nil { return nil, fmt.Errorf("invalid tool descriptor") }
-		if _, err := compileSchema(d.GetInputSchema(), true); err != nil { return nil, fmt.Errorf("invalid tool input schema: %w", err) }
-		if len(d.GetOutputSchema()) != 0 { if _, err := compileSchema(d.GetOutputSchema(), true); err != nil { return nil, fmt.Errorf("invalid tool output schema: %w", err) } }
+		if d == nil {
+			return nil, fmt.Errorf("invalid tool descriptor")
+		}
+		if _, err := compileSchema(d.GetInputSchema(), true); err != nil {
+			return nil, fmt.Errorf("invalid tool input schema: %w", err)
+		}
+		if len(d.GetOutputSchema()) != 0 {
+			if _, err := compileSchema(d.GetOutputSchema(), true); err != nil {
+				return nil, fmt.Errorf("invalid tool output schema: %w", err)
+			}
+		}
 		out = append(out, descriptorFromProto(d))
 	}
 	return out, nil
@@ -58,13 +71,26 @@ func (p *PluginClient) ListTools(ctx *types.PluginContext) ([]Descriptor, error)
 // CallTool invokes a remote tool using the caller's cancellation and deadline.
 func (p *PluginClient) CallTool(ctx *types.PluginContext, input CallInput) (*Result, error) {
 	descriptors, err := p.ListTools(ctx)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	var selected *Descriptor
-	for i := range descriptors { if descriptors[i].Name == input.Name { selected = &descriptors[i]; break } }
-	if selected == nil { return nil, ErrToolNotFound }
+	for i := range descriptors {
+		if descriptors[i].Name == input.Name {
+			selected = &descriptors[i]
+			break
+		}
+	}
+	if selected == nil {
+		return nil, ErrToolNotFound
+	}
 	schema, err := compileSchema(selected.InputSchema, true)
-	if err != nil { return nil, err }
-	if err := validateJSON(schema, input.Arguments); err != nil { return nil, status.Error(codes.InvalidArgument, "Invalid tool arguments.") }
+	if err != nil {
+		return nil, err
+	}
+	if err := validateJSON(schema, input.Arguments); err != nil {
+		return nil, status.Error(codes.InvalidArgument, "Invalid tool arguments.")
+	}
 	if ctx != nil && ctx.Connection != nil && ctx.Connection.ID == "" {
 		return nil, resourcev2.NewError("INVALID_REQUEST", "Selected tool connection must not be empty.")
 	}
@@ -82,13 +108,21 @@ func (p *PluginClient) CallTool(ctx *types.PluginContext, input CallInput) (*Res
 		return nil, status.Error(status.Code(err), "Tool call failed.")
 	}
 	result := resultFromProto(resp)
-	if result.IsError { return safeFailure(result), nil }
+	if result.IsError {
+		return safeFailure(result), nil
+	}
 	if len(selected.OutputSchema) != 0 {
 		schema, err := compileSchema(selected.OutputSchema, true)
-		if err != nil { return nil, err }
-		if err := validateJSON(schema, result.StructuredContent); err != nil { return safeFailure(nil), nil }
+		if err != nil {
+			return nil, err
+		}
+		if err := validateJSON(schema, result.StructuredContent); err != nil {
+			return safeFailure(nil), nil
+		}
 	} else if len(result.StructuredContent) != 0 {
-		if _, err := decodeObject(result.StructuredContent); err != nil { return safeFailure(nil), nil }
+		if _, err := decodeObject(result.StructuredContent); err != nil {
+			return safeFailure(nil), nil
+		}
 	}
 	return result, nil
 }

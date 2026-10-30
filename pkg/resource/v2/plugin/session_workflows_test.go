@@ -13,17 +13,21 @@ import (
 )
 
 type observedSession struct {
-	session resourcev2.Session
+	session      resourcev2.Session
 	inconsistent bool
 }
 type workflowContextProvider struct {
 	browserProvider
 
-	mu sync.Mutex
+	mu   sync.Mutex
 	seen map[string]observedSession
 }
 
-func (p *workflowContextProvider) GetActions(context.Context, resourcev2.AccessRoute, string) ([]resourcev2.ActionDescriptor, error) {
+func (p *workflowContextProvider) GetActions(
+	context.Context,
+	resourcev2.AccessRoute,
+	string,
+) ([]resourcev2.ActionDescriptor, error) {
 	return []resourcev2.ActionDescriptor{{ID: "test", Scope: resourcev2.ActionScopeInstance, Streaming: true}}, nil
 }
 
@@ -45,11 +49,20 @@ func (p *workflowContextProvider) observe(ctx context.Context, method string) {
 
 func TestWorkflowObservationDoesNotAssumeRPCCount(t *testing.T) {
 	p := &workflowContextProvider{}
-	ctx := resourcev2.WithSession(context.Background(), resourcev2.Session{RequestID: "request", RequesterID: "requester"})
+	ctx := resourcev2.WithSession(
+		context.Background(),
+		resourcev2.Session{RequestID: "request", RequesterID: "requester"},
+	)
 	for i := 0; i < 64; i++ {
 		p.observe(ctx, "catalog")
 	}
-	p.observe(resourcev2.WithSession(context.Background(), resourcev2.Session{RequestID: "changed", RequesterID: "requester"}), "catalog")
+	p.observe(
+		resourcev2.WithSession(
+			context.Background(),
+			resourcev2.Session{RequestID: "changed", RequesterID: "requester"},
+		),
+		"catalog",
+	)
 	p.observe(ctx, "catalog")
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -162,7 +175,8 @@ func TestDiagnosticsCrossAncillaryLifecycleAndActionStreams(t *testing.T) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for method, observation := range p.seen {
-		if observation.inconsistent || observation.session.RequestID != "workflow-request" || observation.session.RequesterID != "diagnostic-requester" {
+		if observation.inconsistent || observation.session.RequestID != "workflow-request" ||
+			observation.session.RequesterID != "diagnostic-requester" {
 			t.Fatalf("%s lost diagnostics", method)
 		}
 	}

@@ -85,7 +85,10 @@ func TestManagerCallToolErrors(t *testing.T) {
 	_, err = m.CallTool(types.NewPluginContext(context.Background(), "t", nil, nil, nil), CallInput{Name: "missing"})
 	require.ErrorIs(t, err, ErrToolNotFound)
 
-	_, err = m.CallTool(types.NewPluginContext(context.Background(), "t", nil, nil, nil), CallInput{Name: "scoped", Arguments: json.RawMessage(`{}`)})
+	_, err = m.CallTool(
+		types.NewPluginContext(context.Background(), "t", nil, nil, nil),
+		CallInput{Name: "scoped", Arguments: json.RawMessage(`{}`)},
+	)
 	require.ErrorIs(t, err, ErrConnectionRequired)
 
 	res, err := m.CallTool(

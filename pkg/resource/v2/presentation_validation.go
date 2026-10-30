@@ -5,7 +5,6 @@ import (
 	"sort"
 )
 
-
 // ValidateResourceDefinition bounds and admits presentation metadata before
 // transport serialization. Extractors never confer identity or access.
 func ValidateResourceDefinition(v ResourceDefinition) error {
@@ -150,10 +149,14 @@ func validateActionProperty(p SchemaProperty, depth int) error {
 		return invalid("action schema enum requires string type")
 	}
 	if p.Enum != nil {
-		if len(p.Enum) == 0 { return invalid("action schema enum must not be empty") }
+		if len(p.Enum) == 0 {
+			return invalid("action schema enum must not be empty")
+		}
 		seen := make(map[string]bool, len(p.Enum))
 		for _, item := range p.Enum {
-			if seen[item] { return invalid("duplicate action schema enum value") }
+			if seen[item] {
+				return invalid("duplicate action schema enum value")
+			}
 			seen[item] = true
 		}
 	}
@@ -177,7 +180,9 @@ func validateActionProperty(p SchemaProperty, depth int) error {
 
 func validateActionProperties(properties map[string]SchemaProperty, depth int) error {
 	names := make([]string, 0, len(properties))
-	for name := range properties { names = append(names, name) }
+	for name := range properties {
+		names = append(names, name)
+	}
 	sort.Strings(names)
 	for _, name := range names {
 		p := properties[name]

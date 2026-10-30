@@ -93,13 +93,19 @@ func (c *Controller[T]) NativeQuery(ctx context.Context, request NativeQueryRequ
 	if err = ValidateNativeQueryRequest(request); err != nil {
 		return page, err
 	}
-	return c.dispatchPage(ctx, request.Target, request.PageSize, OperationNativeQuery, &r,
+	return c.dispatchPage(
+		ctx,
+		request.Target,
+		request.PageSize,
+		OperationNativeQuery,
+		&r,
 		func(ctx context.Context, client *T, registration *Registration[T], descriptor ResourceType) (SourcePage, error) {
 			if err := ValidateNativeQueryInput(descriptor, request); err != nil {
 				return SourcePage{}, err
 			}
 			return registration.NativeQuery(ctx, client, request)
-		})
+		},
+	)
 }
 
 // dispatchPage keeps admission, first-query startup, and postdispatch fences
@@ -197,7 +203,16 @@ func (c *Controller[T]) Action(ctx context.Context, request ActionRequest) (valu
 	}
 	defer done()
 	target := actionOperationTarget(request)
-	r, _, err = c.resolve(ctx, target.route, target.provider, target.typ, "", target.scope, target.address, OperationAction)
+	r, _, err = c.resolve(
+		ctx,
+		target.route,
+		target.provider,
+		target.typ,
+		"",
+		target.scope,
+		target.address,
+		OperationAction,
+	)
 	if err != nil {
 		return value, err
 	}

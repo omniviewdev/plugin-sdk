@@ -140,7 +140,7 @@ func toResourceType(v ResourceType) *resourcepb.ResourceType {
 		Type:                  v.Type,
 		DisplayName:           v.DisplayName,
 		DefaultRepresentation: v.DefaultRepresentation,
-		ModelRepresentation: v.ModelRepresentation,
+		ModelRepresentation:   v.ModelRepresentation,
 		IdentityDimensions:    make([]*resourcepb.Dimension, len(v.IdentityDimensions)),
 		QueryDimensions:       make([]*resourcepb.Dimension, len(v.QueryDimensions)),
 		Representations:       make([]*resourcepb.Representation, len(v.Representations)),
@@ -154,7 +154,11 @@ func toResourceType(v ResourceType) *resourcepb.ResourceType {
 	}
 	for i, query := range v.NativeQueries {
 		schema, _ := json.Marshal(query.InputSchema)
-		p.NativeQueries[i] = &resourcepb.NativeQueryDescriptor{Language: query.Language, Description: query.Description, InputSchemaJson: schema}
+		p.NativeQueries[i] = &resourcepb.NativeQueryDescriptor{
+			Language:        query.Language,
+			Description:     query.Description,
+			InputSchemaJson: schema,
+		}
 	}
 	for i, x := range v.IdentityDimensions {
 		p.IdentityDimensions[i] = toDimension(x)
@@ -266,9 +270,9 @@ func toMutationRequest(v MutationRequest) *resourcepb.MutationInput {
 
 func toActionRequest(v ActionRequest) *resourcepb.ActionInput {
 	p := &resourcepb.ActionInput{
-		Route:     toAccessRoute(v.Route),
-		Action:    v.Action,
-		Input:     toValue(v.Input),
+		Route:  toAccessRoute(v.Route),
+		Action: v.Action,
+		Input:  toValue(v.Input),
 	}
 	if v.TypeTarget != nil {
 		t := v.TypeTarget
@@ -432,7 +436,7 @@ func (d *adapterDecoder) resourceType(p *resourcepb.ResourceType) ResourceType {
 		Type:                  p.Type,
 		DisplayName:           p.DisplayName,
 		DefaultRepresentation: p.DefaultRepresentation,
-		ModelRepresentation: p.ModelRepresentation,
+		ModelRepresentation:   p.ModelRepresentation,
 		IdentityDimensions:    make([]Dimension, len(p.IdentityDimensions)),
 		QueryDimensions:       make([]Dimension, len(p.QueryDimensions)),
 		Representations:       make([]Representation, len(p.Representations)),
@@ -614,9 +618,9 @@ func (d *adapterDecoder) action(p *resourcepb.ActionInput) ActionRequest {
 		return ActionRequest{}
 	}
 	v := ActionRequest{
-		Route:     d.route(p.Route),
-		Action:    p.Action,
-		Input:     d.value(p.Input),
+		Route:  d.route(p.Route),
+		Action: p.Action,
+		Input:  d.value(p.Input),
 	}
 	if p.Reference != nil {
 		v.Reference = d.reference(p.Reference)

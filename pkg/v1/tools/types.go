@@ -36,10 +36,17 @@ type EffectiveAnnotations struct {
 // Resolve preserves explicit false values while applying MCP defaults.
 func (a Annotations) Resolve() EffectiveAnnotations {
 	value := func(p *bool, fallback bool) bool {
-		if p != nil { return *p }
+		if p != nil {
+			return *p
+		}
 		return fallback
 	}
-	return EffectiveAnnotations{value(a.ReadOnly, false), value(a.Destructive, true), value(a.Idempotent, false), value(a.OpenWorld, true)}
+	return EffectiveAnnotations{
+		value(a.ReadOnly, false),
+		value(a.Destructive, true),
+		value(a.Idempotent, false),
+		value(a.OpenWorld, true),
+	}
 }
 
 // Descriptor describes one tool to the host.

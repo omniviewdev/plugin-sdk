@@ -32,7 +32,8 @@ func resourceError(code, detail string) error { return resourcev2.NewError(code,
 
 // HasResourceIntent reports whether options must use the resource-aware creation path.
 func (o CreateSessionOptions) HasResourceIntent() bool {
-	return o.SessionID != "" || o.ResourceData != nil || o.Reference != nil || o.Route != nil || o.ResourceKey != "" || o.ResourceID != ""
+	return o.SessionID != "" || o.ResourceData != nil || o.Reference != nil || o.Route != nil || o.ResourceKey != "" ||
+		o.ResourceID != ""
 }
 
 // Validate checks canonical metadata and values without requiring a live connection.
@@ -87,7 +88,7 @@ func (o CreateSessionOptions) ToProto() (*logspb.CreateLogSessionRequest, error)
 		return nil, err
 	}
 	p := &logspb.CreateLogSessionRequest{
-		SessionId: o.SessionID,
+		SessionId:   o.SessionID,
 		ResourceKey: o.ResourceKey,
 		ResourceId:  o.ResourceID,
 		Options:     o.Options.ToProto(),
