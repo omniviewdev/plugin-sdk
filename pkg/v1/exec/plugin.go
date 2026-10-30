@@ -44,6 +44,7 @@ type Provider interface {
 // Plugin exposes a Provider through HashiCorp's gRPC plugin protocol.
 type Plugin struct {
 	plugin.Plugin
+
 	Impl Provider
 }
 
@@ -68,7 +69,7 @@ func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
-) (interface{}, error) {
+) (any, error) {
 	return &PluginClient{
 		client: execpb.NewExecPluginClient(c),
 		log:    logging.Default().Named("exec.plugin.client"),
@@ -85,12 +86,13 @@ func RegisterPlugin(
 	}
 
 	handlers := make(map[string]Handler, len(opts.Handlers))
-	for _, handler := range opts.Handlers {
+	for i := range opts.Handlers {
+		handler := &opts.Handlers[i]
 		key := handler.Plugin + "/" + handler.Resource
 		if _, exists := handlers[key]; exists {
 			return fmt.Errorf("duplicate exec handler key %q", key)
 		}
-		handlers[key] = handler
+		handlers[key] = *handler
 	}
 
 	impl := NewManager(ManagerConfig{

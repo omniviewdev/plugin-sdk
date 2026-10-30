@@ -55,12 +55,10 @@ func TestOutputBuffer_GetAllReturnsCopy(t *testing.T) {
 func TestOutputBuffer_ConcurrentAppend(t *testing.T) {
 	buf := exec.NewOutputBuffer(10000)
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			buf.Append([]byte("x"))
-		}()
+		})
 	}
 	wg.Wait()
 	if buf.Len() != 100 {

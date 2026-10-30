@@ -17,6 +17,7 @@ import (
 
 type streamReadyManager struct {
 	*exec.Manager
+
 	ready chan struct{}
 }
 
@@ -41,8 +42,15 @@ func TestManagerNonresourceActualGRPCTerminalLifecycle(t *testing.T) {
 	server := grpc.NewServer()
 	exec.RegisterExecPluginServer(server, &exec.PluginServer{Impl: provider})
 	listener := bufconn.Listen(1 << 20)
-	go server.Serve(listener)
-	t.Cleanup(func() { server.Stop(); listener.Close() })
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+		if serveErr := <-serveDone; serveErr != nil {
+			t.Errorf("serve: %v", serveErr)
+		}
+	})
 	connection, err := grpc.NewClient(
 		"passthrough:///terminal-lifecycle",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -67,16 +75,16 @@ func TestManagerNonresourceActualGRPCTerminalLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := stream.Send(&execpb.StreamInput{Id: created.Session.Id}); err != nil {
-		t.Fatal(err)
+	if sendErr := stream.Send(&execpb.StreamInput{Id: created.Session.Id}); sendErr != nil {
+		t.Fatal(sendErr)
 	}
 	select {
 	case <-provider.ready:
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
-	if _, err := terminal.InjectOutput([]byte("actual RPC terminal output")); err != nil {
-		t.Fatal(err)
+	if _, injectErr := terminal.InjectOutput([]byte("actual RPC terminal output")); injectErr != nil {
+		t.Fatal(injectErr)
 	}
 	output, err := stream.Recv()
 	if err != nil || output.Id != created.Session.Id || string(output.Data) != "actual RPC terminal output" {

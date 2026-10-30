@@ -7,6 +7,7 @@ import (
 	"math"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,7 @@ import (
 
 type resourceExecFixture struct {
 	Provider
+
 	calls, oldCalls int
 	seen            SessionOptions
 	failure         error
@@ -47,8 +49,15 @@ func (p *resourceExecFixture) CreateResourceSession(_ *types.PluginContext, o Se
 func execPipe(t *testing.T, s *grpc.Server) *grpc.ClientConn {
 	t.Helper()
 	l := bufconn.Listen(1 << 20)
-	go s.Serve(l)
-	t.Cleanup(func() { s.Stop(); l.Close() })
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- s.Serve(l) }()
+	t.Cleanup(func() {
+		s.Stop()
+		_ = l.Close()
+		if serveErr := <-serveDone; serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
+			t.Errorf("serve: %v", serveErr)
+		}
+	})
 	c, err := grpc.NewClient(
 		"passthrough:///exec-test",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -78,7 +87,7 @@ func execBytes(n protowire.Number, v []byte) []byte {
 
 func TestResourceExecActualGRPCLosslessAndOptionalBody(t *testing.T) {
 	for _, size := range []int{0, 70 << 10, 3 << 20} {
-		t.Run(fmt.Sprint(size), func(t *testing.T) {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
 			p := &resourceExecFixture{}
 			s := grpc.NewServer(resourceplugin.ServerOptions()...)
 			RegisterExecPluginServer(s, &PluginServer{Impl: p})
@@ -108,14 +117,7 @@ func TestResourceExecActualGRPCLosslessAndOptionalBody(t *testing.T) {
 				t.Fatalf("wrong RPC/session: %+v %+v", out, p)
 			}
 			if size > 0 {
-				got, err := resourcev2.NativeFromValue(*p.seen.ResourceData)
-				if err != nil || !reflect.DeepEqual(got, native) {
-					t.Fatalf("lossy native body: %v", err)
-				}
-				if !math.Signbit(got.(map[string]any)["negativeZero"].(float64)) ||
-					!math.Signbit(got.(map[string]any)["container"].([]any)[2].([]any)[2].(float64)) {
-					t.Fatal("top-level or nested negative zero lost")
-				}
+				assertExecNativeBody(t, p.seen.ResourceData, native)
 			}
 		})
 	}
@@ -140,6 +142,7 @@ func TestResourceExecActualGRPCErrors(t *testing.T) {
 
 type oldExecServer struct {
 	execpb.UnimplementedExecPluginServer
+
 	calls int
 }
 
@@ -161,6 +164,8 @@ func TestResourceExecOldServerNeverFallsBack(t *testing.T) {
 
 func TestResourceExecRawAdmissionBeforeProvider(t *testing.T) {
 	version := []byte{80, 2}
+	entry := append(execBytes(1, []byte("key")), execBytes(2, []byte("value"))...)
+	dup := append(execBytes(4, entry), execBytes(4, entry)...)
 	cases := []struct {
 		name, method, code string
 		data               []byte
@@ -182,13 +187,8 @@ func TestResourceExecRawAdmissionBeforeProvider(t *testing.T) {
 			"INVALID_REQUEST",
 			append(append([]byte{}, version...), execBytes(6, []byte{255})...),
 		},
+		{"map", "CreateResourceSession", "INVALID_REQUEST", append(append([]byte{}, version...), dup...)},
 	}
-	entry := append(execBytes(1, []byte("key")), execBytes(2, []byte("value"))...)
-	dup := append(execBytes(4, entry), execBytes(4, entry)...)
-	cases = append(cases, struct {
-		name, method, code string
-		data               []byte
-	}{"map", "CreateResourceSession", "INVALID_REQUEST", append(append([]byte{}, version...), dup...)})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &resourceExecFixture{}
@@ -222,7 +222,7 @@ func TestResourceExecRawResponsesRejectBeforeMaterialization(t *testing.T) {
 		append([]byte{8, 2}, execBytes(2, execBytes(6, []byte{16, 128, 148, 235, 220, 3}))...),
 	}
 	for i, data := range cases {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			p := &resourceExecFixture{}
 			s := grpc.NewServer(grpc.ForceServerCodecV2(execRawCodec{data: data}))
 			RegisterExecPluginServer(s, &PluginServer{Impl: p})

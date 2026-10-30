@@ -53,7 +53,7 @@ func NewFakeTerminal() (*FakeTerminal, error) {
 func (t *FakeTerminal) MasterFd() *os.File { return t.masterR }
 
 // SlaveFd returns the borrowed handler reader; Close owns its lifetime.
-func (t *FakeTerminal) SlaveFd() *os.File  { return t.slaveR }
+func (t *FakeTerminal) SlaveFd() *os.File { return t.slaveR }
 
 // Resize records dimensions without changing the pipe-backed terminal.
 func (t *FakeTerminal) Resize(rows, cols uint16) error {

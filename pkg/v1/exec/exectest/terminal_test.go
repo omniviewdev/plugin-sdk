@@ -23,7 +23,7 @@ func TestFakeTerminal_CloseReportsErrorsAndClosesRemainingEnds(t *testing.T) {
 		t.Fatalf("Close must report the previously closed descriptor: %v", err)
 	}
 	for _, writer := range []*os.File{terminal.masterW, terminal.slaveW} {
-		if _, writeErr := writer.Write([]byte("closed")); !errors.Is(writeErr, os.ErrClosed) {
+		if _, writeErr := writer.WriteString("closed"); !errors.Is(writeErr, os.ErrClosed) {
 			t.Errorf("writer %s remains open: %v", writer.Name(), writeErr)
 		}
 	}

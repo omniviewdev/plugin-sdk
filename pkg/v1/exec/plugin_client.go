@@ -219,13 +219,13 @@ func (c *PluginClient) Stream(
 	// sender
 	go func() {
 		defer func() {
-			if err := stream.CloseSend(); err != nil {
-				c.log.Error(ctx, "failed to close send stream", logging.Error(err))
+			if closeErr := stream.CloseSend(); closeErr != nil {
+				c.log.Error(ctx, "failed to close send stream", logging.Error(closeErr))
 			}
 		}()
 		for i := range in {
-			if err := stream.Send(i.ToProto()); err != nil {
-				c.log.Error(ctx, "failed to send stream input", logging.Error(err))
+			if sendErr := stream.Send(i.ToProto()); sendErr != nil {
+				c.log.Error(ctx, "failed to send stream input", logging.Error(sendErr))
 				return
 			}
 		}

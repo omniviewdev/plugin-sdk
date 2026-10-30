@@ -43,8 +43,8 @@ func TestManager_SessionLifecycle(t *testing.T) {
 	}
 
 	// CloseSession
-	if err := h.CloseSession(sess.ID); err != nil {
-		t.Fatalf("CloseSession: %v", err)
+	if closeErr := h.CloseSession(sess.ID); closeErr != nil {
+		t.Fatalf("CloseSession: %v", closeErr)
 	}
 
 	// Wait for close signal
@@ -199,8 +199,8 @@ func TestManager_DoubleClose(t *testing.T) {
 		t.Fatalf("CreateSession: %v", err)
 	}
 
-	if err := h.CloseSession(sess.ID); err != nil {
-		t.Fatalf("first CloseSession: %v", err)
+	if closeErr := h.CloseSession(sess.ID); closeErr != nil {
+		t.Fatalf("first CloseSession: %v", closeErr)
 	}
 
 	// Wait for cleanup
@@ -241,10 +241,8 @@ func TestManager_ConcurrentSessions(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, count)
 
-	for i := 0; i < count; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range count {
+		wg.Go(func() {
 			_, err := h.CreateSession(exec.SessionOptions{
 				ResourcePlugin: "test",
 				ResourceKey:    "pod",
@@ -252,7 +250,7 @@ func TestManager_ConcurrentSessions(t *testing.T) {
 			if err != nil {
 				errs <- err
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)
@@ -301,9 +299,13 @@ func TestManager_OutputSequenceOrdering(t *testing.T) {
 
 	// Inject multiple outputs through the fake terminal master write end,
 	// with a small sleep between to ensure separate reads.
-	ft.InjectOutput([]byte("hello\n"))
+	if _, injectErr := ft.InjectOutput([]byte("hello\n")); injectErr != nil {
+		t.Fatalf("InjectOutput: %v", injectErr)
+	}
 	time.Sleep(50 * time.Millisecond)
-	ft.InjectOutput([]byte("world\n"))
+	if _, injectErr := ft.InjectOutput([]byte("world\n")); injectErr != nil {
+		t.Fatalf("InjectOutput: %v", injectErr)
+	}
 
 	// Wait for at least 2 data outputs.
 	outputs := h.Output.WaitForOutputs(2, 5*time.Second)

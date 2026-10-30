@@ -8,6 +8,8 @@ import (
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
 
+const execResourceDataFieldNumber protowire.Number = 9
+
 // sessionOptionMetadata deliberately excludes the tagged body: metadata and
 // Value have separate bounds, so reflection bookkeeping cannot shrink Value's
 // admitted node budget or convert its scalar types.
@@ -42,22 +44,8 @@ func ValidateSessionOptions(o SessionOptions) error {
 	if err := resourcev2.ValidateMetadata(metadata); err != nil {
 		return err
 	}
-	if o.Reference != nil {
-		if err := resourcev2.ValidateAddress(o.Reference.Address); err != nil {
-			return err
-		}
-		if o.Reference.Incarnation != nil && *o.Reference.Incarnation == "" {
-			return optionError("INVALID_REQUEST", "Resource incarnation must not be empty.")
-		}
-		if o.Route == nil {
-			return optionError("INVALID_REQUEST", "An explicit route is required with a resource reference.")
-		}
-		if o.ResourcePlugin != "" && o.ResourcePlugin != o.Reference.Address.Provider {
-			return optionError("INVALID_REQUEST", "Resource provider selector conflicts with reference.")
-		}
-		if o.ResourceKey != "" && o.ResourceKey != o.Reference.Address.Type {
-			return optionError("INVALID_REQUEST", "Resource type selector conflicts with reference.")
-		}
+	if err := validateSessionOptionReference(o); err != nil {
+		return err
 	}
 	if o.Route != nil && o.Route.Connection == "" {
 		return optionError("INVALID_REQUEST", "Resource route requires an explicit connection.")
@@ -69,6 +57,30 @@ func ValidateSessionOptions(o SessionOptions) error {
 		if err := resourcev2.ValidateValue(*o.ResourceData); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// validateSessionOptionReference checks canonical target identity and selector
+// consistency without acquiring a connection or interpreting opaque identifiers.
+func validateSessionOptionReference(o SessionOptions) error {
+	if o.Reference == nil {
+		return nil
+	}
+	if err := resourcev2.ValidateAddress(o.Reference.Address); err != nil {
+		return err
+	}
+	if o.Reference.Incarnation != nil && *o.Reference.Incarnation == "" {
+		return optionError("INVALID_REQUEST", "Resource incarnation must not be empty.")
+	}
+	if o.Route == nil {
+		return optionError("INVALID_REQUEST", "An explicit route is required with a resource reference.")
+	}
+	if o.ResourcePlugin != "" && o.ResourcePlugin != o.Reference.Address.Provider {
+		return optionError("INVALID_REQUEST", "Resource provider selector conflicts with reference.")
+	}
+	if o.ResourceKey != "" && o.ResourceKey != o.Reference.Address.Type {
+		return optionError("INVALID_REQUEST", "Resource type selector conflicts with reference.")
 	}
 	return nil
 }
@@ -153,11 +165,11 @@ func (o *SessionOptions) ToProto() (*execpb.SessionOptions, error) {
 	// Preflight the complete encoded frame before allocating a second Value tree.
 	frameBytes := proto.Size(out)
 	if opts.ResourceData != nil {
-		valueBytes, err := resourcev2.ValueWireSize(*opts.ResourceData)
-		if err != nil {
-			return nil, err
+		valueBytes, valueErr := resourcev2.ValueWireSize(*opts.ResourceData)
+		if valueErr != nil {
+			return nil, valueErr
 		}
-		frameBytes += protowire.SizeTag(9) + protowire.SizeBytes(valueBytes)
+		frameBytes += protowire.SizeTag(execResourceDataFieldNumber) + protowire.SizeBytes(valueBytes)
 	}
 	if frameBytes > resourcev2.MaxMessageBytes {
 		return nil, optionError("RESOURCE_LIMIT", "Exec resource frame exceeds wire limit.")
@@ -200,29 +212,41 @@ func retiredExecOptionField(data []byte) (bool, error) {
 	return false, nil
 }
 
-// NewSessionOptionsFromProto has no Struct or float64 fallback. Resource intent
-// selects wire version two before body conversion; old nonresource options keep
-// their ordinary terminal path.
-func NewSessionOptionsFromProto(p *execpb.SessionOptions) (*SessionOptions, error) {
-	if p == nil {
-		return nil, optionError("INVALID_REQUEST", "Session options must not be nil.")
-	}
+// validateExecOptionWire admits the resource wire version and unknown fields
+// before any body conversion can discard unsupported protocol evidence.
+func validateExecOptionWire(p *execpb.SessionOptions) (bool, error) {
 	unknown := p.ProtoReflect().GetUnknown()
 	retired, err := retiredExecOptionField(unknown)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 	if retired {
-		return nil, optionError("UNSUPPORTED", "Legacy or unknown resource exec option is unsupported.")
+		return false, optionError("UNSUPPORTED", "Legacy or unknown resource exec option is unsupported.")
 	}
 	resourceIntent := p.ResourceData != nil || p.ResourcePlugin != "" || p.ResourceKey != "" || p.Reference != nil ||
 		p.Route != nil ||
 		p.ResourceWireVersion != 0
 	if resourceIntent && p.ResourceWireVersion != ResourceSessionWireVersion {
-		return nil, optionError("UNSUPPORTED", "Resource exec wire version is unsupported.")
+		return false, optionError("UNSUPPORTED", "Resource exec wire version is unsupported.")
 	}
 	if resourceIntent && len(unknown) > 0 {
-		return nil, optionError("UNSUPPORTED", "Unknown resource exec option field.")
+		return false, optionError("UNSUPPORTED", "Unknown resource exec option field.")
+	}
+	return resourceIntent, nil
+}
+
+// NewSessionOptionsFromProto has no Struct or float64 fallback. Resource intent
+// selects wire version two before body conversion; old nonresource options keep
+// their ordinary terminal path. Nil input and invalid or oversized messages fail.
+// Optional references, routes, and tagged bodies retain presence and are decoded
+// into new domain values; Command, Params, and Labels share the input containers.
+func NewSessionOptionsFromProto(p *execpb.SessionOptions) (*SessionOptions, error) {
+	if p == nil {
+		return nil, optionError("INVALID_REQUEST", "Session options must not be nil.")
+	}
+	resourceIntent, err := validateExecOptionWire(p)
+	if err != nil {
+		return nil, err
 	}
 	opts := SessionOptions{
 		ID:             p.Id,
@@ -242,27 +266,27 @@ func NewSessionOptionsFromProto(p *execpb.SessionOptions) (*SessionOptions, erro
 		Command:        opts.Command,
 		TTY:            opts.TTY,
 	}
-	if err := resourcev2.ValidateMetadata(metadata); err != nil {
-		return nil, err
+	if metadataErr := resourcev2.ValidateMetadata(metadata); metadataErr != nil {
+		return nil, metadataErr
 	}
 	if p.Reference != nil {
-		reference, err := resourcev2.FromProtoResourceReference(p.Reference)
-		if err != nil {
-			return nil, err
+		reference, referenceErr := resourcev2.FromProtoResourceReference(p.Reference)
+		if referenceErr != nil {
+			return nil, referenceErr
 		}
 		opts.Reference = &reference
 	}
 	if p.Route != nil {
-		route, err := resourcev2.FromProtoAccessRoute(p.Route)
-		if err != nil {
-			return nil, err
+		route, routeErr := resourcev2.FromProtoAccessRoute(p.Route)
+		if routeErr != nil {
+			return nil, routeErr
 		}
 		opts.Route = &route
 	}
 	if p.ResourceData != nil {
-		body, err := resourcev2.FromProtoValue(p.ResourceData)
-		if err != nil {
-			return nil, err
+		body, bodyErr := resourcev2.FromProtoValue(p.ResourceData)
+		if bodyErr != nil {
+			return nil, bodyErr
 		}
 		opts.ResourceData = &body
 	}

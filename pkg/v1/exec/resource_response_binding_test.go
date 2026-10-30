@@ -15,6 +15,7 @@ import (
 
 type changedResourceSessionProvider struct {
 	Provider
+
 	id string
 }
 
@@ -24,6 +25,7 @@ func (p *changedResourceSessionProvider) CreateResourceSession(*types.PluginCont
 
 type changedResourceSessionServer struct {
 	execpb.UnimplementedExecPluginServer
+
 	id string
 }
 

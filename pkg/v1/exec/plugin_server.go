@@ -22,6 +22,7 @@ import (
 // PluginServer adapts a Provider to exec RPCs and validates resource admission.
 type PluginServer struct {
 	execpb.UnimplementedExecPluginServer
+
 	log  logging.Logger
 	Impl Provider
 }
@@ -65,8 +66,8 @@ func (s *PluginServer) GetSupportedResources(
 ) (*execpb.GetSupportedResourcesResponse, error) {
 	resp := s.Impl.GetSupportedResources(types.PluginContextFromContext(ctx))
 	handlers := make([]*execpb.ExecHandler, 0, len(resp))
-	for _, h := range resp {
-		handlers = append(handlers, h.ToProto())
+	for i := range resp {
+		handlers = append(handlers, resp[i].ToProto())
 	}
 	return &execpb.GetSupportedResourcesResponse{
 		Handlers: handlers,
@@ -165,8 +166,8 @@ func (s *PluginServer) CreateResourceSession(
 	if err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
-	if err := ValidateResourceSessionOptions(*opts); err != nil {
-		return nil, resourceplugin.ResourceRPCError(err)
+	if validationErr := ValidateResourceSessionOptions(*opts); validationErr != nil {
+		return nil, resourceplugin.ResourceRPCError(validationErr)
 	}
 	provider, ok := s.Impl.(ResourceSessionProvider)
 	if !ok {

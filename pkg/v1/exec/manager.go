@@ -24,9 +24,14 @@ const (
 	DefaultOutputBufferSize = 1000000
 	// DefaultStreamBufferSize sets terminal read size and output channel capacity.
 	DefaultStreamBufferSize = 4096
-	InitialRows             = 27
-	InitialCols             = 72
-	ResizeTimeout           = 500 * time.Millisecond
+	// InitialRows sets PTY height before the first resize.
+	InitialRows = 27
+	// InitialCols sets PTY width before the first resize.
+	InitialCols = 72
+	// ResizeTimeout bounds delivery to handlers that manage their own resizing.
+	ResizeTimeout       = 500 * time.Millisecond
+	sessionCloseTimeout = 10 * time.Second
+	sessionWorkerCount  = 2
 )
 
 // ---------------------------------------------------------------------------
@@ -166,29 +171,31 @@ func (m *Manager) handleStreamInput(ctx context.Context, in chan StreamInput) {
 			}
 
 		case resize := <-m.resize:
-			logger := m.log.With(logging.String("session", resize.SessionID))
-			logger.Debug(ctx, "received stream resize")
-
-			m.mu.RLock()
-			ss, exists := m.sessions[resize.SessionID]
-			m.mu.RUnlock()
-			if !exists {
-				logger.Error(ctx, "session not found")
-				continue
-			}
-
-			if ss.ttyResize {
-				if err := ss.terminal.Resize(resize.Rows, resize.Cols); err != nil {
-					logger.Errorw(ctx, "failed to resize terminal", "error", err)
-				}
-			} else {
-				select {
-				case ss.resize <- SessionResizeInput{Cols: int32(resize.Cols), Rows: int32(resize.Rows)}:
-				case <-m.clock.After(ResizeTimeout):
-					logger.Error(ctx, "timeout resizing session")
-				}
-			}
+			m.handleResize(ctx, resize)
 		}
+	}
+}
+
+func (m *Manager) handleResize(ctx context.Context, resize StreamResize) {
+	logger := m.log.With(logging.String("session", resize.SessionID))
+	logger.Debug(ctx, "received stream resize")
+	m.mu.RLock()
+	ss, exists := m.sessions[resize.SessionID]
+	m.mu.RUnlock()
+	if !exists {
+		logger.Error(ctx, "session not found")
+		return
+	}
+	if ss.ttyResize {
+		if err := ss.terminal.Resize(resize.Rows, resize.Cols); err != nil {
+			logger.Errorw(ctx, "failed to resize terminal", "error", err)
+		}
+		return
+	}
+	select {
+	case ss.resize <- SessionResizeInput{Cols: int32(resize.Cols), Rows: int32(resize.Rows)}:
+	case <-m.clock.After(ResizeTimeout):
+		logger.Error(ctx, "timeout resizing session")
 	}
 }
 
@@ -222,6 +229,7 @@ func (m *Manager) ListSessions(_ *types.PluginContext) ([]*Session, error) {
 // accepts the session. Its cancellation channel remains the session lifetime.
 type resourceAdmissionContext struct {
 	context.Context
+
 	parent   context.Context
 	accepted atomic.Bool
 }
@@ -284,77 +292,46 @@ func (m *Manager) CreateResourceSession(pluginctx *types.PluginContext, opts Ses
 	)
 	if err != nil {
 		if session != nil {
-			_ = m.CloseSession(pluginctx, session.ID)
+			if closeErr := m.CloseSession(pluginctx, session.ID); closeErr != nil {
+				m.log.Errorw(
+					pluginContextOr(context.Background(), pluginctx),
+					"failed to close rejected session",
+					"error", closeErr,
+				)
+			}
 		}
 		return nil, err
 	}
 	return session, nil
 }
 
-func (m *Manager) createSession(pluginctx *types.PluginContext, opts SessionOptions, resource bool) (*Session, error) {
+func (m *Manager) createSession(
+	pluginctx *types.PluginContext,
+	opts SessionOptions,
+	resource bool,
+) (*Session, error) {
 	logger := m.log.With(
 		logging.String("resource", opts.ResourceKey),
 		logging.Any("param_keys", sanitizeMapKeys(opts.Params)),
 		logging.Any("label_keys", sanitizeMapKeys(opts.Labels)),
 	)
 
-	// Look up handler
-	handlerKey := opts.ResourcePlugin + "/" + opts.ResourceKey
-	handler, ok := m.handlers[handlerKey]
-	if !ok {
-		available := slices.Collect(maps.Keys(m.handlers))
-		return nil, NewHandlerNotFoundError(handlerKey, available)
-	}
-	if handler.TTYHandler == nil {
-		return nil, NewHandlerNotFoundError(handlerKey, slices.Collect(maps.Keys(m.handlers)))
-	}
-
 	opts.ID = ensureSessionID(opts.ID)
-
-	m.mu.RLock()
-	if _, exists := m.sessions[opts.ID]; exists {
-		m.mu.RUnlock()
-		return nil, NewSessionExistsError(opts.ID)
-	}
-	m.mu.RUnlock()
-
-	// Nil-guard to avoid panicking on nil PluginContext.
-	if pluginctx == nil {
-		pluginctx = &types.PluginContext{Context: context.Background()}
+	handler, err := m.sessionHandler(opts)
+	if err != nil {
+		return nil, err
 	}
 
-	// Shallow-copy PluginContext to avoid mutating the caller's shared instance.
-	pctxCopy := *pluginctx
-	baseCtx := pctxCopy.Context
-	if baseCtx == nil {
-		baseCtx = context.Background()
+	pctxCopy, cancel, admission, stopAdmission, err := m.sessionContext(pluginctx, opts, resource)
+	if err != nil {
+		return nil, err
 	}
-	// Sessions outlive the RPC that created them. Detach from the parent's
-	// cancellation (e.g. the gRPC unary-call context) while keeping context
-	// values (logging, tracing) intact.
-	ctx, cancel := context.WithCancel(context.WithoutCancel(baseCtx))
-	var admission *resourceAdmissionContext
-	stopAdmission := func() bool { return true }
-	if resource {
-		if err := baseCtx.Err(); err != nil {
-			cancel()
-			return nil, err
-		}
-		admission = &resourceAdmissionContext{Context: ctx, parent: baseCtx}
-		stopAdmission = context.AfterFunc(baseCtx, cancel)
-		defer stopAdmission()
-	}
-	pctxCopy.Context = ctx
+	defer stopAdmission()
+	ctx := pctxCopy.Context
 	if admission != nil {
-		pctxCopy.Context = admission
+		ctx = admission.Context
 	}
-	if m.settingsProvider != nil {
-		pctxCopy.SetSettingsProvider(m.settingsProvider)
-	}
-	pctxCopy.Logger = m.log.With(
-		logging.String("session", opts.ID),
-		logging.String("resource", opts.ResourceKey),
-	)
+	baseCtx := pluginContextOr(context.Background(), pluginctx)
 
 	// Create terminal via factory
 	terminal, err := m.terminalFactory()
@@ -369,7 +346,7 @@ func (m *Manager) createSession(pluginctx *types.PluginContext, opts SessionOpti
 
 	if resource && baseCtx.Err() != nil {
 		cancel()
-		terminal.Close()
+		m.closeTerminal(ctx, terminal)
 		return nil, baseCtx.Err()
 	}
 	resizeChan := make(chan SessionResizeInput)
@@ -378,7 +355,7 @@ func (m *Manager) createSession(pluginctx *types.PluginContext, opts SessionOpti
 	// Call the handler with the TTY side
 	if err = handler.TTYHandler(&pctxCopy, opts, terminal.SlaveFd(), stopChan, resizeChan); err != nil {
 		cancel()
-		terminal.Close()
+		m.closeTerminal(ctx, terminal)
 		if resource && baseCtx.Err() != nil {
 			return nil, baseCtx.Err()
 		}
@@ -404,45 +381,102 @@ func (m *Manager) createSession(pluginctx *types.PluginContext, opts SessionOpti
 		done:      make(chan struct{}),
 	}
 
-	m.mu.Lock()
-	if _, exists := m.sessions[opts.ID]; exists {
-		m.mu.Unlock()
+	if err = m.registerSession(baseCtx, ss, resource, admission, stopAdmission); err != nil {
 		cancel()
-		terminal.Close()
-		return nil, NewSessionExistsError(opts.ID)
+		m.closeTerminal(ctx, terminal)
+		return nil, err
 	}
-	if resource {
-		if !stopAdmission() || baseCtx.Err() != nil {
-			m.mu.Unlock()
-			cancel()
-			terminal.Close()
-			if err := baseCtx.Err(); err != nil {
-				return nil, err
-			}
-			return nil, context.Canceled
-		}
-		admission.accepted.Store(true)
-	}
-	m.sessions[opts.ID] = ss
-	m.mu.Unlock()
-
 	logger.Debugw(ctx, "session created", "session", opts.ID)
-
-	// Start goroutines tracked by the sessionState's WaitGroup.
-	ss.wg.Add(2)
+	ss.wg.Add(sessionWorkerCount)
 	go m.handleStream(ss)
 	go m.handleSignals(ss)
-
-	// Manager-level goroutine waits for session to finish and cleans up.
-	m.wg.Add(1)
-	go func() {
-		defer m.wg.Done()
+	m.wg.Go(func() {
 		ss.wg.Wait()
 		close(ss.done)
-	}()
+	})
 
 	snap := ss.snapshot()
 	return &snap, nil
+}
+
+func (m *Manager) sessionHandler(opts SessionOptions) (Handler, error) {
+	handlerKey := opts.ResourcePlugin + "/" + opts.ResourceKey
+	handler, ok := m.handlers[handlerKey]
+	if !ok || handler.TTYHandler == nil {
+		return Handler{}, NewHandlerNotFoundError(handlerKey, slices.Collect(maps.Keys(m.handlers)))
+	}
+	m.mu.RLock()
+	_, exists := m.sessions[opts.ID]
+	m.mu.RUnlock()
+	if exists {
+		return Handler{}, NewSessionExistsError(opts.ID)
+	}
+	return handler, nil
+}
+
+func (m *Manager) sessionContext(
+	pluginctx *types.PluginContext,
+	opts SessionOptions,
+	resource bool,
+) (types.PluginContext, context.CancelFunc, *resourceAdmissionContext, func() bool, error) {
+	var pctx types.PluginContext
+	if pluginctx != nil {
+		pctx = *pluginctx
+	}
+	baseCtx := pluginContextOr(context.Background(), pluginctx)
+	// Keep values, but let accepted sessions outlive the creating RPC.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(baseCtx))
+	var admission *resourceAdmissionContext
+	stopAdmission := func() bool { return true }
+	pctx.Context = ctx
+	if resource {
+		if err := baseCtx.Err(); err != nil {
+			cancel()
+			return pctx, nil, nil, nil, err
+		}
+		admission = &resourceAdmissionContext{Context: ctx, parent: baseCtx}
+		stopAdmission = context.AfterFunc(baseCtx, cancel)
+		pctx.Context = admission
+	}
+	if m.settingsProvider != nil {
+		pctx.SetSettingsProvider(m.settingsProvider)
+	}
+	pctx.Logger = m.log.With(
+		logging.String("session", opts.ID),
+		logging.String("resource", opts.ResourceKey),
+	)
+	return pctx, cancel, admission, stopAdmission, nil
+}
+
+func (m *Manager) registerSession(
+	baseCtx context.Context,
+	ss *sessionState,
+	resource bool,
+	admission *resourceAdmissionContext,
+	stopAdmission func() bool,
+) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.sessions[ss.session.ID]; exists {
+		return NewSessionExistsError(ss.session.ID)
+	}
+	if resource {
+		if !stopAdmission() || baseCtx.Err() != nil {
+			if err := baseCtx.Err(); err != nil {
+				return err
+			}
+			return context.Canceled
+		}
+		admission.accepted.Store(true)
+	}
+	m.sessions[ss.session.ID] = ss
+	return nil
+}
+
+func (m *Manager) closeTerminal(ctx context.Context, terminal Terminal) {
+	if err := terminal.Close(); err != nil {
+		m.log.Errorw(ctx, "failed to close terminal", "error", err)
+	}
 }
 
 func (m *Manager) handleSignals(ss *sessionState) {
@@ -511,7 +545,7 @@ func (m *Manager) cleanupSession(ss *sessionState, handlerErr error) {
 	sessionID := ss.session.ID
 
 	// Close terminal
-	ss.terminal.Close()
+	m.closeTerminal(ss.ctx, ss.terminal)
 
 	// Remove from map
 	m.mu.Lock()
@@ -633,7 +667,7 @@ func (m *Manager) CloseSession(pluginctx *types.PluginContext, sessionID string)
 	select {
 	case <-ss.waitDone():
 		return nil
-	case <-m.clock.After(10 * time.Second):
+	case <-m.clock.After(sessionCloseTimeout):
 		m.log.Warnw(ctx, "CloseSession timed out waiting for goroutines", "session_id", sessionID)
 		return fmt.Errorf("CloseSession timed out waiting for session %s goroutines", sessionID)
 	}

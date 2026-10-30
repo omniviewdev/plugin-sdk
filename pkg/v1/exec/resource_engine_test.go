@@ -85,7 +85,7 @@ func TestManagerResourceNativeReceivesExactValueAndDetachedLifetime(t *testing.T
 			},
 		},
 	}}
-	var nativeContext context.Context
+	var native *types.PluginContext
 	handler := defaultHandler()
 	handler.TTYHandler = func(pctx *types.PluginContext, opts exec.SessionOptions, _ *os.File, _ chan error, _ <-chan exec.SessionResizeInput) error {
 		if !reflect.DeepEqual(opts.ResourceData, &body) {
@@ -94,7 +94,7 @@ func TestManagerResourceNativeReceivesExactValueAndDetachedLifetime(t *testing.T
 		if _, ok := pctx.Context.Deadline(); !ok {
 			t.Fatal("native admission lost caller deadline")
 		}
-		nativeContext = pctx.Context
+		native = pctx
 		return nil
 	}
 	h := exectest.Mount(t, exectest.WithHandler(handler))
@@ -108,10 +108,10 @@ func TestManagerResourceNativeReceivesExactValueAndDetachedLifetime(t *testing.T
 		t.Fatal(err)
 	}
 	cancel()
-	if nativeContext.Err() != nil {
-		t.Fatalf("accepted native lifetime canceled: %v", nativeContext.Err())
+	if native.Context.Err() != nil {
+		t.Fatalf("accepted native lifetime canceled: %v", native.Context.Err())
 	}
-	if _, ok := nativeContext.Deadline(); ok {
+	if _, ok := native.Context.Deadline(); ok {
 		t.Fatal("accepted session retained RPC deadline")
 	}
 	if err := h.CloseSession(session.ID); err != nil {
@@ -141,14 +141,14 @@ func TestManagerResourceCancellationDuringNativeAdmission(t *testing.T) {
 		exectest.WithHandler(handler),
 		exectest.WithTerminalFactory(exectest.FakeTerminalFactory(terminal)),
 	)
-	if _, err := h.Manager.CreateResourceSession(
+	if _, createErr := h.Manager.CreateResourceSession(
 		&types.PluginContext{Context: ctx},
 		exec.SessionOptions{ResourcePlugin: "test", ResourceKey: "pod"},
 	); !errors.Is(
-		err,
+		createErr,
 		context.Canceled,
 	) {
-		t.Fatalf("expected cancellation, got %v", err)
+		t.Fatalf("expected cancellation, got %v", createErr)
 	}
 	sessions, err := h.Manager.ListSessions(nil)
 	if err != nil || len(sessions) != 0 {

@@ -117,7 +117,17 @@ func (ss *sessionState) waitDone() <-chan struct{} {
 // SessionOptions
 // ---------------------------------------------------------------------------
 
-// SessionOptions contains options for creating a new terminal session.
+// SessionOptions describes a terminal session and optional resource intent.
+// ResourcePlugin and ResourceKey are opaque selectors, not authorization.
+// ResourceData, when present, must be a canonical tagged map; scalar types remain
+// exact through JSON and protobuf conversion. A Reference requires an explicit
+// Route and must agree with any supplied selectors. Neither selectors nor a
+// reference require a body or an unrelated resource Get operation.
+//
+// Validation and normalization do not acquire a connection or copy mutable
+// containers. Callers must not mutate options concurrently with SDK use.
+//
+//nolint:recvcheck // Preserve value-method intent queries; JSON decoding mutates through a pointer receiver.
 type SessionOptions struct {
 	Params         map[string]string             `json:"params"`
 	Labels         map[string]string             `json:"labels"`

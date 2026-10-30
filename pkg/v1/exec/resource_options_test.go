@@ -57,7 +57,7 @@ func TestExecOptionsCanonicalBinaryRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	decoded := new(execpb.SessionOptions)
-	if err := proto.Unmarshal(encoded, decoded); err != nil {
+	if err = proto.Unmarshal(encoded, decoded); err != nil {
 		t.Fatal(err)
 	}
 	output, err := NewSessionOptionsFromProto(decoded)
