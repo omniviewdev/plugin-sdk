@@ -19,6 +19,12 @@ import (
 // ResourceWireVersion identifies the lossless resource-aware metric protocol.
 const ResourceWireVersion uint32 = 2
 
+const (
+	queryResourceDataField  protowire.Number = 11
+	streamResourceDataField protowire.Number = 9
+)
+
+// HasResourceIntent reports whether the request needs the resource-aware protocol.
 func (r QueryRequest) HasResourceIntent() bool {
 	return r.ResourceData != nil || r.Reference != nil || r.Route != nil
 }
@@ -27,7 +33,9 @@ func (r QueryRequest) HasResourceIntent() bool {
 func (r StreamInput) HasResourceIntent() bool {
 	return r.ResourceData != nil || r.Reference != nil || r.Route != nil
 }
+
 func metricError(code, text string) error { return resourcev2.NewError(code, text) }
+
 func validateQuery(r QueryRequest, ctx *types.PluginContext) error {
 	metadata := r
 	metadata.ResourceData = nil
@@ -45,20 +53,31 @@ func validateQuery(r QueryRequest, ctx *types.PluginContext) error {
 			return metricError("INVALID_REQUEST", "Resource selector conflicts with reference.")
 		}
 	}
-	if r.Route != nil {
-		if r.Route.Connection == "" {
-			return metricError("INVALID_REQUEST", "Empty route connection.")
-		}
-		// A nil context validates encoding only; dispatch must supply its selected connection.
-		if ctx != nil && (ctx.Connection == nil || ctx.Connection.ID == "") {
-			return metricError("INVALID_REQUEST", "Resource route requires an actual selected connection.")
-		}
-		if ctx != nil && ctx.Connection != nil && ctx.Connection.ID != r.Route.Connection {
-			return metricError("INVALID_REQUEST", "Route conflicts with trusted connection.")
-		}
+	if err := validateMetricRoute(r.Route, ctx); err != nil {
+		return err
 	}
 	if r.ResourceData != nil {
 		return resourcev2.ValidateValue(*r.ResourceData)
+	}
+	return nil
+}
+
+func validateMetricRoute(route *resourcev2.AccessRoute, ctx *types.PluginContext) error {
+	if route == nil {
+		return nil
+	}
+	if route.Connection == "" {
+		return metricError("INVALID_REQUEST", "Empty route connection.")
+	}
+	// A nil context validates encoding only; dispatch must supply its selected connection.
+	if ctx == nil {
+		return nil
+	}
+	if ctx.Connection == nil || ctx.Connection.ID == "" {
+		return metricError("INVALID_REQUEST", "Resource route requires an actual selected connection.")
+	}
+	if ctx.Connection.ID != route.Connection {
+		return metricError("INVALID_REQUEST", "Route conflicts with trusted connection.")
 	}
 	return nil
 }
@@ -131,40 +150,8 @@ func scanMetricJSON(d *json.Decoder, depth int) error {
 	}
 	switch delimiter {
 	case '{':
-		for d.More() {
-			key, err := d.Token()
-			if err != nil {
-				return metricError("INVALID_REQUEST", err.Error())
-			}
-			name, ok := key.(string)
-			if !ok {
-				return metricError("INVALID_REQUEST", "Invalid metric JSON key.")
-			}
-			if depth == 0 {
-				switch name {
-				case "resource_key",
-					"resource_id",
-					"resource_namespace",
-					"resource_data",
-					"reference",
-					"route",
-					"catalog_revision",
-					"metric_ids",
-					"shape",
-					"start_time",
-					"end_time",
-					"step",
-					"params",
-					"subscription_id",
-					"command",
-					"interval":
-				default:
-					return metricError("INVALID_REQUEST", "Unknown metric JSON field.")
-				}
-			}
-			if err = scanMetricJSON(d, depth+1); err != nil {
-				return err
-			}
+		if err := scanMetricJSONObject(d, depth); err != nil {
+			return err
 		}
 	case '[':
 		for d.More() {
@@ -181,6 +168,38 @@ func scanMetricJSON(d *json.Decoder, depth int) error {
 	return nil
 }
 
+func scanMetricJSONObject(d *json.Decoder, depth int) error {
+	for d.More() {
+		key, err := d.Token()
+		if err != nil {
+			return metricError("INVALID_REQUEST", err.Error())
+		}
+		name, ok := key.(string)
+		if !ok {
+			return metricError("INVALID_REQUEST", "Invalid metric JSON key.")
+		}
+		if depth == 0 && !knownMetricJSONField(name) {
+			return metricError("INVALID_REQUEST", "Unknown metric JSON field.")
+		}
+		if err = scanMetricJSON(d, depth+1); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func knownMetricJSONField(name string) bool {
+	switch name {
+	case "resource_key", "resource_id", "resource_namespace", "resource_data",
+		"reference", "route", "catalog_revision", "metric_ids", "shape",
+		"start_time", "end_time", "step", "params", "subscription_id", "command", "interval":
+		return true
+	default:
+		return false
+	}
+}
+
+// UnmarshalJSON admits exact field names and validates lossless resource input.
 func (r *QueryRequest) UnmarshalJSON(data []byte) error {
 	type plain QueryRequest
 	var p plain
@@ -221,7 +240,7 @@ func queryToProto(r QueryRequest, resource bool) (*metricpb.QueryMetricsRequest,
 		Params:            r.Params,
 	}
 	if resource {
-		p.ResourceWireVersion = 2
+		p.ResourceWireVersion = ResourceWireVersion
 	}
 	if !r.StartTime.IsZero() {
 		p.StartTime = timestamppb.New(r.StartTime)
@@ -245,7 +264,7 @@ func queryToProto(r QueryRequest, resource bool) (*metricpb.QueryMetricsRequest,
 			return nil, err
 		}
 	}
-	if err = preflight(p, r.ResourceData, 11); err != nil {
+	if err = preflight(p, r.ResourceData, queryResourceDataField); err != nil {
 		return nil, err
 	}
 	if r.ResourceData != nil {
@@ -273,26 +292,11 @@ func queryFromProto(p *metricpb.QueryMetricsRequest, resource bool) (QueryReques
 	if p == nil {
 		return QueryRequest{}, metricError("INVALID_REQUEST", "Missing metric request.")
 	}
-	if err := preflight(p, nil, 11); err != nil {
+	if err := preflight(p, nil, queryResourceDataField); err != nil {
 		return QueryRequest{}, err
 	}
-	if resource && p.ResourceWireVersion != 2 {
-		return QueryRequest{}, metricError("UNSUPPORTED", "Unsupported metric resource wire version.")
-	}
-	if !resource && (p.ResourceWireVersion != 0 || p.ResourceData != nil || p.Reference != nil || p.Route != nil) {
-		return QueryRequest{}, metricError("UNSUPPORTED", "Legacy metric query cannot carry resource input.")
-	}
-	if unknown := p.ProtoReflect().GetUnknown(); len(unknown) != 0 {
-		if resource {
-			return QueryRequest{}, metricError("UNSUPPORTED", "Unknown metric request fields.")
-		}
-		if err := resourceplugin.ValidateLegacyUtilityWire(
-			unknown,
-			[]protowire.Number{4, 11, 12, 13, 14},
-			nil,
-		); err != nil {
-			return QueryRequest{}, err
-		}
+	if err := validateQueryWire(p, resource); err != nil {
+		return QueryRequest{}, err
 	}
 	r := QueryRequest{
 		ResourceKey:       p.ResourceKey,
@@ -338,6 +342,23 @@ func queryFromProto(p *metricpb.QueryMetricsRequest, resource bool) (QueryReques
 	return r, validateQuery(r, nil)
 }
 
+func validateQueryWire(p *metricpb.QueryMetricsRequest, resource bool) error {
+	if resource && p.ResourceWireVersion != ResourceWireVersion {
+		return metricError("UNSUPPORTED", "Unsupported metric resource wire version.")
+	}
+	if !resource && (p.ResourceWireVersion != 0 || p.ResourceData != nil || p.Reference != nil || p.Route != nil) {
+		return metricError("UNSUPPORTED", "Legacy metric query cannot carry resource input.")
+	}
+	unknown := p.ProtoReflect().GetUnknown()
+	if len(unknown) == 0 {
+		return nil
+	}
+	if resource {
+		return metricError("UNSUPPORTED", "Unknown metric request fields.")
+	}
+	return resourceplugin.ValidateLegacyUtilityWire(unknown, []protowire.Number{4, 11, 12, 13, 14}, nil)
+}
+
 func streamToProto(r StreamInput, resource bool) (*metricpb.MetricStreamInput, error) {
 	if err := validateStream(r); err != nil {
 		return nil, err
@@ -357,7 +378,7 @@ func streamToProto(r StreamInput, resource bool) (*metricpb.MetricStreamInput, e
 	p.Params = r.Params
 	p.CatalogRevision = r.CatalogRevision
 	if resource {
-		p.ResourceWireVersion = 2
+		p.ResourceWireVersion = ResourceWireVersion
 	}
 	var err error
 	if r.Reference != nil {
@@ -372,7 +393,7 @@ func streamToProto(r StreamInput, resource bool) (*metricpb.MetricStreamInput, e
 			return nil, err
 		}
 	}
-	if err = preflight(p, r.ResourceData, 9); err != nil {
+	if err = preflight(p, r.ResourceData, streamResourceDataField); err != nil {
 		return nil, err
 	}
 	if r.ResourceData != nil {
@@ -385,7 +406,7 @@ func streamFromProto(p *metricpb.MetricStreamInput, resource bool) (StreamInput,
 	if p == nil {
 		return StreamInput{}, metricError("INVALID_REQUEST", "Missing stream frame.")
 	}
-	if err := preflight(p, nil, 9); err != nil {
+	if err := preflight(p, nil, streamResourceDataField); err != nil {
 		return StreamInput{}, err
 	}
 	if unknown := p.ProtoReflect().GetUnknown(); len(unknown) != 0 {

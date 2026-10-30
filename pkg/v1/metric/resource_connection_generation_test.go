@@ -71,8 +71,8 @@ func metricRegistry(
 	if _, err = controller.LoadConnections(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range profiles {
-		if _, err = controller.StartConnection(context.Background(), p.ID); err != nil {
+	for i := range profiles {
+		if _, err = controller.StartConnection(context.Background(), profiles[i].ID); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -143,7 +143,7 @@ func TestMetricRouteOnlyQueryAdmission(t *testing.T) {
 	}
 	client, controller := metricRegistry(
 		t,
-		[]types.Connection{{ID: "selected", Data: map[string]interface{}{"endpoint": "configured"}}},
+		[]types.Connection{{ID: "selected", Data: map[string]any{"endpoint": "configured"}}},
 		query,
 		nil,
 	)
@@ -216,23 +216,7 @@ func TestMetricActualConnectionGenerationIsolation(t *testing.T) {
 	blocked := make(chan struct{}, 1)
 	canceled := make(chan struct{}, 1)
 	var block atomic.Bool
-	endpoint := func(value string) *httptest.Server {
-		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if value == "2" && block.Load() {
-				select {
-				case blocked <- struct{}{}:
-				default:
-				}
-				<-r.Context().Done()
-				select {
-				case canceled <- struct{}{}:
-				default:
-				}
-				return
-			}
-			_, _ = io.WriteString(w, value)
-		}))
-	}
+	endpoint := metricBlockingEndpoint(blocked, canceled, &block)
 	a, b, c := endpoint("1"), endpoint("2"), endpoint("3")
 	defer a.Close()
 	defer b.Close()
@@ -242,48 +226,7 @@ func TestMetricActualConnectionGenerationIsolation(t *testing.T) {
 		{ID: "B", Name: "actual-B", Data: map[string]any{"endpoint": b.URL}},
 	}
 	var calls atomic.Int32
-	client, controller := metricRegistry(t, profiles, func(q *QueryContext, r QueryRequest) (*QueryResponse, error) {
-		calls.Add(1)
-		if q.Connection == nil || q.Connection.ID != q.ConnectionID || q.Connection.Name != "actual-"+q.ConnectionID {
-			return nil, resourcev2.NewError("INVALID_REQUEST", "Configured profile missing.")
-		}
-		if q.ConnectionID == "A" && r.HasResourceIntent() {
-			return nil, resourcev2.NewError("INVALID_REQUEST", "Cluster input gained resource intent.")
-		}
-		pc := types.PluginContextFromContext(q.Context)
-		if pc == nil || pc.RequestID != "metric-diagnostic" {
-			return nil, resourcev2.NewError("INVALID_REQUEST", "Source context diagnostics lost.")
-		}
-		request, err := http.NewRequestWithContext(
-			q.Context,
-			http.MethodGet,
-			q.Connection.Data["endpoint"].(string),
-			nil,
-		)
-		if err != nil {
-			return nil, err
-		}
-		// The callback owns its profile snapshot, not the registry or next poll.
-		q.Connection.Name = "callback-edited"
-		q.Connection.Data["endpoint"] = "http://callback-edited.invalid"
-		response, err := http.DefaultClient.Do(request)
-		if err != nil {
-			return nil, err
-		}
-		defer response.Body.Close()
-		data, err := io.ReadAll(response.Body)
-		if err != nil {
-			return nil, err
-		}
-		value, err := strconv.ParseFloat(string(data), 64)
-		if err != nil {
-			return nil, err
-		}
-		return &QueryResponse{
-			Success: true,
-			Results: []MetricResult{{CurrentValue: &CurrentValue{MetricID: "native", Value: value}}},
-		}, nil
-	}, nil)
+	client, controller := metricRegistry(t, profiles, metricGenerationQuery(&calls), nil)
 	open := func(id string) (chan StreamInput, chan StreamOutput, context.CancelFunc) {
 		ctx, cancel := context.WithCancel(metricConnectionContext(id))
 		in := make(chan StreamInput, 4)
@@ -329,24 +272,7 @@ func TestMetricActualConnectionGenerationIsolation(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("native HTTP request survived generation replacement")
 	}
-	// Drain samples produced before replacement, but reject publication from C on the old lane.
-	deadline := time.After(5 * time.Second)
-drain:
-	for {
-		select {
-		case r, ok := <-outB:
-			if !ok {
-				break drain
-			}
-			for _, v := range r.Results {
-				if v.CurrentValue != nil && v.CurrentValue.Value == 3 {
-					t.Fatal("old lane published replacement sample")
-				}
-			}
-		case <-deadline:
-			t.Fatal("retired lane remained open")
-		}
-	}
+	metricAssertRetiredLane(t, outB, 3)
 	before := calls.Load()
 	stoppedCtx, cancelStopped := context.WithCancel(metricConnectionContext("B"))
 	defer cancelStopped()
@@ -365,6 +291,28 @@ drain:
 	subscribeB.CatalogRevision = metricPin(t, controller, "B")
 	inNew <- subscribeB
 	metricReceive(t, outNew, 3)
+}
+
+// metricAssertRetiredLane drains already-produced samples until retirement closes
+// the lane, rejecting values that could only come from the replacement generation.
+func metricAssertRetiredLane(t *testing.T, out <-chan StreamOutput, replacement float64) {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case r, ok := <-out:
+			if !ok {
+				return
+			}
+			for _, v := range r.Results {
+				if v.CurrentValue != nil && v.CurrentValue.Value == replacement {
+					t.Fatal("old lane published replacement sample")
+				}
+			}
+		case <-deadline:
+			t.Fatal("retired lane remained open")
+		}
+	}
 }
 
 func TestMetricReferenceBeforeOpenAndABARejectStaleCatalog(t *testing.T) {
@@ -400,7 +348,10 @@ func TestMetricReferenceBeforeOpenAndABARejectStaleCatalog(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		in <- StreamInput{SubscriptionID: "stale", Reference: metricReference(), Route: &resourcev2.AccessRoute{Connection: "connection"}, CatalogRevision: pin}
+		in <- StreamInput{
+			SubscriptionID: "stale", Reference: metricReference(),
+			Route: &resourcev2.AccessRoute{Connection: "connection"}, CatalogRevision: pin,
+		}
 		select {
 		case r := <-out:
 			if r.OperationError == nil || r.OperationError.Code != "RESET_REQUIRED" {
@@ -441,29 +392,7 @@ func TestMetricCustomNativeStreamUsesOwnedConfiguredProfile(t *testing.T) {
 		t,
 		profiles,
 		nil,
-		func(ctx *StreamContext, in chan StreamInput) (chan StreamOutput, error) {
-			seen <- ctx
-			out := make(chan StreamOutput)
-			go func() {
-				defer close(out)
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case r, ok := <-in:
-						if !ok {
-							return
-						}
-						select {
-						case out <- StreamOutput{SubscriptionID: r.SubscriptionID, Results: []MetricResult{{CurrentValue: &CurrentValue{Value: float64(len(ctx.ConnectionID))}}}}:
-						case <-ctx.Done():
-							return
-						}
-					}
-				}
-			}()
-			return out, nil
-		},
+		metricOwnedProfileStream(seen),
 	)
 	for _, id := range []string{"A", "B"} {
 		ctx, cancel := context.WithCancel(metricConnectionContext(id))
@@ -479,12 +408,17 @@ func TestMetricCustomNativeStreamUsesOwnedConfiguredProfile(t *testing.T) {
 		if native.ConnectionID != id || native.Connection == nil || native.Connection.Name != "configured-"+id {
 			t.Fatalf("native context lost configured profile: %+v", native)
 		}
-		native.Connection.Data["nested"].(map[string]any)["value"] = "mutated"
+		nested, ok := native.Connection.Data["nested"].(map[string]any)
+		if !ok {
+			t.Fatal("native profile lost nested data")
+		}
+		nested["value"] = "mutated"
 		stored, err := controller.GetConnection(context.Background(), id)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if stored.Data["nested"].(map[string]any)["value"] != "original" {
+		storedNested, ok := stored.Data["nested"].(map[string]any)
+		if !ok || storedNested["value"] != "original" {
 			t.Fatal("native stream profile aliases registry")
 		}
 		cancel()
@@ -500,45 +434,10 @@ func TestMetricRetiredReferenceCannotBeReusedOrPublishQueuedNativeSample(t *test
 	subscribed := make(chan struct{}, 1)
 	retired := make(chan struct{}, 1)
 	release := make(chan struct{})
-	native := func(ctx *StreamContext, in chan StreamInput) (chan StreamOutput, error) {
-		out := make(chan StreamOutput)
-		go func() {
-			defer close(out)
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case r, ok := <-in:
-					if !ok {
-						return
-					}
-					if r.Command == StreamCommandUnsubscribe {
-						retired <- struct{}{}
-						select {
-						case <-release:
-						case <-ctx.Done():
-							return
-						}
-						select {
-						case out <- StreamOutput{SubscriptionID: r.SubscriptionID, Results: []MetricResult{{CurrentValue: &CurrentValue{Value: 99}}}}:
-						case <-ctx.Done():
-							return
-						}
-					} else if r.SubscriptionID == "retired" {
-						subscribed <- struct{}{}
-					} else {
-						select {
-						case out <- StreamOutput{SubscriptionID: r.SubscriptionID, Results: []MetricResult{{CurrentValue: &CurrentValue{Value: 7}}}}:
-						case <-ctx.Done():
-							return
-						}
-					}
-				}
-			}
-		}()
-		return out, nil
-	}
-	client, controller := metricRegistry(t, []types.Connection{{ID: "connection", Data: map[string]any{}}}, nil, native)
+	native := metricRetiredSampleStream(subscribed, retired, release)
+	client, controller := metricRegistry(
+		t, []types.Connection{{ID: "connection", Data: map[string]any{}}}, nil, native,
+	)
 	ctx, cancel := context.WithCancel(metricConnectionContext("connection"))
 	defer cancel()
 	in := make(chan StreamInput, 4)
@@ -546,7 +445,12 @@ func TestMetricRetiredReferenceCannotBeReusedOrPublishQueuedNativeSample(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	in <- StreamInput{SubscriptionID: "retired", Reference: metricReference(), Route: &resourcev2.AccessRoute{Connection: "connection"}, CatalogRevision: metricPin(t, controller, "connection")}
+	in <- StreamInput{
+		SubscriptionID:  "retired",
+		Reference:       metricReference(),
+		Route:           &resourcev2.AccessRoute{Connection: "connection"},
+		CatalogRevision: metricPin(t, controller, "connection"),
+	}
 	select {
 	case <-subscribed:
 	case <-time.After(5 * time.Second):
@@ -578,30 +482,7 @@ func TestMetricStreamBoundsAllUsedSubscriptionIDsBeforeNative(t *testing.T) {
 		t,
 		[]types.Connection{{ID: "connection", Data: map[string]any{}}},
 		nil,
-		func(ctx *StreamContext, in chan StreamInput) (chan StreamOutput, error) {
-			out := make(chan StreamOutput)
-			go func() {
-				defer close(out)
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case r, ok := <-in:
-						if !ok {
-							return
-						}
-						if r.Command == StreamCommandSubscribe {
-							select {
-							case received <- r.SubscriptionID:
-							case <-ctx.Done():
-								return
-							}
-						}
-					}
-				}
-			}()
-			return out, nil
-		},
+		metricSubscriptionObserver(received),
 	)
 	ctx, cancel := context.WithCancel(metricConnectionContext("connection"))
 	defer cancel()
@@ -642,30 +523,7 @@ func TestMetricStreamBoundsRetainedMetadataBeforeNative(t *testing.T) {
 		t,
 		[]types.Connection{{ID: "connection", Data: map[string]any{}}},
 		nil,
-		func(ctx *StreamContext, in chan StreamInput) (chan StreamOutput, error) {
-			out := make(chan StreamOutput)
-			go func() {
-				defer close(out)
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case r, ok := <-in:
-						if !ok {
-							return
-						}
-						if r.Command == StreamCommandSubscribe {
-							select {
-							case received <- r.SubscriptionID:
-							case <-ctx.Done():
-								return
-							}
-						}
-					}
-				}
-			}()
-			return out, nil
-		},
+		metricSubscriptionObserver(received),
 	)
 	ctx, cancel := context.WithCancel(metricConnectionContext("connection"))
 	defer cancel()
@@ -707,6 +565,7 @@ func TestMetricStreamBoundsRetainedMetadataBeforeNative(t *testing.T) {
 
 type metricObservedConnectionProvider struct {
 	*resourcev2.Controller[string]
+
 	released chan error
 }
 
@@ -772,5 +631,193 @@ func TestMetricDirectManagerNativeOutputCloseReleasesConnectionLease(t *testing.
 	case <-(<-nativeContext).Done():
 	case <-time.After(time.Second):
 		t.Fatal("completed native stream context remained live")
+	}
+}
+
+// metricBlockingEndpoint models native polling that must stop with its request.
+func metricBlockingEndpoint(blocked, canceled chan struct{}, block *atomic.Bool) func(string) *httptest.Server {
+	return func(value string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if value == "2" && block.Load() {
+				select {
+				case blocked <- struct{}{}:
+				default:
+				}
+				<-r.Context().Done()
+				select {
+				case canceled <- struct{}{}:
+				default:
+				}
+				return
+			}
+			_, _ = io.WriteString(w, value)
+		}))
+	}
+}
+
+func metricGenerationQuery(calls *atomic.Int32) QueryFunc {
+	return func(q *QueryContext, r QueryRequest) (*QueryResponse, error) {
+		calls.Add(1)
+		if q.Connection == nil || q.Connection.ID != q.ConnectionID || q.Connection.Name != "actual-"+q.ConnectionID {
+			return nil, resourcev2.NewError("INVALID_REQUEST", "Configured profile missing.")
+		}
+		if q.ConnectionID == "A" && r.HasResourceIntent() {
+			return nil, resourcev2.NewError("INVALID_REQUEST", "Cluster input gained resource intent.")
+		}
+		pc := types.PluginContextFromContext(q.Context)
+		if pc == nil || pc.RequestID != "metric-diagnostic" {
+			return nil, resourcev2.NewError("INVALID_REQUEST", "Source context diagnostics lost.")
+		}
+		endpoint, ok := q.Connection.Data["endpoint"].(string)
+		if !ok {
+			return nil, resourcev2.NewError("INVALID_REQUEST", "Configured endpoint missing.")
+		}
+		request, err := http.NewRequestWithContext(q.Context, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+		// The callback owns its profile snapshot, not the registry or next poll.
+		q.Connection.Name = "callback-edited"
+		q.Connection.Data["endpoint"] = "http://callback-edited.invalid"
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			return nil, err
+		}
+		defer response.Body.Close()
+		data, err := io.ReadAll(response.Body)
+		if err != nil {
+			return nil, err
+		}
+		value, err := strconv.ParseFloat(string(data), 64)
+		if err != nil {
+			return nil, err
+		}
+		return &QueryResponse{
+			Success: true,
+			Results: []MetricResult{{CurrentValue: &CurrentValue{MetricID: "native", Value: value}}},
+		}, nil
+	}
+}
+
+func metricOwnedProfileStream(seen chan *StreamContext) StreamFunc {
+	return func(ctx *StreamContext, in chan StreamInput) (chan StreamOutput, error) {
+		seen <- ctx
+		out := make(chan StreamOutput)
+		go func() {
+			defer close(out)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case r, ok := <-in:
+					if !ok {
+						return
+					}
+					sample := StreamOutput{
+						SubscriptionID: r.SubscriptionID,
+						Results: []MetricResult{
+							{CurrentValue: &CurrentValue{Value: float64(len(ctx.ConnectionID))}},
+						},
+					}
+					select {
+					case out <- sample:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}()
+		return out, nil
+	}
+}
+
+func metricSubscriptionObserver(received chan string) StreamFunc {
+	return func(ctx *StreamContext, in chan StreamInput) (chan StreamOutput, error) {
+		out := make(chan StreamOutput)
+		go observeMetricSubscriptions(ctx, in, received, out)
+		return out, nil
+	}
+}
+
+func observeMetricSubscriptions(
+	ctx *StreamContext,
+	in <-chan StreamInput,
+	received chan<- string,
+	out chan<- StreamOutput,
+) {
+	defer close(out)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case r, ok := <-in:
+			if !ok {
+				return
+			}
+			if r.Command != StreamCommandSubscribe {
+				continue
+			}
+			select {
+			case received <- r.SubscriptionID:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
+}
+
+// metricRetiredSampleStream queues stale output until the test releases retirement.
+func metricRetiredSampleStream(subscribed, retired, release chan struct{}) StreamFunc {
+	return func(ctx *StreamContext, in chan StreamInput) (chan StreamOutput, error) {
+		out := make(chan StreamOutput)
+		go func() {
+			defer close(out)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case r, ok := <-in:
+					if !ok {
+						return
+					}
+					if !metricHandleRetiredSample(ctx, r, out, subscribed, retired, release) {
+						return
+					}
+				}
+			}
+		}()
+		return out, nil
+	}
+}
+
+func metricHandleRetiredSample(
+	ctx *StreamContext,
+	r StreamInput,
+	out chan StreamOutput,
+	subscribed, retired, release chan struct{},
+) bool {
+	value := float64(7)
+	switch {
+	case r.Command == StreamCommandUnsubscribe:
+		retired <- struct{}{}
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return false
+		}
+		value = 99
+	case r.SubscriptionID == "retired":
+		subscribed <- struct{}{}
+		return true
+	}
+	sample := StreamOutput{
+		SubscriptionID: r.SubscriptionID,
+		Results:        []MetricResult{{CurrentValue: &CurrentValue{Value: value}}},
+	}
+	select {
+	case out <- sample:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }

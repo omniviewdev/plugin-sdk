@@ -64,8 +64,8 @@ func pluginCallContext(pc *types.PluginContext) context.Context {
 	if pc == nil {
 		pc = &types.PluginContext{}
 	} else {
-		copy := *pc
-		pc = &copy
+		snapshot := *pc
+		pc = &snapshot
 	}
 	if pc.Context != nil {
 		ctx = pc.Context
@@ -113,7 +113,7 @@ func (c *PluginClient) QueryResource(ctx *types.PluginContext, r QueryRequest) (
 	if err != nil {
 		return nil, metricDomainError(err)
 	}
-	if response.ResourceWireVersion != 2 || response.Response == nil {
+	if response.ResourceWireVersion != ResourceWireVersion || response.Response == nil {
 		return nil, metricError("UNSUPPORTED", "Unsupported metric query response.")
 	}
 	return QueryResponseFromProto(response.Response), nil
@@ -168,8 +168,11 @@ func (c *PluginClient) StreamResourceMetrics(ctx context.Context, in chan Stream
 		cancel()
 		return nil, metricDomainError(err)
 	}
-	timer := time.AfterFunc(5*time.Second, cancel)
-	if err = stream.Send(&metricpb.MetricStreamInput{ResourceWireVersion: 2, ResourceOpen: true}); err != nil {
+	timer := time.AfterFunc(metricStreamReadyTimeout, cancel)
+	if err = stream.Send(&metricpb.MetricStreamInput{
+		ResourceWireVersion: ResourceWireVersion,
+		ResourceOpen:        true,
+	}); err != nil {
 		timer.Stop()
 		cancel()
 		return nil, metricDomainError(err)
@@ -184,7 +187,7 @@ func (c *PluginClient) StreamResourceMetrics(ctx context.Context, in chan Stream
 		cancel()
 		return nil, metricDomainError(err)
 	}
-	if ack.ResourceWireVersion != 2 || !ack.GetReady() {
+	if ack.ResourceWireVersion != ResourceWireVersion || !ack.GetReady() {
 		cancel()
 		return nil, metricError("INVALID_REQUEST", "Missing metric stream readiness acknowledgement.")
 	}
@@ -196,11 +199,99 @@ func (c *PluginClient) StreamResourceMetrics(ctx context.Context, in chan Stream
 		if e != nil {
 			return StreamOutput{}, e
 		}
-		if p.ResourceWireVersion != 2 || p.GetOutput() == nil {
+		if p.ResourceWireVersion != ResourceWireVersion || p.GetOutput() == nil {
 			return StreamOutput{}, metricError("INVALID_REQUEST", "Invalid metric stream output frame.")
 		}
 		return outputFromProto(p.GetOutput()), nil
 	}, stream.CloseSend), nil
+}
+
+const metricStreamReadyTimeout = 5 * time.Second
+
+type metricSendFailure struct {
+	err            error
+	subscriptionID string
+}
+
+type metricReceiveResult struct {
+	output StreamOutput
+	err    error
+}
+
+func sendMetricInputs(
+	ctx context.Context,
+	in <-chan StreamInput,
+	resource bool,
+	send func(*metricpb.MetricStreamInput) error,
+	closeSend func() error,
+	failure chan<- metricSendFailure,
+) {
+	// CloseSend only ends the send direction; receive errors remain authoritative.
+	defer func() { _ = closeSend() }()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case r, ok := <-in:
+			if !ok {
+				return
+			}
+			p, err := streamToProto(r, resource)
+			if err == nil {
+				err = send(p)
+			}
+			if err == nil {
+				continue
+			}
+			id := r.SubscriptionID
+			if resourcev2.ValidateMetadata(struct{ ID string }{id}) != nil {
+				id = ""
+			}
+			select {
+			case failure <- metricSendFailure{err: err, subscriptionID: id}:
+			case <-ctx.Done():
+			}
+			return
+		}
+	}
+}
+
+func receiveMetricOutputs(
+	ctx context.Context,
+	recv func() (StreamOutput, error),
+	received chan<- metricReceiveResult,
+) {
+	for {
+		r, err := recv()
+		select {
+		case received <- metricReceiveResult{r, err}:
+		case <-ctx.Done():
+			return
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+func publishMetricStreamError(ctx context.Context, out chan<- StreamOutput, id string, err error) {
+	err = metricDomainError(err)
+	var operation *resourcev2.ResourceOperationError
+	if !errors.As(err, &operation) {
+		operation = &resourcev2.ResourceOperationError{
+			Code:    "INTERNAL",
+			Message: "Metric stream transport failed.",
+		}
+	}
+	if operation.Message == "" {
+		snapshot := *operation
+		snapshot.Message = "Metric stream operation failed."
+		operation = &snapshot
+	}
+	select {
+	case out <- StreamOutput{SubscriptionID: id, OperationError: operation}:
+	case <-ctx.Done():
+	}
 }
 
 func clientStream(
@@ -212,91 +303,25 @@ func clientStream(
 	recv func() (StreamOutput, error),
 	closeSend func() error,
 ) chan StreamOutput {
-	type sendFailure struct {
-		err            error
-		subscriptionID string
-	}
 	out := make(chan StreamOutput)
-	failure := make(chan sendFailure, 1)
-	go func() {
-		defer closeSend()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case r, ok := <-in:
-				if !ok {
-					return
-				}
-				p, err := streamToProto(r, resource)
-				if err == nil {
-					err = send(p)
-				}
-				if err != nil {
-					id := r.SubscriptionID
-					if resourcev2.ValidateMetadata(struct{ ID string }{id}) != nil {
-						id = ""
-					}
-					select {
-					case failure <- sendFailure{err: err, subscriptionID: id}:
-					case <-ctx.Done():
-					}
-					return
-				}
-			}
-		}
-	}()
-	type result struct {
-		output StreamOutput
-		err    error
-	}
-	received := make(chan result)
-	go func() {
-		for {
-			r, e := recv()
-			select {
-			case received <- result{r, e}:
-			case <-ctx.Done():
-				return
-			}
-			if e != nil {
-				return
-			}
-		}
-	}()
+	failure := make(chan metricSendFailure, 1)
+	received := make(chan metricReceiveResult)
+	go sendMetricInputs(ctx, in, resource, send, closeSend, failure)
+	go receiveMetricOutputs(ctx, recv, received)
 	go func() {
 		defer close(out)
 		defer cancel()
-		publishError := func(id string, err error) {
-			err = metricDomainError(err)
-			var operation *resourcev2.ResourceOperationError
-			if !errors.As(err, &operation) {
-				operation = &resourcev2.ResourceOperationError{
-					Code:    "INTERNAL",
-					Message: "Metric stream transport failed.",
-				}
-			}
-			if operation.Message == "" {
-				copy := *operation
-				copy.Message = "Metric stream operation failed."
-				operation = &copy
-			}
-			select {
-			case out <- StreamOutput{SubscriptionID: id, OperationError: operation}:
-			case <-ctx.Done():
-			}
-		}
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case e := <-failure:
-				publishError(e.subscriptionID, e.err)
+				publishMetricStreamError(ctx, out, e.subscriptionID, e.err)
 				return
 			case r := <-received:
 				if r.err != nil {
-					if r.err != io.EOF {
-						publishError("", r.err)
+					if !errors.Is(r.err, io.EOF) {
+						publishMetricStreamError(ctx, out, "", r.err)
 					}
 					return
 				}

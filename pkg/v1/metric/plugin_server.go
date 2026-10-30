@@ -35,9 +35,9 @@ func metricPluginContext(ctx context.Context) *types.PluginContext {
 	if pc == nil {
 		return &types.PluginContext{Context: ctx}
 	}
-	copy := *pc
-	copy.Context = ctx
-	return &copy
+	snapshot := *pc
+	snapshot.Context = ctx
+	return &snapshot
 }
 
 // Query decodes a legacy query and preserves provider error classification.
@@ -86,7 +86,10 @@ func (s *PluginServer) QueryResource(
 	if err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
-	return &metricpb.ResourceQueryMetricsResponse{ResourceWireVersion: 2, Response: response.ToProto()}, nil
+	return &metricpb.ResourceQueryMetricsResponse{
+		ResourceWireVersion: ResourceWireVersion,
+		Response:            response.ToProto(),
+	}, nil
 }
 
 func streamOutputToProto(r StreamOutput) *metricpb.MetricStreamOutput {
@@ -126,20 +129,21 @@ func (s *PluginServer) StreamResourceMetrics(stream metricpb.MetricPlugin_Stream
 	if err != nil {
 		return err
 	}
-	if p.ResourceWireVersion != 2 || !p.ResourceOpen || proto.Size(p) != 4 {
+	const resourceOpenFrameBytes = 4
+	if p.ResourceWireVersion != ResourceWireVersion || !p.ResourceOpen || proto.Size(p) != resourceOpenFrameBytes {
 		return resourceplugin.ResourceRPCError(metricError("INVALID_REQUEST", "Expected resource stream open frame."))
 	}
 	return s.serveStream(stream.Context(), true, stream.Recv, func(output StreamOutput) error {
 		return stream.Send(
 			&metricpb.ResourceMetricStreamOutput{
-				ResourceWireVersion: 2,
+				ResourceWireVersion: ResourceWireVersion,
 				Payload:             &metricpb.ResourceMetricStreamOutput_Output{Output: streamOutputToProto(output)},
 			},
 		)
 	}, func() error {
 		return stream.Send(
 			&metricpb.ResourceMetricStreamOutput{
-				ResourceWireVersion: 2,
+				ResourceWireVersion: ResourceWireVersion,
 				Payload:             &metricpb.ResourceMetricStreamOutput_Ready{Ready: true},
 			},
 		)
@@ -160,17 +164,7 @@ func (s *PluginServer) serveStream(
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	in := make(chan StreamInput)
-	var out chan StreamOutput
-	var err error
-	if resource {
-		impl, ok := s.Impl.(ResourceStreamProvider)
-		if !ok {
-			return resourceplugin.ResourceRPCError(metricError("UNSUPPORTED", "Resource metric stream is unsupported."))
-		}
-		out, err = impl.StreamResourceMetrics(ctx, in)
-	} else {
-		out, err = s.Impl.StreamMetrics(ctx, in)
-	}
+	out, err := s.openMetricStream(ctx, resource, in)
 	if err != nil {
 		return resourceplugin.ResourceRPCError(err)
 	}
@@ -180,39 +174,7 @@ func (s *PluginServer) serveStream(
 		}
 	}
 	failures := make(chan error, 1)
-	go func() {
-		defer close(in)
-		for {
-			p, e := recv()
-			if e != nil {
-				failures <- e
-				return
-			}
-			r, e := streamFromProto(p, resource)
-			if e != nil {
-				failures <- resourceplugin.ResourceRPCError(e)
-				return
-			}
-			pc := types.PluginContextFromContext(ctx)
-			if e = validateQuery(
-				QueryRequest{
-					ResourceKey:  r.ResourceKey,
-					ResourceData: r.ResourceData,
-					Reference:    r.Reference,
-					Route:        r.Route,
-				},
-				pc,
-			); e != nil {
-				failures <- resourceplugin.ResourceRPCError(e)
-				return
-			}
-			select {
-			case in <- r:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	go receiveMetricInputs(ctx, resource, recv, in, failures)
 	for {
 		select {
 		case <-ctx.Done():
@@ -229,6 +191,56 @@ func (s *PluginServer) serveStream(
 			if err = send(r); err != nil {
 				return err
 			}
+		}
+	}
+}
+
+func (s *PluginServer) openMetricStream(
+	ctx context.Context,
+	resource bool,
+	in chan StreamInput,
+) (chan StreamOutput, error) {
+	if !resource {
+		return s.Impl.StreamMetrics(ctx, in)
+	}
+	impl, ok := s.Impl.(ResourceStreamProvider)
+	if !ok {
+		return nil, metricError("UNSUPPORTED", "Resource metric stream is unsupported.")
+	}
+	return impl.StreamResourceMetrics(ctx, in)
+}
+
+func receiveMetricInputs(
+	ctx context.Context,
+	resource bool,
+	recv func() (*metricpb.MetricStreamInput, error),
+	in chan<- StreamInput,
+	failures chan<- error,
+) {
+	defer close(in)
+	for {
+		p, err := recv()
+		if err != nil {
+			failures <- err
+			return
+		}
+		r, err := streamFromProto(p, resource)
+		if err == nil {
+			err = validateQuery(QueryRequest{
+				ResourceKey:  r.ResourceKey,
+				ResourceData: r.ResourceData,
+				Reference:    r.Reference,
+				Route:        r.Route,
+			}, types.PluginContextFromContext(ctx))
+		}
+		if err != nil {
+			failures <- resourceplugin.ResourceRPCError(err)
+			return
+		}
+		select {
+		case in <- r:
+		case <-ctx.Done():
+			return
 		}
 	}
 }

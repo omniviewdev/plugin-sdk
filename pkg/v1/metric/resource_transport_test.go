@@ -2,10 +2,12 @@ package metric
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"io"
 	"math"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -57,8 +59,17 @@ func TestMetricQueryHandlerRejectsInvalidDispatchTypes(t *testing.T) {
 func metricPipe(t *testing.T, s *grpc.Server) *grpc.ClientConn {
 	t.Helper()
 	l := bufconn.Listen(1 << 20)
-	go s.Serve(l)
-	t.Cleanup(func() { s.Stop(); l.Close() })
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- s.Serve(l) }()
+	t.Cleanup(func() {
+		s.Stop()
+		if err := l.Close(); err != nil {
+			t.Errorf("close metric listener: %v", err)
+		}
+		if err := <-serveDone; err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			t.Errorf("serve metric fixture: %v", err)
+		}
+	})
 	options := append(
 		sdk.GRPCDialOptions(),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -68,7 +79,11 @@ func metricPipe(t *testing.T, s *grpc.Server) *grpc.ClientConn {
 	if e != nil {
 		t.Fatal(e)
 	}
-	t.Cleanup(func() { c.Close() })
+	t.Cleanup(func() {
+		if err := c.Close(); err != nil {
+			t.Errorf("close metric client: %v", err)
+		}
+	})
 	return c
 }
 
@@ -115,7 +130,7 @@ func assertMetricBody(t *testing.T, want, got *resourcev2.Value) {
 
 func TestMetricResourceActualGRPCQueryAndPolling(t *testing.T) {
 	for _, size := range []int{0, 3 << 20} {
-		t.Run(fmt.Sprint(size), func(t *testing.T) {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
 			seen := make(chan QueryRequest, 4)
 			contexts := make(chan context.Context, 4)
 			c, registry := metricRegistry(
@@ -153,38 +168,56 @@ func TestMetricResourceActualGRPCQueryAndPolling(t *testing.T) {
 				t.Fatal("reference or route changed")
 			}
 			<-contexts
-			ctx, cancel := context.WithCancel(metricConnectionContext("connection"))
-			in := make(chan StreamInput, 1)
-			out, e := c.StreamResourceMetrics(ctx, in)
-			if e != nil {
-				t.Fatal(e)
-			}
-			in <- StreamInput{SubscriptionID: "resource", ResourceKey: req.ResourceKey, ResourceData: body, Reference: reference, Route: route, CatalogRevision: pin, Interval: time.Hour}
-			select {
-			case r = <-seen:
-			case <-time.After(5 * time.Second):
-				t.Fatal("poll did not reach query callback")
-			}
-			assertMetricBody(t, body, r.ResourceData)
-			if !reflect.DeepEqual(r.Reference, reference) || !reflect.DeepEqual(r.Route, route) {
-				t.Fatal("poll lost resource target")
-			}
-			callbackCtx := <-contexts
-			select {
-			case output := <-out:
-				if output.OperationError != nil {
-					t.Fatal(output.OperationError)
-				}
-			case <-time.After(5 * time.Second):
-				t.Fatal("missing poll output")
-			}
-			cancel()
-			select {
-			case <-callbackCtx.Done():
-			case <-time.After(time.Second):
-				t.Fatal("callback context not cancelled")
-			}
+			metricAssertResourcePolling(t, c, seen, contexts, req, pin)
 		})
+	}
+}
+
+func metricAssertResourcePolling(
+	t *testing.T,
+	c *PluginClient,
+	seen chan QueryRequest,
+	contexts chan context.Context,
+	req QueryRequest,
+	pin string,
+) {
+	t.Helper()
+	body, reference, route := req.ResourceData, req.Reference, req.Route
+	var r QueryRequest
+	ctx, cancel := context.WithCancel(metricConnectionContext("connection"))
+	defer cancel()
+	in := make(chan StreamInput, 1)
+	out, e := c.StreamResourceMetrics(ctx, in)
+	if e != nil {
+		t.Fatal(e)
+	}
+	in <- StreamInput{
+		SubscriptionID: "resource", ResourceKey: req.ResourceKey, ResourceData: body,
+		Reference: reference, Route: route, CatalogRevision: pin, Interval: time.Hour,
+	}
+	select {
+	case r = <-seen:
+	case <-time.After(5 * time.Second):
+		t.Fatal("poll did not reach query callback")
+	}
+	assertMetricBody(t, body, r.ResourceData)
+	if !reflect.DeepEqual(r.Reference, reference) || !reflect.DeepEqual(r.Route, route) {
+		t.Fatal("poll lost resource target")
+	}
+	callbackCtx := <-contexts
+	select {
+	case output := <-out:
+		if output.OperationError != nil {
+			t.Fatal(output.OperationError)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("missing poll output")
+	}
+	cancel()
+	select {
+	case <-callbackCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("callback context not cancelled")
 	}
 }
 
@@ -213,7 +246,9 @@ func TestMetricClusterNonresourceQueryAndStream(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		in <- StreamInput{SubscriptionID: fmt.Sprint(modern), ResourceKey: "cluster::metrics", Interval: time.Hour}
+		in <- StreamInput{
+			SubscriptionID: strconv.FormatBool(modern), ResourceKey: "cluster::metrics", Interval: time.Hour,
+		}
 		select {
 		case r := <-seen:
 			if r.HasResourceIntent() {
@@ -233,6 +268,7 @@ func TestMetricClusterNonresourceQueryAndStream(t *testing.T) {
 
 type oldMetricServer struct {
 	metricpb.UnimplementedMetricPluginServer
+
 	calls atomic.Int32
 }
 
@@ -292,7 +328,14 @@ func TestMetricMalformedRequestsBeforeNativeDispatch(t *testing.T) {
 		t,
 		func(*QueryContext, QueryRequest) (*QueryResponse, error) { calls.Add(1); return &QueryResponse{}, nil },
 	)
-	for _, data := range [][]byte{metricBytes(4, nil), append(metricVarint(12, 2), metricVarint(12, 2)...), append(metricVarint(12, 2), metricBytes(11, append(metricVarint(2, 1), metricVarint(2, 0)...))...)} {
+	for _, data := range [][]byte{
+		metricBytes(4, nil),
+		append(metricVarint(12, 2), metricVarint(12, 2)...),
+		append(
+			metricVarint(12, 2),
+			metricBytes(11, append(metricVarint(2, 1), metricVarint(2, 0)...))...,
+		),
+	} {
 		var response metricpb.ResourceQueryMetricsResponse
 		e := conn.Invoke(
 			context.Background(),
@@ -319,12 +362,16 @@ func TestMetricMalformedRequestsBeforeNativeDispatch(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		_ = stream.SendMsg(&metricpb.MetricStreamInput{})
+		if sendErr := stream.SendMsg(&metricpb.MetricStreamInput{}); sendErr != nil && !errors.Is(sendErr, io.EOF) {
+			t.Fatal(sendErr)
+		}
 		var response metricpb.ResourceMetricStreamOutput
 		if e = stream.RecvMsg(&response); e == nil {
 			t.Fatal("duplicate stream version admitted")
 		}
-		stream.CloseSend()
+		if closeErr := stream.CloseSend(); closeErr != nil {
+			t.Fatal(closeErr)
+		}
 	}
 	if calls.Load() != 0 {
 		t.Fatal("malformed resource reached native query")
@@ -358,7 +405,10 @@ func (malformedMetricServer) StreamResourceMetrics(stream metricpb.MetricPlugin_
 }
 
 func TestMetricMalformedResponsesBeforeDecode(t *testing.T) {
-	for _, data := range [][]byte{append(metricVarint(1, 2), metricVarint(1, 2)...), append(metricVarint(1, 2), append(metricVarint(3, 1), metricBytes(2, nil)...)...)} {
+	for _, data := range [][]byte{
+		append(metricVarint(1, 2), metricVarint(1, 2)...),
+		append(metricVarint(1, 2), append(metricVarint(3, 1), metricBytes(2, nil)...)...),
+	} {
 		s := grpc.NewServer(
 			append(resourceplugin.ServerOptions(), grpc.ForceServerCodecV2(metricRawCodec{data: data}))...)
 		metricpb.RegisterMetricPluginServer(s, malformedMetricServer{})
@@ -389,7 +439,9 @@ func TestMetricLegacyResourceFrameRejectsBeforeNative(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	stream.SendMsg(&metricpb.MetricStreamInput{})
+	if sendErr := stream.SendMsg(&metricpb.MetricStreamInput{}); sendErr != nil && !errors.Is(sendErr, io.EOF) {
+		t.Fatal(sendErr)
+	}
 	var response metricpb.MetricStreamOutput
 	if e = stream.RecvMsg(&response); e == nil {
 		t.Fatal("legacy admitted canonical fields")

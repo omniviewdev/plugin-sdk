@@ -3,10 +3,11 @@ package metric
 import (
 	"context"
 
-	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
-	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protowire"
+
+	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
+	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 )
 
 func legacyQueryWire(data []byte) error {

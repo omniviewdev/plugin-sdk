@@ -76,35 +76,36 @@ type MetricUnit int
 
 const (
 	// UnitNone denotes a dimensionless value.
-	UnitNone        MetricUnit = 0
+	UnitNone MetricUnit = 0
 	// UnitBytes measures bytes.
-	UnitBytes       MetricUnit = 1
+	UnitBytes MetricUnit = 1
 	// UnitKB measures kilobytes.
-	UnitKB          MetricUnit = 2
+	UnitKB MetricUnit = 2
 	// UnitMB measures megabytes.
-	UnitMB          MetricUnit = 3
+	UnitMB MetricUnit = 3
 	// UnitGB measures gigabytes.
-	UnitGB          MetricUnit = 4
+	UnitGB MetricUnit = 4
 	// UnitPercentage measures percentages.
-	UnitPercentage  MetricUnit = 5
+	UnitPercentage MetricUnit = 5
 	// UnitMillis measures milliseconds.
-	UnitMillis      MetricUnit = 6
+	UnitMillis MetricUnit = 6
 	// UnitSeconds measures seconds.
-	UnitSeconds     MetricUnit = 7
+	UnitSeconds MetricUnit = 7
 	// UnitCount measures discrete occurrences.
-	UnitCount       MetricUnit = 8
+	UnitCount MetricUnit = 8
 	// UnitOpsPerSec measures operations per second.
-	UnitOpsPerSec   MetricUnit = 9
+	UnitOpsPerSec MetricUnit = 9
 	// UnitBytesPerSec measures byte throughput.
 	UnitBytesPerSec MetricUnit = 10
 	// UnitMillicores measures thousandths of a CPU core.
-	UnitMillicores  MetricUnit = 11
+	UnitMillicores MetricUnit = 11
 	// UnitCores measures CPU cores.
-	UnitCores       MetricUnit = 12
+	UnitCores MetricUnit = 12
 )
 
 // ToProto converts the unit to the int32 wire enum. Out-of-range ints truncate.
 func (u MetricUnit) ToProto() metricpb.MetricUnit {
+	//nolint:gosec // Preserve legacy int32 truncation without changing the exported int-backed enum ABI.
 	return metricpb.MetricUnit(u)
 }
 
@@ -118,15 +119,16 @@ type MetricShape int
 
 const (
 	// ShapeCurrent requests the latest value.
-	ShapeCurrent    MetricShape = 0
+	ShapeCurrent MetricShape = 0
 	// ShapeTimeseries requests timestamped samples.
 	ShapeTimeseries MetricShape = 1
 	// ShapeAggregate requests a statistical window.
-	ShapeAggregate  MetricShape = 2
+	ShapeAggregate MetricShape = 2
 )
 
 // ToProto converts the shape to the int32 wire enum. Out-of-range ints truncate.
 func (s MetricShape) ToProto() metricpb.MetricShape {
+	//nolint:gosec // Preserve legacy int32 truncation without changing the exported int-backed enum ABI.
 	return metricpb.MetricShape(s)
 }
 
@@ -140,15 +142,16 @@ type MetricStreamCommand int
 
 const (
 	// StreamCommandSubscribe starts a subscription within its owning lane.
-	StreamCommandSubscribe   MetricStreamCommand = 0
+	StreamCommandSubscribe MetricStreamCommand = 0
 	// StreamCommandUnsubscribe retires a subscription within its owning lane.
 	StreamCommandUnsubscribe MetricStreamCommand = 1
 	// StreamCommandClose retires the addressed subscription, not other lanes.
-	StreamCommandClose       MetricStreamCommand = 2
+	StreamCommandClose MetricStreamCommand = 2
 )
 
 // ToProto converts the command to the int32 wire enum. Out-of-range ints truncate.
 func (c MetricStreamCommand) ToProto() metricpb.MetricStreamCommand {
+	//nolint:gosec // Preserve legacy int32 truncation without changing the exported int-backed enum ABI.
 	return metricpb.MetricStreamCommand(c)
 }
 
@@ -430,11 +433,12 @@ type MetricResult struct {
 // ToProto encodes the first present result in series, current, aggregate order.
 func (r *MetricResult) ToProto() *metricpb.MetricResult {
 	result := &metricpb.MetricResult{}
-	if r.TimeSeries != nil {
+	switch {
+	case r.TimeSeries != nil:
 		result.Result = &metricpb.MetricResult_TimeSeries{TimeSeries: r.TimeSeries.ToProto()}
-	} else if r.CurrentValue != nil {
+	case r.CurrentValue != nil:
 		result.Result = &metricpb.MetricResult_CurrentValue{CurrentValue: r.CurrentValue.ToProto()}
-	} else if r.AggregateValue != nil {
+	case r.AggregateValue != nil:
 		result.Result = &metricpb.MetricResult_AggregateValue{AggregateValue: r.AggregateValue.ToProto()}
 	}
 	return result
@@ -541,15 +545,17 @@ type StreamOutput struct {
 // plus connection information passed via gRPC metadata.
 type QueryContext struct {
 	context.Context `json:"-"`
-	PluginID        string
-	ConnectionID    string
-	Connection      *types.Connection
+
+	PluginID     string
+	ConnectionID string
+	Connection   *types.Connection
 }
 
 // StreamContext provides context for metric streams.
 type StreamContext struct {
-	PluginID        string
 	context.Context `json:"-"`
-	ConnectionID    string
-	Connection      *types.Connection
+
+	PluginID     string
+	ConnectionID string
+	Connection   *types.Connection
 }

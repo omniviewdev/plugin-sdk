@@ -3,6 +3,7 @@ package metric
 import (
 	"context"
 	"errors"
+	"maps"
 
 	"github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
@@ -36,6 +37,7 @@ type ResourceStreamProvider interface {
 // Plugin implements the hashicorp go-plugin interfaces for metric capability.
 type Plugin struct {
 	plugin.Plugin
+
 	Impl Provider
 }
 
@@ -58,7 +60,7 @@ func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
-) (interface{}, error) {
+) (any, error) {
 	return &PluginClient{
 		client: metricpb.NewMetricPluginClient(c),
 		log:    logging.Default().Named("metric.plugin.client"),
@@ -74,10 +76,7 @@ func RegisterPlugin(
 		return errors.New("plugin is nil")
 	}
 
-	handlers := make(map[string]Handler)
-	for key, handler := range opts.Handlers {
-		handlers[key] = handler
-	}
+	handlers := maps.Clone(opts.Handlers)
 
 	impl := NewManager(
 		p.Log.Named("metric"),

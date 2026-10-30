@@ -30,30 +30,7 @@ func TestMetricNativeMixedStreamAndControl(t *testing.T) {
 		ProviderInfo{},
 		nil,
 		nil,
-		func(ctx *StreamContext, in chan StreamInput) (chan StreamOutput, error) {
-			contexts <- ctx.Context
-			out := make(chan StreamOutput)
-			go func() {
-				defer close(out)
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					case r, ok := <-in:
-						if !ok {
-							return
-						}
-						received <- r
-						select {
-						case out <- StreamOutput{SubscriptionID: r.SubscriptionID}:
-						case <-ctx.Done():
-							return
-						}
-					}
-				}
-			}()
-			return out, nil
-		},
+		metricControlStream(received, contexts),
 	)
 	s := grpc.NewServer(resourceplugin.ServerOptions()...)
 	RegisterMetricPluginServer(s, &PluginServer{Impl: m})
@@ -114,8 +91,7 @@ func TestMetricTypedQueryAndPollingFailure(t *testing.T) {
 	if resourcev2.ErrorCode(e) != "FORBIDDEN" {
 		t.Fatalf("query error lost type: %v", e)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	in := make(chan StreamInput, 1)
 	out, e := c.StreamResourceMetrics(ctx, in)
 	if e != nil {
@@ -133,7 +109,13 @@ func TestMetricTypedQueryAndPollingFailure(t *testing.T) {
 }
 
 func TestMetricStrictJSONAndTrustedRoute(t *testing.T) {
-	for _, data := range []string{`null`, `{"resource_data":{"kind":"int64","value":9007199254740993}}`, `{"resource_key":"a","resource_key":"b"}`, `{"unknown":1}`, `{"resource_data":{"kind":"map","value":{},"value":{}}}`} {
+	for _, data := range []string{
+		`null`,
+		`{"resource_data":{"kind":"int64","value":9007199254740993}}`,
+		`{"resource_key":"a","resource_key":"b"}`,
+		`{"unknown":1}`,
+		`{"resource_data":{"kind":"map","value":{},"value":{}}}`,
+	} {
 		var r QueryRequest
 		if json.Unmarshal([]byte(data), &r) == nil {
 			t.Fatalf("invalid JSON accepted: %s", data)
@@ -169,7 +151,9 @@ type malformedMetricAfterReady struct {
 	metricpb.UnimplementedMetricPluginServer
 }
 
-func (malformedMetricAfterReady) StreamResourceMetrics(stream metricpb.MetricPlugin_StreamResourceMetricsServer) error {
+func (malformedMetricAfterReady) StreamResourceMetrics(
+	stream metricpb.MetricPlugin_StreamResourceMetricsServer,
+) error {
 	if _, e := stream.Recv(); e != nil {
 		return e
 	}
@@ -194,8 +178,7 @@ func TestMetricMalformedStreamOutputAfterReady(t *testing.T) {
 		append(resourceplugin.ServerOptions(), grpc.ForceServerCodecV2(malformedMetricOutputCodec{}))...)
 	metricpb.RegisterMetricPluginServer(s, malformedMetricAfterReady{})
 	c := &PluginClient{client: metricpb.NewMetricPluginClient(metricPipe(t, s))}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	out, e := c.StreamResourceMetrics(ctx, make(chan StreamInput))
 	if e != nil {
 		t.Fatal(e)
@@ -223,8 +206,8 @@ func TestMetricMalformedStreamInputAfterReady(t *testing.T) {
 	if e = stream.Send(&metricpb.MetricStreamInput{ResourceWireVersion: 2, ResourceOpen: true}); e != nil {
 		t.Fatal(e)
 	}
-	if ack, e := stream.Recv(); e != nil || !ack.GetReady() {
-		t.Fatalf("handshake: %v %v", ack, e)
+	if ack, recvErr := stream.Recv(); recvErr != nil || !ack.GetReady() {
+		t.Fatalf("handshake: %v %v", ack, recvErr)
 	}
 	p := &metricpb.MetricStreamInput{ResourceWireVersion: 2}
 	p.ProtoReflect().SetUnknown(metricBytes(6, nil))
@@ -268,7 +251,10 @@ func TestMetricQueryCallbackCancellation(t *testing.T) {
 		t.Fatal("query callback did not receive cancellation")
 	}
 	select {
-	case <-done:
+	case err := <-done:
+		if err == nil {
+			t.Fatal("canceled query returned success")
+		}
 	case <-time.After(time.Second):
 		t.Fatal("query client did not return")
 	}
@@ -280,14 +266,21 @@ func TestMetricStreamParamsRemainNonresource(t *testing.T) {
 		seen <- r
 		return &QueryResponse{Success: true}, nil
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	in := make(chan StreamInput, 1)
 	out, err := c.StreamMetrics(ctx, in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	in <- StreamInput{ResourceKey: "cluster::metrics", Params: map[string]string{"prometheus_service_name": "prometheus", "prometheus_service_namespace": "monitoring", "prometheus_service_port": "9090"}, Interval: time.Hour}
+	in <- StreamInput{
+		ResourceKey: "cluster::metrics",
+		Params: map[string]string{
+			"prometheus_service_name":      "prometheus",
+			"prometheus_service_namespace": "monitoring",
+			"prometheus_service_port":      "9090",
+		},
+		Interval: time.Hour,
+	}
 	select {
 	case r := <-seen:
 		if r.HasResourceIntent() || r.Params["prometheus_service_name"] != "prometheus" ||
@@ -349,7 +342,7 @@ func TestMetricJSONSharedNodeLimit(t *testing.T) {
 
 func TestMetricDomainErrorKeepsLocalRemoteAndTransportClasses(t *testing.T) {
 	local := resourcev2.NewError("RESOURCE_LIMIT", "Local limit.")
-	if got := metricDomainError(local); got != local {
+	if got := metricDomainError(local); !errors.Is(got, local) {
 		t.Fatalf("local error replaced: %v", got)
 	}
 	if got := metricDomainError(
@@ -387,8 +380,8 @@ func TestMetricSubscribeCatalogRevisionRoundTrip(t *testing.T) {
 		t.Fatalf("catalog revision missing from JSON: %s", data)
 	}
 	var decoded StreamInput
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(data, &decoded); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	wire, err := streamToProto(decoded, true)
 	if err != nil {
@@ -404,5 +397,32 @@ func TestMetricSubscribeCatalogRevisionRoundTrip(t *testing.T) {
 	}
 	if !got.HasResourceIntent() || !reflect.DeepEqual(got.Reference, input.Reference) {
 		t.Fatal("canonical reference or empty scope changed")
+	}
+}
+
+func metricControlStream(received chan StreamInput, contexts chan context.Context) StreamFunc {
+	return func(ctx *StreamContext, in chan StreamInput) (chan StreamOutput, error) {
+		contexts <- ctx.Context
+		out := make(chan StreamOutput)
+		go func() {
+			defer close(out)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case r, ok := <-in:
+					if !ok {
+						return
+					}
+					received <- r
+					select {
+					case out <- StreamOutput{SubscriptionID: r.SubscriptionID}:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}()
+		return out, nil
 	}
 }

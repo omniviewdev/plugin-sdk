@@ -16,6 +16,171 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
+const (
+	pollingOutputBuffer               = 256
+	defaultPollingInterval            = 10 * time.Second
+	maxLaneSubscriptionIDs            = 4096
+	admissionBindingOverhead   uint64 = 64
+	admissionReferenceOverhead uint64 = 64
+	admissionScopeOverhead     uint64 = 32
+)
+
+type streamBinding struct {
+	reference *resourcev2.ResourceReference
+	revision  string
+	active    bool
+	bytes     uint64
+}
+
+// streamAdmission retains immutable catalog pins and ID tombstones for one lane.
+// Only the input goroutine writes; output delivery reads under mu.
+type streamAdmission struct {
+	mu            sync.Mutex
+	bindings      map[string]streamBinding
+	retainedBytes uint64
+}
+
+func (a *streamAdmission) lookup(id string) (streamBinding, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	bound, known := a.bindings[id]
+	return bound, known
+}
+
+func (a *streamAdmission) checkCapacity(input StreamInput, size uint64) error {
+	if input.Command != StreamCommandSubscribe {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if _, used := a.bindings[input.SubscriptionID]; used {
+		return metricError("CONFLICT", "Metric subscription ID was already used in this lane.")
+	}
+	if len(a.bindings) >= maxLaneSubscriptionIDs || size > uint64(resourcev2.MaxMessageBytes)-a.retainedBytes {
+		return metricError("RESOURCE_LIMIT", "Metric lane admission limit reached.")
+	}
+	return nil
+}
+
+func (a *streamAdmission) record(input StreamInput, size uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if input.Command != StreamCommandSubscribe {
+		if previous, exists := a.bindings[input.SubscriptionID]; exists && previous.active {
+			compact := streamAdmissionMetadataBytes(input.SubscriptionID, nil, "")
+			a.retainedBytes -= previous.bytes - compact
+			a.bindings[input.SubscriptionID] = streamBinding{bytes: compact}
+		}
+		return
+	}
+	var reference *resourcev2.ResourceReference
+	if input.Reference != nil {
+		cloned := *input.Reference
+		cloned.Address.Scope = append([]resourcev2.ScopeEntry{}, input.Reference.Address.Scope...)
+		if input.Reference.Incarnation != nil {
+			incarnation := *input.Reference.Incarnation
+			cloned.Incarnation = &incarnation
+		}
+		reference = &cloned
+	}
+	if a.bindings == nil {
+		a.bindings = make(map[string]streamBinding)
+	}
+	a.bindings[input.SubscriptionID] = streamBinding{
+		reference: reference,
+		revision:  input.CatalogRevision,
+		active:    true,
+		bytes:     size,
+	}
+	a.retainedBytes += size
+}
+
+func (m *Manager) validateStreamAdmission(
+	ctx context.Context,
+	input StreamInput,
+	resource bool,
+	admission *streamAdmission,
+) (uint64, error) {
+	err := validateStream(input)
+	pc := types.PluginContextFromContext(ctx)
+	if err == nil {
+		err = validateQuery(QueryRequest{
+			ResourceKey: input.ResourceKey, ResourceData: input.ResourceData,
+			Reference: input.Reference, Route: input.Route,
+		}, pc)
+	}
+	if err == nil && input.Route != nil && (pc == nil || pc.Connection == nil) {
+		err = metricError("INVALID_REQUEST", "Resource route requires an actual selected connection.")
+	}
+	if !resource && input.HasResourceIntent() {
+		return 0, metricError("UNSUPPORTED", "Use StreamResourceMetrics for resource metrics.")
+	}
+	if err != nil {
+		return 0, err
+	}
+	var size uint64
+	if input.Command == StreamCommandSubscribe {
+		size = streamAdmissionMetadataBytes(input.SubscriptionID, input.Reference, input.CatalogRevision)
+	}
+	if err = admission.checkCapacity(input, size); err != nil {
+		return 0, err
+	}
+	return size, m.checkStreamCatalog(ctx, input.Reference, input.CatalogRevision)
+}
+
+func streamRejection(input StreamInput, err error) StreamOutput {
+	var operation *resourcev2.ResourceOperationError
+	if !errors.As(err, &operation) {
+		operation = &resourcev2.ResourceOperationError{
+			Code: "INVALID_REQUEST", Message: "Invalid metric stream input.",
+		}
+	}
+	id := input.SubscriptionID
+	if resourcev2.ValidateMetadata(struct{ ID string }{id}) != nil {
+		id = ""
+	}
+	return StreamOutput{SubscriptionID: id, OperationError: operation}
+}
+
+func (m *Manager) filterStream(
+	ctx context.Context,
+	in <-chan StreamInput,
+	filtered chan<- StreamInput,
+	rejected chan<- StreamOutput,
+	resource bool,
+	admission *streamAdmission,
+) {
+	defer close(filtered)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case input, ok := <-in:
+			if !ok {
+				return
+			}
+			if input.Command == StreamCommandSubscribe && input.SubscriptionID == "" {
+				input.SubscriptionID = uuid.NewString()
+			}
+			size, err := m.validateStreamAdmission(ctx, input, resource, admission)
+			if err != nil {
+				select {
+				case rejected <- streamRejection(input, err):
+				case <-ctx.Done():
+					return
+				}
+				continue
+			}
+			admission.record(input, size)
+			select {
+			case filtered <- input:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
+}
+
 // Manager manages metric queries and streams within a plugin process.
 type Manager struct {
 	log                logging.Logger
@@ -161,121 +326,8 @@ func (m *Manager) admitStream(
 	filtered := make(chan StreamInput)
 	ctx, cancel := context.WithCancel(ctx)
 	rejected := make(chan StreamOutput)
-	type binding struct {
-		reference *resourcev2.ResourceReference
-		revision  string
-		active    bool
-		bytes     uint64
-	}
-	var bindings map[string]binding
-	var bindingsMu sync.Mutex
-	var retainedBytes uint64
-	go func() {
-		defer close(filtered)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case input, ok := <-in:
-				if !ok {
-					return
-				}
-				if input.Command == StreamCommandSubscribe && input.SubscriptionID == "" {
-					input.SubscriptionID = uuid.NewString()
-				}
-				err := validateStream(input)
-				pc := types.PluginContextFromContext(ctx)
-				if err == nil {
-					err = validateQuery(
-						QueryRequest{
-							ResourceKey:  input.ResourceKey,
-							ResourceData: input.ResourceData,
-							Reference:    input.Reference,
-							Route:        input.Route,
-						},
-						pc,
-					)
-				}
-				if err == nil && input.Route != nil && (pc == nil || pc.Connection == nil) {
-					err = metricError("INVALID_REQUEST", "Resource route requires an actual selected connection.")
-				}
-				if !resource && input.HasResourceIntent() {
-					err = metricError("UNSUPPORTED", "Use StreamResourceMetrics for resource metrics.")
-				}
-				var candidateBytes uint64
-				if err == nil && input.Command == StreamCommandSubscribe {
-					candidateBytes = streamAdmissionMetadataBytes(
-						input.SubscriptionID,
-						input.Reference,
-						input.CatalogRevision,
-					)
-					bindingsMu.Lock()
-					_, used := bindings[input.SubscriptionID]
-					if used {
-						err = metricError("CONFLICT", "Metric subscription ID was already used in this lane.")
-					} else if len(bindings) >= 4096 || candidateBytes > uint64(resourcev2.MaxMessageBytes)-retainedBytes {
-						err = metricError("RESOURCE_LIMIT", "Metric lane admission limit reached.")
-					}
-					bindingsMu.Unlock()
-				}
-				if err == nil {
-					err = m.checkStreamCatalog(ctx, input.Reference, input.CatalogRevision)
-				}
-				if err != nil {
-					var operation *resourcev2.ResourceOperationError
-					if !errors.As(err, &operation) {
-						operation = &resourcev2.ResourceOperationError{
-							Code:    "INVALID_REQUEST",
-							Message: "Invalid metric stream input.",
-						}
-					}
-					id := input.SubscriptionID
-					if resourcev2.ValidateMetadata(struct{ ID string }{id}) != nil {
-						id = ""
-					}
-					select {
-					case rejected <- StreamOutput{SubscriptionID: id, OperationError: operation}:
-					case <-ctx.Done():
-						return
-					}
-					continue
-				}
-				bindingsMu.Lock()
-				if input.Command == StreamCommandSubscribe {
-					if bindings == nil {
-						bindings = make(map[string]binding)
-					}
-					var reference *resourcev2.ResourceReference
-					if input.Reference != nil {
-						copy := *input.Reference
-						copy.Address.Scope = append([]resourcev2.ScopeEntry{}, input.Reference.Address.Scope...)
-						if input.Reference.Incarnation != nil {
-							incarnation := *input.Reference.Incarnation
-							copy.Incarnation = &incarnation
-						}
-						reference = &copy
-					}
-					bindings[input.SubscriptionID] = binding{
-						reference: reference,
-						revision:  input.CatalogRevision,
-						active:    true,
-						bytes:     candidateBytes,
-					}
-					retainedBytes += candidateBytes
-				} else if previous, exists := bindings[input.SubscriptionID]; exists && previous.active {
-					compact := streamAdmissionMetadataBytes(input.SubscriptionID, nil, "")
-					retainedBytes -= previous.bytes - compact
-					bindings[input.SubscriptionID] = binding{bytes: compact}
-				}
-				bindingsMu.Unlock()
-				select {
-				case filtered <- input:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
+	admission := &streamAdmission{}
+	go m.filterStream(ctx, in, filtered, rejected, resource, admission)
 	native, err := m.stream(ctx, filtered)
 	if err != nil {
 		cancel()
@@ -290,49 +342,73 @@ func (m *Manager) admitStream(
 				close(finished)
 			}
 		}()
-		for {
-			var output StreamOutput
-			rejection := false
-			select {
-			case <-ctx.Done():
-				return
-			case output = <-rejected:
-				rejection = true
-			case value, ok := <-native:
-				if !ok {
-					return
-				}
-				output = value
-			}
-			if ctx.Err() != nil {
-				return
-			}
-			bindingsMu.Lock()
-			bound, known := bindings[output.SubscriptionID]
-			bindingsMu.Unlock()
-			if known && !bound.active && !rejection {
-				continue
-			}
-			if output.OperationError == nil {
-				if err := m.checkStreamCatalog(ctx, bound.reference, bound.revision); err != nil {
-					var operation *resourcev2.ResourceOperationError
-					if !errors.As(err, &operation) {
-						operation = &resourcev2.ResourceOperationError{
-							Code:    resourcev2.ErrorCode(err),
-							Message: "Metric catalog admission failed.",
-						}
-					}
-					output = StreamOutput{SubscriptionID: output.SubscriptionID, OperationError: operation}
-				}
-			}
-			select {
-			case out <- output:
-			case <-ctx.Done():
-				return
-			}
-		}
+		m.forwardAdmittedStream(ctx, native, rejected, out, admission)
 	}()
 	return out, nil
+}
+
+// forwardAdmittedStream merges local rejections with native output, applying the
+// lane's retirement and catalog fences immediately before publication.
+func (m *Manager) forwardAdmittedStream(
+	ctx context.Context,
+	native <-chan StreamOutput,
+	rejected <-chan StreamOutput,
+	out chan<- StreamOutput,
+	admission *streamAdmission,
+) {
+	for {
+		var output StreamOutput
+		rejection := false
+		select {
+		case <-ctx.Done():
+			return
+		case output = <-rejected:
+			rejection = true
+		case value, ok := <-native:
+			if !ok {
+				return
+			}
+			output = value
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		admitted, publish := m.admitStreamOutput(ctx, admission, output, rejection)
+		if !publish {
+			continue
+		}
+		select {
+		case out <- admitted:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (m *Manager) admitStreamOutput(
+	ctx context.Context,
+	admission *streamAdmission,
+	output StreamOutput,
+	rejection bool,
+) (StreamOutput, bool) {
+	bound, known := admission.lookup(output.SubscriptionID)
+	if known && !bound.active && !rejection {
+		return output, false
+	}
+	if output.OperationError != nil {
+		return output, true
+	}
+	if err := m.checkStreamCatalog(ctx, bound.reference, bound.revision); err != nil {
+		var operation *resourcev2.ResourceOperationError
+		if !errors.As(err, &operation) {
+			operation = &resourcev2.ResourceOperationError{
+				Code:    resourcev2.ErrorCode(err),
+				Message: "Metric catalog admission failed.",
+			}
+		}
+		output = StreamOutput{SubscriptionID: output.SubscriptionID, OperationError: operation}
+	}
+	return output, true
 }
 
 func (m *Manager) checkStreamCatalog(
@@ -389,9 +465,9 @@ func (m *Manager) connectedStream(ctx context.Context, in chan StreamInput) (cha
 			ctx,
 			resourcev2.AccessRoute{Connection: pc.Connection.ID},
 			func(bound context.Context, connection types.Connection) error {
-				copy := *pc
-				copy.Connection = &connection
-				bound = types.WithPluginContext(bound, &copy)
+				boundPC := *pc
+				boundPC.Connection = &connection
+				bound = types.WithPluginContext(bound, &boundPC)
 				finished := make(chan struct{})
 				out, err := m.admitStream(bound, in, true, finished)
 				ready <- result{out: out, err: err}
@@ -433,7 +509,7 @@ func (m *Manager) stream(ctx context.Context, in chan StreamInput) (chan StreamO
 		)
 	}
 
-	out := make(chan StreamOutput, 256)
+	out := make(chan StreamOutput, pollingOutputBuffer)
 	var polls sync.WaitGroup
 	// Otherwise, implement polling-based streaming using QueryFunc.
 	go func() {
@@ -497,7 +573,7 @@ func (m *Manager) subscribe(
 
 	interval := input.Interval
 	if interval <= 0 {
-		interval = 10 * time.Second
+		interval = defaultPollingInterval
 	}
 
 	native := parentCtx
@@ -530,11 +606,9 @@ func (m *Manager) subscribe(
 	m.subscriptions[key] = sub
 	m.mux.Unlock()
 
-	polls.Add(1)
-	go func() {
-		defer polls.Done()
+	polls.Go(func() {
 		m.pollSubscription(sub)
-	}()
+	})
 }
 
 func (m *Manager) unsubscribe(owner context.Context, subscriptionID string) {
@@ -619,12 +693,13 @@ func (m *Manager) pollOnce(sub *managedSubscription) {
 // Account only immutable admitted metadata, not resource bodies or native query
 // options. Retirement retains a compact ID tombstone until this lane closes.
 func streamAdmissionMetadataBytes(id string, reference *resourcev2.ResourceReference, revision string) uint64 {
-	size := uint64(64) + uint64(len(id)) + uint64(len(revision))
+	size := admissionBindingOverhead + uint64(len(id)) + uint64(len(revision))
 	if reference != nil {
 		a := reference.Address
-		size += uint64(len(a.Provider)) + uint64(len(a.Authority)) + uint64(len(a.Type)) + uint64(len(a.ID)) + 64
+		size += uint64(len(a.Provider)) + uint64(len(a.Authority)) + uint64(len(a.Type)) + uint64(len(a.ID)) +
+			admissionReferenceOverhead
 		for _, entry := range a.Scope {
-			size += uint64(len(entry.Dimension)) + uint64(len(entry.Value)) + 32
+			size += uint64(len(entry.Dimension)) + uint64(len(entry.Value)) + admissionScopeOverhead
 		}
 		if reference.Incarnation != nil {
 			size += uint64(len(*reference.Incarnation))
