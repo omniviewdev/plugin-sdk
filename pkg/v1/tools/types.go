@@ -63,6 +63,7 @@ type Handler func(ctx *types.PluginContext, arguments json.RawMessage) (*Result,
 // Tool pairs a descriptor with its handler.
 type Tool struct {
 	Descriptor
+
 	Handler Handler
 }
 
@@ -133,6 +134,8 @@ func scopeFromProto(s toolspb.ToolScope) Scope {
 		return ScopePlugin
 	case toolspb.ToolScope_TOOL_SCOPE_CONNECTION:
 		return ScopeConnection
+	case toolspb.ToolScope_TOOL_SCOPE_UNSPECIFIED:
+		return ""
 	default:
 		return ""
 	}

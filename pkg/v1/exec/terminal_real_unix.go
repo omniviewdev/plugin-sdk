@@ -72,8 +72,8 @@ func NewRealTerminalFactory() TerminalFactory {
 		// transparent byte pipe — only the remote side (e.g. bash in a K8s pod)
 		// will echo input, preventing the double-echo bug.
 		if err = controlFd(slave, func(fd int) error {
-			_, err := term.MakeRaw(fd)
-			return err
+			_, rawErr := term.MakeRaw(fd)
+			return rawErr
 		}); err != nil {
 			cleanupErr := errors.Join(slave.Close(), master.Close())
 			return nil, errors.Join(fmt.Errorf("failed to set tty to raw mode: %w", err), cleanupErr)

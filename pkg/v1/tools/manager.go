@@ -39,14 +39,15 @@ func NewManager(log logging.Logger, opts PluginOpts) (*Manager, error) {
 		tools: make(map[string]Tool, len(opts.Tools)),
 		order: make([]string, 0, len(opts.Tools)),
 	}
-	for _, tool := range opts.Tools {
-		if err := validateTool(tool); err != nil {
+	for i := range opts.Tools {
+		tool := &opts.Tools[i]
+		if err := validateTool(*tool); err != nil {
 			return nil, fmt.Errorf("tool %q: %w", tool.Name, err)
 		}
 		if _, exists := m.tools[tool.Name]; exists {
 			return nil, fmt.Errorf("tool %q: duplicate name", tool.Name)
 		}
-		m.tools[tool.Name] = tool
+		m.tools[tool.Name] = *tool
 		m.order = append(m.order, tool.Name)
 	}
 	return m, nil

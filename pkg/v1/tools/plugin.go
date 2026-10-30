@@ -5,9 +5,9 @@ import (
 	"errors"
 
 	"github.com/hashicorp/go-plugin"
-	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	toolspb "github.com/omniviewdev/plugin-sdk/proto/v1/tools"
@@ -28,6 +28,7 @@ type Provider interface {
 // Plugin exposes a tools provider through the go-plugin gRPC transport.
 type Plugin struct {
 	plugin.Plugin
+
 	Impl Provider
 }
 
@@ -42,7 +43,7 @@ func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
-) (interface{}, error) {
+) (any, error) {
 	return &PluginClient{
 		client: toolspb.NewToolsPluginClient(c),
 		log:    logging.Default().Named("tools.plugin.client"),

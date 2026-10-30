@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -82,19 +81,22 @@ func TestManagerCallToolErrors(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = m.CallTool(types.NewPluginContext(context.Background(), "t", nil, nil, nil), CallInput{Name: "missing"})
-	require.True(t, errors.Is(err, ErrToolNotFound))
+	require.ErrorIs(t, err, ErrToolNotFound)
 
 	_, err = m.CallTool(types.NewPluginContext(context.Background(), "t", nil, nil, nil), CallInput{Name: "scoped"})
-	require.True(t, errors.Is(err, ErrConnectionRequired))
+	require.ErrorIs(t, err, ErrConnectionRequired)
 
 	res, err := m.CallTool(
 		types.NewPluginContextWithConnection(context.Background(), "t", nil, nil, &types.Connection{ID: "c1"}),
 		CallInput{Name: "scoped", Arguments: json.RawMessage(`{"x":"1"}`)},
 	)
 	require.NoError(t, err)
-	require.Equal(t, `{"x":"1"}`, res.Content[0].Text)
+	require.JSONEq(t, `{"x":"1"}`, res.Content[0].Text)
 
-	res, err = m.CallTool(types.NewPluginContext(context.Background(), "t", nil, nil, nil), CallInput{Name: "plain", Arguments: json.RawMessage(`{}`)})
+	res, err = m.CallTool(
+		types.NewPluginContext(context.Background(), "t", nil, nil, nil),
+		CallInput{Name: "plain", Arguments: json.RawMessage(`{}`)},
+	)
 	require.NoError(t, err)
 	require.False(t, res.IsError)
 }

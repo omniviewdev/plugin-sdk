@@ -3,9 +3,9 @@ package tools
 import (
 	"context"
 
-	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	toolspb "github.com/omniviewdev/plugin-sdk/proto/v1/tools"
 )

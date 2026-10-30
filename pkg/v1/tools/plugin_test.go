@@ -26,7 +26,7 @@ import (
 func connectionEcho(ctx *types.PluginContext, arguments json.RawMessage) (*Result, error) {
 	return JSONResult(map[string]any{
 		"connection": ctx.Connection.ID,
-		"arguments":  json.RawMessage(arguments),
+		"arguments":  arguments,
 	})
 }
 
@@ -91,7 +91,11 @@ func TestWireRoundTrip(t *testing.T) {
 	require.True(t, descriptors[0].Annotations.ReadOnly)
 	require.True(t, descriptors[0].Annotations.Idempotent)
 	require.JSONEq(t, `{"type":"object"}`, string(descriptors[0].OutputSchema))
-	require.JSONEq(t, string(ObjectSchema(map[string]any{"x": map[string]any{"type": "integer"}}, "x")), string(descriptors[0].InputSchema))
+	require.JSONEq(
+		t,
+		string(ObjectSchema(map[string]any{"x": map[string]any{"type": "integer"}}, "x")),
+		string(descriptors[0].InputSchema),
+	)
 	require.Equal(t, ScopePlugin, descriptors[1].Scope)
 	require.True(t, descriptors[1].Annotations.Destructive)
 	require.Empty(t, descriptors[1].OutputSchema)
@@ -103,7 +107,10 @@ func TestWireRoundTrip(t *testing.T) {
 	require.JSONEq(t, `{"connection":"conn-1","arguments":{"x":7}}`, string(res.StructuredContent))
 	require.Contains(t, res.Content[0].Text, `"connection": "conn-1"`)
 
-	res, err = client.CallTool(types.NewPluginContext(context.Background(), "test", nil, nil, nil), CallInput{Name: "fail", Arguments: json.RawMessage(`{}`)})
+	res, err = client.CallTool(
+		types.NewPluginContext(context.Background(), "test", nil, nil, nil),
+		CallInput{Name: "fail", Arguments: json.RawMessage(`{}`)},
+	)
 	require.NoError(t, err)
 	require.True(t, res.IsError)
 	require.Equal(t, "nope", res.Content[0].Text)

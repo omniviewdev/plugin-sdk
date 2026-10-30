@@ -15,6 +15,7 @@ import (
 // PluginServer serves a tools provider over gRPC.
 type PluginServer struct {
 	toolspb.UnimplementedToolsPluginServer
+
 	Impl Provider
 }
 
