@@ -19,6 +19,7 @@ import (
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
 
+// PluginClient forwards exec operations to a remote plugin; the server owns sessions.
 type PluginClient struct {
 	client execpb.ExecPluginClient
 	log    logging.Logger
@@ -26,6 +27,7 @@ type PluginClient struct {
 
 var _ Provider = (*PluginClient)(nil)
 
+// GetSupportedResources returns remote handler metadata, or nil if discovery fails.
 func (c *PluginClient) GetSupportedResources(ctx *types.PluginContext) []Handler {
 	resp, err := c.client.GetSupportedResources(
 		types.WithPluginContext(context.Background(), ctx),
@@ -43,6 +45,7 @@ func (c *PluginClient) GetSupportedResources(ctx *types.PluginContext) []Handler
 	return result
 }
 
+// GetSession fetches metadata for one remote session.
 func (c *PluginClient) GetSession(
 	ctx *types.PluginContext,
 	sessionID string,
@@ -57,6 +60,7 @@ func (c *PluginClient) GetSession(
 	return NewSessionFromProto(resp.GetSession()), nil
 }
 
+// ListSessions fetches all remote session metadata.
 func (c *PluginClient) ListSessions(ctx *types.PluginContext) ([]*Session, error) {
 	resp, err := c.client.ListSessions(
 		types.WithPluginContext(context.Background(), ctx),
@@ -73,6 +77,7 @@ func (c *PluginClient) ListSessions(ctx *types.PluginContext) ([]*Session, error
 	return sessions, nil
 }
 
+// CreateSession routes resource-bearing options through the versioned resource RPC.
 func (c *PluginClient) CreateSession(
 	ctx *types.PluginContext,
 	opts SessionOptions,
@@ -94,6 +99,7 @@ func (c *PluginClient) CreateSession(
 	return NewSessionFromProto(resp.GetSession()), nil
 }
 
+// CreateResourceSession validates options and response admission without legacy fallback.
 func (c *PluginClient) CreateResourceSession(ctx *types.PluginContext, opts SessionOptions) (*Session, error) {
 	if err := ValidateResourceSessionOptions(opts); err != nil {
 		return nil, err
@@ -143,6 +149,7 @@ func (c *PluginClient) CreateResourceSession(ctx *types.PluginContext, opts Sess
 	return session, nil
 }
 
+// AttachSession attaches remotely and returns the buffered output snapshot.
 func (c *PluginClient) AttachSession(
 	ctx *types.PluginContext,
 	sessionID string,
@@ -157,6 +164,7 @@ func (c *PluginClient) AttachSession(
 	return NewSessionFromProto(resp.GetSession()), resp.GetBuffer(), nil
 }
 
+// DetachSession detaches remotely without closing the underlying session.
 func (c *PluginClient) DetachSession(
 	ctx *types.PluginContext,
 	sessionID string,
@@ -171,6 +179,7 @@ func (c *PluginClient) DetachSession(
 	return NewSessionFromProto(resp.GetSession()), nil
 }
 
+// CloseSession asks the server to terminate and release the session.
 func (c *PluginClient) CloseSession(ctx *types.PluginContext, sessionID string) error {
 	_, err := c.client.CloseSession(
 		types.WithPluginContext(context.Background(), ctx),
@@ -179,6 +188,7 @@ func (c *PluginClient) CloseSession(ctx *types.PluginContext, sessionID string) 
 	return err
 }
 
+// ResizeSession forwards terminal dimensions for server-side validation.
 func (c *PluginClient) ResizeSession(
 	ctx *types.PluginContext,
 	sessionID string,
@@ -194,6 +204,7 @@ func (c *PluginClient) ResizeSession(
 // Close is a no-op on the client side — the server manages session lifecycle.
 func (c *PluginClient) Close() {}
 
+// Stream multiplexes input and output until the RPC ends; the receiver closes output.
 func (c *PluginClient) Stream(
 	ctx context.Context,
 	in chan StreamInput,

@@ -17,6 +17,7 @@ import (
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 
+// PluginClient adapts remote log RPCs to Provider without downgrading resource requests.
 type PluginClient struct {
 	client logspb.LogPluginClient
 	log    logging.Logger
@@ -36,6 +37,7 @@ func logsClientContext(pc *types.PluginContext) context.Context {
 	return types.WithPluginContext(ctx, &copy)
 }
 
+// GetSupportedResources lists remote handlers, returning nil when discovery fails.
 func (c *PluginClient) GetSupportedResources(ctx *types.PluginContext) []Handler {
 	resp, err := c.client.GetSupportedResources(
 		logsClientContext(ctx),
@@ -53,6 +55,7 @@ func (c *PluginClient) GetSupportedResources(ctx *types.PluginContext) []Handler
 	return result
 }
 
+// CreateSession selects the resource RPC whenever options carry resource intent.
 func (c *PluginClient) CreateSession(
 	ctx *types.PluginContext,
 	opts CreateSessionOptions,
@@ -71,6 +74,7 @@ func (c *PluginClient) CreateSession(
 	return LogSessionFromProto(resp.GetSession()), nil
 }
 
+// CreateResourceSession checks the trusted route and validates the admitted remote result.
 func (c *PluginClient) CreateResourceSession(ctx *types.PluginContext, opts CreateSessionOptions) (*LogSession, error) {
 	if err := validateRoute(ctx, opts); err != nil {
 		return nil, err
@@ -116,6 +120,7 @@ func (c *PluginClient) CreateResourceSession(ctx *types.PluginContext, opts Crea
 	return session, nil
 }
 
+// GetSession retrieves a remote session by ID.
 func (c *PluginClient) GetSession(
 	ctx *types.PluginContext,
 	sessionID string,
@@ -130,6 +135,7 @@ func (c *PluginClient) GetSession(
 	return LogSessionFromProto(resp.GetSession()), nil
 }
 
+// ListSessions returns the remote provider's current sessions.
 func (c *PluginClient) ListSessions(ctx *types.PluginContext) ([]*LogSession, error) {
 	resp, err := c.client.ListSessions(
 		logsClientContext(ctx),
@@ -146,6 +152,7 @@ func (c *PluginClient) ListSessions(ctx *types.PluginContext) ([]*LogSession, er
 	return sessions, nil
 }
 
+// CloseSession requests remote cleanup for the named session.
 func (c *PluginClient) CloseSession(ctx *types.PluginContext, sessionID string) error {
 	_, err := c.client.CloseSession(
 		logsClientContext(ctx),
@@ -154,6 +161,7 @@ func (c *PluginClient) CloseSession(ctx *types.PluginContext, sessionID string) 
 	return err
 }
 
+// UpdateSessionOptions changes streaming options for an existing remote session.
 func (c *PluginClient) UpdateSessionOptions(
 	ctx *types.PluginContext,
 	sessionID string,
@@ -172,6 +180,8 @@ func (c *PluginClient) UpdateSessionOptions(
 	return LogSessionFromProto(resp.GetSession()), nil
 }
 
+// Stream forwards input and output until cancellation or transport termination.
+// Closing input closes the send side; the receiver owns and closes the output channel.
 func (c *PluginClient) Stream(
 	ctx context.Context,
 	in chan StreamInput,

@@ -14,7 +14,7 @@ type ResizeRecord struct {
 	Cols uint16
 }
 
-// FakeTerminal implements exec.Terminal using os.Pipe pairs.
+// FakeTerminal implements exec.Terminal using [os.Pipe] pairs.
 // This allows tests to inject data into the master side and read from the
 // slave side without requiring real PTY support.
 type FakeTerminal struct {
@@ -30,7 +30,7 @@ type FakeTerminal struct {
 
 var _ exec.Terminal = (*FakeTerminal)(nil)
 
-// NewFakeTerminal creates a FakeTerminal backed by two os.Pipe pairs.
+// NewFakeTerminal creates a FakeTerminal backed by two [os.Pipe] pairs.
 func NewFakeTerminal() (*FakeTerminal, error) {
 	masterR, masterW, err := os.Pipe()
 	if err != nil {
@@ -50,9 +50,13 @@ func NewFakeTerminal() (*FakeTerminal, error) {
 	}, nil
 }
 
+// MasterFd returns the borrowed output reader; Close owns its lifetime.
 func (t *FakeTerminal) MasterFd() *os.File { return t.masterR }
+
+// SlaveFd returns the borrowed handler reader; Close owns its lifetime.
 func (t *FakeTerminal) SlaveFd() *os.File  { return t.slaveR }
 
+// Resize records dimensions without changing the pipe-backed terminal.
 func (t *FakeTerminal) Resize(rows, cols uint16) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -60,6 +64,7 @@ func (t *FakeTerminal) Resize(rows, cols uint16) error {
 	return nil
 }
 
+// Close closes every pipe end once and returns any close failures.
 func (t *FakeTerminal) Close() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -89,7 +94,7 @@ func (t *FakeTerminal) Resizes() []ResizeRecord {
 
 // FakeTerminalFactory returns an exec.TerminalFactory that creates the given
 // FakeTerminal on the first call and returns an error on subsequent calls.
-// If ft is nil, the factory always returns (nil, os.ErrClosed).
+// If ft is nil, the factory always returns (nil, [os.ErrClosed]).
 func FakeTerminalFactory(ft *FakeTerminal) exec.TerminalFactory {
 	if ft == nil {
 		return func() (exec.Terminal, error) {

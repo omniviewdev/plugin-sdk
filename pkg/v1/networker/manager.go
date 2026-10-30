@@ -24,7 +24,7 @@ const (
 )
 
 // Sentinel causes for context cancellation — forwarders can inspect these
-// via context.Cause(ctx) to distinguish intentional stops from failures.
+// via [context.Cause] to distinguish intentional stops from failures.
 var (
 	ErrSessionClosed  = errors.New("session closed")
 	ErrManagerStopped = errors.New("manager stopped")
@@ -103,10 +103,12 @@ func (m *Manager) BindConnectionContextProvider(provider resourcev2.ConnectionCo
 // Provider implementation
 // ---------------------------------------------------------------------------
 
+// GetSupportedPortForwardTargets returns registered opaque resource keys.
 func (m *Manager) GetSupportedPortForwardTargets(_ *types.PluginContext) ([]string, error) {
 	return slices.Collect(maps.Keys(m.resourceForwarders)), nil
 }
 
+// GetPortForwardSession returns an owned snapshot or a session-not-found error.
 func (m *Manager) GetPortForwardSession(
 	_ *types.PluginContext,
 	sessionID string,
@@ -123,6 +125,7 @@ func (m *Manager) GetPortForwardSession(
 	return &snap, nil
 }
 
+// ListPortForwardSessions returns owned snapshots, including terminal sessions.
 func (m *Manager) ListPortForwardSessions(_ *types.PluginContext) ([]*PortForwardSession, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -135,6 +138,7 @@ func (m *Manager) ListPortForwardSessions(_ *types.PluginContext) ([]*PortForwar
 	return sessions, nil
 }
 
+// FindPortForwardSessions returns owned snapshots matching both nonempty selectors.
 func (m *Manager) FindPortForwardSessions(
 	_ *types.PluginContext,
 	req FindPortForwardSessionRequest,
@@ -175,6 +179,9 @@ func (m *Manager) FindPortForwardSessions(
 	return sessions, nil
 }
 
+// StartPortForwardSession creates a static tunnel. Creation observes request
+// cancellation; accepted tunnels survive the initiating request's completion.
+// Resource targets require StartResourcePortForwardSession.
 func (m *Manager) StartPortForwardSession(
 	pluginctx *types.PluginContext,
 	opts PortForwardSessionOptions,
@@ -188,6 +195,9 @@ func (m *Manager) StartPortForwardSession(
 	return m.startPortForwardSession(pluginctx, opts)
 }
 
+// StartResourcePortForwardSession admits a resource target against the configured
+// registry and retains its generation lease until tunnel closure or retirement.
+// Cancellation remains attached throughout creation, readiness, and admission.
 func (m *Manager) StartResourcePortForwardSession(
 	pluginctx *types.PluginContext,
 	opts PortForwardSessionOptions,
@@ -462,7 +472,6 @@ func (m *Manager) createPortForwardSession(
 		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("duplicate session ID %q", sessionID))
 	}
 	m.sessions[sessionID] = entry
-	// Start monitor inside the lock to prevent races with StopAll's wg.Wait().
 	m.wg.Add(1)
 	go m.monitorSession(entry, result.ErrCh)
 	m.mu.Unlock()
@@ -601,6 +610,8 @@ func (m *Manager) monitorSession(entry *sessionEntry, errCh <-chan error) {
 	}
 }
 
+// ClosePortForwardSession cancels a tunnel and waits for its monitor up to the
+// configured close timeout. Unknown IDs return a session-not-found error.
 func (m *Manager) ClosePortForwardSession(
 	_ *types.PluginContext,
 	sessionID string,

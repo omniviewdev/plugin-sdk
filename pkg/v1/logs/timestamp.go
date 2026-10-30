@@ -14,13 +14,13 @@ import (
 //   - Bare UTC    (e.g. 2024-01-15T10:30:00Z — exact 20 chars)
 //   - Bare local  (e.g. 2024-01-15T10:30:00 — exact 19 chars)
 //
-// Performance: uses byte-level pre-screening to avoid calling time.Parse on
-// formats that clearly won't match. Each failed time.Parse allocates 4-5
+// Performance: uses byte-level pre-screening to avoid calling [time.Parse] on
+// formats that clearly won't match. Each failed [time.Parse] allocates 4-5
 // objects (error, quote, clone), so skipping them is critical at high
 // throughput. This function is called once per log line.
 //
 // The returned content string is a proper copy (safe to store), while
-// time.Parse candidates use unsafe.String (consumed immediately).
+// [time.Parse] candidates use [unsafe.String] (consumed immediately).
 func extractTimestamp(line []byte) (time.Time, string) {
 	n := len(line)
 
@@ -130,7 +130,7 @@ func isDigit(b byte) bool {
 }
 
 // trimCopyContent trims leading spaces and returns a proper string copy.
-// The copy is necessary because the input bytes may be reused by bufio.Scanner.
+// The copy is necessary because the input bytes may be reused by a scanner.
 func trimCopyContent(b []byte) string {
 	i := 0
 	for i < len(b) && b[i] == ' ' {
@@ -141,7 +141,7 @@ func trimCopyContent(b []byte) string {
 
 // unsafeString converts a byte slice to a string without copying.
 // ONLY safe when the string is consumed immediately and not stored (e.g.,
-// passed to time.Parse which returns a time.Time value, not a string).
+// passed to [time.Parse] which returns a [time.Time] value, not a string).
 func unsafeString(b []byte) string {
 	if len(b) == 0 {
 		return ""

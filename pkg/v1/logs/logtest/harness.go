@@ -1,3 +1,5 @@
+// Package logtest provides programmable log sources, output recorders, and a
+// harness that exercises the real log manager with context-aware test streams.
 package logtest
 
 import (

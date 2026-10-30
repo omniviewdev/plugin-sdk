@@ -10,23 +10,31 @@ import (
 )
 
 const (
+	// ConnectionDefaultExpiryTime is the default credential validity window for new connections.
 	ConnectionDefaultExpiryTime = time.Hour * 24
 )
 
+// ConnectionAutoConnectTrigger identifies a host event that may initiate automatic connection.
 type ConnectionAutoConnectTrigger string
 
 const (
+	// ConnectionAutoConnectTriggerPluginStart requests automatic connection when the plugin starts.
 	ConnectionAutoConnectTriggerPluginStart          ConnectionAutoConnectTrigger = "PLUGIN_START"
+	// ConnectionAutoConnectTriggerConnectionDiscovered requests connection when a profile is discovered.
 	ConnectionAutoConnectTriggerConnectionDiscovered ConnectionAutoConnectTrigger = "CONNECTION_DISCOVERED"
 )
 
+// ConnectionAutoConnectRetry selects when the host may retry a failed automatic connection.
 type ConnectionAutoConnectRetry string
 
 const (
+	// ConnectionAutoConnectRetryNone disables automatic retries after failure.
 	ConnectionAutoConnectRetryNone     ConnectionAutoConnectRetry = "NONE"
+	// ConnectionAutoConnectRetryOnChange permits retry after connection configuration changes.
 	ConnectionAutoConnectRetryOnChange ConnectionAutoConnectRetry = "ON_CHANGE"
 )
 
+// Valid reports whether the trigger names a supported automatic connection event.
 func (t ConnectionAutoConnectTrigger) Valid() bool {
 	switch t {
 	case ConnectionAutoConnectTriggerPluginStart, ConnectionAutoConnectTriggerConnectionDiscovered:
@@ -36,6 +44,7 @@ func (t ConnectionAutoConnectTrigger) Valid() bool {
 	}
 }
 
+// Valid reports whether the retry policy is supported.
 func (r ConnectionAutoConnectRetry) Valid() bool {
 	switch r {
 	case ConnectionAutoConnectRetryNone, ConnectionAutoConnectRetryOnChange:
@@ -45,12 +54,14 @@ func (r ConnectionAutoConnectRetry) Valid() bool {
 	}
 }
 
+// ConnectionAutoConnect configures host-managed connection triggers and retry behavior.
 type ConnectionAutoConnect struct {
 	Enabled  bool                           `json:"enabled"`
 	Triggers []ConnectionAutoConnectTrigger `json:"triggers"`
 	Retry    ConnectionAutoConnectRetry     `json:"retry"`
 }
 
+// ConnectionLifecycle holds host-managed lifecycle preferences; nil AutoConnect leaves automatic connection unspecified.
 type ConnectionLifecycle struct {
 	AutoConnect *ConnectionAutoConnect `json:"auto_connect,omitempty"`
 }
@@ -58,6 +69,7 @@ type ConnectionLifecycle struct {
 // prevent collisions in context values.
 type connectionCtxKey struct{}
 
+// ConnectionContext is a distinct connection value type for integrations requiring separate typing.
 type ConnectionContext Connection
 
 // Connection holds the current state (and configuration data) for an
@@ -122,36 +134,44 @@ type Connection struct {
 	Client any
 }
 
+// GetSensitiveData returns the shared private map; callers must synchronize concurrent access.
 func (c *Connection) GetSensitiveData() map[string]any {
 	return c.sensitiveData
 }
 
+// SetSensitiveData replaces the private map without copying it; nil remains nil.
 func (c *Connection) SetSensitiveData(data map[string]any) {
 	c.sensitiveData = data
 }
 
+// SetSensitiveDataKey updates the private map, which must already be initialized.
 func (c *Connection) SetSensitiveDataKey(key string, value any) {
 	c.sensitiveData[key] = value
 }
 
+// GetSensitiveDataKey returns a private value and whether its key exists; a nil map has no keys.
 func (c *Connection) GetSensitiveDataKey(key string) (any, bool) {
 	val, ok := c.sensitiveData[key]
 	return val, ok
 }
 
+// GetData returns the shared public configuration map without copying it.
 func (c *Connection) GetData() map[string]any {
 	return c.Data
 }
 
+// SetData replaces the public map without copying it; nil remains nil.
 func (c *Connection) SetData(data map[string]any) {
 	c.Data = data
 }
 
+// GetDataKey returns a public value and whether its key exists; a nil map has no keys.
 func (c *Connection) GetDataKey(key string) (any, bool) {
 	val, ok := c.Data[key]
 	return val, ok
 }
 
+// SetDataKey updates the public map, which must already be initialized.
 func (c *Connection) SetDataKey(key string, value any) {
 	c.Data[key] = value
 }
@@ -161,6 +181,7 @@ func (c *Connection) IsAuthed() bool {
 	return c.ExpiryTime > 0 && time.Now().Before(c.LastRefresh.Add(c.ExpiryTime))
 }
 
+// ConnectionOpts supplies connection metadata and shared maps to NewConnection.
 type ConnectionOpts struct {
 	// Data is an optional map of arbitrary data that can be used to store additional information about the namespace.
 	Data map[string]any
@@ -194,6 +215,8 @@ type ConnectionOpts struct {
 	ExpiryTime time.Duration
 }
 
+// NewConnection requires an ID, supplies missing defaults, and validates lifecycle policies.
+// Supplied maps and trigger slices remain shared; the automatic-connection struct is copied.
 func NewConnection(opts ConnectionOpts) (*Connection, error) {
 	if opts.ID == "" {
 		return nil, errors.New("ID is required when creating an authorization context")
@@ -247,6 +270,7 @@ func NewConnection(opts ConnectionOpts) (*Connection, error) {
 	}, nil
 }
 
+// ConnectionFromContext returns the stored pointer, or nil for a nil context or absent connection.
 func ConnectionFromContext(ctx context.Context) *Connection {
 	if ctx == nil {
 		return nil
@@ -257,28 +281,44 @@ func ConnectionFromContext(ctx context.Context) *Connection {
 	return nil
 }
 
+// WithConnection stores the connection pointer without copying it or changing its lifecycle.
 func WithConnection(ctx context.Context, c *Connection) context.Context {
 	return context.WithValue(ctx, connectionCtxKey{}, c)
 }
 
+// ConnectionStatusCode classifies connection lifecycle state or a connection-check failure.
 type ConnectionStatusCode string
 
 const (
+	// ConnectionStatusUnknown indicates that no connection state is known.
 	ConnectionStatusUnknown               ConnectionStatusCode = "UNKNOWN"
+	// ConnectionStatusConnected indicates a registered active connection, not a network-health guarantee.
 	ConnectionStatusConnected             ConnectionStatusCode = "CONNECTED"
+	// ConnectionStatusDisconnected indicates that the connection is not active.
 	ConnectionStatusDisconnected          ConnectionStatusCode = "DISCONNECTED"
+	// ConnectionStatusPending indicates that connection startup is in progress.
 	ConnectionStatusPending               ConnectionStatusCode = "PENDING"
+	// ConnectionStatusFailed indicates that connection startup failed.
 	ConnectionStatusFailed                ConnectionStatusCode = "FAILED"
+	// ConnectionStatusError indicates an unclassified connection error.
 	ConnectionStatusError                 ConnectionStatusCode = "ERROR"
+	// ConnectionStatusUnauthorized indicates missing or invalid authentication.
 	ConnectionStatusUnauthorized          ConnectionStatusCode = "UNAUTHORIZED"
+	// ConnectionStatusForbidden indicates that access was denied.
 	ConnectionStatusForbidden             ConnectionStatusCode = "FORBIDDEN"
+	// ConnectionStatusBadRequest indicates invalid connection-check input.
 	ConnectionStatusBadRequest            ConnectionStatusCode = "BAD_REQUEST"
+	// ConnectionStatusNotFound indicates that the requested connection or target was not found.
 	ConnectionStatusNotFound              ConnectionStatusCode = "NOT_FOUND"
+	// ConnectionStatusTimeout indicates that the connection check exceeded its deadline.
 	ConnectionStatusTimeout               ConnectionStatusCode = "TIMEOUT"
+	// ConnectionStatusUnavailable indicates that the connection target is unavailable.
 	ConnectionStatusUnavailable           ConnectionStatusCode = "UNAVAILABLE"
+	// ConnectionStatusRequestEntityTooLarge indicates that the request exceeded the target limit.
 	ConnectionStatusRequestEntityTooLarge ConnectionStatusCode = "REQUEST_ENTITY_TOO_LARGE"
 )
 
+// ConnectionStatus pairs a connection with its lifecycle or check result and diagnostic details.
 type ConnectionStatus struct {
 	// Connection is the connection that the status is for.
 	Connection *Connection `json:"connection"`

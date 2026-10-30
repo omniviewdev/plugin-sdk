@@ -8,14 +8,14 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/logs/logtest"
 )
 
-// TH-001: Mount + Close lifecycle with no sessions
+// TH-001: Mount + Close lifecycle with no sessions.
 func TestHarnessMountClose(t *testing.T) {
 	h := logtest.Mount(t)
 	// Close is automatic via t.Cleanup, but we can also call it explicitly
 	h.Close()
 }
 
-// TH-002: FeedLine delivers to RecordingOutput
+// TH-002: FeedLine delivers to RecordingOutput.
 func TestHarnessFeedLine(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	h := logtest.Mount(t, logtest.WithSource("container-1", src))
@@ -32,7 +32,7 @@ func TestHarnessFeedLine(t *testing.T) {
 	}
 }
 
-// TH-003: WaitForStatus times out correctly
+// TH-003: WaitForStatus times out correctly.
 func TestHarnessWaitForStatusTimeout(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	h := logtest.Mount(t, logtest.WithSource("container-1", src))
@@ -45,7 +45,7 @@ func TestHarnessWaitForStatusTimeout(t *testing.T) {
 	}
 }
 
-// TH-004: CloseSource triggers stream end
+// TH-004: CloseSource triggers stream end.
 func TestHarnessCloseSource(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	h := logtest.Mount(t, logtest.WithSource("container-1", src))
@@ -69,7 +69,7 @@ func TestHarnessCloseSource(t *testing.T) {
 	}
 }
 
-// TH-005: RecordingOutput WaitForEvent works
+// TH-005: RecordingOutput WaitForEvent works.
 func TestRecordingOutputWaitForEvent(t *testing.T) {
 	output := logtest.NewRecordingOutput()
 
@@ -90,7 +90,7 @@ func TestRecordingOutputWaitForEvent(t *testing.T) {
 	}
 }
 
-// TH-006: RecordingOutput WaitForLines waits correctly
+// TH-006: RecordingOutput WaitForLines waits correctly.
 func TestRecordingOutputWaitForLines(t *testing.T) {
 	output := logtest.NewRecordingOutput()
 

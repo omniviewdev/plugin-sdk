@@ -28,13 +28,21 @@ const (
 type WatchState int
 
 const (
+	// WatchStateIdle means the source is registered but has not begun syncing.
 	WatchStateIdle WatchState = iota
+	// WatchStateSyncing means native cache acquisition is in progress.
 	WatchStateSyncing
+	// WatchStateSynced means the native cache reports readiness, not continuity.
 	WatchStateSynced
+	// WatchStateError means an attempt failed and may be retried.
 	WatchStateError
+	// WatchStateStopped means the source ended without a terminal failure.
 	WatchStateStopped
+	// WatchStateFailed means the source exhausted retries or failed admission.
 	WatchStateFailed
+	// WatchStateForbidden means source access was denied.
 	WatchStateForbidden
+	// WatchStateSkipped means startup was intentionally omitted.
 	WatchStateSkipped
 )
 

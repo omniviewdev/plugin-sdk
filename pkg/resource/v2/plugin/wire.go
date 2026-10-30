@@ -14,7 +14,9 @@ import (
 const WirePolicy = resourcev2.ResourceWirePolicy
 
 const (
+	// MaxWireBytes bounds the entire raw resource protobuf frame before decoding.
 	MaxWireBytes = resourcev2.MaxMessageBytes
+	// MaxBodyBytes bounds scalar payloads and encoded resource Value documents.
 	MaxBodyBytes = resourcev2.MaxDocumentBytes
 	MaxDepth     = resourcev2.MaxValueDepth
 	MaxNodes     = resourcev2.MaxValueNodes

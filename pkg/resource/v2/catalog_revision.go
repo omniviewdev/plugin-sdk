@@ -25,6 +25,8 @@ func WithCatalogRevision(ctx context.Context, revision string) context.Context {
 	return context.WithValue(ctx, catalogRevisionKey{}, revision)
 }
 
+// CatalogRevisionFromContext returns the default observation and its presence.
+// Presence does not validate syntax or authorize dispatch; route-qualified lookup is separate.
 func CatalogRevisionFromContext(ctx context.Context) (string, bool) {
 	revision, ok := ctx.Value(catalogRevisionKey{}).(string)
 	return revision, ok

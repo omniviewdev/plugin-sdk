@@ -21,6 +21,8 @@ type ResourceOperationError struct {
 	Suggestions []string `json:"suggestions,omitempty"`
 }
 
+// Error returns JSON containing public classification and presentation only.
+// A nil receiver returns an INTERNAL classification without native diagnostics.
 func (e *ResourceOperationError) Error() string {
 	if e == nil {
 		return `{"code":"INTERNAL","title":"","message":""}`
@@ -34,6 +36,7 @@ func (e *ResourceOperationError) Error() string {
 	return string(b)
 }
 
+// Unwrap exposes the native cause for local inspection; a nil receiver has no cause.
 func (e *ResourceOperationError) Unwrap() error {
 	if e == nil {
 		return nil
@@ -48,6 +51,8 @@ func (e *ResourceOperationError) Unwrap() error {
 // detail, and host redaction remains authoritative.
 func NewError(code, detail string) error { return &ResourceOperationError{Code: code, Message: detail} }
 
+// ErrorCode finds a reviewed classification through wrapping.
+// It maps cancellation and deadlines explicitly, nil to empty, and unknown errors to INTERNAL.
 func ErrorCode(err error) string {
 	if err == nil {
 		return ""

@@ -186,24 +186,28 @@ func (c *Client) LoadConnections(ctx context.Context) ([]types.Connection, error
 	return out, err
 }
 
+// GetConnection returns one configured profile without starting it.
 func (c *Client) GetConnection(ctx context.Context, id string) (types.Connection, error) {
 	var out types.Connection
 	err := c.connection(ctx, "get", id, &out, false)
 	return out, err
 }
 
+// StartConnection starts the selected configured generation.
 func (c *Client) StartConnection(ctx context.Context, id string) (types.ConnectionStatus, error) {
 	var out types.ConnectionStatus
 	err := c.connection(ctx, "start", id, &out, true)
 	return out, err
 }
 
+// StopConnection retires the selected generation and returns its profile.
 func (c *Client) StopConnection(ctx context.Context, id string) (types.Connection, error) {
 	var out types.Connection
 	err := c.connection(ctx, "stop", id, &out, false)
 	return out, err
 }
 
+// CheckConnection performs the provider's optional health check.
 func (c *Client) CheckConnection(ctx context.Context, id string) (types.ConnectionStatus, error) {
 	var out types.ConnectionStatus
 	err := c.connection(ctx, "check", id, &out, true)
@@ -219,6 +223,7 @@ func (c *Client) GetConnectionStatus(ctx context.Context, id string) (types.Conn
 
 const closeTimeout = 5 * time.Second
 
+// Close retires remote provider resources within the transport close timeout.
 func (c *Client) Close() error { return c.closeWithTimeout(closeTimeout) }
 func (c *Client) closeWithTimeout(timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

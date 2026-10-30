@@ -100,6 +100,7 @@ type Schema struct {
 	Required   []string                  `json:"required,omitempty"`
 }
 
+// MarshalJSON emits the object-root action-schema subset without applying defaults.
 func (s Schema) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Type       string                    `json:"type"`
@@ -108,6 +109,8 @@ func (s Schema) MarshalJSON() ([]byte, error) {
 	}{"object", s.Properties, s.Required})
 }
 
+// UnmarshalJSON rejects malformed JSON, unknown fields and non-object roots.
+// It replaces s only after decoding succeeds; nested constraints remain metadata.
 func (s *Schema) UnmarshalJSON(data []byte) error {
 	if err := ValidateJSON(data); err != nil {
 		return err
@@ -142,6 +145,7 @@ func PtrFloat64(v float64) *float64 { return &v }
 type ActionScope string
 
 const (
+	// ActionScopeInstance associates an action with an exact resource reference.
 	ActionScopeInstance ActionScope = "instance"
 	ActionScopeType     ActionScope = "type"
 )
@@ -251,7 +255,9 @@ const (
 type EdgeDirection string
 
 const (
+	// EdgeOutgoing places the source at the origin of the relationship.
 	EdgeOutgoing EdgeDirection = ""
+	// EdgeIncoming places the source at the destination of the relationship.
 	EdgeIncoming EdgeDirection = "incoming"
 )
 

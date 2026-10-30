@@ -178,6 +178,7 @@ func updateSuccess(out *resourcepb.UpdateResponse, err error) error {
 	return nil
 }
 
+// StartConnectionWatch starts advisory watches for the explicit bounded target set.
 func (c *Client) StartConnectionWatch(ctx context.Context, targets []resourcev2.ReadTarget) error {
 	if len(targets) == 0 || len(targets) > MaxPageSize {
 		return invalid("explicit bounded watch targets required")
@@ -194,6 +195,7 @@ func (c *Client) StartConnectionWatch(ctx context.Context, targets []resourcev2.
 	return updateSuccess(out, err)
 }
 
+// StopConnectionWatch stops advisory watches on the selected route.
 func (c *Client) StopConnectionWatch(ctx context.Context, route resourcev2.AccessRoute) error {
 	p, err := resourcev2.ToProtoAccessRoute(route)
 	if err != nil {
@@ -245,6 +247,7 @@ func (c *Client) GetWatchState(
 	return &v, nil
 }
 
+// EnsureResourceWatch starts the target's advisory watch unless it already exists.
 func (c *Client) EnsureResourceWatch(ctx context.Context, target resourcev2.ReadTarget) error {
 	p, err := resourcev2.ToProtoReadTarget(target)
 	if err != nil {
@@ -254,6 +257,7 @@ func (c *Client) EnsureResourceWatch(ctx context.Context, target resourcev2.Read
 	return updateSuccess(out, err)
 }
 
+// RestartResourceWatch replaces the target's advisory watch with a fresh source.
 func (c *Client) RestartResourceWatch(ctx context.Context, target resourcev2.ReadTarget) error {
 	p, err := resourcev2.ToProtoReadTarget(target)
 	if err != nil {
@@ -263,6 +267,7 @@ func (c *Client) RestartResourceWatch(ctx context.Context, target resourcev2.Rea
 	return updateSuccess(out, err)
 }
 
+// StopResourceWatch stops the resource type's watch on the selected route.
 func (c *Client) StopResourceWatch(ctx context.Context, route resourcev2.AccessRoute, key string) error {
 	p, err := resourcev2.ToProtoAccessRoute(route)
 	if err != nil {
@@ -272,6 +277,7 @@ func (c *Client) StopResourceWatch(ctx context.Context, route resourcev2.AccessR
 	return updateSuccess(out, err)
 }
 
+// IsResourceWatchRunning reports whether the route and resource type have an active watch.
 func (c *Client) IsResourceWatchRunning(ctx context.Context, route resourcev2.AccessRoute, key string) (bool, error) {
 	p, err := resourcev2.ToProtoAccessRoute(route)
 	if err != nil {

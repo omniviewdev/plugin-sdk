@@ -17,6 +17,7 @@ import (
 	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 )
 
+// PluginClient forwards metric queries and streams to a remote plugin.
 type PluginClient struct {
 	client metricpb.MetricPluginClient
 	log    logging.Logger
@@ -44,6 +45,7 @@ func metricDomainError(err error) error {
 	return translated
 }
 
+// GetSupportedResources returns the remote provider and its resource handlers.
 func (c *PluginClient) GetSupportedResources(ctx *types.PluginContext) (*ProviderInfo, []Handler) {
 	response, err := c.client.GetSupportedResources(pluginCallContext(ctx), &emptypb.Empty{})
 	if err != nil {
@@ -71,6 +73,7 @@ func pluginCallContext(pc *types.PluginContext) context.Context {
 	return types.WithPluginContext(ctx, pc)
 }
 
+// Query selects the legacy or resource-aware RPC from the request's intent.
 func (c *PluginClient) Query(ctx *types.PluginContext, r QueryRequest) (*QueryResponse, error) {
 	if r.HasResourceIntent() {
 		return c.QueryResource(ctx, r)
@@ -86,6 +89,7 @@ func (c *PluginClient) Query(ctx *types.PluginContext, r QueryRequest) (*QueryRe
 	return QueryResponseFromProto(response), nil
 }
 
+// QueryResource validates resource intent and requires resource-aware response admission.
 func (c *PluginClient) QueryResource(ctx *types.PluginContext, r QueryRequest) (*QueryResponse, error) {
 	if !r.HasResourceIntent() {
 		return nil, metricError("INVALID_REQUEST", "Resource query requires resource input.")
@@ -134,6 +138,7 @@ func outputFromProto(p *metricpb.MetricStreamOutput) StreamOutput {
 	return r
 }
 
+// StreamMetrics opens a legacy metric stream bound to ctx.
 func (c *PluginClient) StreamMetrics(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
 	child, cancel := context.WithCancel(ctx)
 	stream, err := c.client.StreamMetrics(child)
@@ -150,6 +155,7 @@ func (c *PluginClient) StreamMetrics(ctx context.Context, in chan StreamInput) (
 	}, stream.CloseSend), nil
 }
 
+// StreamResourceMetrics waits for remote readiness before forwarding resource frames.
 func (c *PluginClient) StreamResourceMetrics(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
 	ctx, err := resourceplugin.OutgoingSessionContext(ctx)
 	if err != nil {

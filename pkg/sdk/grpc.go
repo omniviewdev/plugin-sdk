@@ -1,3 +1,4 @@
+// Package sdk composes plugin capabilities, connection-context transport, and process serving.
 package sdk
 
 import (
@@ -90,6 +91,8 @@ func UseClientPluginContext(ctx context.Context) (context.Context, error) {
 	return grpcMetadata.NewOutgoingContext(ctx, outgoing), nil
 }
 
+// ClientPluginContextInterceptor propagates request diagnostics and selected connection
+// metadata without granting resource admission. Missing plugin context leaves the call unchanged.
 func ClientPluginContextInterceptor(log logging.Logger) grpc.UnaryClientInterceptor {
 	if log == nil {
 		log = logging.Default()

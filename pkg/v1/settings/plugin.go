@@ -9,7 +9,7 @@ import (
 	settingspb "github.com/omniviewdev/plugin-sdk/proto/v1/settings"
 )
 
-// This is the implementation of plugin.Plugin so we can serve/consume this.
+// SettingsPlugin serves or consumes settings through [plugin.Plugin] gRPC integration.
 type SettingsPlugin struct {
 	plugin.Plugin
 	// Concrete implementation, written in Go. This is only used for plugins
@@ -17,11 +17,13 @@ type SettingsPlugin struct {
 	Impl Provider
 }
 
+// GRPCServer registers the supplied provider on the plugin-owned gRPC server.
 func (p *SettingsPlugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
 	settingspb.RegisterSettingsPluginServer(s, &SettingsPluginServer{Impl: p.Impl})
 	return nil
 }
 
+// GRPCClient wraps the broker-owned connection without taking ownership of its lifetime.
 func (p *SettingsPlugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,

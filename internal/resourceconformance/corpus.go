@@ -10,6 +10,8 @@ import (
 	"reflect"
 )
 
+// Record preserves one native object's exact identity, tokens, and JSON body.
+// Scope and Body remain caller-owned mutable containers.
 type Record struct {
 	Name        string
 	Provider    string
@@ -22,24 +24,29 @@ type Record struct {
 	Body        json.RawMessage
 }
 
+// Page names finite corpus members in native cursor order; empty Next ends traversal.
 type Page struct {
 	Cursor  string
 	Next    string
 	Records []string // finite oracle names, never wire identity
 }
 
+// Coverage records native enumeration and consistency claims without upgrading them.
 type Coverage struct {
 	Enumeration string
 	Consistency string
 	Limitations []string
 }
 
+// Change is one ordered native update; Revision remains opaque, not sortable.
 type Change struct {
 	Record   string
 	Revision string
 	Body     json.RawMessage
 }
 
+// Scenario binds selected native scopes to finite pages and declared guarantees.
+// A nil Schema means the source did not provide one.
 type Scenario struct {
 	Name       string
 	Profile    string
@@ -53,16 +60,20 @@ type Scenario struct {
 	Operations map[string]string // finite fixture expectations, not SDK capabilities
 }
 
+// IdentityCase supplies independent expected equality for two named records.
 type IdentityCase struct {
 	Name        string
 	Left, Right string
 	Equal       bool
 }
 
+// Link names a native relation whose endpoints must remain in the same node scope.
 type Link struct {
 	From, Relation, To string
 }
 
+// Corpus owns finite fixture expectations, not product registrations or wire types.
+// Callers may mutate a corpus; each NativeCorpus call returns independent storage.
 type Corpus struct {
 	Records       []Record
 	Scenarios     []Scenario
@@ -70,6 +81,7 @@ type Corpus struct {
 	Links         []Link
 }
 
+// Observation pairs a native identity with the body actually seen by a consumer.
 type Observation struct {
 	Record Record
 	Body   json.RawMessage
@@ -82,6 +94,7 @@ func SameAddress(a, b Record) bool {
 		a.Type == b.Type && a.ID == b.ID && reflect.DeepEqual(a.Scope, b.Scope)
 }
 
+// Record returns the named fixture, sharing its scope and body; unknown names panic.
 func (c Corpus) Record(name string) Record {
 	for _, r := range c.Records {
 		if r.Name == name {

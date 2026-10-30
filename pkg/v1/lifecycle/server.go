@@ -19,6 +19,7 @@ type Server struct {
 	Capabilities       []string
 }
 
+// GetInfo returns the process metadata captured at lifecycle registration.
 func (s *Server) GetInfo(_ context.Context, _ *emptypb.Empty) (*lifecyclepb.GetInfoResponse, error) {
 	return &lifecyclepb.GetInfoResponse{
 		PluginId:           s.PluginID,
@@ -27,12 +28,14 @@ func (s *Server) GetInfo(_ context.Context, _ *emptypb.Empty) (*lifecyclepb.GetI
 	}, nil
 }
 
+// GetCapabilities returns the registered capability snapshot. Direct callers must not mutate its slice.
 func (s *Server) GetCapabilities(_ context.Context, _ *emptypb.Empty) (*lifecyclepb.GetCapabilitiesResponse, error) {
 	return &lifecyclepb.GetCapabilitiesResponse{
 		Capabilities: s.Capabilities,
 	}, nil
 }
 
+// HealthCheck reports that this plugin process serves RPCs; it does not probe providers.
 func (s *Server) HealthCheck(_ context.Context, _ *emptypb.Empty) (*lifecyclepb.HealthCheckResponse, error) {
 	return &lifecyclepb.HealthCheckResponse{
 		Status: lifecyclepb.ServingStatus_SERVING_STATUS_SERVING,

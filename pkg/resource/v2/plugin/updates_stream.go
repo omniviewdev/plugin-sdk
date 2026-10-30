@@ -168,6 +168,8 @@ func listenUpdatesHandler(srv interface{}, stream grpc.ServerStream) error {
 	}
 }
 
+// ListenForEvents delivers advisory updates after remote registration readiness.
+// Cancellation ends the listener; onReady must succeed before any event is delivered.
 func (c *Client) ListenForEvents(ctx context.Context, sink resourcev2.WatchEventSink, onReady func() error) error {
 	var err error
 	ctx, err = outgoingSession(ctx)

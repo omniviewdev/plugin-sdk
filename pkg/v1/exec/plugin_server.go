@@ -19,6 +19,7 @@ import (
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
 
+// PluginServer adapts a Provider to exec RPCs and validates resource admission.
 type PluginServer struct {
 	execpb.UnimplementedExecPluginServer
 	log  logging.Logger
@@ -57,6 +58,7 @@ func grpcCodeForError(err error) codes.Code {
 	return codes.Internal
 }
 
+// GetSupportedResources encodes supported handler metadata without callbacks.
 func (s *PluginServer) GetSupportedResources(
 	ctx context.Context,
 	_ *emptypb.Empty,
@@ -71,6 +73,7 @@ func (s *PluginServer) GetSupportedResources(
 	}, nil
 }
 
+// GetSession returns session metadata or a classified RPC error.
 func (s *PluginServer) GetSession(
 	ctx context.Context,
 	in *execpb.GetSessionRequest,
@@ -89,6 +92,7 @@ func (s *PluginServer) GetSession(
 	}, nil
 }
 
+// ListSessions returns snapshots of the provider's current sessions.
 func (s *PluginServer) ListSessions(
 	ctx context.Context,
 	in *emptypb.Empty,
@@ -112,6 +116,7 @@ func (s *PluginServer) ListSessions(
 	}, nil
 }
 
+// CreateSession accepts only ordinary sessions; resource intent requires the versioned RPC.
 func (s *PluginServer) CreateSession(
 	ctx context.Context,
 	in *execpb.SessionOptions,
@@ -142,6 +147,7 @@ func (s *PluginServer) CreateSession(
 	}, nil
 }
 
+// CreateResourceSession validates wire admission and the returned session binding.
 func (s *PluginServer) CreateResourceSession(
 	ctx context.Context,
 	in *execpb.SessionOptions,
@@ -191,6 +197,7 @@ func (s *PluginServer) CreateResourceSession(
 	return response, nil
 }
 
+// AttachSession attaches the session and returns its buffered output.
 func (s *PluginServer) AttachSession(
 	ctx context.Context,
 	in *execpb.AttachSessionRequest,
@@ -209,6 +216,7 @@ func (s *PluginServer) AttachSession(
 	}, nil
 }
 
+// DetachSession detaches the session without terminating it.
 func (s *PluginServer) DetachSession(
 	ctx context.Context,
 	in *execpb.AttachSessionRequest,
@@ -226,6 +234,7 @@ func (s *PluginServer) DetachSession(
 	}, nil
 }
 
+// CloseSession releases the session and maps provider failures to RPC status.
 func (s *PluginServer) CloseSession(
 	ctx context.Context,
 	in *execpb.CloseSessionRequest,
@@ -241,6 +250,7 @@ func (s *PluginServer) CloseSession(
 	}, nil
 }
 
+// ResizeSession forwards dimensions to the provider for terminal validation.
 func (s *PluginServer) ResizeSession(
 	ctx context.Context,
 	in *execpb.ResizeSessionRequest,
@@ -262,6 +272,7 @@ func (s *PluginServer) ResizeSession(
 	}, nil
 }
 
+// Stream multiplexes session input and output for the lifetime of the RPC.
 func (s *PluginServer) Stream(stream execpb.ExecPlugin_StreamServer) error {
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()

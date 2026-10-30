@@ -19,7 +19,7 @@ type ChannelSink struct {
 
 // NewChannelSink creates a ChannelSink wrapping the given output channel.
 // The context controls the lifetime — sends may be dropped after cancellation.
-// If ctx is nil, context.Background() is used. If out is nil, a buffered
+// If ctx is nil, [context.Background] is used. If out is nil, a buffered
 // drop channel is created (output is silently discarded).
 func NewChannelSink(ctx context.Context, out chan<- StreamOutput) *ChannelSink {
 	if ctx == nil {
@@ -31,6 +31,7 @@ func NewChannelSink(ctx context.Context, out chan<- StreamOutput) *ChannelSink {
 	return &ChannelSink{ctx: ctx, out: out}
 }
 
+// OnOutput sends output or drops it after cancellation; a nil receiver does nothing.
 func (s *ChannelSink) OnOutput(output StreamOutput) {
 	if s == nil || s.out == nil {
 		return

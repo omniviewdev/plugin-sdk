@@ -28,6 +28,7 @@ func (c *Client) ApplyConnectionOverlay(ctx context.Context, overlay resourcev2.
 	)
 }
 
+// NativeConnections returns source-owned profiles before host overlays apply.
 func (c *Client) NativeConnections(ctx context.Context) ([]types.Connection, error) {
 	var connections []types.Connection
 	err := c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "nativeConnections"}, &connections)

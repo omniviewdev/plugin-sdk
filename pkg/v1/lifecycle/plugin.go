@@ -18,11 +18,13 @@ type Plugin struct {
 	Impl *Server
 }
 
+// GRPCServer installs the lifecycle server supplied in Impl.
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
 	lifecyclepb.RegisterPluginLifecycleServer(s, p.Impl)
 	return nil
 }
 
+// GRPCClient returns a lifecycle client using the supplied connection.
 func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,

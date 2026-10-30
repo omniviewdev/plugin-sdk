@@ -33,7 +33,10 @@ type StubProvider struct {
 	handlers map[string]settings.CategoryChangeFunc
 }
 
+// ListSettings returns no metadata; configure typed value maps for getter tests.
 func (s *StubProvider) ListSettings() settings.Store { return nil }
+
+// GetSetting returns empty metadata without an error.
 func (s *StubProvider) GetSetting(_ string) (settings.Setting, error) {
 	return settings.Setting{}, nil
 }
@@ -43,6 +46,8 @@ func (s *StubProvider) SetSetting(_ string, _ any) error                       {
 func (s *StubProvider) SetSettings(_ map[string]any) error                     { return nil }
 func (s *StubProvider) RegisterSetting(_ string, _ settings.Setting) error     { return nil }
 func (s *StubProvider) RegisterSettings(_ string, _ ...settings.Setting) error { return nil }
+
+// RegisterChangeHandler replaces the callback for a category under a lock.
 func (s *StubProvider) RegisterChangeHandler(categoryID string, fn settings.CategoryChangeFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -63,6 +68,7 @@ func (s *StubProvider) TriggerChange(categoryID string, vals map[string]any) {
 	}
 }
 
+// GetString returns configured data or the empty string.
 func (s *StubProvider) GetString(id string) (string, error) {
 	if s.Strings != nil {
 		if v, ok := s.Strings[id]; ok {
@@ -72,6 +78,7 @@ func (s *StubProvider) GetString(id string) (string, error) {
 	return "", nil
 }
 
+// GetStringSlice returns the configured slice without copying, or nil.
 func (s *StubProvider) GetStringSlice(id string) ([]string, error) {
 	if s.StringSlices != nil {
 		if v, ok := s.StringSlices[id]; ok {
@@ -81,6 +88,7 @@ func (s *StubProvider) GetStringSlice(id string) ([]string, error) {
 	return nil, nil
 }
 
+// GetInt returns configured data or zero.
 func (s *StubProvider) GetInt(id string) (int, error) {
 	if s.Ints != nil {
 		if v, ok := s.Ints[id]; ok {
@@ -90,6 +98,7 @@ func (s *StubProvider) GetInt(id string) (int, error) {
 	return 0, nil
 }
 
+// GetIntSlice returns the configured slice without copying, or nil.
 func (s *StubProvider) GetIntSlice(id string) ([]int, error) {
 	if s.IntSlices != nil {
 		if v, ok := s.IntSlices[id]; ok {
@@ -99,6 +108,7 @@ func (s *StubProvider) GetIntSlice(id string) ([]int, error) {
 	return nil, nil
 }
 
+// GetFloat returns configured data or zero.
 func (s *StubProvider) GetFloat(id string) (float64, error) {
 	if s.Floats != nil {
 		if v, ok := s.Floats[id]; ok {
@@ -108,6 +118,7 @@ func (s *StubProvider) GetFloat(id string) (float64, error) {
 	return 0, nil
 }
 
+// GetFloatSlice returns the configured slice without copying, or nil.
 func (s *StubProvider) GetFloatSlice(id string) ([]float64, error) {
 	if s.FloatSlices != nil {
 		if v, ok := s.FloatSlices[id]; ok {
@@ -117,6 +128,7 @@ func (s *StubProvider) GetFloatSlice(id string) ([]float64, error) {
 	return nil, nil
 }
 
+// GetBool returns configured data or false.
 func (s *StubProvider) GetBool(id string) (bool, error) {
 	if s.Bools != nil {
 		if v, ok := s.Bools[id]; ok {

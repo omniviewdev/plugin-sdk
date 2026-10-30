@@ -9,6 +9,7 @@ import (
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 
+// ResourceSessionWireVersion identifies the canonical resource log-session wire contract.
 const ResourceSessionWireVersion = resourcev2.WireVersion
 
 // ResourceSessionProvider extends the existing log lifecycle without converting
@@ -18,16 +19,19 @@ const ResourceSessionWireVersion = resourcev2.WireVersion
 // Native callbacks receive the actual RPC context. A missing serialized plugin
 // context does not create a connection or authority; explicit routes still
 // require a matching connection supplied through the caller's plugin metadata.
-
+// Implementations retain responsibility for asynchronous session lifetime and cleanup.
 type ResourceSessionProvider interface {
 	CreateResourceSession(*types.PluginContext, CreateSessionOptions) (*LogSession, error)
 }
 
 func resourceError(code, detail string) error { return resourcev2.NewError(code, detail) }
+
+// HasResourceIntent reports whether options must use the resource-aware creation path.
 func (o CreateSessionOptions) HasResourceIntent() bool {
 	return o.ResourceData != nil || o.Reference != nil || o.Route != nil || o.ResourceKey != "" || o.ResourceID != ""
 }
 
+// Validate checks canonical metadata and values without requiring a live connection.
 func (o CreateSessionOptions) Validate() error {
 	metadata := struct {
 		ResourceKey, ResourceID string
@@ -68,6 +72,7 @@ func validateRoute(ctx *types.PluginContext, o CreateSessionOptions) error {
 	return nil
 }
 
+// ToProto validates options and bounds the encoded frame before allocating the resource body.
 func (o CreateSessionOptions) ToProto() (*logspb.CreateLogSessionRequest, error) {
 	if err := o.Validate(); err != nil {
 		return nil, err
@@ -113,6 +118,8 @@ func (o CreateSessionOptions) ToProto() (*logspb.CreateLogSessionRequest, error)
 	return p, nil
 }
 
+// CreateSessionOptionsFromProto rejects unknown fields and unsupported versions before decoding canonical values.
+// Optional reference, route, and body presence survives conversion.
 func CreateSessionOptionsFromProto(p *logspb.CreateLogSessionRequest) (CreateSessionOptions, error) {
 	var o CreateSessionOptions
 	if p == nil {

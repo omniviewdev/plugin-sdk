@@ -7,13 +7,17 @@ import (
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
 
+// StreamTarget identifies which process output channel carries a chunk.
 type StreamTarget int
 
 const (
+	// StreamTargetStdOut selects standard output and is the zero value.
 	StreamTargetStdOut StreamTarget = iota
+	// StreamTargetStdErr selects standard error.
 	StreamTargetStdErr
 )
 
+// String returns the channel name, or unknown for an invalid target.
 func (t StreamTarget) String() string {
 	switch t {
 	case StreamTargetStdOut:
@@ -24,23 +28,35 @@ func (t StreamTarget) String() string {
 	return "unknown"
 }
 
+// StreamSignal identifies process signals and stream lifecycle notifications.
 type StreamSignal int
 
 const (
-	// while close isn't a signal, it's used to close the stream.
+	// StreamSignalNone carries data without a signal.
 	StreamSignalNone StreamSignal = iota
+	// StreamSignalClose marks stream closure rather than a process signal.
 	StreamSignalClose
+	// StreamSignalSigint requests interrupt.
 	StreamSignalSigint
+	// StreamSignalSigquit requests quit.
 	StreamSignalSigquit
+	// StreamSignalSigterm requests termination.
 	StreamSignalSigterm
+	// StreamSignalSigkill requests immediate termination.
 	StreamSignalSigkill
+	// StreamSignalSighup requests hangup.
 	StreamSignalSighup
+	// StreamSignalSigusr1 carries the first user-defined signal.
 	StreamSignalSigusr1
+	// StreamSignalSigusr2 carries the second user-defined signal.
 	StreamSignalSigusr2
+	// StreamSignalSigwinch reports a terminal size change.
 	StreamSignalSigwinch
+	// StreamSignalError marks a structured session failure.
 	StreamSignalError
 )
 
+// String returns the signal name, defaulting to NONE for unknown values.
 func (s StreamSignal) String() string {
 	switch s {
 	case StreamSignalNone:
@@ -98,6 +114,7 @@ func (s StreamSignal) ToProto() execpb.StreamSignal {
 	return execpb.StreamSignal_STREAM_SIGNAL_NONE
 }
 
+// NewStreamSignalFromProto decodes a wire signal, treating unknown values as none.
 func NewStreamSignalFromProto(p execpb.StreamSignal) StreamSignal {
 	switch p {
 	case execpb.StreamSignal_STREAM_SIGNAL_NONE:
@@ -146,9 +163,13 @@ type ExecError struct {
 	RetryCommands []string
 }
 
+// Error returns the wrapped failure's text; Err must be nonnil.
 func (e *ExecError) Error() string { return e.Err.Error() }
+
+// Unwrap exposes the underlying failure for error classification.
 func (e *ExecError) Unwrap() error { return e.Err }
 
+// StreamOutput carries session data or a lifecycle event and its output sequence.
 type StreamOutput struct {
 	SessionID string       `json:"session_id"`
 	Data      []byte       `json:"data"`
@@ -158,6 +179,7 @@ type StreamOutput struct {
 	Seq       uint64       `json:"seq"`
 }
 
+// ToProto encodes the error, preserving nil and sharing RetryCommands storage.
 func (e *StreamError) ToProto() *execpb.StreamError {
 	if e == nil {
 		return nil
@@ -171,6 +193,7 @@ func (e *StreamError) ToProto() *execpb.StreamError {
 	}
 }
 
+// NewStreamErrorFromProto decodes an error, preserving nil and sharing retry commands.
 func NewStreamErrorFromProto(p *execpb.StreamError) *StreamError {
 	if p == nil {
 		return nil
@@ -184,6 +207,7 @@ func NewStreamErrorFromProto(p *execpb.StreamError) *StreamError {
 	}
 }
 
+// ToProto encodes output, sharing Data storage; nil yields an empty message.
 func (o *StreamOutput) ToProto() *execpb.StreamOutput {
 	if o == nil {
 		return &execpb.StreamOutput{}
@@ -207,6 +231,7 @@ func (o *StreamOutput) ToProto() *execpb.StreamOutput {
 	}
 }
 
+// NewStreamOutputFromProto decodes output, sharing Data; nil yields the zero value.
 func NewStreamOutputFromProto(p *execpb.StreamOutput) StreamOutput {
 	if p == nil {
 		return StreamOutput{}
@@ -230,6 +255,7 @@ func NewStreamOutputFromProto(p *execpb.StreamOutput) StreamOutput {
 	}
 }
 
+// StreamInput carries bytes to write to a session's terminal.
 type StreamInput struct {
 	// SessionID
 	SessionID string `json:"session_id"`
@@ -237,6 +263,7 @@ type StreamInput struct {
 	Data []byte `json:"data"`
 }
 
+// ToProto encodes input, sharing Data storage; nil yields an empty message.
 func (i *StreamInput) ToProto() *execpb.StreamInput {
 	if i == nil {
 		return &execpb.StreamInput{}
@@ -247,6 +274,7 @@ func (i *StreamInput) ToProto() *execpb.StreamInput {
 	}
 }
 
+// NewStreamInputFromProto decodes input, sharing Data; nil yields the zero value.
 func NewStreamInputFromProto(p *execpb.StreamInput) StreamInput {
 	if p == nil {
 		return StreamInput{}
@@ -257,12 +285,14 @@ func NewStreamInputFromProto(p *execpb.StreamInput) StreamInput {
 	}
 }
 
+// StreamResize requests nonzero terminal dimensions measured in characters.
 type StreamResize struct {
 	SessionID string `json:"session_id"`
 	Cols      uint16 `json:"cols"`
 	Rows      uint16 `json:"rows"`
 }
 
+// ToProto encodes dimensions; nil yields an empty request.
 func (r *StreamResize) ToProto() *execpb.ResizeSessionRequest {
 	if r == nil {
 		return &execpb.ResizeSessionRequest{}
@@ -274,6 +304,7 @@ func (r *StreamResize) ToProto() *execpb.ResizeSessionRequest {
 	}
 }
 
+// NewStreamResizeFromProto rejects nil requests and dimensions outside 1..65535.
 func NewStreamResizeFromProto(p *execpb.ResizeSessionRequest) (StreamResize, error) {
 	if p == nil {
 		return StreamResize{}, fmt.Errorf("nil ResizeSessionRequest")

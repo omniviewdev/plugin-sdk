@@ -11,21 +11,32 @@ import (
 )
 
 // PluginType is the legacy integer enum for plugin capabilities.
+//
 // Deprecated: Use Capability instead.
 type PluginType int
 
 const (
+	// ExecutorPlugin identifies the legacy remote-execution capability.
 	ExecutorPlugin PluginType = iota
+	// FilesystemPlugin identifies the legacy filesystem capability.
 	FilesystemPlugin
+	// LogPlugin identifies the legacy log-streaming capability.
 	LogPlugin
+	// MetricPlugin identifies the legacy metric-query capability.
 	MetricPlugin
+	// ReporterPlugin identifies the legacy reporting capability.
 	ReporterPlugin
+	// ResourcePlugin identifies the legacy resource capability.
 	ResourcePlugin
+	// SettingsPlugin identifies the legacy settings capability.
 	SettingsPlugin
+	// NetworkerPlugin identifies the legacy network-forwarding capability.
 	NetworkerPlugin
+	// UIPlugin identifies the legacy frontend capability.
 	UIPlugin
 )
 
+// String returns the manifest capability name, or "unknown" for an unrecognized value.
 func (pt PluginType) String() string {
 	switch pt {
 	case ExecutorPlugin:
@@ -51,6 +62,7 @@ func (pt PluginType) String() string {
 	}
 }
 
+// MarshalText encodes the legacy capability using its manifest name.
 func (pt PluginType) MarshalText() ([]byte, error) {
 	return []byte(pt.String()), nil
 }
@@ -75,6 +87,7 @@ type PluginInfo struct {
 }
 
 // Plugin is the legacy type that combines display + runtime state.
+//
 // Deprecated: New code should use PluginInfo for display and
 // host-side PluginRecord for runtime state.
 type Plugin struct {
@@ -96,6 +109,7 @@ type Plugin struct {
 	PluginClient interface{} `json:"-"`
 }
 
+// HasCapability reports whether the legacy capability list contains capability.
 func (p *Plugin) HasCapability(capability PluginType) bool {
 	for _, c := range p.Capabilities {
 		if c == capability {
@@ -105,6 +119,7 @@ func (p *Plugin) HasCapability(capability PluginType) bool {
 	return false
 }
 
+// SetEnabled marks the plugin enabled without starting its process.
 func (p *Plugin) SetEnabled() {
 	p.Enabled = true
 }
@@ -113,14 +128,17 @@ func (p *Plugin) GetRPCClient() interface{} {
 	return p.RPCClient
 }
 
+// SetDisabled marks the plugin disabled without stopping its process.
 func (p *Plugin) SetDisabled() {
 	p.Enabled = false
 }
 
+// String returns the plugin's identifier.
 func (p *Plugin) String() string {
 	return p.ID
 }
 
+// IsRunning reports the stored process state without probing the process.
 func (p *Plugin) IsRunning() bool {
 	return p.Running
 }

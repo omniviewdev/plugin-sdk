@@ -25,6 +25,7 @@ func NewRecordingOutput() *RecordingOutput {
 	}
 }
 
+// OnOutput records output and wakes waiters. Callers must not mutate shared payloads afterward.
 func (r *RecordingOutput) OnOutput(output exec.StreamOutput) {
 	r.mu.Lock()
 	r.outputs = append(r.outputs, output)

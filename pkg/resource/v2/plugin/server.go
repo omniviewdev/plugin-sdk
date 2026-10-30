@@ -12,12 +12,14 @@ import (
 	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
 )
 
+// GRPCPlugin exposes a resource provider through HashiCorp's gRPC plugin transport.
 type GRPCPlugin struct {
 	goplugin.NetRPCUnsupportedPlugin
 	Impl             resourcev2.Provider
 	SettingsProvider pkgsettings.Provider
 }
 
+// GRPCServer registers resource services with the plugin's gRPC server.
 func (p *GRPCPlugin) GRPCServer(_ *goplugin.GRPCBroker, s *grpc.Server) error {
 	register(s, p.Impl, p.SettingsProvider)
 	return nil
@@ -27,9 +29,12 @@ func (p *GRPCPlugin) GRPCClient(_ context.Context, _ *goplugin.GRPCBroker, c *gr
 	return NewClient(c), nil
 }
 
+// ServerOptions bounds incoming and outgoing resource frames.
 func ServerOptions() []grpc.ServerOption {
 	return []grpc.ServerOption{grpc.MaxRecvMsgSize(MaxWireBytes), grpc.MaxSendMsgSize(MaxWireBytes)}
 }
+
+// RegisterServer registers resource services without a settings provider.
 func RegisterServer(s *grpc.Server, p resourcev2.Provider) { register(s, p, nil) }
 
 type server struct {

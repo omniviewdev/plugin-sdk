@@ -37,6 +37,7 @@ type StaticForwarder interface {
 // ResourceForwarderFunc adapts a plain function to the ResourceForwarder interface.
 type ResourceForwarderFunc func(ctx context.Context, pctx *types.PluginContext, opts ResourcePortForwardHandlerOpts) (*ForwarderResult, error)
 
+// ForwardResource calls f with the resource forwarding request.
 func (f ResourceForwarderFunc) ForwardResource(
 	ctx context.Context,
 	pctx *types.PluginContext,
@@ -48,6 +49,7 @@ func (f ResourceForwarderFunc) ForwardResource(
 // StaticForwarderFunc adapts a plain function to the StaticForwarder interface.
 type StaticForwarderFunc func(ctx context.Context, pctx *types.PluginContext, opts StaticPortForwardHandlerOpts) (*ForwarderResult, error)
 
+// ForwardStatic calls f with the static forwarding request.
 func (f StaticForwarderFunc) ForwardStatic(
 	ctx context.Context,
 	pctx *types.PluginContext,

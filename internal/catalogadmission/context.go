@@ -73,7 +73,7 @@ func ValidateRevision(revision string, maxBytes int) *Violation {
 	return nil
 }
 
-// EncodedSize validates every retained entry and the aggregate metadata budget.
+// EncodedSize validates every retained entry, uint16 frame widths, and the aggregate metadata budget.
 // An absent qualified set has no frame; the default pin is validated separately.
 func EncodedSize(ctx context.Context, defaultRevision string, limits Limits) (int, *Violation) {
 	entries := Entries(ctx)

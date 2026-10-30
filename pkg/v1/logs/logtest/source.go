@@ -58,7 +58,7 @@ func (s *TestLogSource) HandlerFunc() logs.LogHandlerFunc {
 	}
 }
 
-// ReaderFunc returns an io.ReadCloser that reads from this source's Lines channel.
+// ReaderFunc returns an [io.ReadCloser] that reads from this source's Lines channel.
 // The reader respects the PluginContext for cancellation.
 func (s *TestLogSource) ReaderFunc(pctx *types.PluginContext) (io.ReadCloser, error) {
 	if s.ConnectDelay > 0 {
@@ -74,7 +74,7 @@ func (s *TestLogSource) ReaderFunc(pctx *types.PluginContext) (io.ReadCloser, er
 	return &channelReader{lines: s.Lines, done: make(chan struct{}), ctx: pctx.Context}, nil
 }
 
-// channelReader implements io.ReadCloser by reading lines from a channel.
+// channelReader implements [io.ReadCloser] by reading lines from a channel.
 // It respects context cancellation to avoid blocking forever.
 type channelReader struct {
 	lines     chan string
@@ -127,7 +127,7 @@ func (r *channelReader) Close() error {
 	return nil
 }
 
-// SourceBuilder returns a SourceBuilderFunc that produces a single source
+// SingleSourceBuilder returns a SourceBuilderFunc that produces a single source
 // with the given ID and labels.
 func SingleSourceBuilder(sourceID string, labels map[string]string) logs.SourceBuilderFunc {
 	return func(_ string, _ *resourcev2.Value, _ logs.LogSessionOptions) []logs.LogSource {
@@ -172,9 +172,8 @@ func WithTimestamp(t time.Time) LineOption {
 	return func(c *lineConfig) { c.timestamp = t }
 }
 
-// WithLevel is intentionally a no-op — level is set server-side by the handler,
-// not embedded in line content. This option exists for test DSL completeness.
-// TODO: Wire to lineConfig.level when LogLine-level filtering is supported.
+// WithLevel leaves line content unchanged because handlers assign severity
+// server-side. It accepts a level for compatibility with test line option lists.
 func WithLevel(_ logs.LogLevel) LineOption {
 	return func(_ *lineConfig) {}
 }

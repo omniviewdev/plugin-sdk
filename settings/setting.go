@@ -121,7 +121,7 @@ func (s *Setting) ResetValue() {
 	s.Value = s.Default
 }
 
-//========================================= PRIVATE METHODS ==================================
+// ========================================= PRIVATE METHODS ==================================
 
 // tryConvertSlice attempts to convert a slice of any type to a slice of interface{}.
 func tryConvertSlice(value any) ([]interface{}, bool) {

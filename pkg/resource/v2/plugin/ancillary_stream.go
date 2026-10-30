@@ -228,6 +228,7 @@ func (c *Client) openStream(ctx context.Context, index int, method string, reque
 	return s, nil
 }
 
+// WatchConnections forwards connection snapshots until completion or cancellation without closing out.
 func (c *Client) WatchConnections(ctx context.Context, out chan<- []types.Connection) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -267,6 +268,7 @@ func (c *Client) WatchConnections(ctx context.Context, out chan<- []types.Connec
 	}
 }
 
+// StreamAction forwards action events after exactly one native readiness event and leaves out open.
 func (c *Client) StreamAction(
 	ctx context.Context,
 	in resourcev2.ActionRequest,

@@ -1,3 +1,5 @@
+// Package log provides structured runtime logging with context enrichment,
+// configurable severity thresholds, and pluggable output backends.
 package log
 
 import (
@@ -21,6 +23,7 @@ type HCLBackend struct {
 	logger hclog.Logger
 }
 
+// NewHCLBackend wraps logger, using a null logger when logger is nil.
 func NewHCLBackend(logger hclog.Logger) *HCLBackend {
 	if logger == nil {
 		logger = hclog.NewNullLogger()
@@ -28,6 +31,7 @@ func NewHCLBackend(logger hclog.Logger) *HCLBackend {
 	return &HCLBackend{logger: logger}
 }
 
+// NewDefaultHCLBackend creates an hclog backend with its default output options.
 func NewDefaultHCLBackend(name string, level Level) *HCLBackend {
 	return NewHCLBackend(hclog.New(&hclog.LoggerOptions{
 		Name:  name,
@@ -35,6 +39,7 @@ func NewDefaultHCLBackend(name string, level Level) *HCLBackend {
 	}))
 }
 
+// Named returns a backend with a child logger, or this backend for an empty name.
 func (b *HCLBackend) Named(name string) *HCLBackend {
 	if name == "" {
 		return b
@@ -45,12 +50,14 @@ func (b *HCLBackend) Named(name string) *HCLBackend {
 	return &HCLBackend{logger: next}
 }
 
+// SetLevel updates the underlying hclog severity threshold.
 func (b *HCLBackend) SetLevel(level Level) {
 	b.mu.Lock()
 	b.logger.SetLevel(toHCLLevel(level))
 	b.mu.Unlock()
 }
 
+// Write emits a record through hclog; fatal records log errors without exiting.
 func (b *HCLBackend) Write(_ context.Context, record Record) error {
 	b.mu.RLock()
 	logger := b.logger
@@ -83,6 +90,7 @@ func (b *HCLBackend) Write(_ context.Context, record Record) error {
 	return nil
 }
 
+// Sync returns nil because hclog exposes no flush operation.
 func (b *HCLBackend) Sync(_ context.Context) error { return nil }
 
 func toHCLLevel(level Level) hclog.Level {
@@ -107,10 +115,12 @@ type SinkBackend struct {
 	sink Sink
 }
 
+// NewSinkBackend wraps sink; a nil sink discards records.
 func NewSinkBackend(sink Sink) *SinkBackend {
 	return &SinkBackend{sink: sink}
 }
 
+// Write forwards the record to the sink and returns its error.
 func (b *SinkBackend) Write(ctx context.Context, record Record) error {
 	if b.sink == nil {
 		return nil
@@ -118,4 +128,5 @@ func (b *SinkBackend) Write(ctx context.Context, record Record) error {
 	return b.sink.Write(ctx, record)
 }
 
+// Sync returns nil because Sink exposes no flush operation.
 func (b *SinkBackend) Sync(_ context.Context) error { return nil }

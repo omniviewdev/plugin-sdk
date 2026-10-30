@@ -10,16 +10,15 @@ import (
 	commandpb "github.com/omniviewdev/plugin-sdk/proto/v1/command"
 )
 
-// NOTE: Plugin servers (like this one) act akin to api controllers and are only meant for the hanlder to pass on to the Impl
-// on the provider. Servers like this should intentionally be lightweight and simple callers to separate the business logic
-// from the transport layer.
-
+// PluginServer adapts command RPCs to Impl without retaining request payloads.
 type PluginServer struct {
 	Impl Provider
 }
 
 // ============================== GENERAL COMMANDER ============================== //
 
+// Call requires plugin context and dispatches the requested path. Handler failures
+// become Internal RPC errors; missing context becomes InvalidArgument.
 func (s *PluginServer) Call(
 	ctx context.Context,
 	req *commandpb.CallCommandRequest,

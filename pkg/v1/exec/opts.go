@@ -58,6 +58,7 @@ type Handler struct {
 	HandlesResize bool `json:"-"`
 }
 
+// ToProto exports handler metadata without serializing executable callbacks.
 func (h Handler) ToProto() *execpb.ExecHandler {
 	return &execpb.ExecHandler{
 		Plugin:         h.Plugin,
@@ -67,6 +68,7 @@ func (h Handler) ToProto() *execpb.ExecHandler {
 	}
 }
 
+// HandlerFromProto decodes metadata only; nil yields a zero-value handler.
 func HandlerFromProto(p *execpb.ExecHandler) Handler {
 	if p == nil {
 		return Handler{}
@@ -79,10 +81,12 @@ func HandlerFromProto(p *execpb.ExecHandler) Handler {
 	}
 }
 
+// ID returns the plugin/resource routing key.
 func (h Handler) ID() string {
 	return h.Plugin + "/" + h.Resource
 }
 
+// String returns the handler's routing key.
 func (h Handler) String() string {
 	return h.ID()
 }

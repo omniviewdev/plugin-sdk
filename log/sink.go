@@ -15,6 +15,7 @@ type MultiSink struct {
 	sinks []Sink
 }
 
+// NewMultiSink snapshots the sink list and omits nil sinks.
 func NewMultiSink(sinks ...Sink) *MultiSink {
 	filtered := make([]Sink, 0, len(sinks))
 	for _, s := range sinks {
@@ -25,6 +26,7 @@ func NewMultiSink(sinks ...Sink) *MultiSink {
 	return &MultiSink{sinks: filtered}
 }
 
+// Write visits every sink in order and joins their errors without stopping early.
 func (m *MultiSink) Write(ctx context.Context, record Record) error {
 	var errs []error
 	for _, sink := range m.sinks {

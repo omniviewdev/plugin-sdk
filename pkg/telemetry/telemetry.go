@@ -1,3 +1,4 @@
+// Package telemetry configures process-wide tracing and optional profiling from host environment settings.
 package telemetry
 
 import (

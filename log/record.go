@@ -11,6 +11,8 @@ type Record struct {
 	Fields    []Field
 }
 
+// ToMap copies fields into a map, then overwrites reserved keys with record metadata.
+// Field values are shared with the record.
 func (r Record) ToMap() map[string]any {
 	out := make(map[string]any, len(r.Fields)+4)
 	for _, f := range r.Fields {

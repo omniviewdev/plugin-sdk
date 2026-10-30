@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	// PluginID is the go-plugin capability name used to dispense command transport.
 	PluginID = "command"
 )
 
@@ -26,16 +27,19 @@ type Provider interface {
 	ProviderImpl
 }
 
+// Plugin registers command RPCs or creates a client for a go-plugin connection.
 type Plugin struct {
 	plugin.Plugin
 	Impl Provider
 }
 
+// GRPCServer installs command RPCs backed by Impl.
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
 	commandpb.RegisterCommandServer(s, &PluginServer{Impl: p.Impl})
 	return nil
 }
 
+// GRPCClient returns a command client using the supplied connection.
 func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,
@@ -44,6 +48,7 @@ func (p *Plugin) GRPCClient(
 	return &PluginClient{client: commandpb.NewCommandClient(c)}, nil
 }
 
+// RegisterPlugin installs handlers as a command capability; a nil plugin returns an error.
 func RegisterPlugin(
 	p *sdk.Plugin,
 	opts PluginOpts,

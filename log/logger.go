@@ -39,6 +39,8 @@ type logger struct {
 	now    func() time.Time
 }
 
+// New creates a logger with an info threshold, null backend, and [time.Now] by default.
+// Fields are copied; Backend, Level, and values stored in fields remain shared.
 func New(cfg Config) Logger {
 	be := cfg.Backend
 	if be == nil {
@@ -56,6 +58,7 @@ func New(cfg Config) Logger {
 	return &logger{name: cfg.Name, fields: fields, level: level, be: be, now: nowFn}
 }
 
+// Config selects the logger's name, persistent fields, output, threshold, and clock.
 type Config struct {
 	Name    string
 	Fields  []Field
@@ -64,6 +67,7 @@ type Config struct {
 	Now     func() time.Time
 }
 
+// NewNop returns a logger whose backend discards every record.
 func NewNop() Logger {
 	return New(Config{Backend: NewHCLBackend(hclog.NewNullLogger())})
 }
@@ -72,8 +76,7 @@ func NewNop() Logger {
 // Registered via RegisterContextEnricher to break import cycles.
 type ContextEnricher func(context.Context) []Field
 
-// enricherHolder wraps a ContextEnricher so atomic.Value always stores the
-// same concrete type.
+// enricherHolder allows an atomic pointer to publish a context enricher.
 type enricherHolder struct{ fn ContextEnricher }
 
 var contextEnricher atomic.Value // stores *enricherHolder
@@ -84,8 +87,7 @@ func RegisterContextEnricher(fn ContextEnricher) {
 	contextEnricher.Store(&enricherHolder{fn: fn})
 }
 
-// loggerHolder wraps a Logger so that atomic.Value always sees the same
-// concrete type, regardless of the underlying Logger implementation.
+// loggerHolder allows an atomic pointer to publish any Logger implementation.
 type loggerHolder struct{ l Logger }
 
 var defaultLogger atomic.Value

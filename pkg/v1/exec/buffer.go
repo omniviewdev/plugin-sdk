@@ -1,3 +1,5 @@
+// Package exec manages plugin terminal sessions, multiplexed input and output,
+// and bounded output history for reconnecting clients.
 package exec
 
 import (

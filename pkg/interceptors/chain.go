@@ -1,3 +1,4 @@
+// Package interceptors supplies RPC recovery, logging, and diagnostic plugin-context extraction.
 package interceptors
 
 import (

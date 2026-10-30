@@ -7,6 +7,7 @@ import (
 	commandpb "github.com/omniviewdev/plugin-sdk/proto/v1/command"
 )
 
+// PluginClient forwards commands over a shared gRPC client connection.
 type PluginClient struct {
 	client commandpb.CommandClient
 }
@@ -15,6 +16,8 @@ var _ Provider = (*PluginClient)(nil)
 
 // ============================== GENERAL COMMANDER ============================== //
 
+// Call forwards a command with request metadata. RPC lifetime uses a background
+// context; cancellation in the supplied PluginContext does not cancel this legacy transport.
 func (p *PluginClient) Call(
 	ctx *types.PluginContext,
 	path string,

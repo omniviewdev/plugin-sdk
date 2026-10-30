@@ -12,9 +12,12 @@ import (
 // TransportEnvelope preserves admission errors before generated protobuf decoding.
 type TransportEnvelope = envelope
 
+// NewTransportEnvelope wraps a message for bounded raw-wire admission before decoding.
 func NewTransportEnvelope(message proto.Message, legacyExec bool) *TransportEnvelope {
 	return &envelope{message: message, legacyExec: legacyExec}
 }
+
+// AdmissionError returns the raw-wire admission failure retained during decoding.
 func (e *envelope) AdmissionError() error { return e.err }
 func ResourceRPCError(err error) error    { return rpcError(err) }
 func ResourceDomainError(err error) error { return domainError(err) }

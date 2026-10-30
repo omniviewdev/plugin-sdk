@@ -20,6 +20,7 @@ import (
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 
+// PluginServer adapts a log provider to gRPC and preserves resource error classification.
 type PluginServer struct {
 	log  logging.Logger
 	Impl Provider
@@ -37,6 +38,7 @@ func logsPluginContext(ctx context.Context) *types.PluginContext {
 	return &copy
 }
 
+// GetSupportedResources returns the provider's registered log handlers.
 func (s *PluginServer) GetSupportedResources(
 	ctx context.Context,
 	_ *emptypb.Empty,
@@ -51,6 +53,7 @@ func (s *PluginServer) GetSupportedResources(
 	}, nil
 }
 
+// CreateSession serves legacy requests and rejects resource intent without fallback.
 func (s *PluginServer) CreateSession(
 	ctx context.Context,
 	in *logspb.CreateLogSessionRequest,
@@ -80,6 +83,7 @@ func (s *PluginServer) CreateSession(
 	}, nil
 }
 
+// CreateResourceSession validates wire version, trusted route, and provider result before returning a session.
 func (s *PluginServer) CreateResourceSession(
 	ctx context.Context,
 	in *logspb.CreateLogSessionRequest,
@@ -124,6 +128,7 @@ func (s *PluginServer) CreateResourceSession(
 	return response, nil
 }
 
+// GetSession retrieves one session by ID through the provider.
 func (s *PluginServer) GetSession(
 	ctx context.Context,
 	in *logspb.LogSessionByIdRequest,
@@ -143,6 +148,7 @@ func (s *PluginServer) GetSession(
 	}, nil
 }
 
+// ListSessions returns the provider's current sessions.
 func (s *PluginServer) ListSessions(
 	ctx context.Context,
 	_ *emptypb.Empty,
@@ -163,6 +169,7 @@ func (s *PluginServer) ListSessions(
 	}, nil
 }
 
+// CloseSession requests provider cleanup for the named session.
 func (s *PluginServer) CloseSession(
 	ctx context.Context,
 	in *logspb.LogSessionByIdRequest,
@@ -180,6 +187,7 @@ func (s *PluginServer) CloseSession(
 	}, nil
 }
 
+// UpdateSessionOptions applies streaming options to an existing session.
 func (s *PluginServer) UpdateSessionOptions(
 	ctx context.Context,
 	in *logspb.UpdateLogSessionOptionsRequest,
@@ -203,6 +211,7 @@ func (s *PluginServer) UpdateSessionOptions(
 	}, nil
 }
 
+// Stream forwards bidirectional log traffic until the RPC ends or receiving fails.
 func (s *PluginServer) Stream(stream logspb.LogPlugin_StreamServer) error {
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()

@@ -99,11 +99,19 @@ func NormalizeResourceSessionOptions(o SessionOptions) (SessionOptions, error) {
 	return o, nil
 }
 
+// ValidateResourceSessionOptions checks resource intent, selector consistency,
+// canonical inputs, and metadata/body bounds without resolving a connection.
+// Opaque selectors do not require a body, reference, or resource Get operation.
 func ValidateResourceSessionOptions(o SessionOptions) error {
 	_, err := NormalizeResourceSessionOptions(o)
 	return err
 }
 
+// ToProto validates options and encodes resource intent with the current wire
+// version, preserving tagged scalar types and optional reference/route presence.
+// It rejects nil options and oversized frames before allocating a protobuf body.
+// Command, Params, and Labels remain shared with the caller; do not mutate them
+// concurrently with serialization or use of the returned message.
 func (o *SessionOptions) ToProto() (*execpb.SessionOptions, error) {
 	if o == nil {
 		return nil, optionError("INVALID_REQUEST", "Session options must not be nil.")

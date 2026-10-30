@@ -9,6 +9,7 @@ import (
 	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
 )
 
+// WireVersion identifies the resource transport contract, not a catalog revision.
 const WireVersion uint32 = 2
 
 // ScopeEntry is one literal identity dimension, not a query constraint.
@@ -198,6 +199,7 @@ type NativeAuthorityHint struct {
 }
 
 const (
+	// ContinuityConnectionLocal makes no identity continuity claim across connections.
 	ContinuityConnectionLocal = "connectionLocal"
 	ContinuityStableNative    = "stableNative"
 )

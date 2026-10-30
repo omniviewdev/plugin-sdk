@@ -90,6 +90,7 @@ func ValidateResourceGroups(v []ResourceGroup) error {
 	return nil
 }
 
+// ValidateActionDescriptors checks unique action IDs, explicit scopes, and bounded parameter and output schemas.
 func ValidateActionDescriptors(v []ActionDescriptor) error {
 	if err := admission(v); err != nil {
 		return err

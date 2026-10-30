@@ -1,3 +1,5 @@
+// Package exectest exercises exec managers with pipe-backed terminals and
+// synchronized output recording. Harnesses register cleanup with their owning test.
 package exectest
 
 import (

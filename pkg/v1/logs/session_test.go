@@ -6,7 +6,7 @@ import (
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 
-// SS-001: LogSessionStatus.ToProto() round-trips CONNECTING, INITIALIZING
+// SS-001: LogSessionStatus.ToProto() round-trips CONNECTING, INITIALIZING.
 func TestLogSessionStatusNewValues(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -31,7 +31,7 @@ func TestLogSessionStatusNewValues(t *testing.T) {
 	}
 }
 
-// SS-002: LogSessionStatus.FromProto() handles unknown values gracefully
+// SS-002: LogSessionStatus.FromProto() handles unknown values gracefully.
 func TestLogSessionStatusFromProtoUnknown(t *testing.T) {
 	got := LogSessionStatusFromProto(logspb.LogSessionStatus(99))
 	if got != LogSessionStatusActive {
@@ -39,7 +39,7 @@ func TestLogSessionStatusFromProtoUnknown(t *testing.T) {
 	}
 }
 
-// SS-003: All existing status values still convert correctly (regression)
+// SS-003: All existing status values still convert correctly (regression).
 func TestLogSessionStatusExistingValuesRegression(t *testing.T) {
 	tests := []struct {
 		name  string

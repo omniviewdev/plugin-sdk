@@ -37,8 +37,11 @@ func pluginContextEnricher(ctx context.Context) []logging.Field {
 }
 
 const (
+	// DefaultTimeout bounds requests that do not specify a timeout.
 	DefaultTimeout         = 10 * time.Second
+	// DefaultMaxRetries limits retries for default request options.
 	DefaultMaxRetries      = 3
+	// DefaultBackoffInterval sets the delay between default retries.
 	DefaultBackoffInterval = 1 * time.Second
 )
 
@@ -77,6 +80,8 @@ type PluginContext struct {
 	Logger logging.Logger `json:"-"`
 }
 
+// WithPluginContext stores a shallow snapshot without retaining the snapshot's Context.
+// A nil pluginContext leaves ctx unchanged; referenced settings and connection data remain shared.
 func WithPluginContext(ctx context.Context, pluginContext *PluginContext) context.Context {
 	if pluginContext == nil {
 		return ctx
@@ -86,6 +91,8 @@ func WithPluginContext(ctx context.Context, pluginContext *PluginContext) contex
 	return context.WithValue(ctx, pluginCtxKey{}, &copy)
 }
 
+// PluginContextFromContext returns a fresh shallow snapshot bound to ctx, or nil
+// when the private context entry is absent, invalid, or a typed-nil pointer.
 func PluginContextFromContext(ctx context.Context) *PluginContext {
 	v := ctx.Value(pluginCtxKey{})
 	if v == nil {
@@ -96,7 +103,7 @@ func PluginContextFromContext(ctx context.Context) *PluginContext {
 	return &pluginctx
 }
 
-// Construct a new plugin context with the given requester, resource key, and resource context.
+// NewPluginContext creates a request context with a new request ID and shared resource and settings pointers.
 func NewPluginContext(
 	ctx context.Context,
 	requester string,
@@ -117,7 +124,7 @@ func NewPluginContext(
 	return pluginCtx
 }
 
-// Construct a new plugin context with a valid connection.
+// NewPluginContextWithConnection creates a request context with a new request ID and the supplied connection.
 func NewPluginContextWithConnection(
 	ctx context.Context,
 	requester string,
@@ -138,6 +145,7 @@ func NewPluginContextWithConnection(
 	return pluginCtx
 }
 
+// NewPluginContextFromCtx creates request defaults using ctx's global configuration without storing itself in ctx.
 func NewPluginContextFromCtx(ctx context.Context) *PluginContext {
 	return &PluginContext{
 		Context:        ctx,
@@ -148,18 +156,22 @@ func NewPluginContextFromCtx(ctx context.Context) *PluginContext {
 	}
 }
 
+// SetSettingsProvider replaces the shared settings provider for this request.
 func (c *PluginContext) SetSettingsProvider(provider settings.Provider) {
 	c.PluginConfig = provider
 }
 
+// SetResourceContext replaces the resource pointer without copying its contents.
 func (c *PluginContext) SetResourceContext(resourceContext *ResourceContext) {
 	c.ResourceContext = resourceContext
 }
 
+// SetConnection replaces the connection pointer without changing its authentication state.
 func (c *PluginContext) SetConnection(authContext *Connection) {
 	c.Connection = authContext
 }
 
+// IsAuthenticated reports whether a connection is selected, not whether its credentials remain valid.
 func (c *PluginContext) IsAuthenticated() bool {
 	return c.Connection != nil
 }
@@ -176,6 +188,7 @@ type RequestOptions struct {
 	BackoffInterval time.Duration `json:"backoff_interval"`
 }
 
+// NewDefaultRequestOptions returns independently mutable request options initialized to SDK defaults.
 func NewDefaultRequestOptions() *RequestOptions {
 	return &RequestOptions{
 		Timeout:         DefaultTimeout,

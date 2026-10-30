@@ -7,6 +7,7 @@ import (
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
+// Features negotiates optional remote traits independently of Client's method set.
 func (c *Client) Features(ctx context.Context) (resourcev2.FeatureSet, error) {
 	out, err := c.call(
 		ctx,

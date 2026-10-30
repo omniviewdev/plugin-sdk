@@ -14,6 +14,7 @@ import (
 	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
 )
 
+// PluginServer exposes a forwarding provider over gRPC with resource wire admission.
 type PluginServer struct {
 	networkerpb.UnimplementedNetworkerPluginServer
 	Impl Provider
@@ -53,6 +54,7 @@ func grpcCodeForNetworkerError(err error) codes.Code {
 	return codes.Internal
 }
 
+// GetSupportedPortForwardTargets lists resource keys with registered forwarders.
 func (s *PluginServer) GetSupportedPortForwardTargets(
 	ctx context.Context,
 	_ *emptypb.Empty,
@@ -67,6 +69,7 @@ func (s *PluginServer) GetSupportedPortForwardTargets(
 	}, nil
 }
 
+// GetPortForwardSession returns a bounded wire snapshot for the requested session.
 func (s *PluginServer) GetPortForwardSession(
 	ctx context.Context,
 	in *networkerpb.PortForwardSessionByIdRequest,
@@ -89,6 +92,7 @@ func (s *PluginServer) GetPortForwardSession(
 	return &networkerpb.PortForwardSessionByIdResponse{Session: session}, nil
 }
 
+// ListPortForwardSessions returns session snapshots within the aggregate wire limit.
 func (s *PluginServer) ListPortForwardSessions(
 	ctx context.Context,
 	_ *emptypb.Empty,
@@ -119,6 +123,7 @@ func (s *PluginServer) ListPortForwardSessions(
 	return out, nil
 }
 
+// FindPortForwardSessions returns bounded snapshots matching the supplied filters.
 func (s *PluginServer) FindPortForwardSessions(
 	ctx context.Context,
 	in *networkerpb.FindPortForwardSessionRequest,
@@ -153,6 +158,7 @@ func (s *PluginServer) FindPortForwardSessions(
 	return out, nil
 }
 
+// StartPortForwardSession starts a legacy static forward and rejects resource payloads.
 func (s *PluginServer) StartPortForwardSession(
 	ctx context.Context,
 	in *networkerpb.PortForwardSessionOptions,
@@ -182,6 +188,7 @@ func (s *PluginServer) StartPortForwardSession(
 	return &networkerpb.PortForwardSessionByIdResponse{Session: session}, nil
 }
 
+// ClosePortForwardSession closes the requested forward and returns its final snapshot.
 func (s *PluginServer) ClosePortForwardSession(
 	ctx context.Context,
 	in *networkerpb.PortForwardSessionByIdRequest,
@@ -207,6 +214,9 @@ func (s *PluginServer) ClosePortForwardSession(
 	return &networkerpb.PortForwardSessionByIdResponse{Session: session}, nil
 }
 
+// StartResourcePortForwardSession admits resource-v2 context and starts a forward.
+// Caller cancellation remains attached through readiness; accepted session lifetime
+// and its retained connection-generation lease belong to the forwarding provider.
 func (s *PluginServer) StartResourcePortForwardSession(
 	ctx context.Context,
 	in *networkerpb.PortForwardSessionOptions,

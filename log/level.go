@@ -10,11 +10,17 @@ import (
 type Level int32
 
 const (
+	// LevelTrace enables the most detailed diagnostic records.
 	LevelTrace Level = iota
+	// LevelDebug enables debugging records and more severe records.
 	LevelDebug
+	// LevelInfo enables informational records and more severe records.
 	LevelInfo
+	// LevelWarn enables warning records and more severe records.
 	LevelWarn
+	// LevelError enables error and fatal records.
 	LevelError
+	// LevelFatal marks fatal conditions without requiring process termination.
 	LevelFatal
 )
 
@@ -37,6 +43,8 @@ func (l Level) String() string {
 	}
 }
 
+// ParseLevel accepts case-insensitive severity names and surrounding whitespace.
+// Empty input selects info; "warning" aliases warn. Invalid input returns info and an error.
 func ParseLevel(s string) (Level, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "trace":
@@ -61,20 +69,24 @@ type LevelController struct {
 	level atomic.Int32
 }
 
+// NewLevelController creates a concurrency-safe threshold controller.
 func NewLevelController(initial Level) *LevelController {
 	c := &LevelController{}
 	c.Set(initial)
 	return c
 }
 
+// Level returns the current severity threshold.
 func (c *LevelController) Level() Level {
 	return Level(c.level.Load())
 }
 
+// Set atomically replaces the severity threshold.
 func (c *LevelController) Set(level Level) {
 	c.level.Store(int32(level))
 }
 
+// Enabled reports whether level meets the current severity threshold.
 func (c *LevelController) Enabled(level Level) bool {
 	return level >= c.Level()
 }

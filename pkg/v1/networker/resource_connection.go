@@ -112,6 +112,8 @@ func strictNetworkJSON(data []byte, target any) error {
 	return nil
 }
 
+// UnmarshalJSON rejects unknown fields and invalid resource references, routes,
+// or lossless values before replacing the receiver.
 func (c *PortForwardResourceConnection) UnmarshalJSON(data []byte) error {
 	type plain PortForwardResourceConnection
 	var out plain

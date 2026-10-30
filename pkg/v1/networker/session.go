@@ -21,6 +21,7 @@ import (
 // SessionState
 // ---------------------------------------------------------------------------
 
+// SessionState describes tunnel availability; stopped and failed states are terminal.
 type SessionState string
 
 const (
@@ -30,10 +31,12 @@ const (
 	SessionStateFailed  SessionState = "FAILED"
 )
 
+// String returns the stable state label.
 func (s SessionState) String() string {
 	return string(s)
 }
 
+// ToProto encodes the state; unknown states map to stopped.
 func (s SessionState) ToProto() networkerpb.PortForwardSession_SessionState {
 	switch s {
 	case SessionStateActive:
@@ -107,13 +110,17 @@ var (
 // Protocols and Connection Types
 // ---------------------------------------------------------------------------
 
+// PortForwardProtocol selects the native transport protocol.
 type PortForwardProtocol string
 
 const (
+	// PortForwardProtocolTCP requests a TCP tunnel.
 	PortForwardProtocolTCP PortForwardProtocol = "TCP"
+	// PortForwardProtocolUDP requests a UDP tunnel.
 	PortForwardProtocolUDP PortForwardProtocol = "UDP"
 )
 
+// String returns the protocol label.
 func (p PortForwardProtocol) String() string {
 	return string(p)
 }
@@ -137,9 +144,11 @@ func (p PortForwardProtocol) ToProto() networkerpb.PortForwardProtocol {
 	}
 }
 
+// PortForwardConnectionType distinguishes resource and static forwarding targets.
 type PortForwardConnectionType string
 
 const (
+	// PortForwardConnectionTypeResource selects a registered resource forwarder.
 	PortForwardConnectionTypeResource PortForwardConnectionType = "RESOURCE"
 	PortForwardConnectionTypeStatic   PortForwardConnectionType = "STATIC"
 )
@@ -395,6 +404,8 @@ func (PortForwardResourceConnection) connectionType() PortForwardConnectionType 
 	return PortForwardConnectionTypeResource
 }
 
+// ToProto validates exact tagged data and returns an independently owned wire value.
+// Nil receivers and oversized frames return classified resource errors.
 func (c *PortForwardResourceConnection) ToProto() (*networkerpb.PortForwardResourceConnection, error) {
 	if c == nil {
 		return nil, resourcev2.NewError("INVALID_REQUEST", "Resource connection must not be nil.")
@@ -442,6 +453,8 @@ func (c *PortForwardResourceConnection) ToProto() (*networkerpb.PortForwardResou
 	return out, nil
 }
 
+// PortForwardResourceConnectionFromProto validates version, unknown fields, and
+// tagged values before decoding. The result owns its decoded resource data.
 func PortForwardResourceConnectionFromProto(
 	o *networkerpb.PortForwardResourceConnection,
 ) (PortForwardResourceConnection, error) {
@@ -511,6 +524,7 @@ func (PortForwardStaticConnection) connectionType() PortForwardConnectionType {
 	return PortForwardConnectionTypeStatic
 }
 
+// ToProto copies the address; a nil receiver stays absent.
 func (c *PortForwardStaticConnection) ToProto() *networkerpb.PortForwardStaticConnection {
 	if c == nil {
 		return nil
@@ -520,6 +534,7 @@ func (c *PortForwardStaticConnection) ToProto() *networkerpb.PortForwardStaticCo
 	}
 }
 
+// ToSessionProto wraps the address in the session connection oneof.
 func (c *PortForwardStaticConnection) ToSessionProto() *networkerpb.PortForwardSession_StaticConnection {
 	if c == nil {
 		return nil
@@ -529,6 +544,7 @@ func (c *PortForwardStaticConnection) ToSessionProto() *networkerpb.PortForwardS
 	}
 }
 
+// ToSessionOptionsProto wraps the address in the options connection oneof.
 func (c *PortForwardStaticConnection) ToSessionOptionsProto() *networkerpb.PortForwardSessionOptions_StaticConnection {
 	if c == nil {
 		return nil
@@ -538,6 +554,7 @@ func (c *PortForwardStaticConnection) ToSessionOptionsProto() *networkerpb.PortF
 	}
 }
 
+// PortForwardStaticConnectionFromProto copies the address; nil produces the zero value.
 func PortForwardStaticConnectionFromProto(
 	o *networkerpb.PortForwardStaticConnection,
 ) PortForwardStaticConnection {
@@ -563,12 +580,15 @@ func PortForwardStaticConnectionFromJson(o map[string]any) *PortForwardStaticCon
 // PortForwardSessionEncryption
 // ---------------------------------------------------------------------------
 
+// PortForwardSessionEncryption carries forwarder-specific encryption settings.
+// The manager transports these settings; the native forwarder enforces support.
 type PortForwardSessionEncryption struct {
 	Algorithm string `json:"algorithm"`
 	Key       string `json:"key"`
 	Enabled   bool   `json:"enabled"`
 }
 
+// ToProto copies encryption settings; nil stays absent.
 func (o *PortForwardSessionEncryption) ToProto() *networkerpb.PortForwardSessionEncryption {
 	if o == nil {
 		return nil
@@ -580,6 +600,7 @@ func (o *PortForwardSessionEncryption) ToProto() *networkerpb.PortForwardSession
 	}
 }
 
+// PortForwardSessionEncryptionFromProto copies settings; nil produces disabled encryption.
 func PortForwardSessionEncryptionFromProto(
 	o *networkerpb.PortForwardSessionEncryption,
 ) PortForwardSessionEncryption {
@@ -597,6 +618,8 @@ func PortForwardSessionEncryptionFromProto(
 // PortForwardSessionOptions
 // ---------------------------------------------------------------------------
 
+// PortForwardSessionOptions configures a new tunnel. LocalPort zero requests an
+// available port. The manager copies labels and connection data on acceptance.
 type PortForwardSessionOptions struct {
 	Connection     Connection                   `json:"connection"`
 	Labels         map[string]string            `json:"labels"`
@@ -608,6 +631,8 @@ type PortForwardSessionOptions struct {
 	RemotePort     int32                        `json:"remote_port"`
 }
 
+// UnmarshalJSON decodes a strict options envelope and validates resource targets
+// without inferring identity from legacy selectors.
 func (o *PortForwardSessionOptions) UnmarshalJSON(data []byte) error {
 	type Alias PortForwardSessionOptions
 	aux := &struct {
@@ -657,16 +682,20 @@ func (o *PortForwardSessionOptions) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ResourcePortForwardHandlerOpts pairs resource identity with forwarding options.
 type ResourcePortForwardHandlerOpts struct {
 	Resource PortForwardResourceConnection `json:"resource"`
 	Options  PortForwardSessionOptions     `json:"options"`
 }
 
+// StaticPortForwardHandlerOpts pairs a native address with forwarding options.
 type StaticPortForwardHandlerOpts struct {
 	Static  PortForwardStaticConnection `json:"static"`
 	Options PortForwardSessionOptions   `json:"options"`
 }
 
+// ToProto validates metadata and resource payloads before allocating a bounded frame.
+// Nil options return INVALID_REQUEST.
 func (o *PortForwardSessionOptions) ToProto() (*networkerpb.PortForwardSessionOptions, error) {
 	if o == nil {
 		return nil, resourcev2.NewError("INVALID_REQUEST", "Session options must not be nil.")
@@ -711,6 +740,8 @@ func (o *PortForwardSessionOptions) ToProto() (*networkerpb.PortForwardSessionOp
 	return opts, nil
 }
 
+// NewPortForwardSessionOptionsFromProto validates the wire frame and resource
+// version before decoding. Nil options return INVALID_REQUEST.
 func NewPortForwardSessionOptionsFromProto(
 	o *networkerpb.PortForwardSessionOptions,
 ) (*PortForwardSessionOptions, error) {
@@ -769,11 +800,14 @@ func NewPortForwardSessionOptionsFromProto(
 // FindPortForwardSessionRequest
 // ---------------------------------------------------------------------------
 
+// FindPortForwardSessionRequest filters sessions by opaque resource and connection
+// selectors. Empty selectors do not restrict that dimension.
 type FindPortForwardSessionRequest struct {
 	ResourceID   string `json:"resource_id"`
 	ConnectionID string `json:"connection_id"`
 }
 
+// ToProto copies the filter selectors into a wire request.
 func (p FindPortForwardSessionRequest) ToProto() *networkerpb.FindPortForwardSessionRequest {
 	return &networkerpb.FindPortForwardSessionRequest{
 		ResourceId:   p.ResourceID,
@@ -781,6 +815,7 @@ func (p FindPortForwardSessionRequest) ToProto() *networkerpb.FindPortForwardSes
 	}
 }
 
+// NewFindPortForwardSessionRequestFromProto copies selectors; nil matches all sessions.
 func NewFindPortForwardSessionRequestFromProto(
 	p *networkerpb.FindPortForwardSessionRequest,
 ) FindPortForwardSessionRequest {

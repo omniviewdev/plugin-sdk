@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	// StateDirectoryEnvironment names the host-selected, absolute application state root.
 	StateDirectoryEnvironment = "OMNIVIEW_STATE_DIR"
 	WorkspaceFileEnvironment  = "OMNIVIEW_WORKSPACE_FILE"
 )

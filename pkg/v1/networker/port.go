@@ -19,15 +19,18 @@ type RealPortChecker struct{}
 
 var _ PortChecker = RealPortChecker{}
 
+// FindFreePort returns an available TCP port selected by the operating system.
 func (RealPortChecker) FindFreePort() (int32, error) {
 	return FindFreeTCPPort()
 }
 
+// IsPortUnavailable reports whether a TCP connection to the local port succeeds.
 func (RealPortChecker) IsPortUnavailable(port int32) bool {
 	return IsPortUnavailable(port)
 }
 
 // FindFreeTCPPort finds an available port by letting the OS pick a free port.
+// The port is not reserved after this function returns.
 func FindFreeTCPPort() (int32, error) {
 	lis, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
@@ -49,7 +52,8 @@ func FindFreeTCPPort() (int32, error) {
 	return int32(port), nil
 }
 
-// IsPortUnavailable checks if a port is unavailable (i.e., in use).
+// IsPortUnavailable reports whether a TCP connection to the local port succeeds.
+// A failed probe returns false but does not guarantee that a listener can bind.
 func IsPortUnavailable(port int32) bool {
 	conn, err := net.Dial("tcp", fmt.Sprintf("localhost:%d", port))
 	if err != nil {

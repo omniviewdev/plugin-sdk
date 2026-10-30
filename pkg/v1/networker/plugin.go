@@ -16,9 +16,11 @@ import (
 )
 
 const (
+	// PluginID is the capability name used to register and discover networker plugins.
 	PluginID = "networker"
 )
 
+// PortForwardProvider manages forwarding sessions and reports supported resource targets.
 type PortForwardProvider interface {
 	GetSupportedPortForwardTargets(*types.PluginContext) ([]string, error)
 	GetPortForwardSession(*types.PluginContext, string) (*PortForwardSession, error)
@@ -43,12 +45,13 @@ type ResourcePortForwardProvider interface {
 	StartResourcePortForwardSession(*types.PluginContext, PortForwardSessionOptions) (*PortForwardSession, error)
 }
 
-// Provider is the interface satisfied by the plugin server and client
-// to provide the networker functionality.
+// Provider embeds the session-management contract shared by local managers and
+// remote clients. Resource forwarding is an optional [ResourcePortForwardProvider].
 type Provider interface {
 	PortForwardProvider
 }
 
+// Plugin connects a forwarding provider to the HashiCorp gRPC plugin protocol.
 type Plugin struct {
 	plugin.Plugin
 	Impl Provider
@@ -61,11 +64,13 @@ func (p *Plugin) BindConnectionContextProvider(provider resourcev2.ConnectionCon
 	}
 }
 
+// GRPCServer registers the provider with resource-aware request admission.
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
 	RegisterNetworkerPluginServer(s, &PluginServer{Impl: p.Impl})
 	return nil
 }
 
+// GRPCClient creates a forwarding client for the supplied plugin connection.
 func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,
@@ -77,6 +82,7 @@ func (p *Plugin) GRPCClient(
 	}, nil
 }
 
+// RegisterPlugin constructs a manager and registers the networker capability.
 func RegisterPlugin(
 	p *sdk.Plugin,
 	opts PluginOpts,

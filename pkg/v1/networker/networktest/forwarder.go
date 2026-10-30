@@ -1,3 +1,5 @@
+// Package networktest provides forwarding fakes, session harnesses, and state
+// observers for tests that exercise the real networker session manager.
 package networktest
 
 import (
@@ -28,6 +30,8 @@ type StubResourceForwarder struct {
 
 var _ networker.ResourceForwarder = (*StubResourceForwarder)(nil)
 
+// ForwardResource records the request and returns the configured failure or an
+// immediately ready tunnel whose error channel reports FailAfter, if set.
 func (s *StubResourceForwarder) ForwardResource(
 	_ context.Context,
 	_ *types.PluginContext,
@@ -90,6 +94,8 @@ type StubStaticForwarder struct {
 
 var _ networker.StaticForwarder = (*StubStaticForwarder)(nil)
 
+// ForwardStatic returns the configured failure or an immediately ready tunnel
+// whose error channel reports FailAfter, if set.
 func (s *StubStaticForwarder) ForwardStatic(
 	_ context.Context,
 	_ *types.PluginContext,

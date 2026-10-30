@@ -20,7 +20,9 @@ import (
 )
 
 const (
+	// DefaultOutputBufferSize bounds retained output history in bytes per session.
 	DefaultOutputBufferSize = 1000000
+	// DefaultStreamBufferSize sets terminal read size and output channel capacity.
 	DefaultStreamBufferSize = 4096
 	InitialRows             = 27
 	InitialCols             = 72
@@ -111,6 +113,7 @@ func (m *Manager) Close() {
 	m.wg.Wait()
 }
 
+// GetSupportedResources returns registered terminal handlers.
 func (m *Manager) GetSupportedResources(_ *types.PluginContext) []Handler {
 	return slices.Collect(maps.Values(m.handlers))
 }

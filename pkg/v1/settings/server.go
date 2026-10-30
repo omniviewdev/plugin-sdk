@@ -10,11 +10,14 @@ import (
 	settingspb "github.com/omniviewdev/plugin-sdk/proto/v1/settings"
 )
 
+// SettingsPluginServer exposes a provider through the settings RPC service.
+// The provider owns synchronization; RPC cancellation does not cancel provider methods.
 type SettingsPluginServer struct {
 	// This is the real implementation
 	Impl Provider
 }
 
+// ListSettings serializes provider metadata into a new response map.
 func (s *SettingsPluginServer) ListSettings(
 	_ context.Context,
 	_ *emptypb.Empty,
@@ -31,6 +34,7 @@ func (s *SettingsPluginServer) ListSettings(
 	}, nil
 }
 
+// GetSetting returns metadata or an Internal status when the provider fails.
 func (s *SettingsPluginServer) GetSetting(
 	_ context.Context,
 	in *settingspb.GetSettingRequest,
@@ -43,6 +47,7 @@ func (s *SettingsPluginServer) GetSetting(
 	return ToProtoSetting(resp), nil
 }
 
+// GetSettingValue encodes the provider value or reports an Internal status.
 func (s *SettingsPluginServer) GetSettingValue(
 	_ context.Context,
 	in *settingspb.GetSettingValueRequest,
@@ -66,6 +71,7 @@ func (s *SettingsPluginServer) GetSettingValue(
 	}, nil
 }
 
+// SetSetting decodes and validates one update through the provider.
 func (s *SettingsPluginServer) SetSetting(
 	_ context.Context,
 	in *settingspb.SetSettingRequest,
@@ -85,6 +91,7 @@ func (s *SettingsPluginServer) SetSetting(
 	return &emptypb.Empty{}, nil
 }
 
+// SetSettings decodes every input before calling the provider's bulk update method.
 func (s *SettingsPluginServer) SetSettings(
 	_ context.Context,
 	in *settingspb.SetSettingsRequest,

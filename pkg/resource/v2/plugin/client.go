@@ -9,8 +9,11 @@ import (
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
+// Client adapts remote resource operations to domain interfaces. Its method set
+// does not imply optional provider support; negotiate Features before using it.
 type Client struct{ conn grpc.ClientConnInterface }
 
+// NewClient binds resource operations to an existing gRPC connection.
 func NewClient(c grpc.ClientConnInterface) *Client { return &Client{conn: c} }
 func (c *Client) call(ctx context.Context, r *resourcepb.Request) (*resourcepb.Response, error) {
 	var err error
@@ -40,6 +43,7 @@ func (c *Client) call(ctx context.Context, r *resourcepb.Request) (*resourcepb.R
 	return out, nil
 }
 
+// Catalog discovers the provider's catalog for the explicit route.
 func (c *Client) Catalog(ctx context.Context, in resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
 	p, err := resourcev2.ToProtoCatalogRequest(in)
 	if err != nil {
@@ -107,6 +111,7 @@ func (c *Client) Enumerate(ctx context.Context, in resourcev2.EnumerateRequest) 
 	return value, nil
 }
 
+// NativeQuery executes the provider's native query contract and validates its page.
 func (c *Client) NativeQuery(ctx context.Context, in resourcev2.NativeQueryRequest) (resourcev2.SourcePage, error) {
 	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
 	if err != nil {
@@ -133,6 +138,7 @@ func (c *Client) NativeQuery(ctx context.Context, in resourcev2.NativeQueryReque
 	return value, nil
 }
 
+// Mutate admits the exact requested write verb and validates the returned record.
 func (c *Client) Mutate(ctx context.Context, in resourcev2.MutationRequest) (resourcev2.Record, error) {
 	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
 	if err != nil {
@@ -159,6 +165,7 @@ func (c *Client) Mutate(ctx context.Context, in resourcev2.MutationRequest) (res
 	return value, nil
 }
 
+// Action invokes a finite provider action under the accepted catalog observation.
 func (c *Client) Action(ctx context.Context, in resourcev2.ActionRequest) (resourcev2.Value, error) {
 	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// PluginMetaFormat selects the serialized format of a plugin manifest.
 type PluginMetaFormat int
 
 const (
@@ -67,38 +68,47 @@ func (m *PluginMeta) HasBackendCapabilities() bool {
 	return false
 }
 
+// PluginMaintainer identifies a contact responsible for maintaining the plugin.
 type PluginMaintainer struct {
 	Name  string `json:"name"  yaml:"name"`
 	Email string `json:"email" yaml:"email"`
 }
 
+// PluginAuthor identifies the original author and optional contact links.
 type PluginAuthor struct {
 	Name  string `json:"name"  yaml:"name"`
 	Email string `json:"email" yaml:"email,omitempty"`
 	URL   string `json:"url"   yaml:"url,omitempty"`
 }
 
+// PluginThemeColors defines the plugin's primary, secondary, and tertiary accent colors.
 type PluginThemeColors struct {
 	Primary   string `json:"primary"   yaml:"primary"`
 	Secondary string `json:"secondary" yaml:"secondary"`
 	Tertiary  string `json:"tertiary"  yaml:"tertiary"`
 }
 
+// PluginTheme supplies presentation defaults for the plugin's frontend.
 type PluginTheme struct {
 	Colors PluginThemeColors `json:"colors" yaml:"colors"`
 }
 
+// PluginComponents declares frontend components associated with resource views.
 type PluginComponents struct {
 	Resource []PluginResourceComponent `json:"resource" yaml:"resource"`
 }
 
+// PluginComponentArea selects the host surface where a resource component appears.
 type PluginComponentArea string
 
 const (
+	// PluginComponentAreaEditor places a component in the resource editor.
 	PluginComponentAreaEditor  PluginComponentArea = "EDITOR"
+	// PluginComponentAreaSidebar places a component in the resource sidebar.
 	PluginComponentAreaSidebar PluginComponentArea = "SIDEBAR"
 )
 
+// PluginResourceComponent binds a named frontend extension to resource types and a host surface.
 type PluginResourceComponent struct {
 	Name           string              `json:"name"      yaml:"name"`
 	Plugin         string              `json:"plugin"    yaml:"plugin"`

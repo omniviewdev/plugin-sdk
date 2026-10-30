@@ -13,8 +13,10 @@ import (
 	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 )
 
+// PluginServer adapts metric provider calls to the gRPC transport.
 type PluginServer struct{ Impl Provider }
 
+// GetSupportedResources exposes the provider's resource handlers.
 func (s *PluginServer) GetSupportedResources(
 	ctx context.Context,
 	_ *emptypb.Empty,
@@ -37,6 +39,7 @@ func metricPluginContext(ctx context.Context) *types.PluginContext {
 	return &copy
 }
 
+// Query decodes a legacy query and preserves provider error classification.
 func (s *PluginServer) Query(
 	ctx context.Context,
 	p *metricpb.QueryMetricsRequest,
@@ -52,6 +55,7 @@ func (s *PluginServer) Query(
 	return response.ToProto(), nil
 }
 
+// QueryResource admits resource-aware input before invoking the provider.
 func (s *PluginServer) QueryResource(
 	ctx context.Context,
 	p *metricpb.QueryMetricsRequest,
@@ -104,6 +108,7 @@ func streamOutputToProto(r StreamOutput) *metricpb.MetricStreamOutput {
 	return p
 }
 
+// StreamMetrics serves a legacy metric stream until completion or cancellation.
 func (s *PluginServer) StreamMetrics(stream metricpb.MetricPlugin_StreamMetricsServer) error {
 	return s.serveStream(
 		stream.Context(),
@@ -114,6 +119,7 @@ func (s *PluginServer) StreamMetrics(stream metricpb.MetricPlugin_StreamMetricsS
 	)
 }
 
+// StreamResourceMetrics validates the open frame and acknowledges provider readiness.
 func (s *PluginServer) StreamResourceMetrics(stream metricpb.MetricPlugin_StreamResourceMetricsServer) error {
 	p, err := stream.Recv()
 	if err != nil {

@@ -19,6 +19,7 @@ import (
 	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
 )
 
+// PluginClient manages remote forwarding sessions through resource-aware gRPC calls.
 type PluginClient struct {
 	client networkerpb.NetworkerPluginClient
 	log    logging.Logger
@@ -144,6 +145,8 @@ func (p *PluginClient) FindPortForwardSessions(
 	return sessions, nil
 }
 
+// StartPortForwardSession starts a static forward or dispatches resource options
+// through the lossless resource RPC without falling back to the legacy RPC.
 func (p *PluginClient) StartPortForwardSession(
 	ctx *types.PluginContext,
 	opts PortForwardSessionOptions,
@@ -175,6 +178,7 @@ func (p *PluginClient) StartPortForwardSession(
 	return NewPortForwardSessionFromProto(resp.GetSession())
 }
 
+// ClosePortForwardSession closes the remote session and returns its final snapshot.
 func (p *PluginClient) ClosePortForwardSession(
 	ctx *types.PluginContext,
 	sessionID string,
@@ -240,6 +244,9 @@ func (p *PluginClient) StopAll() {
 	}
 }
 
+// StartResourcePortForwardSession requires resource-v2 support and carries the
+// caller's admission observations and cancellation through native readiness.
+// An accepted session remains open after this RPC completes.
 func (p *PluginClient) StartResourcePortForwardSession(
 	ctx *types.PluginContext,
 	opts PortForwardSessionOptions,

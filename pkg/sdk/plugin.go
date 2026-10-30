@@ -39,6 +39,8 @@ type PluginOpts struct {
 	Debug bool
 }
 
+// Plugin owns capability registration and process logging. Finish registration
+// before serving; registration and metadata access are not synchronized.
 type Plugin struct {
 	// settingsProvider is the settings provider for the plugin.
 	SettingsProvider pkgsettings.Provider
@@ -131,7 +133,8 @@ func NewPlugin(opts PluginOpts) *Plugin {
 	}
 }
 
-// registerCapability registers a plugin capability with the plugin system.
+// RegisterCapability installs or replaces a transport and binds utility consumers
+// to the resource provider's sole configured connection registry.
 func (p *Plugin) RegisterCapability(capability string, registration plugin.Plugin) {
 	if p == nil {
 		panic("plugin cannot be nil when registering capability")
@@ -170,26 +173,32 @@ func (p *Plugin) GetPluginMap() map[string]plugin.Plugin {
 	return p.pluginMap
 }
 
+// GetMeta returns metadata by value; nested containers remain shared and must not be mutated.
 func (p *Plugin) GetMeta() config.PluginMeta {
 	return p.meta
 }
 
+// GetPluginID returns the ID loaded from the installed plugin manifest.
 func (p *Plugin) GetPluginID() string {
 	return p.meta.ID
 }
 
+// GRPCServerFactory builds a server with SDK middleware and the default logger.
 func GRPCServerFactory(opts []grpc.ServerOption) *grpc.Server {
 	return GRPCServerFactoryWithLogger(logging.Default(), opts)
 }
 
+// GRPCServerFactoryWithLogger builds a server with resource wire limits and SDK middleware.
 func GRPCServerFactoryWithLogger(log logging.Logger, opts []grpc.ServerOption) *grpc.Server {
 	return grpc.NewServer(utils.RegisterServerOpts(append(opts, rp.ServerOptions()...), log)...)
 }
 
+// GRPCDialOptions returns SDK context propagation and tracing options using the default logger.
 func GRPCDialOptions() []grpc.DialOption {
 	return withClientOpts(nil, logging.Default())
 }
 
+// GRPCDialOptionsWithLogger returns SDK context propagation and tracing options using log.
 func GRPCDialOptionsWithLogger(log logging.Logger) []grpc.DialOption {
 	return withClientOpts(nil, log)
 }
@@ -203,6 +212,7 @@ func (p *Plugin) effectiveProtocolVersion() int {
 	return CurrentProtocolVersion
 }
 
+// SetLogLevel changes both SDK and runtime logging; nil plugins or controllers are ignored.
 func (p *Plugin) SetLogLevel(level logging.Level) {
 	if p == nil || p.LogLevel == nil {
 		return
@@ -217,6 +227,9 @@ func (p *Plugin) SetLogLevel(level logging.Level) {
 // It auto-registers lifecycle RPC and leaves handshake transport to go-plugin.
 // The host owns development process supervision; the SDK never advertises or
 // removes legacy .devinfo records.
+// It panics if the effective SDK protocol version exceeds the signed 32-bit
+// lifecycle wire range, rather than advertising a wrapped version. Nonpositive
+// manifest versions continue to use CurrentProtocolVersion.
 func (p *Plugin) Serve() {
 	telemetryProvider, err := telemetry.InitFromEnv()
 	if err != nil {

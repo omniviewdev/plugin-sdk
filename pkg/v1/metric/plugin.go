@@ -39,17 +39,21 @@ type Plugin struct {
 	Impl Provider
 }
 
+// BindConnectionContextProvider forwards registry binding to implementations that accept it.
+// Call during setup, before serving requests.
 func (p *Plugin) BindConnectionContextProvider(provider resourcev2.ConnectionContextProvider) {
 	if consumer, ok := p.Impl.(resourcev2.ConnectionContextConsumer); ok {
 		consumer.BindConnectionContextProvider(provider)
 	}
 }
 
+// GRPCServer registers the metric service on the supplied server.
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
 	RegisterMetricPluginServer(s, &PluginServer{Impl: p.Impl})
 	return nil
 }
 
+// GRPCClient creates a client backed by the supplied connection; the caller owns that connection.
 func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,

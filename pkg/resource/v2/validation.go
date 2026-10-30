@@ -177,6 +177,8 @@ func dimensions(ds []Dimension) (map[string]bool, error) {
 	return out, nil
 }
 
+// ValidateAddress checks canonical identity shape and duplicate dimensions.
+// An optional declaration requires exactly its dimensions and empty-value rules.
 func ValidateAddress(a ResourceAddress, declared ...[]Dimension) error {
 	if len(declared) > 1 {
 		return invalid("multiple identity dimension declarations")
@@ -570,6 +572,8 @@ func validateCount(c Count) error {
 	return nil
 }
 
+// ValidateCatalog checks type, representation, schema, and scoped capability declarations.
+// It validates structure, not caller authorization or live source availability.
 func ValidateCatalog(c Catalog) error {
 	if err := admission(c); err != nil {
 		return err
@@ -643,6 +647,8 @@ func validateTarget(t ReadTarget) error {
 	return ValidateScope(t.Scope)
 }
 
+// ValidateGetRequest requires an explicit route, canonical reference, and representation.
+// Catalog support and accepted revision checks belong to operation admission.
 func ValidateGetRequest(v GetRequest) error {
 	if err := admission(v); err != nil {
 		return err
@@ -656,6 +662,7 @@ func ValidateGetRequest(v GetRequest) error {
 	return text(v.Representation, true)
 }
 
+// ValidateEnumerateRequest checks target shape, optional cursor, and the page-size ceiling.
 func ValidateEnumerateRequest(v EnumerateRequest) error {
 	if err := validateTarget(v.Target); err != nil {
 		return err
@@ -666,6 +673,7 @@ func ValidateEnumerateRequest(v EnumerateRequest) error {
 	return token(v.Cursor)
 }
 
+// ValidateNativeQueryRequest checks enumeration bounds, language, and a lossless query value.
 func ValidateNativeQueryRequest(v NativeQueryRequest) error {
 	if err := ValidateEnumerateRequest(
 		EnumerateRequest{Target: v.Target, PageSize: v.PageSize, Cursor: v.Cursor},
@@ -678,6 +686,8 @@ func ValidateNativeQueryRequest(v NativeQueryRequest) error {
 	return ValidateValue(v.Query)
 }
 
+// ValidateMutationRequest checks reference, operation token, revision presence, and input shape.
+// It does not infer supported mutation verbs from the request.
 func ValidateMutationRequest(v MutationRequest) error {
 	if err := admission(v); err != nil {
 		return err
@@ -697,6 +707,7 @@ func ValidateMutationRequest(v MutationRequest) error {
 	return ValidateValue(v.Input)
 }
 
+// ValidateActionRequest checks route, reference, action token, and tagged input.
 func ValidateActionRequest(v ActionRequest) error {
 	if err := admission(v); err != nil {
 		return err
@@ -713,6 +724,7 @@ func ValidateActionRequest(v ActionRequest) error {
 	return ValidateValue(v.Input)
 }
 
+// ValidateRecord requires a map-root body plus valid identity, representation, and coverage.
 func ValidateRecord(r Record) error {
 	if err := admission(r); err != nil {
 		return err
@@ -735,6 +747,8 @@ func ValidateRecord(r Record) error {
 	return token(r.SourceRevision)
 }
 
+// ValidateSourcePage bounds records and aggregate protobuf frame size.
+// Coverage, consistency, count, and continuation remain explicit source claims.
 func ValidateSourcePage(p SourcePage) error {
 	if len(p.Records) > maxPageRecords {
 		return limited("page record limit")
@@ -920,6 +934,8 @@ func validateSchemaDocumentReference(v SchemaDocumentReference) error {
 	return text(v.Revision, true)
 }
 
+// ValidateSchemaDocument checks document identity, dialect, and strict bounded JSON.
+// It performs no external document resolution or schema normalization.
 func ValidateSchemaDocument(v SchemaDocument) error {
 	if err := admission(v); err != nil {
 		return err

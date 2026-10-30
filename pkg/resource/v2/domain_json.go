@@ -67,6 +67,7 @@ func rejectNullTokens(object map[string]any, names ...string) error {
 	return nil
 }
 
+// UnmarshalJSON decodes ScopeEntry, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *ScopeEntry) UnmarshalJSON(data []byte) error {
 	type plain ScopeEntry
 	var out plain
@@ -81,6 +82,7 @@ func (v *ScopeEntry) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes ResourceAddress, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *ResourceAddress) UnmarshalJSON(data []byte) error {
 	type plain ResourceAddress
 	var out plain
@@ -100,6 +102,7 @@ func (v *ResourceAddress) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes AccessRoute, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *AccessRoute) UnmarshalJSON(data []byte) error {
 	type plain AccessRoute
 	var out plain
@@ -114,6 +117,7 @@ func (v *AccessRoute) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes ResourceReference, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *ResourceReference) UnmarshalJSON(data []byte) error {
 	type plain ResourceReference
 	var out plain
@@ -132,6 +136,7 @@ func (v *ResourceReference) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes ScopeConstraint, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *ScopeConstraint) UnmarshalJSON(data []byte) error {
 	raw, err := parseJSONWithLimit(data, MaxMessageBytes)
 	if err != nil {
@@ -185,6 +190,7 @@ func (v *ScopeConstraint) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes QueryScope, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *QueryScope) UnmarshalJSON(data []byte) error {
 	if _, err := parseJSONWithLimit(data, MaxMessageBytes); err != nil {
 		return err
@@ -210,6 +216,7 @@ func (v *QueryScope) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes ReadTarget, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *ReadTarget) UnmarshalJSON(data []byte) error {
 	type plain ReadTarget
 	var out plain
@@ -236,6 +243,7 @@ func (v *ReadTarget) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes CatalogRequest, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *CatalogRequest) UnmarshalJSON(data []byte) error {
 	type plain CatalogRequest
 	var out plain
@@ -250,6 +258,7 @@ func (v *CatalogRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes GetRequest, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *GetRequest) UnmarshalJSON(data []byte) error {
 	type plain GetRequest
 	var out plain
@@ -264,6 +273,7 @@ func (v *GetRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes EnumerateRequest, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *EnumerateRequest) UnmarshalJSON(data []byte) error {
 	type plain EnumerateRequest
 	var out plain
@@ -282,6 +292,7 @@ func (v *EnumerateRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes NativeQueryRequest, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *NativeQueryRequest) UnmarshalJSON(data []byte) error {
 	type plain NativeQueryRequest
 	var out plain
@@ -300,6 +311,7 @@ func (v *NativeQueryRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes MutationRequest, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *MutationRequest) UnmarshalJSON(data []byte) error {
 	type plain MutationRequest
 	var out plain
@@ -318,6 +330,7 @@ func (v *MutationRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes ActionRequest, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *ActionRequest) UnmarshalJSON(data []byte) error {
 	type plain ActionRequest
 	var out plain
@@ -332,6 +345,7 @@ func (v *ActionRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes SchemaDocumentReference, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *SchemaDocumentReference) UnmarshalJSON(data []byte) error {
 	type plain SchemaDocumentReference
 	var out plain
@@ -346,6 +360,7 @@ func (v *SchemaDocumentReference) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes SchemaBinding, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *SchemaBinding) UnmarshalJSON(data []byte) error {
 	type plain SchemaBinding
 	var out plain
@@ -364,6 +379,7 @@ func (v *SchemaBinding) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes Representation, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *Representation) UnmarshalJSON(data []byte) error {
 	type plain Representation
 	var out plain
@@ -378,6 +394,7 @@ func (v *Representation) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes SchemaDocument, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *SchemaDocument) UnmarshalJSON(data []byte) error {
 	type plain SchemaDocument
 	var out plain
@@ -392,6 +409,7 @@ func (v *SchemaDocument) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes NativeAuthorityHint, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *NativeAuthorityHint) UnmarshalJSON(data []byte) error {
 	type plain NativeAuthorityHint
 	var out plain
@@ -406,6 +424,7 @@ func (v *NativeAuthorityHint) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes Coverage, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *Coverage) UnmarshalJSON(data []byte) error {
 	type plain Coverage
 	var out plain
@@ -420,6 +439,7 @@ func (v *Coverage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes Count, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *Count) UnmarshalJSON(data []byte) error {
 	type plain Count
 	var out plain
@@ -438,6 +458,7 @@ func (v *Count) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes Record, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *Record) UnmarshalJSON(data []byte) error {
 	type plain Record
 	var out plain
@@ -456,6 +477,7 @@ func (v *Record) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes SourcePage, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *SourcePage) UnmarshalJSON(data []byte) error {
 	type plain SourcePage
 	var out plain
@@ -474,6 +496,7 @@ func (v *SourcePage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes Dimension, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *Dimension) UnmarshalJSON(data []byte) error {
 	type plain Dimension
 	var out plain
@@ -488,6 +511,7 @@ func (v *Dimension) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes Capability, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *Capability) UnmarshalJSON(data []byte) error {
 	type plain Capability
 	var out plain
@@ -502,6 +526,7 @@ func (v *Capability) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes ResourceType, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *ResourceType) UnmarshalJSON(data []byte) error {
 	type plain ResourceType
 	var out plain
@@ -528,6 +553,7 @@ func (v *ResourceType) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes Catalog, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *Catalog) UnmarshalJSON(data []byte) error {
 	type plain Catalog
 	var out plain
@@ -553,6 +579,7 @@ func marshalDomainJSON(value any) ([]byte, error) {
 	return data, nil
 }
 
+// MarshalJSON validates ResourceAddress and emits canonical JSON without mutating caller-owned containers.
 func (v ResourceAddress) MarshalJSON() ([]byte, error) {
 	if err := ValidateAddress(v); err != nil {
 		return nil, err
@@ -564,6 +591,7 @@ func (v ResourceAddress) MarshalJSON() ([]byte, error) {
 	return marshalDomainJSON(out)
 }
 
+// MarshalJSON validates QueryScope and emits canonical JSON without mutating caller-owned containers.
 func (v QueryScope) MarshalJSON() ([]byte, error) {
 	if err := ValidateScope(v); err != nil {
 		return nil, err
@@ -574,6 +602,7 @@ func (v QueryScope) MarshalJSON() ([]byte, error) {
 	return marshalDomainJSON(out)
 }
 
+// MarshalJSON validates ScopeConstraint and emits canonical JSON without mutating caller-owned containers.
 func (v ScopeConstraint) MarshalJSON() ([]byte, error) {
 	if err := validateConstraint(v); err != nil {
 		return nil, err
@@ -587,6 +616,7 @@ func (v ScopeConstraint) MarshalJSON() ([]byte, error) {
 	return marshalDomainJSON(out)
 }
 
+// MarshalJSON validates SchemaBinding and emits canonical JSON without mutating caller-owned containers.
 func (v SchemaBinding) MarshalJSON() ([]byte, error) {
 	if err := validateSchema(v); err != nil {
 		return nil, err
@@ -599,6 +629,7 @@ func (v SchemaBinding) MarshalJSON() ([]byte, error) {
 	return marshalDomainJSON(out)
 }
 
+// MarshalJSON validates Coverage and emits canonical JSON without mutating caller-owned containers.
 func (v Coverage) MarshalJSON() ([]byte, error) {
 	if err := validateCoverage(v); err != nil {
 		return nil, err
@@ -611,6 +642,7 @@ func (v Coverage) MarshalJSON() ([]byte, error) {
 	return marshalDomainJSON(out)
 }
 
+// MarshalJSON validates ResourceType and emits canonical JSON without mutating caller-owned containers.
 func (v ResourceType) MarshalJSON() ([]byte, error) {
 	if err := validateType(v); err != nil {
 		return nil, err
@@ -632,6 +664,7 @@ func (v ResourceType) MarshalJSON() ([]byte, error) {
 	return marshalDomainJSON(out)
 }
 
+// MarshalJSON validates Catalog and emits canonical JSON without mutating caller-owned containers.
 func (v Catalog) MarshalJSON() ([]byte, error) {
 	if err := ValidateCatalog(v); err != nil {
 		return nil, err
@@ -644,6 +677,7 @@ func (v Catalog) MarshalJSON() ([]byte, error) {
 	return marshalDomainJSON(out)
 }
 
+// MarshalJSON validates SourcePage and emits canonical JSON without mutating caller-owned containers.
 func (v SourcePage) MarshalJSON() ([]byte, error) {
 	if err := ValidateSourcePage(v); err != nil {
 		return nil, err

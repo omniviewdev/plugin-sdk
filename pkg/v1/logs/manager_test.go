@@ -18,7 +18,7 @@ import (
 	"github.com/omniviewdev/plugin-sdk/settings/settingstest"
 )
 
-// SM-001: CreateSession → status is CONNECTING immediately (not ACTIVE)
+// SM-001: CreateSession → status is CONNECTING immediately (not ACTIVE).
 func TestCreateSessionStatusConnecting(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	h := logtest.Mount(t, logtest.WithSource("container-1", src))
@@ -29,7 +29,7 @@ func TestCreateSessionStatusConnecting(t *testing.T) {
 	}
 }
 
-// SM-002: Source resolution success → INITIALIZING, then SESSION_READY event when lines arrive
+// SM-002: Source resolution success → INITIALIZING, then SESSION_READY event when lines arrive.
 func TestSourceResolutionToInitializing(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	h := logtest.Mount(t, logtest.WithSource("container-1", src))
@@ -45,7 +45,7 @@ func TestSourceResolutionToInitializing(t *testing.T) {
 	}
 }
 
-// SM-003: All sources send first line → SESSION_READY event, status → ACTIVE
+// SM-003: All sources send first line → SESSION_READY event, status → ACTIVE.
 func TestAllSourcesReadyTransitionsToActive(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	h := logtest.Mount(t, logtest.WithSource("container-1", src))
@@ -71,7 +71,7 @@ func TestAllSourcesReadyTransitionsToActive(t *testing.T) {
 	}
 }
 
-// SM-004: No handler for resource → ERROR
+// SM-004: No handler for resource → ERROR.
 func TestSourceResolutionFailure(t *testing.T) {
 	h := logtest.Mount(t)
 
@@ -88,7 +88,7 @@ func TestSourceResolutionFailure(t *testing.T) {
 	}
 }
 
-// SM-005: One source active, another unused → still transitions to ACTIVE
+// SM-005: One source active, another unused → still transitions to ACTIVE.
 func TestPartialSourceReadiness(t *testing.T) {
 	src1 := logtest.NewTestLogSource()
 	src2 := logtest.NewTestLogSource()
@@ -117,7 +117,7 @@ func TestPartialSourceReadiness(t *testing.T) {
 	}
 }
 
-// SM-006: RECONNECTING/RECONNECTED after source close (regression)
+// SM-006: RECONNECTING/RECONNECTED after source close (regression).
 func TestReconnectionFlowRegression(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	h := logtest.Mount(t, logtest.WithSource("container-1", src))
@@ -140,7 +140,7 @@ func TestReconnectionFlowRegression(t *testing.T) {
 	}
 }
 
-// SM-007: Rapid CreateSession + CloseSession x10 → no goroutine leak
+// SM-007: Rapid CreateSession + CloseSession x10 → no goroutine leak.
 func TestRapidCreateCloseNoLeak(t *testing.T) {
 	h := logtest.Mount(t, logtest.WithSource("container-1", logtest.NewTestLogSource()))
 
@@ -161,7 +161,7 @@ func TestRapidCreateCloseNoLeak(t *testing.T) {
 	}
 }
 
-// SM-008: Multiple sources with staggered connection — ACTIVE only after all report ready
+// SM-008: Multiple sources with staggered connection — ACTIVE only after all report ready.
 func TestMultiSourceStaggeredConnection(t *testing.T) {
 	// Each resolved source gets its own TestLogSource so lines route deterministically.
 	src1 := logtest.NewTestLogSource()
@@ -235,7 +235,7 @@ func TestMultiSourceStaggeredConnection(t *testing.T) {
 	}
 }
 
-// SM-009: Source with ConnectDelay → stays INITIALIZING during delay
+// SM-009: Source with ConnectDelay → stays INITIALIZING during delay.
 func TestConnectDelayStaysInitializing(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	src.ConnectDelay = 500 * time.Millisecond
@@ -270,7 +270,7 @@ func TestConnectDelayStaysInitializing(t *testing.T) {
 	}
 }
 
-// SM-010: CloseSession waits for goroutines (done channel)
+// SM-010: CloseSession waits for goroutines (done channel).
 func TestCloseSessionWaitsForGoroutines(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	src.ConnectDelay = 200 * time.Millisecond
@@ -301,7 +301,7 @@ func TestCloseSessionWaitsForGoroutines(t *testing.T) {
 	}
 }
 
-// SM-011: Pause command → PAUSED, lines skipped; Resume → ACTIVE
+// SM-011: Pause command → PAUSED, lines skipped; Resume → ACTIVE.
 func TestPauseResumeCommands(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	h := logtest.Mount(t, logtest.WithSource("container-1", src))
@@ -361,7 +361,7 @@ func TestPauseResumeCommands(t *testing.T) {
 // Edge case tests
 // ---------------------------------------------------------------------------
 
-// EC-001: CreateSession with nil PluginContext → error, not panic
+// EC-001: CreateSession with nil PluginContext → error, not panic.
 func TestCreateSessionNilPluginContext(t *testing.T) {
 	output := logtest.NewRecordingOutput()
 	mgr := logs.NewManager(logs.ManagerConfig{
@@ -381,7 +381,7 @@ func TestCreateSessionNilPluginContext(t *testing.T) {
 	}
 }
 
-// EC-002: GetSession for non-existent session → error
+// EC-002: GetSession for non-existent session → error.
 func TestGetSessionNotFound(t *testing.T) {
 	output := logtest.NewRecordingOutput()
 	mgr := logs.NewManager(logs.ManagerConfig{Sink: output})
@@ -394,7 +394,7 @@ func TestGetSessionNotFound(t *testing.T) {
 	}
 }
 
-// EC-003: CloseSession twice → second call returns error
+// EC-003: CloseSession twice → second call returns error.
 func TestCloseSessionTwice(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	h := logtest.Mount(t, logtest.WithSource("container-1", src))
@@ -410,7 +410,7 @@ func TestCloseSessionTwice(t *testing.T) {
 	}
 }
 
-// EC-004: UpdateSessionOptions for non-existent session → error
+// EC-004: UpdateSessionOptions for non-existent session → error.
 func TestUpdateSessionOptionsNotFound(t *testing.T) {
 	output := logtest.NewRecordingOutput()
 	mgr := logs.NewManager(logs.ManagerConfig{Sink: output})
@@ -423,7 +423,7 @@ func TestUpdateSessionOptionsNotFound(t *testing.T) {
 	}
 }
 
-// EC-005: ListSessions returns empty slice, not nil
+// EC-005: ListSessions returns empty slice, not nil.
 func TestListSessionsEmpty(t *testing.T) {
 	output := logtest.NewRecordingOutput()
 	mgr := logs.NewManager(logs.ManagerConfig{Sink: output})
@@ -442,7 +442,7 @@ func TestListSessionsEmpty(t *testing.T) {
 	}
 }
 
-// EC-006: NewManager with nil config fields doesn't panic
+// EC-006: NewManager with nil config fields doesn't panic.
 func TestNewManagerNilFields(t *testing.T) {
 	mgr := logs.NewManager(logs.ManagerConfig{})
 	t.Cleanup(mgr.Close)
@@ -453,7 +453,7 @@ func TestNewManagerNilFields(t *testing.T) {
 	}
 }
 
-// EC-007: Close with no sessions doesn't block
+// EC-007: Close with no sessions doesn't block.
 func TestCloseEmptyManager(t *testing.T) {
 	mgr := logs.NewManager(logs.ManagerConfig{})
 
@@ -470,7 +470,7 @@ func TestCloseEmptyManager(t *testing.T) {
 	}
 }
 
-// EC-008: ChannelSink respects context cancellation (doesn't block on full channel)
+// EC-008: ChannelSink respects context cancellation (doesn't block on full channel).
 func TestChannelSinkContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	out := make(chan logs.StreamOutput, 1) // tiny buffer
@@ -496,7 +496,7 @@ func TestChannelSinkContextCancellation(t *testing.T) {
 	}
 }
 
-// EC-009: Handler connect failure → reconnection attempts with context check
+// EC-009: Handler connect failure → reconnection attempts with context check.
 func TestHandlerConnectFailureReconnects(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	src.ErrOnConnect = fmt.Errorf("simulated connect failure")
@@ -544,7 +544,7 @@ func TestHandlerConnectFailureReconnects(t *testing.T) {
 // Coverage gap tests: Stream + handleCommands
 // ---------------------------------------------------------------------------
 
-// CG-001: Stream() creates ChannelSink and output channel when no Sink configured
+// CG-001: Stream() creates ChannelSink and output channel when no Sink configured.
 func TestStreamCreatesChannelSink(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	mgr := logs.NewManager(logs.ManagerConfig{
@@ -612,7 +612,7 @@ func TestStreamCreatesChannelSink(t *testing.T) {
 	}
 }
 
-// CG-002: handleCommands dispatches pause, resume, close via Stream input channel
+// CG-002: handleCommands dispatches pause, resume, close via Stream input channel.
 func TestStreamHandleCommands(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	output := logtest.NewRecordingOutput()
@@ -689,7 +689,7 @@ func TestStreamHandleCommands(t *testing.T) {
 	}
 }
 
-// CG-003: handleCommands with unknown session ID logs error but doesn't panic
+// CG-003: handleCommands with unknown session ID logs error but doesn't panic.
 func TestStreamCommandUnknownSession(t *testing.T) {
 	output := logtest.NewRecordingOutput()
 	mgr := logs.NewManager(logs.ManagerConfig{Sink: output})
@@ -709,7 +709,7 @@ func TestStreamCommandUnknownSession(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 }
 
-// CG-004: Stream context cancellation triggers closeAll
+// CG-004: Stream context cancellation triggers closeAll.
 func TestStreamContextCancelTriggersCloseAll(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	output := logtest.NewRecordingOutput()
@@ -762,7 +762,7 @@ func TestStreamContextCancelTriggersCloseAll(t *testing.T) {
 // Coverage gap tests: watchSourceEvents (dynamic source lifecycle)
 // ---------------------------------------------------------------------------
 
-// CG-005: Dynamic source add via SourceEvent channel
+// CG-005: Dynamic source add via SourceEvent channel.
 func TestWatchSourceEventsAddSource(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	dynamicSrc := logtest.NewTestLogSource()
@@ -855,7 +855,7 @@ func TestWatchSourceEventsAddSource(t *testing.T) {
 	}
 }
 
-// CG-006: Dynamic source remove via SourceEvent channel
+// CG-006: Dynamic source remove via SourceEvent channel.
 func TestWatchSourceEventsRemoveSource(t *testing.T) {
 	src := logtest.NewTestLogSource()
 
@@ -933,7 +933,7 @@ func TestWatchSourceEventsRemoveSource(t *testing.T) {
 	_ = session
 }
 
-// CG-007: watchSourceEvents exits when events channel closes
+// CG-007: watchSourceEvents exits when events channel closes.
 func TestWatchSourceEventsChannelClose(t *testing.T) {
 	src := logtest.NewTestLogSource()
 
@@ -984,7 +984,7 @@ func TestWatchSourceEventsChannelClose(t *testing.T) {
 // Coverage gap tests: updateEnabledSources
 // ---------------------------------------------------------------------------
 
-// CG-008: Disable a source via UpdateSessionOptions enabled_sources param
+// CG-008: Disable a source via UpdateSessionOptions enabled_sources param.
 func TestUpdateEnabledSourcesDisableOne(t *testing.T) {
 	src := logtest.NewTestLogSource()
 
@@ -1049,7 +1049,7 @@ func TestUpdateEnabledSourcesDisableOne(t *testing.T) {
 // Coverage gap tests: orchestrateSession resolver paths
 // ---------------------------------------------------------------------------
 
-// CG-009: Resolver returns error → session goes to ERROR
+// CG-009: Resolver returns error → session goes to ERROR.
 func TestResolverReturnsError(t *testing.T) {
 	resolver := func(_ *types.PluginContext, _ *resourcev2.Value, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
 		return nil, fmt.Errorf("simulated resolver failure")
@@ -1091,7 +1091,7 @@ func TestResolverReturnsError(t *testing.T) {
 	}
 }
 
-// CG-010: Resolver succeeds but no handler available → ERROR
+// CG-010: Resolver succeeds but no handler available → ERROR.
 func TestResolverNoHandlerAvailable(t *testing.T) {
 	resolver := func(_ *types.PluginContext, _ *resourcev2.Value, _ logs.SourceResolverOptions) (*logs.SourceResolverResult, error) {
 		return &logs.SourceResolverResult{
@@ -1137,7 +1137,7 @@ func TestResolverNoHandlerAvailable(t *testing.T) {
 // Coverage gap tests: streamFromHandler paths
 // ---------------------------------------------------------------------------
 
-// CG-011: Handler with nil SourceBuilder → default single source
+// CG-011: Handler with nil SourceBuilder → default single source.
 func TestHandlerNilSourceBuilder(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	output := logtest.NewRecordingOutput()
@@ -1175,7 +1175,7 @@ func TestHandlerNilSourceBuilder(t *testing.T) {
 	}
 }
 
-// CG-012: SourceBuilder returns empty slice → ERROR
+// CG-012: SourceBuilder returns empty slice → ERROR.
 func TestHandlerEmptySourceBuilder(t *testing.T) {
 	emptyBuilder := func(_ string, _ *resourcev2.Value, _ logs.LogSessionOptions) []logs.LogSource {
 		return nil // empty
@@ -1223,7 +1223,7 @@ func TestHandlerEmptySourceBuilder(t *testing.T) {
 // Coverage gap tests: readStream paused path
 // ---------------------------------------------------------------------------
 
-// CG-013: Lines sent while session is PAUSED are skipped
+// CG-013: Lines sent while session is PAUSED are skipped.
 func TestReadStreamPausedSkipsLines(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	output := logtest.NewRecordingOutput()
@@ -1308,7 +1308,7 @@ func TestReadStreamPausedSkipsLines(t *testing.T) {
 // Coverage gap tests: ListSessions with active sessions
 // ---------------------------------------------------------------------------
 
-// CG-014: ListSessions returns all active sessions
+// CG-014: ListSessions returns all active sessions.
 func TestListSessionsWithActiveSessions(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	output := logtest.NewRecordingOutput()
@@ -1370,7 +1370,7 @@ func TestListSessionsWithActiveSessions(t *testing.T) {
 // Coverage gap tests: extractTimestamp
 // ---------------------------------------------------------------------------
 
-// CG-015: extractTimestamp parses various formats
+// CG-015: extractTimestamp parses various formats.
 func TestExtractTimestampFormats(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1475,7 +1475,7 @@ func TestExtractTimestampFormats(t *testing.T) {
 // Coverage gap tests: registry edge cases
 // ---------------------------------------------------------------------------
 
-// CG-016: Registry with no handlers — AnyHandler returns false
+// CG-016: Registry with no handlers — AnyHandler returns false.
 func TestRegistryNoHandlers(t *testing.T) {
 	output := logtest.NewRecordingOutput()
 	mgr := logs.NewManager(logs.ManagerConfig{
@@ -1493,7 +1493,7 @@ func TestRegistryNoHandlers(t *testing.T) {
 // Coverage gap tests: concurrent operations
 // ---------------------------------------------------------------------------
 
-// CG-017: Concurrent CreateSession + ListSessions + GetSession
+// CG-017: Concurrent CreateSession + ListSessions + GetSession.
 func TestConcurrentSessionOperations(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	output := logtest.NewRecordingOutput()
@@ -1571,7 +1571,7 @@ func TestConcurrentSessionOperations(t *testing.T) {
 	}
 }
 
-// CG-018: Non-follow mode — stream ends after source closes without reconnect
+// CG-018: Non-follow mode — stream ends after source closes without reconnect.
 func TestNonFollowModeNoReconnect(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	output := logtest.NewRecordingOutput()
@@ -1615,7 +1615,7 @@ func TestNonFollowModeNoReconnect(t *testing.T) {
 	}
 }
 
-// CG-019: MultiSourceBuilder produces correct sources
+// CG-019: MultiSourceBuilder produces correct sources.
 func TestMultiSourceBuilder(t *testing.T) {
 	src := logtest.NewTestLogSource()
 	output := logtest.NewRecordingOutput()
@@ -2560,7 +2560,7 @@ func BenchmarkCreateCloseSession(b *testing.B) {
 
 // BenchmarkHandlerLookup measures the O(1) registry lookup.
 func BenchmarkHandlerLookup(b *testing.B) {
-	// Build a registry with many handlers to demonstrate O(1) vs O(N)
+	// Build a registry with many handlers to demonstrate O(1) vs O(N).
 	handlers := make(map[string]logs.Handler)
 	for i := 0; i < 100; i++ {
 		key := fmt.Sprintf("plugin-%d/resource-%d", i, i)

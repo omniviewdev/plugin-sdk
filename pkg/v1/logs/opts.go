@@ -72,6 +72,7 @@ type Handler struct {
 	SourceBuilder SourceBuilderFunc   `json:"-"`
 }
 
+// ToProto encodes handler metadata without its executable callbacks.
 func (h Handler) ToProto() *logspb.LogHandler {
 	return &logspb.LogHandler{
 		Plugin:        h.Plugin,
@@ -80,6 +81,7 @@ func (h Handler) ToProto() *logspb.LogHandler {
 	}
 }
 
+// HandlerFromProto decodes handler metadata; callbacks must be registered locally.
 func HandlerFromProto(p *logspb.LogHandler) Handler {
 	return Handler{
 		Plugin:        p.GetPlugin(),
@@ -88,11 +90,12 @@ func HandlerFromProto(p *logspb.LogHandler) Handler {
 	}
 }
 
+// ID returns the plugin-qualified resource handler key.
 func (h Handler) ID() string {
 	return h.Plugin + "/" + h.Resource
 }
 
-// LogHandlerFunc opens a log stream for a single source, returning an io.ReadCloser.
+// LogHandlerFunc opens a log stream for a single source, returning an [io.ReadCloser].
 type LogHandlerFunc func(ctx *types.PluginContext, req LogStreamRequest) (io.ReadCloser, error)
 
 // SourceResolver resolves a "group" resource into individual log sources.

@@ -629,7 +629,8 @@ func validateType(v ResourceType) error {
 	)
 }
 
-// Transport adapter contract: these synchronous codecs perform no I/O and have no
+// ToProtoValue encodes canonical scalar kinds and exact integer values.
+// These synchronous transport codecs perform no I/O and have no
 // cancellation or shared mutable state. Concurrent calls are safe only while
 // callers keep each input's mutable storage unchanged. Successful outputs do not
 // alias input containers. Discard output on any error: malformed shapes and

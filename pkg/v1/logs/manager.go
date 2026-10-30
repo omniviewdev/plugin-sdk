@@ -1,3 +1,6 @@
+// Package logs manages asynchronous log sessions, source discovery, and streaming.
+// Accepted sessions retain context values but outlive creation RPC cancellation.
+// Callers own session closure and must close resource sessions on connection retirement.
 package logs
 
 import (
@@ -22,6 +25,7 @@ import (
 )
 
 const (
+	// MaxConcurrentStreamsPerSession bounds simultaneous source readers in one session.
 	MaxConcurrentStreamsPerSession = 20
 	MaxScannerBuffer               = 1024 * 1024 // 1MB max line length
 	scannerInitBuf                 = 4096        // 4KB initial; grows to MaxScannerBuffer on demand
@@ -189,10 +193,13 @@ func (m *Manager) BindConnectionContextProvider(provider resourcev2.ConnectionCo
 	m.connectionProvider = provider
 }
 
+// GetSupportedResources returns the registered handler descriptions.
 func (m *Manager) GetSupportedResources(_ *types.PluginContext) []Handler {
 	return m.registry.AllHandlers()
 }
 
+// CreateSession registers a legacy session and starts acquisition asynchronously.
+// A successful return does not imply readiness; close the session explicitly.
 func (m *Manager) CreateSession(
 	pluginctx *types.PluginContext,
 	opts CreateSessionOptions,
@@ -304,6 +311,7 @@ func (m *Manager) createSession(pluginctx *types.PluginContext, opts CreateSessi
 	return &snap, nil
 }
 
+// GetSession returns an independent session snapshot, or an error for an unknown ID.
 func (m *Manager) GetSession(_ *types.PluginContext, sessionID string) (*LogSession, error) {
 	m.mu.RLock()
 	ss, ok := m.sessions[sessionID]
@@ -315,6 +323,7 @@ func (m *Manager) GetSession(_ *types.PluginContext, sessionID string) (*LogSess
 	return &snap, nil
 }
 
+// ListSessions returns session snapshots sorted by ID.
 func (m *Manager) ListSessions(_ *types.PluginContext) ([]*LogSession, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -333,6 +342,8 @@ func (m *Manager) ListSessions(_ *types.PluginContext) ([]*LogSession, error) {
 	return sessions, nil
 }
 
+// CloseSession removes and cancels a session, waiting up to the shutdown timeout.
+// An unknown ID returns an error; a timeout is logged rather than returned.
 func (m *Manager) CloseSession(_ *types.PluginContext, sessionID string) error {
 	m.mu.Lock()
 	ss, ok := m.sessions[sessionID]
@@ -356,6 +367,8 @@ func (m *Manager) CloseSession(_ *types.PluginContext, sessionID string) error {
 	return nil
 }
 
+// UpdateSessionOptions replaces mutable options while preserving the admitted target.
+// The enabled_sources parameter cancels disabled sources and restarts enabled sources.
 func (m *Manager) UpdateSessionOptions(
 	_ *types.PluginContext,
 	sessionID string,
@@ -383,6 +396,8 @@ func (m *Manager) UpdateSessionOptions(
 	return &snap, nil
 }
 
+// Stream starts command handling and returns the shared output channel.
+// With a configured sink, output is nil. Cancellation or closed input cancels sessions.
 func (m *Manager) Stream(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
 	m.mu.Lock()
 	if m.sink == nil {

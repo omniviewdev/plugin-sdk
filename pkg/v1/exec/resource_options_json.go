@@ -11,6 +11,8 @@ import (
 // UnmarshalJSON validates raw evidence before ordinary decoding can erase
 // duplicates or replace malformed Unicode. The explicit field switch also
 // rejects case-folded aliases; opaque selector and identifier values are data.
+// Tagged scalar types and explicit optional-field presence survive decoding.
+// A decoding or validation error leaves the receiver unchanged.
 func (o *SessionOptions) UnmarshalJSON(data []byte) error {
 	if o == nil {
 		return optionError("INVALID_REQUEST", "Nil exec option receiver.")

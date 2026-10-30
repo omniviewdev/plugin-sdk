@@ -1,3 +1,4 @@
+// Package utils provides SDK state-store access, RPC middleware composition, and legacy encoding helpers.
 package utils
 
 import (

@@ -1,3 +1,4 @@
+// Package plugin transports resource v2 providers over bounded, validated gRPC messages.
 package plugin
 
 import (
@@ -69,12 +70,14 @@ func ancillaryRoute(route resourcev2.AccessRoute) (*resourcepb.AccessRoute, erro
 	return resourcev2.ToProtoAccessRoute(route)
 }
 
+// ListConnections returns configured connection snapshots without starting native clients.
 func (c *Client) ListConnections(ctx context.Context) ([]types.Connection, error) {
 	var out []types.Connection
 	err := c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "listConnections"}, &out)
 	return out, err
 }
 
+// ScopeValues discovers values for one scope dimension on the explicit route.
 func (c *Client) ScopeValues(ctx context.Context, route resourcev2.AccessRoute, dimension string) ([]string, error) {
 	var out []string
 	p, err := ancillaryRoute(route)
@@ -85,6 +88,7 @@ func (c *Client) ScopeValues(ctx context.Context, route resourcev2.AccessRoute, 
 	return out, err
 }
 
+// UpdateConnection updates one configured connection after validating its wire metadata.
 func (c *Client) UpdateConnection(ctx context.Context, in types.Connection) (types.Connection, error) {
 	var out types.Connection
 	if err := resourcev2.ValidateMetadata(in); err != nil {
@@ -101,10 +105,12 @@ func (c *Client) UpdateConnection(ctx context.Context, in types.Connection) (typ
 	return out, err
 }
 
+// DeleteConnection removes the configured connection identified by id.
 func (c *Client) DeleteConnection(ctx context.Context, id string) error {
 	return c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "deleteConnection", Id: id}, &struct{}{})
 }
 
+// GetResourceGroups returns validated presentation groups for the selected route.
 func (c *Client) GetResourceGroups(
 	ctx context.Context,
 	route resourcev2.AccessRoute,
@@ -118,6 +124,7 @@ func (c *Client) GetResourceGroups(
 	return out, err
 }
 
+// GetResourceDefinition returns the validated presentation definition for one resource type.
 func (c *Client) GetResourceDefinition(
 	ctx context.Context,
 	route resourcev2.AccessRoute,
@@ -132,6 +139,7 @@ func (c *Client) GetResourceDefinition(
 	return out, err
 }
 
+// GetEditorSchemas returns editor schema bindings for the selected route.
 func (c *Client) GetEditorSchemas(
 	ctx context.Context,
 	route resourcev2.AccessRoute,
@@ -158,6 +166,7 @@ func (c *Client) GetEditorSchemas(
 	return out, nil
 }
 
+// GetActions returns validated action descriptors for one resource type.
 func (c *Client) GetActions(
 	ctx context.Context,
 	route resourcev2.AccessRoute,
@@ -172,6 +181,7 @@ func (c *Client) GetActions(
 	return out, err
 }
 
+// GetRelationships returns relationship descriptors for one resource type.
 func (c *Client) GetRelationships(
 	ctx context.Context,
 	route resourcev2.AccessRoute,
@@ -199,6 +209,7 @@ func (c *Client) GetRelationships(
 	return out, nil
 }
 
+// ResolveRelationships resolves links within the explicitly admitted source and target bindings.
 func (c *Client) ResolveRelationships(
 	ctx context.Context,
 	in resourcev2.RelationshipResolutionRequest,
@@ -231,6 +242,7 @@ func (c *Client) ResolveRelationships(
 	return out, nil
 }
 
+// GetHealth returns optional health for the resource body; nil health means no health result.
 func (c *Client) GetHealth(
 	ctx context.Context,
 	in resourcev2.GetRequest,
@@ -261,6 +273,7 @@ func (c *Client) GetHealth(
 	return &out, nil
 }
 
+// GetResourceEvents returns resource events within both the requested and transport limits.
 func (c *Client) GetResourceEvents(
 	ctx context.Context,
 	in resourcev2.GetRequest,
@@ -294,6 +307,7 @@ func (c *Client) GetResourceEvents(
 	return out, nil
 }
 
+// GetSchemaDocument fetches the exact schema document reference without substituting another revision.
 func (c *Client) GetSchemaDocument(
 	ctx context.Context,
 	route resourcev2.AccessRoute,

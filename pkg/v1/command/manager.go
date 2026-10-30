@@ -1,3 +1,4 @@
+// Package command dispatches plugin-specific opaque command payloads through optional RPC transport.
 package command
 
 import (
@@ -15,7 +16,7 @@ var (
 	ErrHandlerTimeout = errors.New("handler timeout")
 )
 
-// Manager manages the lifecycle of the terminal sessions.
+// Manager dispatches commands through a handler map shared with its constructor.
 type Manager struct {
 	log              logging.Logger
 	settingsProvider settings.Provider
@@ -24,7 +25,8 @@ type Manager struct {
 
 var _ Provider = (*Manager)(nil)
 
-// NewManager initializes a new Manager instance.
+// NewManager retains handlers without copying. Do not mutate the map during calls.
+// A nil logger disables logging; handlers own any synchronization they need.
 func NewManager(
 	log logging.Logger,
 	sp settings.Provider,
@@ -40,6 +42,8 @@ func NewManager(
 	}
 }
 
+// Call invokes the exact target handler or returns ErrHandlerNotFound.
+// Payload and result ownership follow the selected handler's contract.
 func (m *Manager) Call(
 	ctx *types.PluginContext,
 	target string,

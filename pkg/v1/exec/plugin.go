@@ -41,6 +41,7 @@ type Provider interface {
 	Close()
 }
 
+// Plugin exposes a Provider through HashiCorp's gRPC plugin protocol.
 type Plugin struct {
 	plugin.Plugin
 	Impl Provider
@@ -53,6 +54,7 @@ func (p *Plugin) BindConnectionContextProvider(provider resourcev2.ConnectionCon
 	}
 }
 
+// GRPCServer registers exec RPCs backed by Impl on s.
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
 	RegisterExecPluginServer(s, &PluginServer{
 		log:  logging.Default().Named("exec.plugin.server"),
@@ -61,6 +63,7 @@ func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
 	return nil
 }
 
+// GRPCClient constructs the host-side exec provider using c.
 func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,
@@ -72,6 +75,7 @@ func (p *Plugin) GRPCClient(
 	}, nil
 }
 
+// RegisterPlugin installs an exec manager after rejecting duplicate handler keys.
 func RegisterPlugin(
 	p *sdk.Plugin,
 	opts PluginOpts,

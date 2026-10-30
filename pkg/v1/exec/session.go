@@ -14,8 +14,9 @@ import (
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
 
-// Session is a snapshot value type — safe for concurrent reads, returned by
-// the public API. It carries no mutable internal state.
+// Session is a snapshot of public terminal-session metadata, not a live view.
+// Manager snapshots own their maps and command slice. Callers may read a snapshot
+// concurrently, but must synchronize mutations to those containers.
 type Session struct {
 	CreatedAt time.Time         `json:"created_at"`
 	Labels    map[string]string `json:"labels"`
@@ -25,6 +26,9 @@ type Session struct {
 	Attached  bool              `json:"attached"`
 }
 
+// ToProto converts session metadata without changing session lifetime or state.
+// A nil receiver returns nil. The result shares Command, Labels, and Params with
+// the snapshot; callers must synchronize mutations while either value is in use.
 func (s *Session) ToProto() *execpb.Session {
 	if s == nil {
 		return nil
@@ -39,6 +43,9 @@ func (s *Session) ToProto() *execpb.Session {
 	}
 }
 
+// NewSessionFromProto converts public session metadata and returns nil for nil
+// input. Command, Labels, and Params share the input message's containers; the
+// result does not own or control the lifetime of a running terminal session.
 func NewSessionFromProto(s *execpb.Session) *Session {
 	if s == nil {
 		return nil

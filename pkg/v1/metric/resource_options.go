@@ -16,12 +16,14 @@ import (
 	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 )
 
+// ResourceWireVersion identifies the lossless resource-aware metric protocol.
 const ResourceWireVersion uint32 = 2
 
 func (r QueryRequest) HasResourceIntent() bool {
 	return r.ResourceData != nil || r.Reference != nil || r.Route != nil
 }
 
+// HasResourceIntent reports whether the stream frame carries resource-aware input.
 func (r StreamInput) HasResourceIntent() bool {
 	return r.ResourceData != nil || r.Reference != nil || r.Route != nil
 }
@@ -192,6 +194,7 @@ func (r *QueryRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON validates stream metadata, catalog pins, and resource values.
 func (r *StreamInput) UnmarshalJSON(data []byte) error {
 	type plain StreamInput
 	var p plain

@@ -12,6 +12,7 @@ import (
 	settingspb "github.com/omniviewdev/plugin-sdk/proto/v1/settings"
 )
 
+// SettingTypeToProtoType maps known types and uses text for unknown values.
 func SettingTypeToProtoType(t settings.SettingType) settingspb.SettingType {
 	switch t {
 	case settings.Text:
@@ -36,6 +37,7 @@ func SettingTypeToProtoType(t settings.SettingType) settingspb.SettingType {
 	return settingspb.SettingType_SETTING_TYPE_TEXT
 }
 
+// ProtoTypeToSettingType maps known wire types and uses text for unknown values.
 func ProtoTypeToSettingType(t settingspb.SettingType) settings.SettingType {
 	switch t {
 	case settingspb.SettingType_SETTING_TYPE_TEXT:
@@ -84,6 +86,7 @@ func ConvertAnyToInterface(anyValue *anypb.Any) (interface{}, error) {
 	return value, nil
 }
 
+// ToProtoSettingFileSelection preserves nil and shares the extension slice with its input.
 func ToProtoSettingFileSelection(s *settings.SettingFileSelection) *settingspb.SettingFileSelection {
 	if s == nil {
 		return nil
@@ -99,6 +102,7 @@ func ToProtoSettingFileSelection(s *settings.SettingFileSelection) *settingspb.S
 	}
 }
 
+// FromProtoSettingFileSelection preserves nil and shares the wire extension slice.
 func FromProtoSettingFileSelection(s *settingspb.SettingFileSelection) *settings.SettingFileSelection {
 	if s == nil {
 		return nil
@@ -114,6 +118,8 @@ func FromProtoSettingFileSelection(s *settingspb.SettingFileSelection) *settings
 	}
 }
 
+// ToProtoSetting encodes metadata without a validator and returns nil on encoding failure.
+// Password types always carry sensitive metadata.
 func ToProtoSetting(s settings.Setting) *settingspb.Setting {
 	options := make([]*settingspb.SettingOption, 0, len(s.Options))
 	for _, o := range s.Options {
@@ -152,6 +158,8 @@ func ToProtoSetting(s settings.Setting) *settingspb.Setting {
 	}
 }
 
+// FromProtoSetting decodes metadata without restoring executable validators.
+// Invalid values yield a sensitive zero setting; absent sensitivity metadata stays private.
 func FromProtoSetting(s *settingspb.Setting) settings.Setting {
 	options := make([]settings.SettingOption, 0, len(s.GetOptions()))
 	for _, o := range s.GetOptions() {

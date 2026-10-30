@@ -9,7 +9,9 @@ import (
 )
 
 const (
+	// StateIsolationCapability identifies the SDK's per-profile state-root isolation contract.
 	StateIsolationCapability = "state-root-v1"
+	// StateIsolationSDKModule identifies the module whose revision the trusted builder attests.
 	StateIsolationSDKModule  = "github.com/omniviewdev/plugin-sdk"
 )
 

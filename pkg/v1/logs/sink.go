@@ -24,6 +24,7 @@ func NewChannelSink(ctx context.Context, out chan StreamOutput) *ChannelSink {
 	return &ChannelSink{ctx: ctx, out: out}
 }
 
+// OnLine sends a line or returns when the sink context is canceled.
 func (s *ChannelSink) OnLine(line LogLine) {
 	select {
 	case s.out <- StreamOutput{
@@ -34,6 +35,7 @@ func (s *ChannelSink) OnLine(line LogLine) {
 	}
 }
 
+// OnEvent sends a session event or returns when the sink context is canceled.
 func (s *ChannelSink) OnEvent(sessionID string, event LogStreamEvent) {
 	select {
 	case s.out <- StreamOutput{

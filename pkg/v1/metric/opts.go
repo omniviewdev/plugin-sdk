@@ -46,6 +46,7 @@ type ProviderInfo struct {
 	Description string `json:"description"`
 }
 
+// ToProto encodes provider metadata into a new wire message.
 func (p *ProviderInfo) ToProto() *metricpb.MetricProviderInfo {
 	return &metricpb.MetricProviderInfo{
 		Id:          p.ID,
@@ -55,6 +56,7 @@ func (p *ProviderInfo) ToProto() *metricpb.MetricProviderInfo {
 	}
 }
 
+// ProviderInfoFromProto returns zero metadata for nil input.
 func ProviderInfoFromProto(p *metricpb.MetricProviderInfo) ProviderInfo {
 	if p == nil {
 		return ProviderInfo{}
@@ -73,25 +75,40 @@ func ProviderInfoFromProto(p *metricpb.MetricProviderInfo) ProviderInfo {
 type MetricUnit int
 
 const (
+	// UnitNone denotes a dimensionless value.
 	UnitNone        MetricUnit = 0
+	// UnitBytes measures bytes.
 	UnitBytes       MetricUnit = 1
+	// UnitKB measures kilobytes.
 	UnitKB          MetricUnit = 2
+	// UnitMB measures megabytes.
 	UnitMB          MetricUnit = 3
+	// UnitGB measures gigabytes.
 	UnitGB          MetricUnit = 4
+	// UnitPercentage measures percentages.
 	UnitPercentage  MetricUnit = 5
+	// UnitMillis measures milliseconds.
 	UnitMillis      MetricUnit = 6
+	// UnitSeconds measures seconds.
 	UnitSeconds     MetricUnit = 7
+	// UnitCount measures discrete occurrences.
 	UnitCount       MetricUnit = 8
+	// UnitOpsPerSec measures operations per second.
 	UnitOpsPerSec   MetricUnit = 9
+	// UnitBytesPerSec measures byte throughput.
 	UnitBytesPerSec MetricUnit = 10
+	// UnitMillicores measures thousandths of a CPU core.
 	UnitMillicores  MetricUnit = 11
+	// UnitCores measures CPU cores.
 	UnitCores       MetricUnit = 12
 )
 
+// ToProto converts the unit to the int32 wire enum. Out-of-range ints truncate.
 func (u MetricUnit) ToProto() metricpb.MetricUnit {
 	return metricpb.MetricUnit(u)
 }
 
+// MetricUnitFromProto preserves every int32 wire unit, including unknown values.
 func MetricUnitFromProto(p metricpb.MetricUnit) MetricUnit {
 	return MetricUnit(p)
 }
@@ -100,15 +117,20 @@ func MetricUnitFromProto(p metricpb.MetricUnit) MetricUnit {
 type MetricShape int
 
 const (
+	// ShapeCurrent requests the latest value.
 	ShapeCurrent    MetricShape = 0
+	// ShapeTimeseries requests timestamped samples.
 	ShapeTimeseries MetricShape = 1
+	// ShapeAggregate requests a statistical window.
 	ShapeAggregate  MetricShape = 2
 )
 
+// ToProto converts the shape to the int32 wire enum. Out-of-range ints truncate.
 func (s MetricShape) ToProto() metricpb.MetricShape {
 	return metricpb.MetricShape(s)
 }
 
+// MetricShapeFromProto preserves every int32 wire shape, including unknown values.
 func MetricShapeFromProto(p metricpb.MetricShape) MetricShape {
 	return MetricShape(p)
 }
@@ -117,15 +139,20 @@ func MetricShapeFromProto(p metricpb.MetricShape) MetricShape {
 type MetricStreamCommand int
 
 const (
+	// StreamCommandSubscribe starts a subscription within its owning lane.
 	StreamCommandSubscribe   MetricStreamCommand = 0
+	// StreamCommandUnsubscribe retires a subscription within its owning lane.
 	StreamCommandUnsubscribe MetricStreamCommand = 1
+	// StreamCommandClose retires the addressed subscription, not other lanes.
 	StreamCommandClose       MetricStreamCommand = 2
 )
 
+// ToProto converts the command to the int32 wire enum. Out-of-range ints truncate.
 func (c MetricStreamCommand) ToProto() metricpb.MetricStreamCommand {
 	return metricpb.MetricStreamCommand(c)
 }
 
+// MetricStreamCommandFromProto preserves unknown wire commands for validation.
 func MetricStreamCommandFromProto(p metricpb.MetricStreamCommand) MetricStreamCommand {
 	return MetricStreamCommand(p)
 }
@@ -139,6 +166,7 @@ type ColorRange struct {
 	Color string  `json:"color"`
 }
 
+// ToProto copies the range into a new wire message.
 func (c *ColorRange) ToProto() *metricpb.MetricColorRange {
 	return &metricpb.MetricColorRange{
 		Min:   c.Min,
@@ -147,6 +175,7 @@ func (c *ColorRange) ToProto() *metricpb.MetricColorRange {
 	}
 }
 
+// ColorRangeFromProto returns a zero range for nil input.
 func ColorRangeFromProto(p *metricpb.MetricColorRange) ColorRange {
 	return ColorRange{
 		Min:   p.GetMin(),
@@ -167,6 +196,7 @@ type MetricDescriptor struct {
 	ChartGroup      string        `json:"chart_group"`
 }
 
+// ToProto copies descriptor slices into a new wire message.
 func (d *MetricDescriptor) ToProto() *metricpb.MetricDescriptor {
 	colorRanges := make([]*metricpb.MetricColorRange, 0, len(d.ColorRanges))
 	for i := range d.ColorRanges {
@@ -188,6 +218,7 @@ func (d *MetricDescriptor) ToProto() *metricpb.MetricDescriptor {
 	}
 }
 
+// MetricDescriptorFromProto decodes descriptor slices; nil input yields zero metadata.
 func MetricDescriptorFromProto(p *metricpb.MetricDescriptor) MetricDescriptor {
 	colorRanges := make([]ColorRange, 0, len(p.GetColorRanges()))
 	for _, cr := range p.GetColorRanges() {
@@ -215,6 +246,7 @@ type Handler struct {
 	Metrics  []MetricDescriptor `json:"metrics"`
 }
 
+// ToProto copies the handler and its metric descriptors into wire messages.
 func (h *Handler) ToProto() *metricpb.MetricHandler {
 	metrics := make([]*metricpb.MetricDescriptor, 0, len(h.Metrics))
 	for i := range h.Metrics {
@@ -226,6 +258,7 @@ func (h *Handler) ToProto() *metricpb.MetricHandler {
 	}
 }
 
+// HandlerFromProto decodes the available metrics; nil input yields an empty handler.
 func HandlerFromProto(p *metricpb.MetricHandler) Handler {
 	metrics := make([]MetricDescriptor, 0, len(p.GetMetrics()))
 	for _, m := range p.GetMetrics() {
@@ -246,6 +279,7 @@ type DataPoint struct {
 	Labels    map[string]string `json:"labels"`
 }
 
+// ToProto encodes the timestamp and value; the labels map remains shared.
 func (d *DataPoint) ToProto() *metricpb.DataPoint {
 	return &metricpb.DataPoint{
 		Timestamp: timestamppb.New(d.Timestamp),
@@ -254,6 +288,8 @@ func (d *DataPoint) ToProto() *metricpb.DataPoint {
 	}
 }
 
+// DataPointFromProto decodes a sample and shares labels with the input.
+// A missing timestamp yields the zero time.
 func DataPointFromProto(p *metricpb.DataPoint) DataPoint {
 	var ts time.Time
 	if p.GetTimestamp() != nil {
@@ -273,6 +309,7 @@ type TimeSeries struct {
 	Labels     map[string]string `json:"labels"`
 }
 
+// ToProto allocates sample messages and shares their label maps with the result.
 func (t *TimeSeries) ToProto() *metricpb.TimeSeries {
 	points := make([]*metricpb.DataPoint, 0, len(t.DataPoints))
 	for i := range t.DataPoints {
@@ -285,6 +322,7 @@ func (t *TimeSeries) ToProto() *metricpb.TimeSeries {
 	}
 }
 
+// TimeSeriesFromProto decodes samples and shares label maps with the wire input.
 func TimeSeriesFromProto(p *metricpb.TimeSeries) TimeSeries {
 	points := make([]DataPoint, 0, len(p.GetDataPoints()))
 	for _, dp := range p.GetDataPoints() {
@@ -305,6 +343,7 @@ type CurrentValue struct {
 	Labels    map[string]string `json:"labels"`
 }
 
+// ToProto encodes the value and timestamp; the labels map remains shared.
 func (c *CurrentValue) ToProto() *metricpb.CurrentValue {
 	return &metricpb.CurrentValue{
 		MetricId:  c.MetricID,
@@ -314,6 +353,7 @@ func (c *CurrentValue) ToProto() *metricpb.CurrentValue {
 	}
 }
 
+// CurrentValueFromProto shares labels and uses zero time for a missing timestamp.
 func CurrentValueFromProto(p *metricpb.CurrentValue) CurrentValue {
 	var ts time.Time
 	if p.GetTimestamp() != nil {
@@ -342,6 +382,7 @@ type AggregateValue struct {
 	Labels   map[string]string `json:"labels"`
 }
 
+// ToProto encodes the statistical window and shares the labels map.
 func (a *AggregateValue) ToProto() *metricpb.AggregateValue {
 	return &metricpb.AggregateValue{
 		MetricId: a.MetricID,
@@ -358,6 +399,7 @@ func (a *AggregateValue) ToProto() *metricpb.AggregateValue {
 	}
 }
 
+// AggregateValueFromProto shares labels and uses zero duration for a missing window.
 func AggregateValueFromProto(p *metricpb.AggregateValue) AggregateValue {
 	var window time.Duration
 	if p.GetWindow() != nil {
@@ -385,6 +427,7 @@ type MetricResult struct {
 	AggregateValue *AggregateValue `json:"aggregate_value,omitempty"`
 }
 
+// ToProto encodes the first present result in series, current, aggregate order.
 func (r *MetricResult) ToProto() *metricpb.MetricResult {
 	result := &metricpb.MetricResult{}
 	if r.TimeSeries != nil {
@@ -397,6 +440,7 @@ func (r *MetricResult) ToProto() *metricpb.MetricResult {
 	return result
 }
 
+// MetricResultFromProto decodes the selected wire variant; absent variants yield zero.
 func MetricResultFromProto(p *metricpb.MetricResult) MetricResult {
 	r := MetricResult{}
 	switch v := p.GetResult().(type) {
@@ -438,6 +482,7 @@ type QueryResponse struct {
 	Error   string         `json:"error"`
 }
 
+// QueryResponseFromProto decodes results; nil input produces an unsuccessful empty response.
 func QueryResponseFromProto(p *metricpb.QueryMetricsResponse) *QueryResponse {
 	results := make([]MetricResult, 0, len(p.GetResults()))
 	for _, r := range p.GetResults() {
@@ -450,6 +495,7 @@ func QueryResponseFromProto(p *metricpb.QueryMetricsResponse) *QueryResponse {
 	}
 }
 
+// ToProto copies result containers; nested label maps remain shared.
 func (r *QueryResponse) ToProto() *metricpb.QueryMetricsResponse {
 	results := make([]*metricpb.MetricResult, 0, len(r.Results))
 	for i := range r.Results {

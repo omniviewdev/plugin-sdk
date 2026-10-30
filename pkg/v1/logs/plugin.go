@@ -40,11 +40,13 @@ func (p *Plugin) BindConnectionContextProvider(provider resourcev2.ConnectionCon
 	}
 }
 
+// GRPCServer registers log lifecycle and raw resource-admission handlers.
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
 	RegisterLogPluginServer(s, &PluginServer{log: logging.Default().Named("logs.plugin.server"), Impl: p.Impl})
 	return nil
 }
 
+// GRPCClient creates a remote log provider using the supplied connection.
 func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,

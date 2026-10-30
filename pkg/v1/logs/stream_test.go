@@ -7,7 +7,7 @@ import (
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 
-// LV-001: LogLevel.ToProto() round-trips all 7 values
+// LV-001: LogLevel.ToProto() round-trips all 7 values.
 func TestLogLevelToProtoRoundTrip(t *testing.T) {
 	levels := []struct {
 		go_   LogLevel
@@ -34,7 +34,7 @@ func TestLogLevelToProtoRoundTrip(t *testing.T) {
 	}
 }
 
-// LV-002: LogLevel.FromProto() maps unknown values to UNSPECIFIED
+// LV-002: LogLevel.FromProto() maps unknown values to UNSPECIFIED.
 func TestLogLevelFromProtoUnknown(t *testing.T) {
 	got := LogLevelFromProto(logspb.LogLevel(99))
 	if got != LogLevelUnspecified {
@@ -42,7 +42,7 @@ func TestLogLevelFromProtoUnknown(t *testing.T) {
 	}
 }
 
-// LV-003: LogLine.ToProto() includes Level field
+// LV-003: LogLine.ToProto() includes Level field.
 func TestLogLineToProtoIncludesLevel(t *testing.T) {
 	line := LogLine{
 		SessionID: "sess-1",
@@ -60,7 +60,7 @@ func TestLogLineToProtoIncludesLevel(t *testing.T) {
 	}
 }
 
-// LV-004: LogLine.FromProto() with level=0 → UNSPECIFIED
+// LV-004: LogLine.FromProto() with level=0 → UNSPECIFIED.
 func TestLogLineFromProtoLevelZero(t *testing.T) {
 	p := &logspb.LogLine{
 		SessionId: "sess-1",
@@ -75,7 +75,7 @@ func TestLogLineFromProtoLevelZero(t *testing.T) {
 	}
 }
 
-// LV-005: LogLine.ToProto() preserves all existing fields unchanged
+// LV-005: LogLine.ToProto() preserves all existing fields unchanged.
 func TestLogLineToProtoPreservesFields(t *testing.T) {
 	ts := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
 	line := LogLine{
@@ -125,7 +125,7 @@ func TestLogLineToProtoPreservesFields(t *testing.T) {
 	}
 }
 
-// LV-006: StreamEventSessionReady round-trips
+// LV-006: StreamEventSessionReady round-trips.
 func TestStreamEventSessionReadyRoundTrip(t *testing.T) {
 	p := StreamEventSessionReady.ToProto()
 	if p != logspb.LogStreamEventType_LOG_STREAM_EVENT_SESSION_READY {

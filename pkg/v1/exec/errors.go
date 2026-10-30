@@ -9,13 +9,19 @@ import (
 type ErrorCode int
 
 const (
+	// ErrCodeSessionNotFound identifies an unknown session ID.
 	ErrCodeSessionNotFound ErrorCode = iota + 1
+	// ErrCodeHandlerNotFound identifies an unsupported handler key.
 	ErrCodeHandlerNotFound
+	// ErrCodeSessionClosed identifies a session that no longer accepts work.
 	ErrCodeSessionClosed
+	// ErrCodeTerminalError identifies a terminal operation failure.
 	ErrCodeTerminalError
+	// ErrCodeSessionExists identifies a duplicate session ID.
 	ErrCodeSessionExists
 )
 
+// String returns the stable error classification, or UNKNOWN for an invalid code.
 func (c ErrorCode) String() string {
 	switch c {
 	case ErrCodeSessionNotFound:
@@ -41,6 +47,7 @@ type ExecSessionError struct {
 	Err       error // optional wrapped error
 }
 
+// Error formats the classification and optional session ID; a nil receiver is safe.
 func (e *ExecSessionError) Error() string {
 	if e == nil {
 		return "<nil ExecSessionError>"
@@ -51,6 +58,7 @@ func (e *ExecSessionError) Error() string {
 	return fmt.Sprintf("[%s] %s", e.Code, e.Message)
 }
 
+// Unwrap returns the underlying failure, or nil for a nil receiver.
 func (e *ExecSessionError) Unwrap() error {
 	if e == nil {
 		return nil
@@ -70,7 +78,7 @@ func (e *ExecSessionError) Is(target error) bool {
 	return false
 }
 
-// Sentinel errors for errors.Is matching.
+// Sentinel errors support classification with [errors.Is].
 var (
 	ErrSessionNotFound = &ExecSessionError{Code: ErrCodeSessionNotFound}
 	ErrHandlerNotFound = &ExecSessionError{Code: ErrCodeHandlerNotFound}
@@ -79,8 +87,7 @@ var (
 	ErrSessionExists   = &ExecSessionError{Code: ErrCodeSessionExists}
 )
 
-// Constructor helpers.
-
+// NewSessionNotFoundError records the session ID that could not be found.
 func NewSessionNotFoundError(sessionID string) *ExecSessionError {
 	return &ExecSessionError{
 		Code:      ErrCodeSessionNotFound,
@@ -89,6 +96,7 @@ func NewSessionNotFoundError(sessionID string) *ExecSessionError {
 	}
 }
 
+// NewHandlerNotFoundError reports the requested key and available handlers.
 func NewHandlerNotFoundError(handlerKey string, available []string) *ExecSessionError {
 	return &ExecSessionError{
 		Code:    ErrCodeHandlerNotFound,
@@ -96,6 +104,7 @@ func NewHandlerNotFoundError(handlerKey string, available []string) *ExecSession
 	}
 }
 
+// NewSessionClosedError records a session that no longer accepts work.
 func NewSessionClosedError(sessionID string) *ExecSessionError {
 	return &ExecSessionError{
 		Code:      ErrCodeSessionClosed,
@@ -104,6 +113,7 @@ func NewSessionClosedError(sessionID string) *ExecSessionError {
 	}
 }
 
+// NewTerminalError wraps err while retaining the affected session ID.
 func NewTerminalError(sessionID string, err error) *ExecSessionError {
 	return &ExecSessionError{
 		Code:      ErrCodeTerminalError,
@@ -113,6 +123,7 @@ func NewTerminalError(sessionID string, err error) *ExecSessionError {
 	}
 }
 
+// NewSessionExistsError reports an attempt to reuse a live session ID.
 func NewSessionExistsError(sessionID string) *ExecSessionError {
 	return &ExecSessionError{
 		Code:      ErrCodeSessionExists,

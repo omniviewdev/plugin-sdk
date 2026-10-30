@@ -24,6 +24,7 @@ func NewFakePortChecker(startPort int32) *FakePortChecker {
 	}
 }
 
+// FindFreePort returns the next unblocked port, advancing through at most 10,000 candidates.
 func (f *FakePortChecker) FindFreePort() (int32, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -38,6 +39,7 @@ func (f *FakePortChecker) FindFreePort() (int32, error) {
 	return 0, fmt.Errorf("no free port found after %d probes", maxProbes)
 }
 
+// IsPortUnavailable reports whether BlockPort marked the port as unavailable.
 func (f *FakePortChecker) IsPortUnavailable(port int32) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()

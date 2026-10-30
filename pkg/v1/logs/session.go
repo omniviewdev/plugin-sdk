@@ -14,14 +14,21 @@ import (
 type LogSessionStatus int
 
 const (
+	// LogSessionStatusActive indicates that the session is delivering logs.
 	LogSessionStatusActive LogSessionStatus = iota
+	// LogSessionStatusPaused indicates that log delivery is suspended.
 	LogSessionStatusPaused
+	// LogSessionStatusClosed indicates that the session has ended.
 	LogSessionStatusClosed
+	// LogSessionStatusError indicates that the session encountered a failure.
 	LogSessionStatusError
+	// LogSessionStatusConnecting indicates that native source acquisition is pending.
 	LogSessionStatusConnecting
+	// LogSessionStatusInitializing indicates that session setup is in progress.
 	LogSessionStatusInitializing
 )
 
+// ToProto converts the status to its wire value, defaulting unknown values to active.
 func (s LogSessionStatus) ToProto() logspb.LogSessionStatus {
 	switch s {
 	case LogSessionStatusActive:
@@ -40,6 +47,7 @@ func (s LogSessionStatus) ToProto() logspb.LogSessionStatus {
 	return logspb.LogSessionStatus_LOG_SESSION_STATUS_ACTIVE
 }
 
+// LogSessionStatusFromProto decodes a wire status, defaulting unknown values to active.
 func LogSessionStatusFromProto(p logspb.LogSessionStatus) LogSessionStatus {
 	switch p {
 	case logspb.LogSessionStatus_LOG_SESSION_STATUS_ACTIVE:
@@ -71,6 +79,7 @@ type LogSession struct {
 	CreatedAt     time.Time         `json:"created_at"`
 }
 
+// ToProto encodes the session snapshot and its active sources.
 func (s *LogSession) ToProto() *logspb.LogSession {
 	sources := make([]*logspb.LogSource, 0, len(s.ActiveSources))
 	for _, src := range s.ActiveSources {
@@ -89,6 +98,7 @@ func (s *LogSession) ToProto() *logspb.LogSession {
 	}
 }
 
+// LogSessionFromProto decodes a session snapshot without opening native sources.
 func LogSessionFromProto(p *logspb.LogSession) *LogSession {
 	sources := make([]LogSource, 0, len(p.GetActiveSources()))
 	for _, src := range p.GetActiveSources() {
@@ -123,6 +133,8 @@ type LogSessionOptions struct {
 	Params              map[string]string             `json:"params"`
 }
 
+// ToProto encodes stream options, sharing Params and omitting Reference and Route.
+// A nil receiver produces nil; resource admission metadata travels separately.
 func (o *LogSessionOptions) ToProto() *logspb.LogSessionOptions {
 	if o == nil {
 		return nil
@@ -144,6 +156,8 @@ func (o *LogSessionOptions) ToProto() *logspb.LogSessionOptions {
 	return p
 }
 
+// LogSessionOptionsFromProto decodes stream options and shares the wire Params map.
+// Nil input produces zero options without resource admission metadata.
 func LogSessionOptionsFromProto(p *logspb.LogSessionOptions) LogSessionOptions {
 	if p == nil {
 		return LogSessionOptions{}

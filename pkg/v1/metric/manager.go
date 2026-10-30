@@ -53,6 +53,8 @@ type managedSubscription struct {
 
 var _ Provider = (*Manager)(nil)
 
+// NewManager creates a process-local manager. A nil logger disables logging.
+// Bind the connection provider before starting concurrent queries or streams.
 func NewManager(
 	log logging.Logger,
 	sp settings.Provider,
@@ -81,6 +83,7 @@ func (m *Manager) BindConnectionContextProvider(provider resourcev2.ConnectionCo
 	m.connectionProvider = provider
 }
 
+// GetSupportedResources returns provider metadata and an unordered handler snapshot.
 func (m *Manager) GetSupportedResources(_ *types.PluginContext) (*ProviderInfo, []Handler) {
 	handlers := make([]Handler, 0, len(m.handlers))
 	for _, h := range m.handlers {
@@ -89,6 +92,7 @@ func (m *Manager) GetSupportedResources(_ *types.PluginContext) (*ProviderInfo, 
 	return &m.providerInfo, handlers
 }
 
+// Query runs a non-resource query; resource intent requires QueryResource.
 func (m *Manager) Query(ctx *types.PluginContext, req QueryRequest) (*QueryResponse, error) {
 	if req.HasResourceIntent() {
 		return nil, resourcev2.NewError("UNSUPPORTED", "Use QueryResource for resource metrics.")
@@ -96,6 +100,7 @@ func (m *Manager) Query(ctx *types.PluginContext, req QueryRequest) (*QueryRespo
 	return m.query(ctx, req)
 }
 
+// QueryResource validates resource input before leasing its configured connection.
 func (m *Manager) QueryResource(ctx *types.PluginContext, req QueryRequest) (*QueryResponse, error) {
 	if !req.HasResourceIntent() {
 		return nil, resourcev2.NewError("INVALID_REQUEST", "Resource query requires resource input.")
@@ -142,6 +147,7 @@ func (m *Manager) queryContext(ctx context.Context, pc *types.PluginContext) *Qu
 	return qctx
 }
 
+// StreamMetrics starts an owner-isolated non-resource lane until cancellation or input closure.
 func (m *Manager) StreamMetrics(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
 	return m.admitStream(ctx, in, false, nil)
 }
@@ -358,6 +364,8 @@ func (m *Manager) checkStreamCatalog(
 	return resourcev2.CheckCatalogRevision(resourcev2.WithCatalogRevision(ctx, revision), catalog)
 }
 
+// StreamResourceMetrics leases the selected connection for the lane's lifetime.
+// Cancellation stops native work and prevents further delivery.
 func (m *Manager) StreamResourceMetrics(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
 	return m.connectedStream(ctx, in)
 }
@@ -427,7 +435,7 @@ func (m *Manager) stream(ctx context.Context, in chan StreamInput) (chan StreamO
 
 	out := make(chan StreamOutput, 256)
 	var polls sync.WaitGroup
-	// Otherwise, implement polling-based streaming using QueryFunc
+	// Otherwise, implement polling-based streaming using QueryFunc.
 	go func() {
 		defer func() {
 			m.mux.Lock()
@@ -544,7 +552,7 @@ func (m *Manager) pollSubscription(sub *managedSubscription) {
 	ticker := time.NewTicker(sub.interval)
 	defer ticker.Stop()
 
-	// Immediately poll once
+	// Immediately poll once.
 	m.pollOnce(sub)
 
 	for {

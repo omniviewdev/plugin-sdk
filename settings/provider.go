@@ -1,3 +1,4 @@
+// Package settings provides synchronized in-memory preferences and user-safe validation.
 package settings
 
 import (
@@ -11,18 +12,20 @@ import (
 )
 
 var (
+	// ErrSettingNotFound reports an unknown setting within a category.
 	ErrSettingNotFound         = errors.New("setting not found")
+	// ErrSettingTypeMismatch reports a value incompatible with the declared setting type.
 	ErrSettingTypeMismatch     = errors.New("setting type mismatch")
+	// ErrSettingCategoryNotFound reports an unknown category.
 	ErrSettingCategoryNotFound = errors.New("setting category not found")
+	// ErrInvalidSettingID reports an ID without nonempty category and setting components.
 	ErrInvalidSettingID        = errors.New("invalid setting ID")
 )
 
 //nolint:gochecknoglobals // don't want to have to specify this in every function
 var nilSetting = Setting{}
 
-// The settings store is a map of maps. The first map is the category of the settings, and the second
-// map is the settings themselves. The key of the first map is the category name, and the key of the
-// second map is the setting ID.
+// Store groups settings by category ID, then by setting ID.
 type Store map[string]Category
 
 // Category is a group of settings. This is used to group settings together in the UI.
@@ -144,6 +147,8 @@ type ProviderOpts struct {
 	PluginSettings []Category
 }
 
+// NewProvider creates an independent in-memory store. A nil logger disables logging.
+// Validators and change handlers run outside store locks and may call provider methods.
 func NewProvider(opts ProviderOpts) Provider {
 	p := &provider{
 		logger:         opts.Logger,

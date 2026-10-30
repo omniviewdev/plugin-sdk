@@ -20,6 +20,8 @@ type Record struct {
 	StateRoot     string `json:"stateRoot"`
 }
 
+// Claims is the durable v1 registry of custom profile bindings. An empty claim
+// list grants no ownership; readers must apply their own filesystem overlap policy.
 type Claims struct {
 	SchemaVersion int      `json:"schemaVersion"`
 	Claims        []Record `json:"claims"`
@@ -35,6 +37,8 @@ type ManifestIdentity struct {
 	} `json:"profile"`
 }
 
+// WorkspaceIdentity adds source-directory boundaries to the narrow manifest
+// identity projection; it does not validate the host's complete manifest schema.
 type WorkspaceIdentity struct {
 	ManifestIdentity
 	Repositories []struct {
@@ -63,6 +67,7 @@ type Error struct {
 	Message string
 }
 
+// Error returns the fixed diagnostic without serializing machine-local metadata.
 func (e *Error) Error() string { return e.Message }
 
 func invalid(message string) error {
@@ -103,6 +108,9 @@ func ReadJSON(path string, value any) error {
 	return nil
 }
 
+// ValidateRecord requires a canonical nonzero workspace UUID and an absolute,
+// clean state directory. Existing state and container symlinks fail closed;
+// validation never creates the missing directory suffix.
 func ValidateRecord(record Record) error {
 	id, err := uuid.Parse(record.WorkspaceID)
 	if record.SchemaVersion != 1 || err != nil || id == uuid.Nil || id.String() != record.WorkspaceID ||

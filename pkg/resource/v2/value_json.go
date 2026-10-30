@@ -247,6 +247,8 @@ func taggedValue(raw any, depth int, nodes *int) (Value, error) {
 	return v, nil
 }
 
+// UnmarshalJSON admits the strict tagged encoding without changing the receiver on failure.
+// Duplicate members, malformed Unicode, and missing or inactive payloads are rejected.
 func (v *Value) UnmarshalJSON(data []byte) error {
 	if v == nil {
 		return invalid("nil value receiver")

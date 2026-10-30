@@ -1,3 +1,4 @@
+// Package config defines plugin manifests, host configuration, and artifact provenance.
 package config
 
 import (

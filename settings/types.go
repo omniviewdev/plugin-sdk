@@ -1,5 +1,6 @@
 package settings
 
+// SettingType identifies the form control and expected value family for a preference.
 type SettingType string
 
 const (
@@ -19,10 +20,12 @@ const (
 	Color SettingType = "color"
 	// DateTime is the type for a date time field entry.
 	DateTime SettingType = "datetime"
-	// SettingTypePassword is the type for a password field entry.
+	// Password is the type for a password field entry.
 	Password SettingType = "password"
 )
 
+// SettingFileSelection describes file-picker capabilities and initial selection.
+// Extensions is caller-owned; an empty slice does not restrict extensions.
 type SettingFileSelection struct {
 	// Whether file selection should be allowed.
 	Enabled bool `json:"enabled"`
@@ -57,6 +60,7 @@ var AllSettingTypes = []struct {
 	{Password, "PASSWORD"},
 }
 
+// SettingOption pairs a selectable value with its display metadata.
 type SettingOption struct {
 	// Label is the human readable label of the option
 	Label string `json:"label"`
