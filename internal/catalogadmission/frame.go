@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	frameVersion = 1
+	frameVersion     = 1
 	frameHeaderBytes = 3
 	frameLengthBytes = 2
 )
@@ -25,10 +25,11 @@ func Marshal(ctx context.Context, defaultRevision string, limits Limits) ([]byte
 	}
 	entries := Entries(ctx)
 	if len(entries) > math.MaxUint16 {
-		return nil, &ViolationError{resourceLimit, "Too many route catalog observations."}
+		return nil, &ViolationError{resourceLimit, tooManyObservations}
 	}
 	frame := make([]byte, size)
 	frame[0] = 1
+	//nolint:gosec // EncodedSize and the local guard bound the count to uint16 before allocation.
 	binary.BigEndian.PutUint16(frame[1:3], uint16(len(entries)))
 	offset := 3
 	for _, entry := range entries {
@@ -36,6 +37,7 @@ func Marshal(ctx context.Context, defaultRevision string, limits Limits) ([]byte
 			if len(field) > math.MaxUint16 {
 				return nil, &ViolationError{resourceLimit, "Catalog observation exceeds frame field bound."}
 			}
+			//nolint:gosec // EncodedSize validates every field width before allocation; the local guard repeats that bound.
 			binary.BigEndian.PutUint16(frame[offset:offset+2], uint16(len(field)))
 			offset += 2
 			copy(frame[offset:], field)
@@ -47,7 +49,12 @@ func Marshal(ctx context.Context, defaultRevision string, limits Limits) ([]byte
 
 // Unmarshal admits a complete frame without inheriting previous observations.
 // Repeated entries preserve duplicate evidence until rejection; trailing bytes fail.
-func Unmarshal(ctx context.Context, frame []byte, defaultRevision string, limits Limits) (context.Context, *ViolationError) {
+func Unmarshal(
+	ctx context.Context,
+	frame []byte,
+	defaultRevision string,
+	limits Limits,
+) (context.Context, *ViolationError) {
 	if len(frame)+len(defaultRevision)+256 > limits.MetadataBytes {
 		return nil, &ViolationError{resourceLimit, "Catalog revision metadata exceeds bound."}
 	}
@@ -56,7 +63,7 @@ func Unmarshal(ctx context.Context, frame []byte, defaultRevision string, limits
 	}
 	count := int(binary.BigEndian.Uint16(frame[1:frameHeaderBytes]))
 	if count > limits.Observations {
-		return nil, &ViolationError{resourceLimit, "Too many route catalog observations."}
+		return nil, &ViolationError{resourceLimit, tooManyObservations}
 	}
 	if count == 0 {
 		return nil, malformedFrame()

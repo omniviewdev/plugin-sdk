@@ -24,8 +24,10 @@ func nativeValue(raw json.RawMessage) resource.Value {
 	if err := d.Decode(&v); err != nil {
 		panic(err)
 	}
-	var convert func(any) resource.Value
-	convert = func(x any) resource.Value {
+	return convertNativeValue(v)
+}
+
+func convertNativeValue(x any) resource.Value {
 		switch x := x.(type) {
 		case nil:
 			return resource.Value{Kind: "null"}
@@ -44,23 +46,29 @@ func nativeValue(raw json.RawMessage) resource.Value {
 		case []any:
 			out := resource.Value{Kind: "list", List: make([]resource.Value, 0, len(x))}
 			for _, item := range x {
-				out.List = append(out.List, convert(item))
+				out.List = append(out.List, convertNativeValue(item))
 			}
 			return out
 		case map[string]any:
-			out := resource.Value{Kind: "map", Map: make(map[string]resource.Value, len(x))}
-			for k, item := range x {
-				out.Map[k] = convert(item)
-				if k == "createdAt" {
-					out.Map[k] = resource.Value{Kind: "timestamp", Timestamp: item.(string)}
-				}
-			}
-			return out
+			return nativeMapValue(x)
 		default:
 			panic("unsupported fixture value")
 		}
-	}
-	return convert(v)
+}
+
+func nativeMapValue(x map[string]any) resource.Value {
+			out := resource.Value{Kind: "map", Map: make(map[string]resource.Value, len(x))}
+			for k, item := range x {
+				out.Map[k] = convertNativeValue(item)
+				if k == "createdAt" {
+					timestamp, ok := item.(string)
+					if !ok {
+						panic("fixture createdAt must be a native timestamp string")
+					}
+					out.Map[k] = resource.Value{Kind: "timestamp", Timestamp: timestamp}
+				}
+			}
+			return out
 }
 
 func scopeEntries(scope map[string]string) []resource.ScopeEntry {
@@ -149,9 +157,10 @@ func (p *nativeProvider) scenario(route resource.AccessRoute) (Scenario, error) 
 	if !active {
 		return Scenario{}, nativeError("INVALID_REQUEST", "source is not started")
 	}
-	for _, s := range p.corpus.Scenarios {
+	for i := range p.corpus.Scenarios {
+		s := &p.corpus.Scenarios[i]
 		if s.Name == route.Connection {
-			return s, nil
+			return *s, nil
 		}
 	}
 	return Scenario{}, nativeError("NOT_FOUND", "unknown source route")
@@ -212,15 +221,17 @@ func (p *nativeProvider) Catalog(ctx context.Context, in resource.CatalogRequest
 }
 
 func (p *nativeProvider) LoadConnections(context.Context) ([]types.Connection, error) {
-	out := []types.Connection{}
-	for _, s := range p.corpus.Scenarios {
+	out := make([]types.Connection, 0, len(p.corpus.Scenarios))
+	for i := range p.corpus.Scenarios {
+		s := &p.corpus.Scenarios[i]
 		out = append(out, types.Connection{ID: s.Name, Name: s.Name})
 	}
 	return out, nil
 }
 
 func (p *nativeProvider) GetConnection(_ context.Context, id string) (types.Connection, error) {
-	for _, s := range p.corpus.Scenarios {
+	for i := range p.corpus.Scenarios {
+		s := &p.corpus.Scenarios[i]
 		if s.Name == id {
 			return types.Connection{ID: id, Name: id}, nil
 		}

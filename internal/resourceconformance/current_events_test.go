@@ -3,6 +3,7 @@ package resourceconformance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	resource "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 )
@@ -28,6 +31,7 @@ type nativeWatch struct {
 // test-side barrier, not a new RPC or a snapshot/update continuity mechanism.
 type nativeEventProvider struct {
 	*nativeEnumerable
+
 	eventMu   sync.Mutex
 	listening bool
 	events    chan nativeEvent
@@ -125,54 +129,66 @@ func (p *nativeEventProvider) EnsureResourceWatch(ctx context.Context, target re
 	watchCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	p.watches[s.Name] = nativeWatch{cancel: cancel, done: done, target: target}
-	go func() {
-		defer close(done)
-		state := resource.WatchStateEvent{
+	go p.runWatch(watchCtx, done, target, s)
+	return nil
+}
+
+func (p *nativeEventProvider) runWatch(
+	ctx context.Context,
+	done chan struct{},
+	target resource.ReadTarget,
+	s Scenario,
+) {
+	defer close(done)
+	state := resource.WatchStateEvent{
+		Route:     target.Route,
+		Type:      s.Type,
+		State:     resource.WatchStateSynced,
+		Count:     resource.Count{Kind: "unknown"},
+		Guarantee: resource.BestEffortGuarantee,
+	}
+	select {
+	case p.events <- nativeEvent{state: &state}:
+	case <-ctx.Done():
+		return
+	}
+	if !p.awaitEventRelease(ctx) {
+		return
+	}
+	for _, change := range s.Updates {
+		r := nativeRecord(p.corpus.Record(change.Record), s)
+		r.Reference.Address.Authority = target.Authority
+		r.Body = nativeValue(change.Body)
+		r.SourceRevision = token(change.Revision)
+		event := resource.WatchUpdatePayload{
 			Route:     target.Route,
-			Type:      s.Type,
-			State:     resource.WatchStateSynced,
-			Count:     resource.Count{Kind: "unknown"},
+			Record:    r,
 			Guarantee: resource.BestEffortGuarantee,
 		}
 		select {
-		case p.events <- nativeEvent{state: &state}:
-		case <-watchCtx.Done():
+		case p.events <- nativeEvent{update: &event}:
+		case <-ctx.Done():
 			return
 		}
-		ticker := time.NewTicker(5 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-watchCtx.Done():
-				return
-			case <-ticker.C:
-				if _, err := os.Stat(filepath.Join(p.state, "release-native-events")); os.IsNotExist(err) {
-					continue
-				} else if err != nil {
-					return
-				}
-				for _, change := range s.Updates {
-					r := nativeRecord(p.corpus.Record(change.Record), s)
-					r.Reference.Address.Authority = target.Authority
-					r.Body = nativeValue(change.Body)
-					r.SourceRevision = token(change.Revision)
-					event := resource.WatchUpdatePayload{
-						Route:     target.Route,
-						Record:    r,
-						Guarantee: resource.BestEffortGuarantee,
-					}
-					select {
-					case p.events <- nativeEvent{update: &event}:
-					case <-watchCtx.Done():
-						return
-					}
-				}
-				<-watchCtx.Done()
-				return
+	}
+	<-ctx.Done()
+}
+
+func (p *nativeEventProvider) awaitEventRelease(ctx context.Context) bool {
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-ticker.C:
+			_, err := os.Stat(filepath.Join(p.state, "release-native-events"))
+			if os.IsNotExist(err) {
+				continue
 			}
+			return err == nil
 		}
-	}()
-	return nil
+	}
 }
 
 func (p *nativeEventProvider) StartConnectionWatch(ctx context.Context, targets []resource.ReadTarget) error {
@@ -280,15 +296,16 @@ func (s *nativeEventSink) OnStateChange(p resource.WatchStateEvent) {
 }
 
 func probeNativeEvents(
+	session context.Context,
 	t *testing.T,
 	provider resource.Provider,
-	session context.Context,
 	receipts string,
 	s Scenario,
 	c Corpus,
 ) {
 	t.Helper()
-	updates := provider.(resource.BestEffortUpdateProvider)
+	updates, ok := provider.(resource.BestEffortUpdateProvider)
+	require.True(t, ok)
 	ctx, cancel := context.WithCancel(session)
 	defer cancel()
 	sink := &nativeEventSink{
@@ -348,7 +365,11 @@ func probeNativeEvents(
 	require.False(t, running)
 	cancel()
 	select {
-	case <-done:
+	case listenerErr := <-done:
+		if listenerErr != nil && !errors.Is(listenerErr, context.Canceled) &&
+			status.Code(listenerErr) != codes.Canceled {
+			require.NoError(t, listenerErr)
+		}
 	case <-session.Done():
 		t.Fatal("listener cancellation did not finish")
 	}

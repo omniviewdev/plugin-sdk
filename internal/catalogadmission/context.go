@@ -11,6 +11,7 @@ import (
 const (
 	resetRequired = "RESET_REQUIRED"
 	resourceLimit = "RESOURCE_LIMIT"
+	tooManyObservations = "Too many route catalog observations."
 )
 
 // Limits are supplied by the domain boundary, not inferred from transport input.
@@ -88,7 +89,7 @@ func EncodedSize(ctx context.Context, defaultRevision string, limits Limits) (in
 		return 0, nil
 	}
 	if len(entries) > limits.Observations || len(entries) > math.MaxUint16 {
-		return 0, &ViolationError{resourceLimit, "Too many route catalog observations."}
+		return 0, &ViolationError{resourceLimit, tooManyObservations}
 	}
 	size := 3
 	for i, entry := range entries {

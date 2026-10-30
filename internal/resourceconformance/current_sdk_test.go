@@ -46,7 +46,9 @@ func TestCurrentSDKChild(t *testing.T) {
 	default:
 		impl = newNativeEventProvider(base)
 	}
-	defer impl.(resource.Closer).Close()
+	closer, ok := impl.(resource.Closer)
+	require.True(t, ok)
+	defer func() { require.NoError(t, closer.Close()) }()
 	p := sdk.NewPlugin(sdk.PluginOpts{ID: fixturePluginID})
 	p.RegisterCapability("resource", &resourceplugin.GRPCPlugin{Impl: impl})
 	p.Serve()
@@ -59,7 +61,7 @@ func startNativeProcess(t *testing.T) (resource.Provider, string, func()) {
 func startNativeProfile(t *testing.T, profile string) (resource.Provider, string, func()) {
 	t.Helper()
 	root, home, receipts := t.TempDir(), t.TempDir(), t.TempDir()
-	socketDir, err := os.MkdirTemp("", "p45-")
+	socketDir, err := os.MkdirTemp("", "p45-") //nolint:usetesting // Keep Unix-domain socket paths below OS limits.
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(socketDir)) })
 	pluginDir := filepath.Join(root, "plugins", fixturePluginID)
@@ -130,7 +132,9 @@ func TestCurrentSDKChildIsolation(t *testing.T) {
 	defer stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	connections, err := provider.(resource.ConnectionLifecycle).LoadConnections(ctx)
+	lifecycle, ok := provider.(resource.ConnectionLifecycle)
+	require.True(t, ok)
+	connections, err := lifecycle.LoadConnections(ctx)
 	require.NoError(t, err)
 	require.Len(t, connections, len(NativeCorpus().Scenarios))
 }
@@ -152,9 +156,8 @@ func TestCurrentSDKNativeBoundary(t *testing.T) {
 	require.NoError(t, c.Validate())
 	provider, receipts, stop := startNativeProcess(t)
 	defer stop()
-	lifecycle := provider.(resource.ConnectionLifecycle)
-	enumerator := provider.(resource.Enumerator)
-	getter := provider.(resource.Getter)
+	lifecycle, ok := provider.(resource.ConnectionLifecycle)
+	require.True(t, ok)
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
 	connections, err := lifecycle.LoadConnections(ctx)
@@ -163,132 +166,173 @@ func TestCurrentSDKNativeBoundary(t *testing.T) {
 	bodies := map[string]json.RawMessage{}
 	for _, s := range c.Scenarios {
 		t.Run(s.Name, func(t *testing.T) {
-			_, err := lifecycle.StartConnection(ctx, s.Name)
-			require.NoError(t, err)
-			catalog, err := provider.Catalog(
-				ctx,
-				resource.CatalogRequest{Route: resource.AccessRoute{Connection: s.Name}},
-			)
-			require.NoError(t, err)
-			ctx := resource.WithCatalogRevision(ctx, catalog.Revision)
-			require.Equal(t, s.Type, catalog.Types[0].Type)
-			require.Equal(t, representation(s), catalog.Types[0].Representations[0])
-			expectedCaps := []resource.Capability{
-				{Operation: resource.OperationGet, Scope: queryScope(s)},
-				{Operation: resource.OperationEnumerate, Scope: queryScope(s)},
-			}
-			if len(s.Updates) > 0 {
-				expectedCaps = append(
-					expectedCaps,
-					resource.Capability{
-						Operation: resource.OperationUpdate,
-						Scope:     queryScope(s),
-						Guarantee: resource.BestEffortGuarantee,
-					},
-				)
-			}
-			require.Equal(t, expectedCaps, catalog.Types[0].Capabilities)
-			require.Equal(t, resource.Coverage{Kind: "complete", Paths: []string{}}, catalog.Coverage)
-			for _, descriptor := range catalog.Types {
-				require.Nil(t, descriptor.NativeAuthorityHint)
-			}
-			var observed []Observation
-			var cursor *string
-			for _, page := range s.Pages {
-				require.Equal(t, token(page.Cursor), cursor)
-				result, err := enumerator.Enumerate(
-					ctx,
-					resource.EnumerateRequest{Target: target(s, c), PageSize: 2, Cursor: cursor},
-				)
-				require.NoError(t, err)
-				require.Equal(t, token(page.Next), result.NextCursor)
-				require.Equal(t, resource.Count{Kind: "unknown"}, result.Count)
-				require.Equal(t, s.Coverage.Consistency, result.Consistency)
-				require.Nil(t, result.SourceRevision)
-				wantCoverage := resource.Coverage{Kind: "complete", Paths: []string{}}
-				if s.Coverage.Enumeration == "partial" {
-					wantCoverage = resource.Coverage{
-						Kind:   "partial",
-						Paths:  []string{},
-						Reason: "selected listing truncated; eventual visibility",
-					}
-				}
-				require.Equal(t, wantCoverage, result.Coverage)
-				require.Len(t, result.Records, len(page.Records))
-				for i, got := range result.Records {
-					r := c.Record(page.Records[i])
-					require.Equal(t, nativeRecord(r, s), got, "transport changed canonical record %s", r.Name)
-					get, err := getter.Get(
-						ctx,
-						resource.GetRequest{
-							Route:          resource.AccessRoute{Connection: s.Name},
-							Reference:      got.Reference,
-							Representation: "native",
-						},
-					)
-					require.NoError(t, err)
-					require.Equal(t, got, get, "exact scope must disambiguate colliding native IDs")
-					body := nativeBodyJSON(got.Body)
-					observed = append(observed, Observation{Record: r, Body: body})
-					bodies[r.Name] = body
-				}
-				cursor = result.NextCursor
-			}
-			require.NoError(t, c.CheckSnapshot(s, observed, s.Coverage, s.Freshness))
-			missing := nativeRecord(c.Record(s.Pages[0].Records[0]), s).Reference
-			missing.Address.ID = "not-observed"
-			_, err = getter.Get(
-				ctx,
-				resource.GetRequest{
-					Route:          resource.AccessRoute{Connection: s.Name},
-					Reference:      missing,
-					Representation: "native",
-				},
-			)
-			requireNativeError(t, err, "NOT_FOUND")
-			_, err = enumerator.Enumerate(
-				ctx,
-				resource.EnumerateRequest{Target: target(s, c), Cursor: token("invalid-cursor")},
-			)
-			requireNativeError(t, err, "INVALID_REQUEST")
-			wrong := target(s, c)
-			wrong.Type = "unregistered/native/type"
-			_, err = enumerator.Enumerate(ctx, resource.EnumerateRequest{Target: wrong})
-			requireNativeError(t, err, "UNSUPPORTED")
-			ref := nativeRecord(c.Record(s.Pages[0].Records[0]), s).Reference
-			_, err = provider.(resource.Mutator).Mutate(
-				ctx,
-				resource.MutationRequest{
-					Route:     resource.AccessRoute{Connection: s.Name},
-					Reference: ref,
-					Operation: "delete",
-					Input:     resource.Value{Kind: "map", Map: map[string]resource.Value{}},
-				},
-			)
-			requireNativeError(t, err, "UNSUPPORTED")
-			_, err = provider.(resource.NativeQuerier).NativeQuery(
-				ctx,
-				resource.NativeQueryRequest{
-					Target:   target(s, c),
-					Language: "fixture.compute.v1",
-					Query:    resource.Value{Kind: "int64", Int: "1"},
-				},
-			)
-			requireNativeError(t, err, "UNSUPPORTED")
-			if len(s.Updates) > 0 {
-				probeNativeEvents(t, provider, ctx, receipts, s, c)
-			}
-			probeCancellation(t, enumerator, ctx, receipts, s, c)
-			_, err = lifecycle.StopConnection(ctx, s.Name)
-			require.NoError(t, err)
-			closed, err := os.ReadFile(filepath.Join(receipts, s.Name+".closed"))
-			require.NoError(t, err)
-			require.Equal(t, "closed", string(closed))
-			_, err = enumerator.Enumerate(ctx, resource.EnumerateRequest{Target: target(s, c)})
-			requireNativeError(t, err, "INVALID_REQUEST")
+			checkNativeScenario(ctx, t, provider, receipts, s, c, bodies)
 		})
 	}
 	require.NoError(t, c.CheckLinks(bodies), "links must resolve from actually transported tagged bodies")
+}
+
+func checkNativeScenario(
+	ctx context.Context,
+	t *testing.T,
+	provider resource.Provider,
+	receipts string,
+	s Scenario,
+	c Corpus,
+	bodies map[string]json.RawMessage,
+) {
+	t.Helper()
+	lifecycle, ok := provider.(resource.ConnectionLifecycle)
+	require.True(t, ok)
+	enumerator, ok := provider.(resource.Enumerator)
+	require.True(t, ok)
+	getter, ok := provider.(resource.Getter)
+	require.True(t, ok)
+	mutator, ok := provider.(resource.Mutator)
+	require.True(t, ok)
+	querier, ok := provider.(resource.NativeQuerier)
+	require.True(t, ok)
+	_, err := lifecycle.StartConnection(ctx, s.Name)
+	require.NoError(t, err)
+	catalog, err := provider.Catalog(
+		ctx,
+		resource.CatalogRequest{Route: resource.AccessRoute{Connection: s.Name}},
+	)
+	require.NoError(t, err)
+	ctx = resource.WithCatalogRevision(ctx, catalog.Revision)
+	require.Equal(t, s.Type, catalog.Types[0].Type)
+	require.Equal(t, representation(s), catalog.Types[0].Representations[0])
+	expectedCaps := []resource.Capability{
+		{Operation: resource.OperationGet, Scope: queryScope(s)},
+		{Operation: resource.OperationEnumerate, Scope: queryScope(s)},
+	}
+	if len(s.Updates) > 0 {
+		expectedCaps = append(
+			expectedCaps,
+			resource.Capability{
+				Operation: resource.OperationUpdate,
+				Scope:     queryScope(s),
+				Guarantee: resource.BestEffortGuarantee,
+			},
+		)
+	}
+	require.Equal(t, expectedCaps, catalog.Types[0].Capabilities)
+	require.Equal(t, resource.Coverage{Kind: "complete", Paths: []string{}}, catalog.Coverage)
+	for i := range catalog.Types {
+		require.Nil(t, catalog.Types[i].NativeAuthorityHint)
+	}
+	checkNativeTransportSnapshot(ctx, t, enumerator, getter, s, c, bodies)
+	missing := nativeRecord(c.Record(s.Pages[0].Records[0]), s).Reference
+	missing.Address.ID = "not-observed"
+	_, err = getter.Get(
+		ctx,
+		resource.GetRequest{
+			Route:          resource.AccessRoute{Connection: s.Name},
+			Reference:      missing,
+			Representation: "native",
+		},
+	)
+	requireNativeError(t, err, "NOT_FOUND")
+	_, err = enumerator.Enumerate(
+		ctx,
+		resource.EnumerateRequest{Target: target(s, c), Cursor: token("invalid-cursor")},
+	)
+	requireNativeError(t, err, "INVALID_REQUEST")
+	wrong := target(s, c)
+	wrong.Type = "unregistered/native/type"
+	_, err = enumerator.Enumerate(ctx, resource.EnumerateRequest{Target: wrong})
+	requireNativeError(t, err, "UNSUPPORTED")
+	ref := nativeRecord(c.Record(s.Pages[0].Records[0]), s).Reference
+	_, err = mutator.Mutate(
+		ctx,
+		resource.MutationRequest{
+			Route:     resource.AccessRoute{Connection: s.Name},
+			Reference: ref,
+			Operation: "delete",
+			Input:     resource.Value{Kind: "map", Map: map[string]resource.Value{}},
+		},
+	)
+	requireNativeError(t, err, "UNSUPPORTED")
+	_, err = querier.NativeQuery(
+		ctx,
+		resource.NativeQueryRequest{
+			Target:   target(s, c),
+			Language: "fixture.compute.v1",
+			Query:    resource.Value{Kind: "int64", Int: "1"},
+		},
+	)
+	requireNativeError(t, err, "UNSUPPORTED")
+	if len(s.Updates) > 0 {
+		probeNativeEvents(ctx, t, provider, receipts, s, c)
+	}
+	probeCancellation(ctx, t, enumerator, receipts, s, c)
+	_, err = lifecycle.StopConnection(ctx, s.Name)
+	require.NoError(t, err)
+	closed, err := os.ReadFile(filepath.Join(receipts, s.Name+".closed"))
+	require.NoError(t, err)
+	require.Equal(t, "closed", string(closed))
+	_, err = enumerator.Enumerate(ctx, resource.EnumerateRequest{Target: target(s, c)})
+	requireNativeError(t, err, "INVALID_REQUEST")
+}
+
+func checkNativeTransportSnapshot(
+	ctx context.Context,
+	t *testing.T,
+	enumerator resource.Enumerator,
+	getter resource.Getter,
+	s Scenario,
+	c Corpus,
+	bodies map[string]json.RawMessage,
+) {
+	t.Helper()
+	count := 0
+	for _, page := range s.Pages {
+		count += len(page.Records)
+	}
+	observed := make([]Observation, 0, count)
+	var cursor *string
+	for _, page := range s.Pages {
+		require.Equal(t, token(page.Cursor), cursor)
+		result, pageErr := enumerator.Enumerate(
+			ctx,
+			resource.EnumerateRequest{Target: target(s, c), PageSize: 2, Cursor: cursor},
+		)
+		require.NoError(t, pageErr)
+		require.Equal(t, token(page.Next), result.NextCursor)
+		require.Equal(t, resource.Count{Kind: "unknown"}, result.Count)
+		require.Equal(t, s.Coverage.Consistency, result.Consistency)
+		require.Nil(t, result.SourceRevision)
+		wantCoverage := resource.Coverage{Kind: "complete", Paths: []string{}}
+		if s.Coverage.Enumeration == "partial" {
+			wantCoverage = resource.Coverage{
+				Kind:   "partial",
+				Paths:  []string{},
+				Reason: "selected listing truncated; eventual visibility",
+			}
+		}
+		require.Equal(t, wantCoverage, result.Coverage)
+		require.Len(t, result.Records, len(page.Records))
+		for i := range result.Records {
+			got := &result.Records[i]
+			r := c.Record(page.Records[i])
+			require.Equal(t, nativeRecord(r, s), *got, "transport changed canonical record %s", r.Name)
+			get, getErr := getter.Get(
+				ctx,
+				resource.GetRequest{
+					Route:          resource.AccessRoute{Connection: s.Name},
+					Reference:      got.Reference,
+					Representation: "native",
+				},
+			)
+			require.NoError(t, getErr)
+			require.Equal(t, *got, get, "exact scope must disambiguate colliding native IDs")
+			body := nativeBodyJSON(got.Body)
+			observed = append(observed, Observation{Record: r, Body: body})
+			bodies[r.Name] = body
+		}
+		cursor = result.NextCursor
+	}
+	require.NoError(t, c.CheckSnapshot(s, observed, s.Coverage, s.Freshness))
 }
 
 // Convert only already classified fixture values for the independent native
@@ -313,14 +357,14 @@ func nativeBodyJSON(v resource.Value) json.RawMessage {
 			return v.Double
 		case "list":
 			out := make([]any, 0, len(v.List))
-			for _, x := range v.List {
-				out = append(out, plain(x))
+			for i := range v.List {
+				out = append(out, plain(v.List[i]))
 			}
 			return out
 		case "map":
 			out := map[string]any{}
-			for k, x := range v.Map {
-				out[k] = plain(x)
+			for k := range v.Map {
+				out[k] = plain(v.Map[k])
 			}
 			return out
 		default:
@@ -337,14 +381,14 @@ func nativeBodyJSON(v resource.Value) json.RawMessage {
 func requireNativeError(t *testing.T, err error, code string) {
 	t.Helper()
 	var native *resource.ResourceOperationError
-	require.True(t, errors.As(err, &native), "expected typed error, got %v", err)
+	require.ErrorAs(t, err, &native)
 	require.Equal(t, code, native.Code)
 }
 
 func probeCancellation(
+	session context.Context,
 	t *testing.T,
 	p resource.Enumerator,
-	session context.Context,
 	receipts string,
 	s Scenario,
 	c Corpus,
@@ -395,31 +439,16 @@ func TestCurrentSDKIndependentProfiles(t *testing.T) {
 		t.Run(profile, func(t *testing.T) {
 			// Provider shapes genuinely omit unsupported methods; transport capability
 			// discovery remains catalog-qualified, never client method-set inference.
-			base := newNativeProvider(t.TempDir(), profile)
-			var shape resource.Provider = base
-			switch profile {
-			case "get-only":
-				shape = &nativeReader{base}
-			case "enumerate-only":
-				shape = &nativeEnumerationOnly{base}
-			case "native-query-only":
-				shape = &nativeQueryOnly{base}
-			case "read-only":
-				shape = &nativeEnumerable{&nativeReader{base}}
-			}
-			_, hasGet := shape.(resource.Getter)
-			_, hasEnum := shape.(resource.Enumerator)
-			_, hasQuery := shape.(resource.NativeQuerier)
-			require.Equal(t, profile == "get-only" || profile == "read-only", hasGet)
-			require.Equal(t, profile == "enumerate-only" || profile == "read-only", hasEnum)
-			require.Equal(t, profile == "native-query-only", hasQuery)
+			hasGet, hasEnum, hasQuery := checkNativeProfileShape(t, profile)
 			provider, _, stop := startNativeProfile(t, profile)
 			defer stop()
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			c := NativeCorpus()
 			s := c.Scenarios[0]
-			_, err := provider.(resource.ConnectionLifecycle).StartConnection(ctx, s.Name)
+			lifecycle, ok := provider.(resource.ConnectionLifecycle)
+			require.True(t, ok)
+			_, err := lifecycle.StartConnection(ctx, s.Name)
 			require.NoError(t, err)
 			catalog, err := provider.Catalog(
 				ctx,
@@ -427,9 +456,9 @@ func TestCurrentSDKIndependentProfiles(t *testing.T) {
 			)
 			require.NoError(t, err)
 			ctx = resource.WithCatalogRevision(ctx, catalog.Revision)
-			ops := []resource.Operation{}
-			for _, cap := range catalog.Types[0].Capabilities {
-				ops = append(ops, cap.Operation)
+			ops := make([]resource.Operation, 0, len(catalog.Types[0].Capabilities))
+			for _, capability := range catalog.Types[0].Capabilities {
+				ops = append(ops, capability.Operation)
 			}
 			expected := []resource.Operation{}
 			if hasGet {
@@ -442,8 +471,24 @@ func TestCurrentSDKIndependentProfiles(t *testing.T) {
 				expected = append(expected, resource.OperationNativeQuery)
 			}
 			require.Equal(t, expected, ops)
+			checkNativeProfileOperations(ctx, t, provider, s, c, hasGet, hasEnum, hasQuery)
+		})
+	}
+}
+
+func checkNativeProfileOperations(
+	ctx context.Context,
+	t *testing.T,
+	provider resource.Provider,
+	s Scenario,
+	c Corpus,
+	hasGet, hasEnum, hasQuery bool,
+) {
+	t.Helper()
 			ref := nativeRecord(c.Record(s.Pages[0].Records[0]), s).Reference
-			got, getErr := provider.(resource.Getter).Get(
+			getter, ok := provider.(resource.Getter)
+			require.True(t, ok)
+			got, getErr := getter.Get(
 				ctx,
 				resource.GetRequest{
 					Route:          resource.AccessRoute{Connection: s.Name},
@@ -457,14 +502,18 @@ func TestCurrentSDKIndependentProfiles(t *testing.T) {
 			} else {
 				requireNativeError(t, getErr, "UNSUPPORTED")
 			}
-			_, enumErr := provider.(resource.Enumerator).Enumerate(ctx, resource.EnumerateRequest{Target: target(s, c)})
+			enumerator, ok := provider.(resource.Enumerator)
+			require.True(t, ok)
+			_, enumErr := enumerator.Enumerate(ctx, resource.EnumerateRequest{Target: target(s, c)})
 			if hasEnum {
 				require.NoError(t, enumErr)
 			} else {
 				requireNativeError(t, enumErr, "UNSUPPORTED")
 			}
 			input := resource.Value{Kind: "int64", Int: "9007199254740993"}
-			page, queryErr := provider.(resource.NativeQuerier).NativeQuery(
+			querier, ok := provider.(resource.NativeQuerier)
+			require.True(t, ok)
+			page, queryErr := querier.NativeQuery(
 				ctx,
 				resource.NativeQueryRequest{Target: target(s, c), Language: "fixture.compute.v1", Query: input},
 			)
@@ -495,8 +544,31 @@ func TestCurrentSDKIndependentProfiles(t *testing.T) {
 			var decoded resource.Value
 			require.NoError(t, json.Unmarshal(raw, &decoded))
 			require.Equal(t, computed, decoded)
-		})
+}
+
+func checkNativeProfileShape(t *testing.T, profile string) (bool, bool, bool) {
+	t.Helper()
+	// These providers omit unsupported methods; client method sets do not prove support.
+	base := newNativeProvider(t.TempDir(), profile)
+	t.Cleanup(func() { require.NoError(t, base.Close()) })
+	var shape resource.Provider = base
+	switch profile {
+	case "get-only":
+		shape = &nativeReader{base}
+	case "enumerate-only":
+		shape = &nativeEnumerationOnly{base}
+	case "native-query-only":
+		shape = &nativeQueryOnly{base}
+	case "read-only":
+		shape = &nativeEnumerable{&nativeReader{base}}
 	}
+	_, hasGet := shape.(resource.Getter)
+	_, hasEnum := shape.(resource.Enumerator)
+	_, hasQuery := shape.(resource.NativeQuerier)
+	require.Equal(t, profile == "get-only" || profile == "read-only", hasGet)
+	require.Equal(t, profile == "enumerate-only" || profile == "read-only", hasEnum)
+	require.Equal(t, profile == "native-query-only", hasQuery)
+	return hasGet, hasEnum, hasQuery
 }
 
 func TestCurrentSDKHostIssuedAuthority(t *testing.T) {
@@ -508,7 +580,9 @@ func TestCurrentSDKHostIssuedAuthority(t *testing.T) {
 			defer cancel()
 			c := NativeCorpus()
 			s := c.Scenarios[0]
-			_, err := provider.(resource.ConnectionLifecycle).StartConnection(ctx, s.Name)
+			lifecycle, ok := provider.(resource.ConnectionLifecycle)
+			require.True(t, ok)
+			_, err := lifecycle.StartConnection(ctx, s.Name)
 			require.NoError(t, err)
 			catalog, err := provider.Catalog(
 				ctx,
@@ -520,9 +594,13 @@ func TestCurrentSDKHostIssuedAuthority(t *testing.T) {
 			admitted.Authority = "host-issued:isolated/雪"
 			var page resource.SourcePage
 			if profile == "read-only" {
-				page, err = provider.(resource.Enumerator).Enumerate(ctx, resource.EnumerateRequest{Target: admitted})
+				enumerator, ok := provider.(resource.Enumerator)
+				require.True(t, ok)
+				page, err = enumerator.Enumerate(ctx, resource.EnumerateRequest{Target: admitted})
 			} else {
-				page, err = provider.(resource.NativeQuerier).NativeQuery(
+				querier, ok := provider.(resource.NativeQuerier)
+				require.True(t, ok)
+				page, err = querier.NativeQuery(
 					ctx,
 					resource.NativeQueryRequest{
 						Target:   admitted,
@@ -538,11 +616,13 @@ func TestCurrentSDKHostIssuedAuthority(t *testing.T) {
 			}
 			if profile == "read-only" {
 				record := page.Records[0]
-				got, err := provider.(resource.Getter).Get(
+				getter, ok := provider.(resource.Getter)
+				require.True(t, ok)
+				got, getErr := getter.Get(
 					ctx,
 					resource.GetRequest{Route: admitted.Route, Reference: record.Reference, Representation: "native"},
 				)
-				require.NoError(t, err)
+				require.NoError(t, getErr)
 				require.Equal(t, record, got)
 			}
 		})

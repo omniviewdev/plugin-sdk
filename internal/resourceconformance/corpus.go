@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 )
 
 // Record preserves one native object's exact identity, tokens, and JSON body.
@@ -96,9 +97,10 @@ func SameAddress(a, b Record) bool {
 
 // Record returns the named fixture, sharing its scope and body; unknown names panic.
 func (c Corpus) Record(name string) Record {
-	for _, r := range c.Records {
+	for i := range c.Records {
+		r := &c.Records[i]
 		if r.Name == name {
-			return r
+			return *r
 		}
 	}
 	panic("unknown corpus record: " + name)
@@ -120,10 +122,12 @@ func (c Corpus) CheckSnapshot(s Scenario, got []Observation, coverage Coverage, 
 		return fmt.Errorf("%s: got %d members, want %d", s.Name, len(got), len(want))
 	}
 	seen := make([]bool, len(want))
-	for _, o := range got {
+	for j := range got {
+		o := &got[j]
 		matched := false
-		for i, r := range want {
-			if !seen[i] && SameAddress(o.Record, r) {
+		for i := range want {
+			r := &want[i]
+			if !seen[i] && SameAddress(o.Record, *r) {
 				if !equalJSON(o.Body, r.Body) || o.Record.Incarnation != r.Incarnation ||
 					o.Record.Revision != r.Revision {
 					return fmt.Errorf("%s: native body/tokens changed for %s", s.Name, r.Name)
@@ -153,59 +157,82 @@ func equalJSON(a, b json.RawMessage) bool {
 // Validate prevents malformed corpus edits from turning a finite oracle into a
 // self-fulfilling expectation. Identity/link expectations remain hand-authored.
 func (c Corpus) Validate() error {
-	names := make(map[string]Record, len(c.Records))
-	for _, r := range c.Records {
+	names, err := c.validateRecords()
+	if err != nil {
+		return err
+	}
+	for i := range c.Scenarios {
+		if err := c.Scenarios[i].validate(names); err != nil {
+			return err
+		}
+	}
+	return c.validateReferences(names)
+}
+
+func (c Corpus) validateRecords() (map[string]*Record, error) {
+	names := make(map[string]*Record, len(c.Records))
+	for i := range c.Records {
+		r := &c.Records[i]
 		if r.Name == "" || r.Provider == "" || r.Authority == "" || r.Type == "" || r.ID == "" || !json.Valid(r.Body) {
-			return fmt.Errorf("invalid record %q", r.Name)
+			return nil, fmt.Errorf("invalid record %q", r.Name)
 		}
 		if _, exists := names[r.Name]; exists {
-			return fmt.Errorf("duplicate record %q", r.Name)
+			return nil, fmt.Errorf("duplicate record %q", r.Name)
 		}
 		var body map[string]json.RawMessage
 		if err := json.Unmarshal(r.Body, &body); err != nil {
-			return err
+			return nil, err
 		}
 		for _, forbidden := range []string{"metadata", "apiVersion", "kind", "namespace", "uid"} {
 			if _, exists := body[forbidden]; exists {
-				return fmt.Errorf("%s: fabricated universal field %s", r.Name, forbidden)
+				return nil, fmt.Errorf("%s: fabricated universal field %s", r.Name, forbidden)
 			}
 		}
 		names[r.Name] = r
 	}
-	for _, s := range c.Scenarios {
-		if len(s.Pages) == 0 || s.Pages[0].Cursor != "" || (s.Schema != nil && !json.Valid(s.Schema)) {
-			return fmt.Errorf("%s: invalid pages/schema", s.Name)
+	return names, nil
+}
+
+func (s *Scenario) validate(names map[string]*Record) error {
+	if len(s.Pages) == 0 || s.Pages[0].Cursor != "" || (s.Schema != nil && !json.Valid(s.Schema)) {
+		return fmt.Errorf("%s: invalid pages/schema", s.Name)
+	}
+	if err := s.validatePages(names); err != nil {
+		return err
+	}
+	if s.Freshness == "" || s.Coverage.Enumeration == "" || s.Coverage.Consistency == "" {
+		return fmt.Errorf("%s: missing explicit guarantee", s.Name)
+	}
+	for _, u := range s.Updates {
+		r, ok := names[u.Record]
+		if !ok || r.Provider != s.Profile || r.Type != s.Type || !json.Valid(u.Body) || u.Revision == "" {
+			return fmt.Errorf("%s: invalid native change", s.Name)
 		}
-		for i, p := range s.Pages {
-			if i+1 < len(s.Pages) && p.Next != s.Pages[i+1].Cursor || i+1 == len(s.Pages) && p.Next != "" {
-				return fmt.Errorf("%s: broken finite cursor chain", s.Name)
+	}
+	return nil
+}
+
+func (s *Scenario) validatePages(names map[string]*Record) error {
+	for i, p := range s.Pages {
+		if i+1 < len(s.Pages) && p.Next != s.Pages[i+1].Cursor || i+1 == len(s.Pages) && p.Next != "" {
+			return fmt.Errorf("%s: broken finite cursor chain", s.Name)
+		}
+		for _, name := range p.Records {
+			r, ok := names[name]
+			if !ok || r.Provider != s.Profile || r.Type != s.Type {
+				return fmt.Errorf("%s: invalid page member %s", s.Name, name)
 			}
-			for _, name := range p.Records {
-				r, ok := names[name]
-				if !ok || r.Provider != s.Profile || r.Type != s.Type {
-					return fmt.Errorf("%s: invalid page member %s", s.Name, name)
+			for dimension, value := range r.Scope {
+				if !slices.Contains(s.Selection[dimension], value) {
+					return fmt.Errorf("%s: scope escape %s", s.Name, name)
 				}
-				for dimension, value := range r.Scope {
-					selected := false
-					for _, v := range s.Selection[dimension] {
-						selected = selected || value == v
-					}
-					if !selected {
-						return fmt.Errorf("%s: scope escape %s", s.Name, name)
-					}
-				}
-			}
-		}
-		if s.Freshness == "" || s.Coverage.Enumeration == "" || s.Coverage.Consistency == "" {
-			return fmt.Errorf("%s: missing explicit guarantee", s.Name)
-		}
-		for _, u := range s.Updates {
-			r, ok := names[u.Record]
-			if !ok || r.Provider != s.Profile || r.Type != s.Type || !json.Valid(u.Body) || u.Revision == "" {
-				return fmt.Errorf("%s: invalid native change", s.Name)
 			}
 		}
 	}
+	return nil
+}
+
+func (c Corpus) validateReferences(names map[string]*Record) error {
 	for _, tc := range c.IdentityCases {
 		if _, ok := names[tc.Left]; !ok {
 			return fmt.Errorf("unknown identity operand %s", tc.Left)

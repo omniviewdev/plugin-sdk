@@ -48,30 +48,36 @@ func (c Corpus) CheckLinks(bodies map[string]json.RawMessage) error {
 		if !equalJSON(source["node"], node) || !equalJSON(target["node"], node) {
 			return fmt.Errorf("%s: native body points at another node", edge.From)
 		}
-		switch edge.Relation {
-		case "hosted-by":
-			if !equalJSON(source["host"], target["node"]) {
-				return fmt.Errorf("%s: native host link changed", edge.From)
-			}
-		case "has-disk":
-			var disks []json.RawMessage
-			if err := json.Unmarshal(source["disks"], &disks); err != nil {
-				return err
-			}
-			found := false
-			for _, id := range disks {
-				found = found || equalJSON(id, target["diskid"])
-			}
-			if !found {
-				return fmt.Errorf("%s: native disk link changed", edge.From)
-			}
-		case "attached-to":
-			if !equalJSON(source["vmid"], target["vmid"]) {
-				return fmt.Errorf("%s: native VM link changed", edge.From)
-			}
-		default:
-			return fmt.Errorf("unknown finite relation %q", edge.Relation)
+		if err := checkNativeRelation(edge, source, target); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+func checkNativeRelation(edge Link, source, target map[string]json.RawMessage) error {
+	switch edge.Relation {
+	case relationHostedBy:
+		if !equalJSON(source["host"], target["node"]) {
+			return fmt.Errorf("%s: native host link changed", edge.From)
+		}
+	case relationHasDisk:
+		var disks []json.RawMessage
+		if err := json.Unmarshal(source["disks"], &disks); err != nil {
+			return err
+		}
+		for _, id := range disks {
+			if equalJSON(id, target["diskid"]) {
+				return nil
+			}
+		}
+		return fmt.Errorf("%s: native disk link changed", edge.From)
+	case relationAttachedTo:
+		if !equalJSON(source["vmid"], target["vmid"]) {
+			return fmt.Errorf("%s: native VM link changed", edge.From)
+		}
+	default:
+		return fmt.Errorf("unknown finite relation %q", edge.Relation)
 	}
 	return nil
 }

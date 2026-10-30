@@ -22,44 +22,59 @@ func TestNativeCorpusOracles(t *testing.T) {
 	}
 	for _, s := range c.Scenarios {
 		t.Run(s.Name, func(t *testing.T) {
-			var observed []Observation
-			for _, p := range s.Pages {
-				for _, name := range p.Records {
-					r := c.Record(name)
-					observed = append(observed, Observation{Record: r, Body: r.Body})
-				}
-			}
-			if err := c.CheckSnapshot(s, observed, s.Coverage, s.Freshness); err != nil {
-				t.Fatal(err)
-			}
-			if len(observed) > 0 {
-				bad := append([]Observation(nil), observed...)
-				bad[0].Body = json.RawMessage(`{"wrong":"payload"}`)
-				if c.CheckSnapshot(s, bad, s.Coverage, s.Freshness) == nil {
-					t.Fatal("oracle accepted altered native payload")
-				}
-				if c.CheckSnapshot(s, observed[1:], s.Coverage, s.Freshness) == nil {
-					t.Fatal("oracle accepted missing member")
-				}
-				if c.CheckSnapshot(s, append(observed, observed[0]), s.Coverage, s.Freshness) == nil {
-					t.Fatal("oracle accepted duplicate member")
-				}
-			}
-			badCoverage := s.Coverage
-			badCoverage.Consistency = "pointInTime"
-			if s.Coverage.Consistency != "pointInTime" &&
-				c.CheckSnapshot(s, observed, badCoverage, s.Freshness) == nil {
-				t.Fatal("oracle accepted invented point-in-time consistency")
-			}
-			badCoverage = s.Coverage
-			badCoverage.Enumeration = "exhausted"
-			if s.Coverage.Enumeration == "partial" && c.CheckSnapshot(s, observed, badCoverage, s.Freshness) == nil {
-				t.Fatal("oracle accepted partial enumeration as exhausted")
-			}
-			if c.CheckSnapshot(s, observed, s.Coverage, "live") == nil {
-				t.Fatal("oracle accepted invented freshness")
-			}
+			checkScenarioSnapshot(t, c, s)
 		})
+	}
+}
+
+func checkScenarioSnapshot(t *testing.T, c Corpus, s Scenario) {
+	t.Helper()
+	count := 0
+	for _, p := range s.Pages {
+		count += len(p.Records)
+	}
+	observed := make([]Observation, 0, count)
+	for _, p := range s.Pages {
+		for _, name := range p.Records {
+			r := c.Record(name)
+			observed = append(observed, Observation{Record: r, Body: r.Body})
+		}
+	}
+	if err := c.CheckSnapshot(s, observed, s.Coverage, s.Freshness); err != nil {
+		t.Fatal(err)
+	}
+	checkSnapshotRejectsBadMembers(t, c, s, observed)
+	badCoverage := s.Coverage
+	badCoverage.Consistency = "pointInTime"
+	if s.Coverage.Consistency != "pointInTime" &&
+		c.CheckSnapshot(s, observed, badCoverage, s.Freshness) == nil {
+		t.Fatal("oracle accepted invented point-in-time consistency")
+	}
+	badCoverage = s.Coverage
+	badCoverage.Enumeration = "exhausted"
+	if s.Coverage.Enumeration == "partial" && c.CheckSnapshot(s, observed, badCoverage, s.Freshness) == nil {
+		t.Fatal("oracle accepted partial enumeration as exhausted")
+	}
+	if c.CheckSnapshot(s, observed, s.Coverage, "live") == nil {
+		t.Fatal("oracle accepted invented freshness")
+	}
+}
+
+func checkSnapshotRejectsBadMembers(t *testing.T, c Corpus, s Scenario, observed []Observation) {
+	t.Helper()
+	if len(observed) == 0 {
+		return
+	}
+	bad := append([]Observation(nil), observed...)
+	bad[0].Body = json.RawMessage(`{"wrong":"payload"}`)
+	if c.CheckSnapshot(s, bad, s.Coverage, s.Freshness) == nil {
+		t.Fatal("oracle accepted altered native payload")
+	}
+	if c.CheckSnapshot(s, observed[1:], s.Coverage, s.Freshness) == nil {
+		t.Fatal("oracle accepted missing member")
+	}
+	if c.CheckSnapshot(s, append(observed, observed[0]), s.Coverage, s.Freshness) == nil {
+		t.Fatal("oracle accepted duplicate member")
 	}
 }
 

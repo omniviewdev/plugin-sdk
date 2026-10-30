@@ -91,7 +91,10 @@ func TestGenerationChild(t *testing.T) {
 				return []types.Connection{generationConnection(initial)}, nil
 			},
 			CreateClient: func(_ context.Context, c types.Connection) (*string, error) {
-				endpoint := c.Data["endpoint"].(string)
+				endpoint, ok := c.Data["endpoint"].(string)
+				if !ok {
+					return nil, fmt.Errorf("generation fixture endpoint must be a string")
+				}
 				return &endpoint, nil
 			},
 			DestroyClient: func(context.Context, *string) error { return nil },
@@ -100,101 +103,117 @@ func TestGenerationChild(t *testing.T) {
 			{
 				Type: "native/object",
 				Get: func(ctx context.Context, endpoint *string, request resource.GetRequest) (resource.Record, error) {
-					n := reads.Add(1)
-					if err := os.WriteFile(
-						filepath.Join(control, fmt.Sprintf("entered-%d", n)),
-						[]byte(*endpoint),
-						0o600,
-					); err != nil {
-						return resource.Record{}, err
-					}
-					stop := context.AfterFunc(ctx, func() {
-						_ = os.WriteFile(
-							filepath.Join(control, fmt.Sprintf("canceled-%d", n)),
-							[]byte("canceled"),
-							0o600,
-						)
-					})
-					defer stop()
-					// Deliberately ignore cancellation: the controller must fence this result.
-					response, err := (&http.Client{Timeout: 10 * time.Second}).Get(*endpoint)
-					if err != nil {
-						return resource.Record{}, err
-					}
-					defer response.Body.Close()
-					body, err := io.ReadAll(io.LimitReader(response.Body, 1024))
-					if err != nil {
-						return resource.Record{}, err
-					}
-					if err := os.WriteFile(
-						filepath.Join(control, fmt.Sprintf("returned-%d", n)),
-						body,
-						0o600,
-					); err != nil {
-						return resource.Record{}, err
-					}
-					return resource.Record{
-						Reference: request.Reference,
-						Body: resource.Value{
-							Kind: "map",
-							Map:  map[string]resource.Value{"native": {Kind: "string", String: string(body)}},
-						},
-						Representation: generationRepresentation(),
-						Coverage:       resource.Coverage{Kind: "complete", Paths: []string{}},
-					}, nil
+					return readGeneration(ctx, control, endpoint, request, reads.Add(1))
 				},
 			},
 		},
 	})
 	require.NoError(t, err)
-	defer controller.Close()
+	defer func() { require.NoError(t, controller.Close()) }()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
-		ticker := time.NewTicker(5 * time.Millisecond)
-		defer ticker.Stop()
-		last := 0
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-			data, err := os.ReadFile(filepath.Join(control, "command.json"))
-			if err != nil {
-				continue
-			}
-			var command generationCommand
-			if json.Unmarshal(data, &command) != nil || command.Sequence <= last {
-				continue
-			}
-			last = command.Sequence
-			err = controller.ApplyConnections(ctx, []types.Connection{generationConnection(command.Endpoint)})
-			if err == nil {
-				_, err = controller.StartConnection(ctx, "generation")
-			}
-			if err != nil {
-				_ = os.WriteFile(filepath.Join(control, "control-error"), []byte(err.Error()), 0o600)
-				return
-			}
-			if err = os.WriteFile(
-				filepath.Join(control, fmt.Sprintf("applied-%d", last)),
-				[]byte(command.Endpoint),
-				0o600,
-			); err != nil {
-				return
-			}
-		}
+		refreshGeneration(ctx, controller, control)
 	}()
 	p := sdk.NewPlugin(sdk.PluginOpts{ID: fixturePluginID})
 	p.RegisterCapability("resource", &resourceplugin.GRPCPlugin{Impl: controller})
 	p.Serve()
 }
 
+func readGeneration(
+	ctx context.Context,
+	control string,
+	endpoint *string,
+	request resource.GetRequest,
+	n int64,
+) (resource.Record, error) {
+	if err := os.WriteFile(
+		filepath.Join(control, fmt.Sprintf("entered-%d", n)),
+		[]byte(*endpoint),
+		0o600,
+	); err != nil {
+		return resource.Record{}, err
+	}
+	stop := context.AfterFunc(ctx, func() {
+		_ = os.WriteFile(
+			filepath.Join(control, fmt.Sprintf("canceled-%d", n)),
+			[]byte("canceled"),
+			0o600,
+		)
+	})
+	defer stop()
+	// Deliberately ignore cancellation: the controller must fence this result.
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Get(*endpoint)
+	if err != nil {
+		return resource.Record{}, err
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 1024))
+	closeErr := response.Body.Close()
+	if err != nil {
+		return resource.Record{}, err
+	}
+	if closeErr != nil {
+		return resource.Record{}, closeErr
+	}
+	if err := os.WriteFile(
+		filepath.Join(control, fmt.Sprintf("returned-%d", n)),
+		body,
+		0o600,
+	); err != nil {
+		return resource.Record{}, err
+	}
+	return resource.Record{
+		Reference: request.Reference,
+		Body: resource.Value{
+			Kind: "map",
+			Map:  map[string]resource.Value{"native": {Kind: "string", String: string(body)}},
+		},
+		Representation: generationRepresentation(),
+		Coverage:       resource.Coverage{Kind: "complete", Paths: []string{}},
+	}, nil
+}
+
+func refreshGeneration(ctx context.Context, controller *resource.Controller[string], control string) {
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	last := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		data, err := os.ReadFile(filepath.Join(control, "command.json"))
+		if err != nil {
+			continue
+		}
+		var command generationCommand
+		if json.Unmarshal(data, &command) != nil || command.Sequence <= last {
+			continue
+		}
+		last = command.Sequence
+		err = controller.ApplyConnections(ctx, []types.Connection{generationConnection(command.Endpoint)})
+		if err == nil {
+			_, err = controller.StartConnection(ctx, "generation")
+		}
+		if err != nil {
+			_ = os.WriteFile(filepath.Join(control, "control-error"), []byte(err.Error()), 0o600)
+			return
+		}
+		if err = os.WriteFile(
+			filepath.Join(control, fmt.Sprintf("applied-%d", last)),
+			[]byte(command.Endpoint),
+			0o600,
+		); err != nil {
+			return
+		}
+	}
+}
+
 func startGenerationProcess(t *testing.T, endpoint string) (resource.Provider, string) {
 	t.Helper()
 	root, home, control := t.TempDir(), t.TempDir(), t.TempDir()
-	socket, err := os.MkdirTemp("", "p45-gen-")
+	socket, err := os.MkdirTemp("", "p45-gen-") //nolint:usetesting // Keep Unix-domain socket paths below OS limits.
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(socket)) })
 	dir := filepath.Join(root, "plugins", fixturePluginID)
@@ -306,19 +325,22 @@ func TestCurrentSDKGenerationFence(t *testing.T) {
 	provider, control := startGenerationProcess(t, a.URL)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	lifecycle := provider.(resource.ConnectionLifecycle)
+	lifecycle, ok := provider.(resource.ConnectionLifecycle)
+	require.True(t, ok)
+	getter, ok := provider.(resource.Getter)
+	require.True(t, ok)
 	_, err := lifecycle.LoadConnections(ctx)
 	require.NoError(t, err)
 	_, err = lifecycle.StartConnection(ctx, "generation")
 	require.NoError(t, err)
 	route := resource.AccessRoute{Connection: "generation"}
 	catalog := func() resource.Catalog {
-		c, err := provider.Catalog(ctx, resource.CatalogRequest{Route: route})
-		require.NoError(t, err)
+		c, catalogErr := provider.Catalog(ctx, resource.CatalogRequest{Route: route})
+		require.NoError(t, catalogErr)
 		return c
 	}
 	get := func(revision string) (resource.Record, error) {
-		return provider.(resource.Getter).Get(
+		return getter.Get(
 			resource.WithCatalogRevision(ctx, revision),
 			resource.GetRequest{Route: route, Reference: generationReference(), Representation: "document"},
 		)
@@ -352,7 +374,10 @@ func TestCurrentSDKGenerationFence(t *testing.T) {
 		err    error
 	}
 	result := make(chan readResult, 1)
-	go func() { record, err := get(restoredA.Revision); result <- readResult{record: record, err: err} }()
+	go func() {
+		resultRecord, resultErr := get(restoredA.Revision)
+		result <- readResult{record: resultRecord, err: resultErr}
+	}()
 	select {
 	case <-entered:
 	case <-ctx.Done():
@@ -384,7 +409,7 @@ func TestCurrentSDKGenerationFence(t *testing.T) {
 	require.EqualValues(t, 2, bReads.Load())
 	hostReference := generationReference()
 	hostReference.Address.Authority = "host-issued/opaque:α"
-	record, err = provider.(resource.Getter).Get(
+	record, err = getter.Get(
 		resource.WithCatalogRevision(ctx, currentB.Revision),
 		resource.GetRequest{Route: route, Reference: hostReference, Representation: "document"},
 	)

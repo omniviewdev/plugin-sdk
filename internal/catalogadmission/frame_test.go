@@ -68,7 +68,13 @@ func checkFrameFieldBoundary(t *testing.T, field string, width int, limits Limit
 	if sizeErr != nil || marshalErr != nil {
 		t.Fatalf("representable %s rejected: size error %v, marshal error %v", field, sizeErr, marshalErr)
 	}
-	wantSize := frameHeaderBytes + 3*frameLengthBytes + len(entry.Provider) + len(entry.Connection) + len(entry.Revision)
+	wantSize := frameHeaderBytes + 3*frameLengthBytes + len(
+		entry.Provider,
+	) + len(
+		entry.Connection,
+	) + len(
+		entry.Revision,
+	)
 	if size != wantSize || len(frame) != wantSize {
 		t.Fatalf("representable %s: size %d, frame length %d, want %d", field, size, len(frame), wantSize)
 	}
