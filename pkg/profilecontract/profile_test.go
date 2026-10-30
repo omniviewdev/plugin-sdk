@@ -25,7 +25,7 @@ func TestReadJSONPreservesAbsenceAndRejectsRedirectedMetadata(t *testing.T) {
 	for _, dangling := range []bool{false, true} {
 		target := filepath.Join(base, "target.json")
 		if !dangling {
-			if err := os.WriteFile(target, []byte(`{"schemaVersion":1}`), 0600); err != nil {
+			if err := os.WriteFile(target, []byte(`{"schemaVersion":1}`), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		} else if err := os.Remove(target); err != nil {
@@ -37,7 +37,8 @@ func TestReadJSONPreservesAbsenceAndRejectsRedirectedMetadata(t *testing.T) {
 		}
 		err := ReadJSON(link, &record)
 		var protocolError *Error
-		if err == nil || os.IsNotExist(err) || !errors.As(err, &protocolError) || protocolError.Code != "conflicting_state_root" {
+		if err == nil || os.IsNotExist(err) || !errors.As(err, &protocolError) ||
+			protocolError.Code != "conflicting_state_root" {
 			t.Fatalf("redirected metadata must not select default: %v", err)
 		}
 		if err := os.Remove(link); err != nil {
@@ -55,13 +56,15 @@ func TestReadJSONDoesNotExposeInvalidMetadata(t *testing.T) {
 	// A JSON type error can include the input's field name. Diagnostics must
 	// expose neither that arbitrary key nor the underlying decoder details.
 	before := []byte(`{"private-customer-token":{"schemaVersion":"secret"}}`)
-	if err := os.WriteFile(path, before, 0600); err != nil {
+	if err := os.WriteFile(path, before, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var value map[string]Record
 	err = ReadJSON(path, &value)
 	var protocolError *Error
-	if !errors.As(err, &protocolError) || protocolError.Code != "invalid_profile_binding" || strings.Contains(err.Error(), "private-customer-token") || strings.Contains(err.Error(), "secret") {
+	if !errors.As(err, &protocolError) || protocolError.Code != "invalid_profile_binding" ||
+		strings.Contains(err.Error(), "private-customer-token") ||
+		strings.Contains(err.Error(), "secret") {
 		t.Fatalf("expected a private invalid-metadata diagnostic: %v", err)
 	}
 	after, readErr := os.ReadFile(path)
@@ -72,12 +75,18 @@ func TestReadJSONDoesNotExposeInvalidMetadata(t *testing.T) {
 
 func TestOwnershipJournalRetainsV1SerializedIdentity(t *testing.T) {
 	// These are the existing host wire keys, not a new envelope or protocol.
-	data := []byte(`{"schemaVersion":1,"workspaceID":"986f7163-049d-4087-b00e-02b62390e865","root":"old","phase":"rename","renameTo":"new","manifest":{"schemaVersion":1,"workspaceID":"986f7163-049d-4087-b00e-02b62390e865","slug":"new","profile":{"kind":"development"}},"resources":[{"commonDir":"source"}]}`)
+	data := []byte(
+		`{"schemaVersion":1,"workspaceID":"986f7163-049d-4087-b00e-02b62390e865","root":"old","phase":"rename","renameTo":"new","manifest":{"schemaVersion":1,"workspaceID":"986f7163-049d-4087-b00e-02b62390e865","slug":"new","profile":{"kind":"development"}},"resources":[{"commonDir":"source"}]}`,
+	)
 	var journal OwnershipJournal[ManifestIdentity]
 	if err := json.Unmarshal(data, &journal); err != nil {
 		t.Fatal(err)
 	}
-	if journal.SchemaVersion != 1 || journal.Root != "old" || journal.RenameTo != "new" || journal.Phase != "rename" || journal.Manifest.Slug != "new" || journal.Manifest.Profile.Kind != "development" || len(journal.Resources) != 1 || journal.Resources[0].CommonDir != "source" {
+	if journal.SchemaVersion != 1 || journal.Root != "old" || journal.RenameTo != "new" || journal.Phase != "rename" ||
+		journal.Manifest.Slug != "new" ||
+		journal.Manifest.Profile.Kind != "development" ||
+		len(journal.Resources) != 1 ||
+		journal.Resources[0].CommonDir != "source" {
 		t.Fatalf("v1 ownership journal was not decoded: %+v", journal)
 	}
 	encoded, err := json.Marshal(journal)
@@ -92,7 +101,7 @@ func TestCanonicalPathResolvesExistingPrefixWithoutCreatingMissingSuffix(t *test
 		t.Fatal(err)
 	}
 	target := filepath.Join(base, "target")
-	if err := os.Mkdir(target, 0700); err != nil {
+	if err := os.Mkdir(target, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	alias := filepath.Join(base, "alias")

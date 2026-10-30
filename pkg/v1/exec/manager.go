@@ -260,15 +260,25 @@ func (m *Manager) CreateResourceSession(pluginctx *types.PluginContext, opts Ses
 	if err != nil {
 		return nil, err
 	}
-	if normalized.Route != nil && (pluginctx == nil || pluginctx.Connection == nil || pluginctx.Connection.ID != normalized.Route.Connection) {
-		return nil, resourcev2.NewError("INVALID_INPUT", "resource session route must match the explicit caller connection")
+	if normalized.Route != nil &&
+		(pluginctx == nil || pluginctx.Connection == nil || pluginctx.Connection.ID != normalized.Route.Connection) {
+		return nil, resourcev2.NewError(
+			"INVALID_INPUT",
+			"resource session route must match the explicit caller connection",
+		)
 	}
 	var session *Session
-	err = resourcev2.WithUtilityConnection(pluginctx, m.connectionProvider, normalized.Reference, normalized.Route, func(bound *types.PluginContext) error {
-		var createErr error
-		session, createErr = m.createSession(bound, normalized, true)
-		return createErr
-	})
+	err = resourcev2.WithUtilityConnection(
+		pluginctx,
+		m.connectionProvider,
+		normalized.Reference,
+		normalized.Route,
+		func(bound *types.PluginContext) error {
+			var createErr error
+			session, createErr = m.createSession(bound, normalized, true)
+			return createErr
+		},
+	)
 	if err != nil {
 		if session != nil {
 			_ = m.CloseSession(pluginctx, session.ID)

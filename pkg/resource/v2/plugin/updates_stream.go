@@ -2,11 +2,13 @@ package plugin
 
 import (
 	"context"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
-	"google.golang.org/grpc"
 	"io"
 	"sync"
+
+	"google.golang.org/grpc"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
 type updateDelivery struct {
@@ -32,22 +34,27 @@ func (s *updateSink) push(message *resourcepb.UpdateStreamEvent, err error) {
 	case <-s.ctx.Done():
 	}
 }
+
 func (s *updateSink) OnAdd(v resourcev2.WatchAddPayload) {
 	p, err := resourcev2.ToProtoWatchAddPayload(v)
 	s.push(&resourcepb.UpdateStreamEvent{Version: 2, Event: &resourcepb.UpdateStreamEvent_Add{Add: p}}, err)
 }
+
 func (s *updateSink) OnUpdate(v resourcev2.WatchUpdatePayload) {
 	p, err := resourcev2.ToProtoWatchUpdatePayload(v)
 	s.push(&resourcepb.UpdateStreamEvent{Version: 2, Event: &resourcepb.UpdateStreamEvent_Update{Update: p}}, err)
 }
+
 func (s *updateSink) OnDelete(v resourcev2.WatchDeletePayload) {
 	p, err := resourcev2.ToProtoWatchDeletePayload(v)
 	s.push(&resourcepb.UpdateStreamEvent{Version: 2, Event: &resourcepb.UpdateStreamEvent_Delete{Delete: p}}, err)
 }
+
 func (s *updateSink) OnStateChange(v resourcev2.WatchStateEvent) {
 	p, err := resourcev2.ToProtoWatchStateEvent(v)
 	s.push(&resourcepb.UpdateStreamEvent{Version: 2, Event: &resourcepb.UpdateStreamEvent_State{State: p}}, err)
 }
+
 func (s *updateSink) established() error {
 	s.mu.Lock()
 	if s.ready {
@@ -75,6 +82,7 @@ func (s *updateSink) established() error {
 		return s.ctx.Err()
 	}
 }
+
 func listenUpdatesHandler(srv interface{}, stream grpc.ServerStream) error {
 	s := srv.(*updatesServer)
 	r := &resourcepb.UpdateRequest{}
@@ -159,6 +167,7 @@ func listenUpdatesHandler(srv interface{}, stream grpc.ServerStream) error {
 		}
 	}
 }
+
 func (c *Client) ListenForEvents(ctx context.Context, sink resourcev2.WatchEventSink, onReady func() error) error {
 	var err error
 	ctx, err = outgoingSession(ctx)
@@ -170,7 +179,13 @@ func (c *Client) ListenForEvents(ctx context.Context, sink resourcev2.WatchEvent
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream, err := c.conn.NewStream(ctx, &resourcepb.ResourceUpdates_ServiceDesc.Streams[0], resourcepb.ResourceUpdates_Listen_FullMethodName, grpc.MaxCallRecvMsgSize(MaxWireBytes), grpc.MaxCallSendMsgSize(MaxWireBytes))
+	stream, err := c.conn.NewStream(
+		ctx,
+		&resourcepb.ResourceUpdates_ServiceDesc.Streams[0],
+		resourcepb.ResourceUpdates_Listen_FullMethodName,
+		grpc.MaxCallRecvMsgSize(MaxWireBytes),
+		grpc.MaxCallSendMsgSize(MaxWireBytes),
+	)
 	if err != nil {
 		return domainError(err)
 	}

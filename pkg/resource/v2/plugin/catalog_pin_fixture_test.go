@@ -2,11 +2,17 @@ package plugin
 
 import (
 	"context"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"testing"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 )
 
-func acceptedCatalogContext(t *testing.T, ctx context.Context, p resourcev2.Provider, route resourcev2.AccessRoute) context.Context {
+func acceptedCatalogContext(
+	t *testing.T,
+	ctx context.Context,
+	p resourcev2.Provider,
+	route resourcev2.AccessRoute,
+) context.Context {
 	t.Helper()
 	catalog, err := p.Catalog(ctx, resourcev2.CatalogRequest{Route: route})
 	if err != nil {
@@ -15,7 +21,12 @@ func acceptedCatalogContext(t *testing.T, ctx context.Context, p resourcev2.Prov
 	return resourcev2.WithCatalogRevision(ctx, catalog.Revision)
 }
 
-func acceptedWireContext(t *testing.T, ctx context.Context, p resourcev2.Provider, route resourcev2.AccessRoute) context.Context {
+func acceptedWireContext(
+	t *testing.T,
+	ctx context.Context,
+	p resourcev2.Provider,
+	route resourcev2.AccessRoute,
+) context.Context {
 	t.Helper()
 	ctx, err := outgoingSession(acceptedCatalogContext(t, ctx, p, route))
 	if err != nil {
@@ -24,7 +35,12 @@ func acceptedWireContext(t *testing.T, ctx context.Context, p resourcev2.Provide
 	return ctx
 }
 
-func acceptedRelationshipContext(t *testing.T, ctx context.Context, p resourcev2.Provider, request resourcev2.RelationshipResolutionRequest) context.Context {
+func acceptedRelationshipContext(
+	t *testing.T,
+	ctx context.Context,
+	p resourcev2.Provider,
+	request resourcev2.RelationshipResolutionRequest,
+) context.Context {
 	t.Helper()
 	ctx = acceptedCatalogContext(t, ctx, p, request.Source.Route)
 	seen := map[struct {
@@ -49,7 +65,12 @@ func acceptedRelationshipContext(t *testing.T, ctx context.Context, p resourcev2
 	return ctx
 }
 
-func acceptedRelationshipWireContext(t *testing.T, ctx context.Context, p resourcev2.Provider, request resourcev2.RelationshipResolutionRequest) context.Context {
+func acceptedRelationshipWireContext(
+	t *testing.T,
+	ctx context.Context,
+	p resourcev2.Provider,
+	request resourcev2.RelationshipResolutionRequest,
+) context.Context {
 	t.Helper()
 	ctx, err := outgoingSession(acceptedRelationshipContext(t, ctx, p, request))
 	if err != nil {

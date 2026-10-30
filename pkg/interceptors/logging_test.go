@@ -4,12 +4,13 @@ import (
 	"context"
 	"testing"
 
-	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
 )
 
 // ---------------------------------------------------------------------------

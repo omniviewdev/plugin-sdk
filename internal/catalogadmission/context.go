@@ -90,7 +90,10 @@ func EncodedSize(ctx context.Context, defaultRevision string, limits Limits) (in
 				return 0, &Violation{"RESET_REQUIRED", "Duplicate qualified catalog revision."}
 			}
 		}
-		if entry.Provider == "" || entry.Connection == "" || len(entry.Provider) > limits.RevisionBytes || len(entry.Connection) > limits.RevisionBytes || !utf8.ValidString(entry.Provider) || !utf8.ValidString(entry.Connection) {
+		if entry.Provider == "" || entry.Connection == "" || len(entry.Provider) > limits.RevisionBytes ||
+			len(entry.Connection) > limits.RevisionBytes ||
+			!utf8.ValidString(entry.Provider) ||
+			!utf8.ValidString(entry.Connection) {
 			return 0, &Violation{"RESET_REQUIRED", "Invalid qualified catalog route."}
 		}
 		if err := ValidateRevision(entry.Revision, limits.RevisionBytes); err != nil {

@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
@@ -20,8 +21,13 @@ func (c *Client) ApplyConnectionOverlay(ctx context.Context, overlay resourcev2.
 	if err = resourcev2.ValidateJSON(data); err != nil {
 		return err
 	}
-	return c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "applyConnectionOverlay", ConnectionJson: data}, &struct{}{})
+	return c.ancillaryJSON(
+		ctx,
+		&resourcepb.AncillaryRequest{Operation: "applyConnectionOverlay", ConnectionJson: data},
+		&struct{}{},
+	)
 }
+
 func (c *Client) NativeConnections(ctx context.Context) ([]types.Connection, error) {
 	var connections []types.Connection
 	err := c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "nativeConnections"}, &connections)

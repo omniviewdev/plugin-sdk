@@ -2,6 +2,7 @@ package resourcev2
 
 import (
 	"context"
+
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
@@ -23,7 +24,13 @@ import (
 // Honor the lease context and do not synchronously retire the same generation.
 // The callback's lease ends on return; accepted long-lived sessions need their
 // own cancellation/retirement cleanup rather than retaining this request lease.
-func WithUtilityConnection(pc *types.PluginContext, provider ConnectionContextProvider, reference *ResourceReference, route *AccessRoute, fn func(*types.PluginContext) error) error {
+func WithUtilityConnection(
+	pc *types.PluginContext,
+	provider ConnectionContextProvider,
+	reference *ResourceReference,
+	route *AccessRoute,
+	fn func(*types.PluginContext) error,
+) error {
 	if fn == nil {
 		return NewError("INVALID_REQUEST", "Utility callback is required.")
 	}

@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"google.golang.org/grpc"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 )
 
 func TestActualGRPCQualifiedSourcePinPrecedence(t *testing.T) {
@@ -14,8 +15,21 @@ func TestActualGRPCQualifiedSourcePinPrecedence(t *testing.T) {
 		accepted                                             bool
 	}{
 		{name: "qualified-only", qualifiedPin: "cat-1", provider: "test", connection: "explicit", accepted: true},
-		{name: "qualified-over-wrong-default", defaultPin: "wrong-default", qualifiedPin: "cat-1", provider: "test", connection: "explicit", accepted: true},
-		{name: "wrong-qualified-no-default-fallback", defaultPin: "cat-1", qualifiedPin: "wrong-qualified", provider: "test", connection: "explicit"},
+		{
+			name:         "qualified-over-wrong-default",
+			defaultPin:   "wrong-default",
+			qualifiedPin: "cat-1",
+			provider:     "test",
+			connection:   "explicit",
+			accepted:     true,
+		},
+		{
+			name:         "wrong-qualified-no-default-fallback",
+			defaultPin:   "cat-1",
+			qualifiedPin: "wrong-qualified",
+			provider:     "test",
+			connection:   "explicit",
+		},
 		{name: "retired-qualified", qualifiedPin: "retired-catalog", provider: "test", connection: "explicit"},
 		{name: "missing-route", qualifiedPin: "cat-1", provider: "test", connection: "other-connection"},
 		{name: "wrong-provider", qualifiedPin: "cat-1", provider: "other-provider", connection: "explicit"},
@@ -24,7 +38,10 @@ func TestActualGRPCQualifiedSourcePinPrecedence(t *testing.T) {
 	for _, operation := range []string{"Get", "StartConnectionWatch"} {
 		for _, tc := range cases {
 			t.Run(operation+"/"+tc.name, func(t *testing.T) {
-				provider := &updateProvider{qualifiedProvider: qualifiedProvider{allowed: true}, trigger: make(chan struct{}, 1)}
+				provider := &updateProvider{
+					qualifiedProvider: qualifiedProvider{allowed: true},
+					trigger:           make(chan struct{}, 1),
+				}
 				server := grpc.NewServer()
 				RegisterServer(server, provider)
 				client := NewClient(pipe(t, server))
@@ -33,7 +50,12 @@ func TestActualGRPCQualifiedSourcePinPrecedence(t *testing.T) {
 					ctx = resourcev2.WithCatalogRevision(ctx, tc.defaultPin)
 				}
 				if tc.qualifiedPin != "" {
-					ctx = resourcev2.WithCatalogRevisionForRoute(ctx, tc.provider, resourcev2.AccessRoute{Connection: tc.connection}, tc.qualifiedPin)
+					ctx = resourcev2.WithCatalogRevisionForRoute(
+						ctx,
+						tc.provider,
+						resourcev2.AccessRoute{Connection: tc.connection},
+						tc.qualifiedPin,
+					)
 				}
 				var err error
 				if operation == "Get" {

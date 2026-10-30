@@ -32,7 +32,11 @@ func ownershipToken(connection types.Connection) string {
 }
 
 func ownershipConnection(endpoint string) types.Connection {
-	connection := types.Connection{ID: "route", Data: map[string]any{"transport": map[string]any{"urls": []any{endpoint}}}, Labels: map[string]any{"groups": []any{map[string]any{"name": "original"}}}}
+	connection := types.Connection{
+		ID:     "route",
+		Data:   map[string]any{"transport": map[string]any{"urls": []any{endpoint}}},
+		Labels: map[string]any{"groups": []any{map[string]any{"name": "original"}}},
+	}
 	return connection
 }
 
@@ -46,9 +50,11 @@ func credentialOwnershipConnection(endpoint string) types.Connection {
 	}})
 	return connection
 }
+
 func ownershipEndpoint(connection types.Connection) string {
 	return connection.Data["transport"].(map[string]any)["urls"].([]any)[0].(string)
 }
+
 func mutateOwnershipConnection(connection types.Connection, endpoint string) {
 	connection.Data["transport"].(map[string]any)["urls"].([]any)[0] = endpoint
 	connection.Labels["groups"].([]any)[0].(map[string]any)["name"] = "edited"
@@ -74,17 +80,27 @@ func TestConnectionOwnershipInvalidation(t *testing.T) {
 				_, _ = io.WriteString(w, "old-source")
 			}))
 			t.Cleanup(oldSource.Close)
-			newSource := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "new-source") }))
+			newSource := httptest.NewServer(
+				http.HandlerFunc(
+					func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "new-source") },
+				),
+			)
 			t.Cleanup(newSource.Close)
 			input := []types.Connection{credentialOwnershipConnection(oldSource.URL)}
 			var destroyed atomic.Int32
-			cfg := Config[ownershipEndpointClient]{Catalog: func(context.Context, CatalogRequest) (Catalog, error) { return Catalog{}, nil }, Lifecycle: &Lifecycle[ownershipEndpointClient]{
-				LoadConnections: func(context.Context) ([]types.Connection, error) { return input, nil },
-				CreateClient: func(_ context.Context, connection types.Connection) (*ownershipEndpointClient, error) {
-					return &ownershipEndpointClient{endpoint: ownershipEndpoint(connection), http: oldSource.Client()}, nil
+			cfg := Config[ownershipEndpointClient]{
+				Catalog: func(context.Context, CatalogRequest) (Catalog, error) { return Catalog{}, nil },
+				Lifecycle: &Lifecycle[ownershipEndpointClient]{
+					LoadConnections: func(context.Context) ([]types.Connection, error) { return input, nil },
+					CreateClient: func(_ context.Context, connection types.Connection) (*ownershipEndpointClient, error) {
+						return &ownershipEndpointClient{
+							endpoint: ownershipEndpoint(connection),
+							http:     oldSource.Client(),
+						}, nil
+					},
+					DestroyClient: func(context.Context, *ownershipEndpointClient) error { destroyed.Add(1); return nil },
 				},
-				DestroyClient: func(context.Context, *ownershipEndpointClient) error { destroyed.Add(1); return nil },
-			}}
+			}
 			controller, err := NewController(cfg)
 			if err != nil {
 				t.Fatal(err)
@@ -181,7 +197,10 @@ func TestConnectionOwnershipInvalidation(t *testing.T) {
 			if got := ownershipEndpoint(before); got != oldSource.URL {
 				t.Errorf("%s leaked nested config mutation into inventory before apply: %s", boundary, got)
 			}
-			if ownershipToken(before) != oldSource.URL || string(before.GetSensitiveData()["credentials"].(ownershipCredentials).Extra["secret"]) != oldSource.URL {
+			if ownershipToken(before) != oldSource.URL ||
+				string(
+					before.GetSensitiveData()["credentials"].(ownershipCredentials).Extra["secret"],
+				) != oldSource.URL {
 				t.Errorf("%s leaked hidden credentials into inventory before apply", boundary)
 			}
 			if _, err := controller.UpdateConnection(context.Background(), edit); err != nil {
@@ -207,20 +226,24 @@ func TestConnectionOwnershipInvalidation(t *testing.T) {
 				t.Fatal(err)
 			}
 			var body string
-			err = controller.WithClient(context.Background(), AccessRoute{Connection: "route"}, func(ctx context.Context, client *ownershipEndpointClient) error {
-				request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.endpoint, nil)
-				if err != nil {
+			err = controller.WithClient(
+				context.Background(),
+				AccessRoute{Connection: "route"},
+				func(ctx context.Context, client *ownershipEndpointClient) error {
+					request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.endpoint, nil)
+					if err != nil {
+						return err
+					}
+					response, err := client.http.Do(request)
+					if err != nil {
+						return err
+					}
+					defer response.Body.Close()
+					data, err := io.ReadAll(response.Body)
+					body = string(data)
 					return err
-				}
-				response, err := client.http.Do(request)
-				if err != nil {
-					return err
-				}
-				defer response.Body.Close()
-				data, err := io.ReadAll(response.Body)
-				body = string(data)
-				return err
-			})
+				},
+			)
 			if err != nil || body != "new-source" {
 				t.Errorf("replacement read reached %q, want new-source: %v", body, err)
 			}
@@ -233,11 +256,28 @@ func TestConnectionOwnershipPreservesNestedNativeValues(t *testing.T) {
 	var destroyed atomic.Int32
 	cfg.Lifecycle = controllerLifecycle(&destroyed)
 	controller := newTestController(t, cfg)
-	auto := &types.ConnectionAutoConnect{Enabled: true, Triggers: []types.ConnectionAutoConnectTrigger{types.ConnectionAutoConnectTriggerPluginStart}}
+	auto := &types.ConnectionAutoConnect{
+		Enabled:  true,
+		Triggers: []types.ConnectionAutoConnectTrigger{types.ConnectionAutoConnectTriggerPluginStart},
+	}
 	typed := map[string][]string{"tokens": {"original"}}
 	raw := json.RawMessage(`{"opaque":1}`)
 	number := json.Number("18446744073709551615")
-	input := types.Connection{ID: "explicit", Data: map[string]any{"typed": typed, "raw": raw, "signed": int64(-9223372036854775808), "unsigned": uint64(18446744073709551615), "number": number, "negativeZero": math.Copysign(0, -1), "nilMap": map[string]any(nil), "nilSlice": []any(nil)}, Labels: map[string]any{"array": [1]map[string]string{{"name": "original"}}}, Lifecycle: types.ConnectionLifecycle{AutoConnect: auto}}
+	input := types.Connection{
+		ID: "explicit",
+		Data: map[string]any{
+			"typed":        typed,
+			"raw":          raw,
+			"signed":       int64(-9223372036854775808),
+			"unsigned":     uint64(18446744073709551615),
+			"number":       number,
+			"negativeZero": math.Copysign(0, -1),
+			"nilMap":       map[string]any(nil),
+			"nilSlice":     []any(nil),
+		},
+		Labels:    map[string]any{"array": [1]map[string]string{{"name": "original"}}},
+		Lifecycle: types.ConnectionLifecycle{AutoConnect: auto},
+	}
 	input.SetSensitiveData(map[string]any{"credentials": map[string]any{"token": "original"}})
 	if err := controller.ApplyConnections(context.Background(), []types.Connection{input}); err != nil {
 		t.Fatal(err)
@@ -282,7 +322,10 @@ func TestConnectionOwnershipPreservesNestedNativeValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fmt.Sprint(next.Labels["array"]) != "[map[name:original]]" || next.Data["typed"].(map[string][]string)["tokens"][0] != "original" || next.GetSensitiveData()["credentials"].(map[string]any)["token"] != "original" || next.Lifecycle.AutoConnect.Triggers[0] != types.ConnectionAutoConnectTriggerPluginStart {
+	if fmt.Sprint(next.Labels["array"]) != "[map[name:original]]" ||
+		next.Data["typed"].(map[string][]string)["tokens"][0] != "original" ||
+		next.GetSensitiveData()["credentials"].(map[string]any)["token"] != "original" ||
+		next.Lifecycle.AutoConnect.Triggers[0] != types.ConnectionAutoConnectTriggerPluginStart {
 		t.Error("returned nested containers or lifecycle remain aliased")
 	}
 }
@@ -342,14 +385,19 @@ func TestConnectionOwnershipCallbackAndSessionIsolation(t *testing.T) {
 		t.Fatal("start result shares native creation configuration")
 	}
 	for range 2 {
-		if err := c.WithClient(context.Background(), AccessRoute{Connection: "route"}, func(ctx context.Context, client *string) error {
-			session, _ := SessionFromContext(ctx)
-			if *client != "original" || ownershipEndpoint(*session.Connection) != "original" || ownershipToken(*session.Connection) != "original" {
-				return errors.New("callback mutation changed active slot configuration")
-			}
-			mutateOwnershipConnection(*session.Connection, "request-session")
-			return nil
-		}); err != nil {
+		if err := c.WithClient(
+			context.Background(),
+			AccessRoute{Connection: "route"},
+			func(ctx context.Context, client *string) error {
+				session, _ := SessionFromContext(ctx)
+				if *client != "original" || ownershipEndpoint(*session.Connection) != "original" ||
+					ownershipToken(*session.Connection) != "original" {
+					return errors.New("callback mutation changed active slot configuration")
+				}
+				mutateOwnershipConnection(*session.Connection, "request-session")
+				return nil
+			},
+		); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -358,7 +406,8 @@ func TestConnectionOwnershipCallbackAndSessionIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	mutateOwnershipConnection(*retainedCheck, "retained-check")
-	if ownershipEndpoint(*checked.Connection) != "check-callback" || ownershipToken(*checked.Connection) != "check-callback" {
+	if ownershipEndpoint(*checked.Connection) != "check-callback" ||
+		ownershipToken(*checked.Connection) != "check-callback" {
 		t.Fatal("check result aliases native callback-retained configuration")
 	}
 	stopped, err := c.StopConnection(context.Background(), "route")
@@ -369,7 +418,10 @@ func TestConnectionOwnershipCallbackAndSessionIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ownershipEndpoint(stopped) != "original" || ownershipEndpoint(stored) != "original" || ownershipToken(stopped) != "original" || ownershipToken(stored) != "original" || destroyed.Load() != 1 {
+	if ownershipEndpoint(stopped) != "original" || ownershipEndpoint(stored) != "original" ||
+		ownershipToken(stopped) != "original" ||
+		ownershipToken(stored) != "original" ||
+		destroyed.Load() != 1 {
 		t.Fatal("callbacks changed inventory, stop result, or client teardown")
 	}
 }
@@ -383,7 +435,10 @@ func TestHiddenCredentialUpdateRetiresClient(t *testing.T) {
 		return &token, nil
 	}
 	c := newTestController(t, cfg)
-	if err := c.ApplyConnections(context.Background(), []types.Connection{credentialOwnershipConnection("original")}); err != nil {
+	if err := c.ApplyConnections(
+		context.Background(),
+		[]types.Connection{credentialOwnershipConnection("original")},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.StartConnection(context.Background(), "route"); err != nil {
@@ -435,12 +490,16 @@ func TestHiddenCredentialUpdateRetiresClient(t *testing.T) {
 	if _, err := c.StartConnection(context.Background(), "route"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.WithClient(context.Background(), AccessRoute{Connection: "route"}, func(_ context.Context, client *string) error {
-		if *client != "replacement" {
-			return fmt.Errorf("client token = %q, want replacement", *client)
-		}
-		return nil
-	}); err != nil {
+	if err := c.WithClient(
+		context.Background(),
+		AccessRoute{Connection: "route"},
+		func(_ context.Context, client *string) error {
+			if *client != "replacement" {
+				return fmt.Errorf("client token = %q, want replacement", *client)
+			}
+			return nil
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 }

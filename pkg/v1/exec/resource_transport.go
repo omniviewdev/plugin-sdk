@@ -2,9 +2,11 @@ package exec
 
 import (
 	"context"
+
+	"google.golang.org/grpc"
+
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
-	"google.golang.org/grpc"
 )
 
 // RegisterExecPluginServer preserves all generated handlers except session admission.
@@ -22,7 +24,9 @@ func RegisterExecPluginServer(registrar grpc.ServiceRegistrar, server execpb.Exe
 	registrar.RegisterService(&descriptor, server)
 }
 
-func execSessionHandler(resource bool) func(any, context.Context, func(any) error, grpc.UnaryServerInterceptor) (any, error) {
+func execSessionHandler(
+	resource bool,
+) func(any, context.Context, func(any) error, grpc.UnaryServerInterceptor) (any, error) {
 	return func(server any, ctx context.Context, decode func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 		request := new(execpb.SessionOptions)
 		envelope := resourceplugin.NewTransportEnvelope(request, !resource)
@@ -45,6 +49,14 @@ func execSessionHandler(resource bool) func(any, context.Context, func(any) erro
 		if interceptor == nil {
 			return handler(ctx, request)
 		}
-		return interceptor(ctx, request, &grpc.UnaryServerInfo{Server: server, FullMethod: "/" + execpb.ExecPlugin_ServiceDesc.ServiceName + "/" + method}, handler)
+		return interceptor(
+			ctx,
+			request,
+			&grpc.UnaryServerInfo{
+				Server:     server,
+				FullMethod: "/" + execpb.ExecPlugin_ServiceDesc.ServiceName + "/" + method,
+			},
+			handler,
+		)
 	}
 }

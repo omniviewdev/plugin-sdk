@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/omniviewdev/plugin-sdk/internal/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/omniviewdev/plugin-sdk/internal/testutil"
 )
 
 type customFixture struct {
@@ -25,8 +26,8 @@ func writeCustomJSON(t *testing.T, path string, value any) {
 	t.Helper()
 	data, err := json.Marshal(value)
 	require.NoError(t, err)
-	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
-	require.NoError(t, os.WriteFile(path, data, 0600))
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, data, 0o600))
 }
 
 func customRootFixture(t *testing.T) customFixture {
@@ -66,7 +67,10 @@ func TestResolveCustomRootRequiresMatchingDurableOwnershipWithoutWriting(t *test
 	require.Equal(t, fixture.state, root)
 	_, err = os.Lstat(fixture.state)
 	require.True(t, os.IsNotExist(err), "read-only resolution must not initialize state")
-	t.Setenv(StateDirectoryEnvironment, filepath.Join(fixture.home, ".omniview-dev", "profiles", testWorkspaceID, "state"))
+	t.Setenv(
+		StateDirectoryEnvironment,
+		filepath.Join(fixture.home, ".omniview-dev", "profiles", testWorkspaceID, "state"),
+	)
 	_, err = ResolveRoot()
 	require.Error(t, err, "default environment cannot override an explicit custom binding")
 }
@@ -83,7 +87,11 @@ func TestCustomRootRejectsMissingForeignAndMalformedMetadata(t *testing.T) {
 			case "missing-claims":
 				require.NoError(t, os.Remove(fixture.claims))
 			case "foreign-binding", "foreign-owner", "foreign-claim":
-				foreign := map[string]any{"schemaVersion": 1, "workspaceID": "09e2b911-76a7-4418-8d5f-30f31b50fe32", "stateRoot": fixture.state}
+				foreign := map[string]any{
+					"schemaVersion": 1,
+					"workspaceID":   "09e2b911-76a7-4418-8d5f-30f31b50fe32",
+					"stateRoot":     fixture.state,
+				}
 				if kind == "foreign-binding" {
 					writeCustomJSON(t, fixture.binding, foreign)
 				}
@@ -94,11 +102,11 @@ func TestCustomRootRejectsMissingForeignAndMalformedMetadata(t *testing.T) {
 					writeCustomJSON(t, fixture.claims, map[string]any{"schemaVersion": 1, "claims": []any{foreign}})
 				}
 			case "malformed-binding":
-				require.NoError(t, os.WriteFile(fixture.binding, []byte("{"), 0600))
+				require.NoError(t, os.WriteFile(fixture.binding, []byte("{"), 0o600))
 			case "malformed-owner":
-				require.NoError(t, os.WriteFile(fixture.owner, []byte("{"), 0600))
+				require.NoError(t, os.WriteFile(fixture.owner, []byte("{"), 0o600))
 			case "malformed-claims":
-				require.NoError(t, os.WriteFile(fixture.claims, []byte("{"), 0600))
+				require.NoError(t, os.WriteFile(fixture.claims, []byte("{"), 0o600))
 			case "unsupported-claims":
 				writeCustomJSON(t, fixture.claims, map[string]any{"schemaVersion": 2, "claims": []any{fixture.record}})
 			case "empty-claims":
@@ -134,7 +142,7 @@ func TestCustomRootRejectsRedirectedMetadataAndState(t *testing.T) {
 				data, err := os.ReadFile(path)
 				require.NoError(t, err)
 				if kind != "dangling-binding" {
-					require.NoError(t, os.WriteFile(copyPath, data, 0600))
+					require.NoError(t, os.WriteFile(copyPath, data, 0o600))
 				}
 				require.NoError(t, os.Remove(path))
 				require.NoError(t, os.Symlink(copyPath, path))
@@ -155,18 +163,46 @@ func TestCustomRootRejectsProtectedAndOverlappingClaims(t *testing.T) {
 			case "nightly":
 				fixture.record["stateRoot"] = filepath.Join(fixture.home, ".omniview-nightly", "state")
 			case "default-profiles":
-				fixture.record["stateRoot"] = filepath.Join(fixture.home, ".omniview-dev", "profiles", "custom", "state")
+				fixture.record["stateRoot"] = filepath.Join(
+					fixture.home,
+					".omniview-dev",
+					"profiles",
+					"custom",
+					"state",
+				)
 			case "workspace":
 				fixture.record["stateRoot"] = filepath.Join(fixture.workspace, "custom", "state")
 			}
 			fixture.writeRecords(t)
 			if kind == "duplicate" {
-				writeCustomJSON(t, fixture.claims, map[string]any{"schemaVersion": 1, "claims": []any{fixture.record, fixture.record}})
+				writeCustomJSON(
+					t,
+					fixture.claims,
+					map[string]any{"schemaVersion": 1, "claims": []any{fixture.record, fixture.record}},
+				)
 			} else if kind == "nested" {
-				nested := map[string]any{"schemaVersion": 1, "workspaceID": "09e2b911-76a7-4418-8d5f-30f31b50fe32", "stateRoot": filepath.Join(filepath.Dir(fixture.state), "nested", "state")}
-				writeCustomJSON(t, fixture.claims, map[string]any{"schemaVersion": 1, "claims": []any{fixture.record, nested}})
+				nested := map[string]any{
+					"schemaVersion": 1,
+					"workspaceID":   "09e2b911-76a7-4418-8d5f-30f31b50fe32",
+					"stateRoot":     filepath.Join(filepath.Dir(fixture.state), "nested", "state"),
+				}
+				writeCustomJSON(
+					t,
+					fixture.claims,
+					map[string]any{"schemaVersion": 1, "claims": []any{fixture.record, nested}},
+				)
 			} else if kind == "foreign-malformed" {
-				writeCustomJSON(t, fixture.claims, map[string]any{"schemaVersion": 1, "claims": []any{fixture.record, map[string]any{"schemaVersion": 1, "workspaceID": "invalid", "stateRoot": "/invalid/state"}}})
+				writeCustomJSON(
+					t,
+					fixture.claims,
+					map[string]any{
+						"schemaVersion": 1,
+						"claims": []any{
+							fixture.record,
+							map[string]any{"schemaVersion": 1, "workspaceID": "invalid", "stateRoot": "/invalid/state"},
+						},
+					},
+				)
 			}
 			t.Setenv(StateDirectoryEnvironment, fixture.record["stateRoot"].(string))
 			_, err := ResolveRoot()
@@ -208,8 +244,8 @@ func TestCustomRootRejectsRegisteredCollectionSourceOverlap(t *testing.T) {
 			manifestData, err := os.ReadFile(fixture.manifest)
 			require.NoError(t, err)
 			fixture.manifest = filepath.Join(fixture.workspace, "workspace.json")
-			require.NoError(t, os.MkdirAll(fixture.workspace, 0700))
-			require.NoError(t, os.WriteFile(fixture.manifest, manifestData, 0600))
+			require.NoError(t, os.MkdirAll(fixture.workspace, 0o700))
+			require.NoError(t, os.WriteFile(fixture.manifest, manifestData, 0o600))
 			fixture.binding = filepath.Join(fixture.workspace, ".local", "profile.json")
 			fixture.writeRecords(t)
 			t.Setenv(WorkspaceFileEnvironment, fixture.manifest)
@@ -222,7 +258,11 @@ func TestCustomRootRejectsRegisteredCollectionSourceOverlap(t *testing.T) {
 			if kind == "unsupported-registry" {
 				version = 2
 			}
-			writeCustomJSON(t, filepath.Join(collection, ".omniview-dev", "repositories.json"), map[string]any{"schemaVersion": version, "repositories": []any{source}})
+			writeCustomJSON(
+				t,
+				filepath.Join(collection, ".omniview-dev", "repositories.json"),
+				map[string]any{"schemaVersion": version, "repositories": []any{source}},
+			)
 			_, err = ResolveRoot()
 			require.Error(t, err)
 		})
@@ -235,10 +275,21 @@ func interruptedRenameFixture(t *testing.T) (customFixture, map[string]any) {
 	oldRoot := fixture.workspace
 	newRoot := filepath.Join(filepath.Dir(oldRoot), "renamed")
 	manifest := map[string]any{
-		"schemaVersion": 1, "workspaceID": testWorkspaceID, "slug": "renamed", "displayName": "Renamed workspace",
-		"repositories": []any{map[string]any{"id": "omniview", "directory": "omniview", "baseRef": "main", "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "branch": "feature"}},
-		"profile":      map[string]any{"kind": "development"},
-		"ports":        map[string]any{"policy": "sticky"},
+		"schemaVersion": 1,
+		"workspaceID":   testWorkspaceID,
+		"slug":          "renamed",
+		"displayName":   "Renamed workspace",
+		"repositories": []any{
+			map[string]any{
+				"id":         "omniview",
+				"directory":  "omniview",
+				"baseRef":    "main",
+				"baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				"branch":     "feature",
+			},
+		},
+		"profile": map[string]any{"kind": "development"},
+		"ports":   map[string]any{"policy": "sticky"},
 	}
 	journal := map[string]any{
 		"schemaVersion": 1, "workspaceID": testWorkspaceID, "root": oldRoot,

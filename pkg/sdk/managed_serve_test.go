@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-plugin"
+	"github.com/stretchr/testify/require"
+
 	"github.com/omniviewdev/plugin-sdk/internal/testutil"
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/lifecycle"
-	"github.com/stretchr/testify/require"
 )
 
 // This helper runs only as the managed client's disposable child, never against
@@ -39,14 +40,21 @@ func TestManagedServePreservesLegacyDiscoveryAndProductionState(t *testing.T) {
 	t.Setenv("OMNIVIEW_TELEMETRY_ENABLED", "false")
 	t.Setenv("OMNIVIEW_TELEMETRY_PROFILING", "false")
 	pluginDir := filepath.Join(root, "plugins", "managed-test-plugin")
-	require.NoError(t, os.MkdirAll(pluginDir, 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "plugin.yaml"), []byte("id: managed-test-plugin\nversion: 1.0.0\n"), 0600))
+	require.NoError(t, os.MkdirAll(pluginDir, 0o700))
+	require.NoError(
+		t,
+		os.WriteFile(
+			filepath.Join(pluginDir, "plugin.yaml"),
+			[]byte("id: managed-test-plugin\nversion: 1.0.0\n"),
+			0o600,
+		),
+	)
 	legacyPath := filepath.Join(pluginDir, ".devinfo")
 	legacy := []byte(`{"pid":1,"generation":"foreign-owner"}`)
-	require.NoError(t, os.WriteFile(legacyPath, legacy, 0600))
+	require.NoError(t, os.WriteFile(legacyPath, legacy, 0o600))
 	productionPath := filepath.Join(home, ".omniview", "plugins", "managed-test-plugin", "store", "resource")
-	require.NoError(t, os.MkdirAll(filepath.Dir(productionPath), 0700))
-	require.NoError(t, os.WriteFile(productionPath, []byte("production sentinel"), 0600))
+	require.NoError(t, os.MkdirAll(filepath.Dir(productionPath), 0o700))
+	require.NoError(t, os.WriteFile(productionPath, []byte("production sentinel"), 0o600))
 
 	cmd := exec.Command(os.Args[0], "-test.run=^TestManagedServeHelperProcess$")
 	cmd.Env = append(os.Environ(), "OMNIVIEW_SDK_MANAGED_TEST_CHILD=1", "GOWORK=off")
@@ -88,5 +96,10 @@ func TestManagedServePreservesLegacyDiscoveryAndProductionState(t *testing.T) {
 	require.Equal(t, "workspace sentinel", string(data))
 	discoveryFiles, err := filepath.Glob(filepath.Join(pluginDir, ".devinfo*"))
 	require.NoError(t, err)
-	require.Equal(t, []string{legacyPath}, discoveryFiles, "managed serving must not create discovery files, temporary files, or locks")
+	require.Equal(
+		t,
+		[]string{legacyPath},
+		discoveryFiles,
+		"managed serving must not create discovery files, temporary files, or locks",
+	)
 }

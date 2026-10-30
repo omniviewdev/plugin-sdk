@@ -3,8 +3,9 @@ package interceptors
 import (
 	"testing"
 
-	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/stretchr/testify/assert"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
 )
 
 func TestDefaultUnaryInterceptors_ReturnsThree(t *testing.T) {

@@ -66,6 +66,7 @@ type responseAdmissionCodec struct {
 
 func (c *responseAdmissionCodec) Name() string                           { return "proto" }
 func (c *responseAdmissionCodec) Marshal(v any) (mem.BufferSlice, error) { return c.codec.Marshal(v) }
+
 func (c *responseAdmissionCodec) Unmarshal(data mem.BufferSlice, v any) error {
 	p, ok := v.(proto.Message)
 	if !ok {

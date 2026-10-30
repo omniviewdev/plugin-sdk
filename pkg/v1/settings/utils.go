@@ -3,10 +3,11 @@ package settings
 import (
 	"encoding/json"
 
-	"github.com/omniviewdev/plugin-sdk/settings"
 	grpcproto "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+
+	"github.com/omniviewdev/plugin-sdk/settings"
 
 	settingspb "github.com/omniviewdev/plugin-sdk/proto/v1/settings"
 )
@@ -186,6 +187,7 @@ func FromProtoSetting(s *settingspb.Setting) settings.Setting {
 		FileSelection: FromProtoSettingFileSelection(s.GetFileSelection()),
 		DevOnly:       s.GetDevOnly(),
 		// Missing sensitivity metadata is legacy/unknown, never explicit public.
-		Sensitive: s.Sensitive == nil || s.GetSensitive() || s.GetType() == settingspb.SettingType_SETTING_TYPE_PASSWORD,
+		Sensitive: s.Sensitive == nil || s.GetSensitive() ||
+			s.GetType() == settingspb.SettingType_SETTING_TYPE_PASSWORD,
 	}
 }

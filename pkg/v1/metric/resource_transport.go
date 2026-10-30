@@ -2,15 +2,18 @@ package metric
 
 import (
 	"context"
-	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
-	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
+
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protowire"
+
+	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
+	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 )
 
 func legacyQueryWire(data []byte) error {
 	return resourceplugin.ValidateLegacyUtilityWire(data, []protowire.Number{4, 11, 12, 13, 14}, nil)
 }
+
 func legacyStreamWire(data []byte) error {
 	return resourceplugin.ValidateLegacyUtilityWire(data, []protowire.Number{6, 9, 10, 11, 12, 13, 15}, nil)
 }
@@ -37,7 +40,10 @@ func RegisterMetricPluginServer(registrar grpc.ServiceRegistrar, server metricpb
 	}
 	registrar.RegisterService(&d, server)
 }
-func metricQueryHandler(resource bool) func(any, context.Context, func(any) error, grpc.UnaryServerInterceptor) (any, error) {
+
+func metricQueryHandler(
+	resource bool,
+) func(any, context.Context, func(any) error, grpc.UnaryServerInterceptor) (any, error) {
 	return func(server any, ctx context.Context, decode func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 		p := new(metricpb.QueryMetricsRequest)
 		validator := legacyQueryWire
@@ -64,7 +70,15 @@ func metricQueryHandler(resource bool) func(any, context.Context, func(any) erro
 		if interceptor == nil {
 			return handler(ctx, p)
 		}
-		return interceptor(ctx, p, &grpc.UnaryServerInfo{Server: server, FullMethod: "/" + metricpb.MetricPlugin_ServiceDesc.ServiceName + "/" + name}, handler)
+		return interceptor(
+			ctx,
+			p,
+			&grpc.UnaryServerInfo{
+				Server:     server,
+				FullMethod: "/" + metricpb.MetricPlugin_ServiceDesc.ServiceName + "/" + name,
+			},
+			handler,
+		)
 	}
 }
 

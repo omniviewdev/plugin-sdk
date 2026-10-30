@@ -19,12 +19,16 @@ type ResourceSessionProvider interface {
 // HasResourceIntent prevents resource requests from falling back to an older
 // terminal method, including selectors without a body and optional C01 inputs.
 func (o SessionOptions) HasResourceIntent() bool {
-	return o.ResourceData != nil || o.ResourcePlugin != "" || o.ResourceKey != "" || o.Reference != nil || o.Route != nil
+	return o.ResourceData != nil || o.ResourcePlugin != "" || o.ResourceKey != "" || o.Reference != nil ||
+		o.Route != nil
 }
 
 func validateResourceSessionResult(session *Session, requestedID string) error {
 	if session == nil || session.ID == "" || (requestedID != "" && session.ID != requestedID) {
-		return resourcev2.NewError("PROVIDER_ERROR", "Resource exec response changed or omitted the requested session ID.")
+		return resourcev2.NewError(
+			"PROVIDER_ERROR",
+			"Resource exec response changed or omitted the requested session ID.",
+		)
 	}
 	return resourcev2.ValidateMetadata(session)
 }

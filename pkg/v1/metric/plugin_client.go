@@ -3,16 +3,18 @@ package metric
 import (
 	"context"
 	"errors"
+	"io"
+	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
-	"io"
-	"time"
 )
 
 type PluginClient struct {
@@ -41,6 +43,7 @@ func metricDomainError(err error) error {
 	}
 	return translated
 }
+
 func (c *PluginClient) GetSupportedResources(ctx *types.PluginContext) (*ProviderInfo, []Handler) {
 	response, err := c.client.GetSupportedResources(pluginCallContext(ctx), &emptypb.Empty{})
 	if err != nil {
@@ -53,6 +56,7 @@ func (c *PluginClient) GetSupportedResources(ctx *types.PluginContext) (*Provide
 	}
 	return &info, handlers
 }
+
 func pluginCallContext(pc *types.PluginContext) context.Context {
 	ctx := context.Background()
 	if pc == nil {
@@ -66,6 +70,7 @@ func pluginCallContext(pc *types.PluginContext) context.Context {
 	}
 	return types.WithPluginContext(ctx, pc)
 }
+
 func (c *PluginClient) Query(ctx *types.PluginContext, r QueryRequest) (*QueryResponse, error) {
 	if r.HasResourceIntent() {
 		return c.QueryResource(ctx, r)
@@ -80,6 +85,7 @@ func (c *PluginClient) Query(ctx *types.PluginContext, r QueryRequest) (*QueryRe
 	}
 	return QueryResponseFromProto(response), nil
 }
+
 func (c *PluginClient) QueryResource(ctx *types.PluginContext, r QueryRequest) (*QueryResponse, error) {
 	if !r.HasResourceIntent() {
 		return nil, metricError("INVALID_REQUEST", "Resource query requires resource input.")
@@ -108,6 +114,7 @@ func (c *PluginClient) QueryResource(ctx *types.PluginContext, r QueryRequest) (
 	}
 	return QueryResponseFromProto(response.Response), nil
 }
+
 func outputFromProto(p *metricpb.MetricStreamOutput) StreamOutput {
 	r := StreamOutput{SubscriptionID: p.SubscriptionId, Error: p.Error}
 	if p.Timestamp != nil {
@@ -117,10 +124,16 @@ func outputFromProto(p *metricpb.MetricStreamOutput) StreamOutput {
 		r.Results = append(r.Results, MetricResultFromProto(v))
 	}
 	if e := p.OperationError; e != nil {
-		r.OperationError = &resourcev2.ResourceOperationError{Code: e.Code, Title: e.Title, Message: e.Message, Suggestions: e.Suggestions}
+		r.OperationError = &resourcev2.ResourceOperationError{
+			Code:        e.Code,
+			Title:       e.Title,
+			Message:     e.Message,
+			Suggestions: e.Suggestions,
+		}
 	}
 	return r
 }
+
 func (c *PluginClient) StreamMetrics(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
 	child, cancel := context.WithCancel(ctx)
 	stream, err := c.client.StreamMetrics(child)
@@ -136,6 +149,7 @@ func (c *PluginClient) StreamMetrics(ctx context.Context, in chan StreamInput) (
 		return outputFromProto(p), nil
 	}, stream.CloseSend), nil
 }
+
 func (c *PluginClient) StreamResourceMetrics(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
 	ctx, err := resourceplugin.OutgoingSessionContext(ctx)
 	if err != nil {
@@ -182,7 +196,16 @@ func (c *PluginClient) StreamResourceMetrics(ctx context.Context, in chan Stream
 		return outputFromProto(p.GetOutput()), nil
 	}, stream.CloseSend), nil
 }
-func clientStream(ctx context.Context, cancel context.CancelFunc, in chan StreamInput, resource bool, send func(*metricpb.MetricStreamInput) error, recv func() (StreamOutput, error), closeSend func() error) chan StreamOutput {
+
+func clientStream(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	in chan StreamInput,
+	resource bool,
+	send func(*metricpb.MetricStreamInput) error,
+	recv func() (StreamOutput, error),
+	closeSend func() error,
+) chan StreamOutput {
 	type sendFailure struct {
 		err            error
 		subscriptionID string
@@ -242,7 +265,10 @@ func clientStream(ctx context.Context, cancel context.CancelFunc, in chan Stream
 			err = metricDomainError(err)
 			var operation *resourcev2.ResourceOperationError
 			if !errors.As(err, &operation) {
-				operation = &resourcev2.ResourceOperationError{Code: "INTERNAL", Message: "Metric stream transport failed."}
+				operation = &resourcev2.ResourceOperationError{
+					Code:    "INTERNAL",
+					Message: "Metric stream transport failed.",
+				}
 			}
 			if operation.Message == "" {
 				copy := *operation

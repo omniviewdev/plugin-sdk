@@ -1,8 +1,9 @@
 package logs
 
 import (
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"time"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 

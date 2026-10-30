@@ -57,6 +57,7 @@ func decodeDomainObject(data []byte, out any, required ...string) (map[string]an
 	}
 	return object, nil
 }
+
 func rejectNullTokens(object map[string]any, names ...string) error {
 	for _, name := range names {
 		if value, present := object[name]; present && value == nil {
@@ -65,6 +66,7 @@ func rejectNullTokens(object map[string]any, names ...string) error {
 	}
 	return nil
 }
+
 func (v *ScopeEntry) UnmarshalJSON(data []byte) error {
 	type plain ScopeEntry
 	var out plain
@@ -78,6 +80,7 @@ func (v *ScopeEntry) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *ResourceAddress) UnmarshalJSON(data []byte) error {
 	type plain ResourceAddress
 	var out plain
@@ -96,6 +99,7 @@ func (v *ResourceAddress) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *AccessRoute) UnmarshalJSON(data []byte) error {
 	type plain AccessRoute
 	var out plain
@@ -109,6 +113,7 @@ func (v *AccessRoute) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *ResourceReference) UnmarshalJSON(data []byte) error {
 	type plain ResourceReference
 	var out plain
@@ -126,6 +131,7 @@ func (v *ResourceReference) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *ScopeConstraint) UnmarshalJSON(data []byte) error {
 	raw, err := parseJSONWithLimit(data, MaxMessageBytes)
 	if err != nil {
@@ -178,6 +184,7 @@ func (v *ScopeConstraint) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *QueryScope) UnmarshalJSON(data []byte) error {
 	if _, err := parseJSONWithLimit(data, MaxMessageBytes); err != nil {
 		return err
@@ -202,10 +209,20 @@ func (v *QueryScope) UnmarshalJSON(data []byte) error {
 	*v = normalizeScopeOwned(value)
 	return nil
 }
+
 func (v *ReadTarget) UnmarshalJSON(data []byte) error {
 	type plain ReadTarget
 	var out plain
-	if _, err := decodeDomainObject(data, &out, "route", "provider", "authority", "type", "scope", "representation"); err != nil {
+	if _, err := decodeDomainObject(
+		data,
+		&out,
+		"route",
+		"provider",
+		"authority",
+		"type",
+		"scope",
+		"representation",
+	); err != nil {
 		return err
 	}
 	value := ReadTarget(out)
@@ -218,6 +235,7 @@ func (v *ReadTarget) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *CatalogRequest) UnmarshalJSON(data []byte) error {
 	type plain CatalogRequest
 	var out plain
@@ -231,6 +249,7 @@ func (v *CatalogRequest) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *GetRequest) UnmarshalJSON(data []byte) error {
 	type plain GetRequest
 	var out plain
@@ -244,6 +263,7 @@ func (v *GetRequest) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *EnumerateRequest) UnmarshalJSON(data []byte) error {
 	type plain EnumerateRequest
 	var out plain
@@ -261,6 +281,7 @@ func (v *EnumerateRequest) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *NativeQueryRequest) UnmarshalJSON(data []byte) error {
 	type plain NativeQueryRequest
 	var out plain
@@ -278,6 +299,7 @@ func (v *NativeQueryRequest) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *MutationRequest) UnmarshalJSON(data []byte) error {
 	type plain MutationRequest
 	var out plain
@@ -295,6 +317,7 @@ func (v *MutationRequest) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *ActionRequest) UnmarshalJSON(data []byte) error {
 	type plain ActionRequest
 	var out plain
@@ -308,6 +331,7 @@ func (v *ActionRequest) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *SchemaDocumentReference) UnmarshalJSON(data []byte) error {
 	type plain SchemaDocumentReference
 	var out plain
@@ -321,6 +345,7 @@ func (v *SchemaDocumentReference) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *SchemaBinding) UnmarshalJSON(data []byte) error {
 	type plain SchemaBinding
 	var out plain
@@ -338,6 +363,7 @@ func (v *SchemaBinding) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *Representation) UnmarshalJSON(data []byte) error {
 	type plain Representation
 	var out plain
@@ -351,6 +377,7 @@ func (v *Representation) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *SchemaDocument) UnmarshalJSON(data []byte) error {
 	type plain SchemaDocument
 	var out plain
@@ -364,6 +391,7 @@ func (v *SchemaDocument) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *NativeAuthorityHint) UnmarshalJSON(data []byte) error {
 	type plain NativeAuthorityHint
 	var out plain
@@ -377,6 +405,7 @@ func (v *NativeAuthorityHint) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *Coverage) UnmarshalJSON(data []byte) error {
 	type plain Coverage
 	var out plain
@@ -390,6 +419,7 @@ func (v *Coverage) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *Count) UnmarshalJSON(data []byte) error {
 	type plain Count
 	var out plain
@@ -407,6 +437,7 @@ func (v *Count) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *Record) UnmarshalJSON(data []byte) error {
 	type plain Record
 	var out plain
@@ -424,6 +455,7 @@ func (v *Record) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *SourcePage) UnmarshalJSON(data []byte) error {
 	type plain SourcePage
 	var out plain
@@ -455,6 +487,7 @@ func (v *Dimension) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *Capability) UnmarshalJSON(data []byte) error {
 	type plain Capability
 	var out plain
@@ -468,10 +501,19 @@ func (v *Capability) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *ResourceType) UnmarshalJSON(data []byte) error {
 	type plain ResourceType
 	var out plain
-	object, err := decodeDomainObject(data, &out, "type", "identityDimensions", "queryDimensions", "representations", "capabilities")
+	object, err := decodeDomainObject(
+		data,
+		&out,
+		"type",
+		"identityDimensions",
+		"queryDimensions",
+		"representations",
+		"capabilities",
+	)
 	if err != nil {
 		return err
 	}
@@ -485,6 +527,7 @@ func (v *ResourceType) UnmarshalJSON(data []byte) error {
 	*v = value
 	return nil
 }
+
 func (v *Catalog) UnmarshalJSON(data []byte) error {
 	type plain Catalog
 	var out plain
@@ -520,6 +563,7 @@ func (v ResourceAddress) MarshalJSON() ([]byte, error) {
 	sort.Slice(out.Scope, func(i, j int) bool { return out.Scope[i].Dimension < out.Scope[j].Dimension })
 	return marshalDomainJSON(out)
 }
+
 func (v QueryScope) MarshalJSON() ([]byte, error) {
 	if err := ValidateScope(v); err != nil {
 		return nil, err
@@ -529,6 +573,7 @@ func (v QueryScope) MarshalJSON() ([]byte, error) {
 	sort.Slice(out, func(i, j int) bool { return out[i].Dimension < out[j].Dimension })
 	return marshalDomainJSON(out)
 }
+
 func (v ScopeConstraint) MarshalJSON() ([]byte, error) {
 	if err := validateConstraint(v); err != nil {
 		return nil, err
@@ -541,6 +586,7 @@ func (v ScopeConstraint) MarshalJSON() ([]byte, error) {
 	}
 	return marshalDomainJSON(out)
 }
+
 func (v SchemaBinding) MarshalJSON() ([]byte, error) {
 	if err := validateSchema(v); err != nil {
 		return nil, err
@@ -552,6 +598,7 @@ func (v SchemaBinding) MarshalJSON() ([]byte, error) {
 	}
 	return marshalDomainJSON(out)
 }
+
 func (v Coverage) MarshalJSON() ([]byte, error) {
 	if err := validateCoverage(v); err != nil {
 		return nil, err
@@ -563,6 +610,7 @@ func (v Coverage) MarshalJSON() ([]byte, error) {
 	}
 	return marshalDomainJSON(out)
 }
+
 func (v ResourceType) MarshalJSON() ([]byte, error) {
 	if err := validateType(v); err != nil {
 		return nil, err
@@ -583,6 +631,7 @@ func (v ResourceType) MarshalJSON() ([]byte, error) {
 	}
 	return marshalDomainJSON(out)
 }
+
 func (v Catalog) MarshalJSON() ([]byte, error) {
 	if err := ValidateCatalog(v); err != nil {
 		return nil, err
@@ -594,6 +643,7 @@ func (v Catalog) MarshalJSON() ([]byte, error) {
 	}
 	return marshalDomainJSON(out)
 }
+
 func (v SourcePage) MarshalJSON() ([]byte, error) {
 	if err := ValidateSourcePage(v); err != nil {
 		return nil, err

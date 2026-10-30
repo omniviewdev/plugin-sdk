@@ -22,7 +22,16 @@ func (c *Controller[T]) Get(ctx context.Context, request GetRequest) (record Rec
 	defer done()
 	a := request.Reference.Address
 	var descriptor ResourceType
-	r, descriptor, err = c.resolve(ctx, request.Route, a.Provider, a.Type, request.Representation, nil, &a, OperationGet)
+	r, descriptor, err = c.resolve(
+		ctx,
+		request.Route,
+		a.Provider,
+		a.Type,
+		request.Representation,
+		nil,
+		&a,
+		OperationGet,
+	)
 	if err != nil {
 		return record, err
 	}
@@ -30,7 +39,17 @@ func (c *Controller[T]) Get(ctx context.Context, request GetRequest) (record Rec
 	// Unknown selection-only dimensions must not turn an exact Get into an
 	// implicit unscoped watch or acquisition. An explicit query can start it.
 	if exact {
-		if err := c.ensureOnFirstQuery(ctx, ReadTarget{Route: request.Route, Provider: a.Provider, Authority: a.Authority, Type: a.Type, Scope: scope, Representation: request.Representation}); err != nil {
+		if err := c.ensureOnFirstQuery(
+			ctx,
+			ReadTarget{
+				Route:          request.Route,
+				Provider:       a.Provider,
+				Authority:      a.Authority,
+				Type:           a.Type,
+				Scope:          scope,
+				Representation: request.Representation,
+			},
+		); err != nil {
 			return record, err
 		}
 	}
@@ -99,7 +118,16 @@ func (c *Controller[T]) NativeQuery(ctx context.Context, request NativeQueryRequ
 	defer done()
 	t := request.Target
 	var descriptor ResourceType
-	r, descriptor, err = c.resolve(ctx, t.Route, t.Provider, t.Type, t.Representation, t.Scope, nil, OperationNativeQuery)
+	r, descriptor, err = c.resolve(
+		ctx,
+		t.Route,
+		t.Provider,
+		t.Type,
+		t.Representation,
+		t.Scope,
+		nil,
+		OperationNativeQuery,
+	)
 	if err != nil {
 		return page, err
 	}
@@ -136,7 +164,16 @@ func (c *Controller[T]) Mutate(ctx context.Context, request MutationRequest) (re
 	defer done()
 	a := request.Reference.Address
 	var descriptor ResourceType
-	r, descriptor, err = c.resolve(ctx, request.Route, a.Provider, a.Type, "", nil, &a, mutationOperation(request.Operation))
+	r, descriptor, err = c.resolve(
+		ctx,
+		request.Route,
+		a.Provider,
+		a.Type,
+		"",
+		nil,
+		&a,
+		mutationOperation(request.Operation),
+	)
 	if err != nil {
 		return record, err
 	}

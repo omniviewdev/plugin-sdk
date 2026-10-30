@@ -5,16 +5,22 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"google.golang.org/grpc"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	"google.golang.org/grpc"
 )
 
 func TestActualGRPCManagedConnectionUIWithoutNativeWatch(t *testing.T) {
 	var created atomic.Int32
 	controller, err := resourcev2.NewController(resourcev2.Config[int]{
 		Catalog: func(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
-			return resourcev2.Catalog{Provider: "managed", Revision: "native", Types: []resourcev2.ResourceType{}, Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}}}, nil
+			return resourcev2.Catalog{
+				Provider: "managed",
+				Revision: "native",
+				Types:    []resourcev2.ResourceType{},
+				Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}},
+			}, nil
 		},
 		Lifecycle: &resourcev2.Lifecycle[int]{LoadConnections: func(context.Context) ([]types.Connection, error) {
 			return []types.Connection{{ID: "native", Name: "discovered"}}, nil
@@ -42,7 +48,15 @@ func TestActualGRPCManagedConnectionUIWithoutNativeWatch(t *testing.T) {
 	if _, err := client.LoadConnections(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := client.ApplyConnectionOverlay(ctx, resourcev2.ConnectionOverlay{Upserts: []types.Connection{{ID: "manual", Name: "configured", Data: map[string]any{"endpoint": "native-config"}}}, DisabledIDs: []string{}}); err != nil {
+	if err := client.ApplyConnectionOverlay(
+		ctx,
+		resourcev2.ConnectionOverlay{
+			Upserts: []types.Connection{
+				{ID: "manual", Name: "configured", Data: map[string]any{"endpoint": "native-config"}},
+			},
+			DisabledIDs: []string{},
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 	connections, err := client.ListConnections(ctx)

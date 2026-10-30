@@ -12,9 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	"google.golang.org/grpc"
 )
 
 func TestActualGRPCFailedStartReadinessSurvivesNativeCleanup(t *testing.T) {
@@ -61,7 +62,9 @@ func TestActualGRPCFailedStartReadinessSurvivesNativeCleanup(t *testing.T) {
 				},
 				Lifecycle: &resourcev2.Lifecycle[nativeClient]{
 					LoadConnections: func(context.Context) ([]types.Connection, error) {
-						return []types.Connection{{ID: "native", Name: "original", Data: map[string]any{"mode": failure}}}, nil
+						return []types.Connection{
+							{ID: "native", Name: "original", Data: map[string]any{"mode": failure}},
+						}, nil
 					},
 					CreateClient: func(ctx context.Context, connection types.Connection) (*nativeClient, error) {
 						created.Add(1)
@@ -96,7 +99,12 @@ func TestActualGRPCFailedStartReadinessSurvivesNativeCleanup(t *testing.T) {
 								}
 							})
 						}
-						request, err := http.NewRequestWithContext(ctx, http.MethodDelete, native.URL+"/"+client.id, nil)
+						request, err := http.NewRequestWithContext(
+							ctx,
+							http.MethodDelete,
+							native.URL+"/"+client.id,
+							nil,
+						)
 						if err != nil {
 							return err
 						}
@@ -134,10 +142,12 @@ func TestActualGRPCFailedStartReadinessSurvivesNativeCleanup(t *testing.T) {
 				t.Helper()
 				beforeHTTP, beforeCreate := httpCalls.Load(), created.Load()
 				status, err := client.GetConnectionStatus(ctx, "native")
-				if err != nil || status.Status != want || status.Connection == nil || status.Error != "" || status.Details != "" {
+				if err != nil || status.Status != want || status.Connection == nil || status.Error != "" ||
+					status.Details != "" {
 					t.Fatalf("want %s: %+v %v", want, status, err)
 				}
-				if httpCalls.Load() != beforeHTTP || created.Load() != beforeCreate || probes.Load() != 0 || catalogs.Load() != 0 {
+				if httpCalls.Load() != beforeHTTP || created.Load() != beforeCreate || probes.Load() != 0 ||
+					catalogs.Load() != 0 {
 					t.Fatal("readiness performed native work")
 				}
 			}
@@ -209,7 +219,10 @@ func TestActualGRPCFailedStartReadinessSurvivesNativeCleanup(t *testing.T) {
 			state(types.ConnectionStatusDisconnected)
 			failedStart()
 			connection.Data = map[string]any{"mode": "healthy"}
-			if err := client.ApplyConnectionOverlay(ctx, resourcev2.ConnectionOverlay{Upserts: []types.Connection{connection}, DisabledIDs: []string{}}); err != nil {
+			if err := client.ApplyConnectionOverlay(
+				ctx,
+				resourcev2.ConnectionOverlay{Upserts: []types.Connection{connection}, DisabledIDs: []string{}},
+			); err != nil {
 				t.Fatal(err)
 			}
 			state(types.ConnectionStatusDisconnected)

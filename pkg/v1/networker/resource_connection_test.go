@@ -17,13 +17,20 @@ func TestResourceNetworkStrictJSONCanonical(t *testing.T) {
 		t.Fatal(err)
 	}
 	connection, ok := resourceConnection(options.Connection)
-	if !ok || connection.ResourceData.Map["min"].Int != "-9223372036854775808" || connection.ResourceData.Map["max"].Uint != "18446744073709551615" || !math.Signbit(connection.ResourceData.Map["nested"].List[0].Double) {
+	if !ok || connection.ResourceData.Map["min"].Int != "-9223372036854775808" ||
+		connection.ResourceData.Map["max"].Uint != "18446744073709551615" ||
+		!math.Signbit(connection.ResourceData.Map["nested"].List[0].Double) {
 		t.Fatal("JSON scalar loss")
 	}
 	if connection.Reference == nil || connection.Route == nil {
 		t.Fatal("reference or route lost")
 	}
-	if err := validateResourceContext(&types.PluginContext{Connection: &types.Connection{ID: "other"}}, options); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+	if err := validateResourceContext(
+		&types.PluginContext{Connection: &types.Connection{ID: "other"}},
+		options,
+	); resourcev2.ErrorCode(
+		err,
+	) != "INVALID_REQUEST" {
 		t.Fatalf("trusted route conflict: %v", err)
 	}
 	for _, bad := range []string{
@@ -40,9 +47,23 @@ func TestResourceNetworkStrictJSONCanonical(t *testing.T) {
 }
 
 func TestResourceNetworkSnapshotDeepClone(t *testing.T) {
-	body := resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{"nested": {Kind: "list", List: []resourcev2.Value{{Kind: "string", String: "original"}}}}}
+	body := resourcev2.Value{
+		Kind: "map",
+		Map: map[string]resourcev2.Value{
+			"nested": {Kind: "list", List: []resourcev2.Value{{Kind: "string", String: "original"}}},
+		},
+	}
 	token := "original"
-	source := PortForwardResourceConnection{ResourceData: &body, Reference: &resourcev2.ResourceReference{Address: resourcev2.ResourceAddress{Scope: []resourcev2.ScopeEntry{{Dimension: "scope", Value: "original"}}}, Incarnation: &token}, Route: &resourcev2.AccessRoute{Connection: "original"}}
+	source := PortForwardResourceConnection{
+		ResourceData: &body,
+		Reference: &resourcev2.ResourceReference{
+			Address: resourcev2.ResourceAddress{
+				Scope: []resourcev2.ScopeEntry{{Dimension: "scope", Value: "original"}},
+			},
+			Incarnation: &token,
+		},
+		Route: &resourcev2.AccessRoute{Connection: "original"},
+	}
 	entry := sessionEntry{session: PortForwardSession{Connection: source}}
 	copied := entry.snapshot().Connection.(PortForwardResourceConnection)
 	nested := copied.ResourceData.Map["nested"]
@@ -50,7 +71,10 @@ func TestResourceNetworkSnapshotDeepClone(t *testing.T) {
 	copied.Reference.Address.Scope[0].Value = "changed"
 	*copied.Reference.Incarnation = "changed"
 	copied.Route.Connection = "changed"
-	if source.ResourceData.Map["nested"].List[0].String != "original" || source.Reference.Address.Scope[0].Value != "original" || token != "original" || source.Route.Connection != "original" {
+	if source.ResourceData.Map["nested"].List[0].String != "original" ||
+		source.Reference.Address.Scope[0].Value != "original" ||
+		token != "original" ||
+		source.Route.Connection != "original" {
 		t.Fatal("snapshot aliases resource connection")
 	}
 }
@@ -79,8 +103,18 @@ func TestResourceNetworkPreflightBodyAndResponseFrameBounds(t *testing.T) {
 	}
 	body := resourcev2.Value{Kind: "string", String: strings.Repeat("x", 12<<20)}
 	connection, _ := resourceConnection(canonicalResourceOptions(&body).Connection)
-	session := &PortForwardSession{Connection: connection, ConnectionType: PortForwardConnectionTypeResource, Protocol: PortForwardProtocolTCP, State: SessionStateActive}
-	if err := preflightSessions([]*PortForwardSession{session, session, session}, false); resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {
+	session := &PortForwardSession{
+		Connection:     connection,
+		ConnectionType: PortForwardConnectionTypeResource,
+		Protocol:       PortForwardProtocolTCP,
+		State:          SessionStateActive,
+	}
+	if err := preflightSessions(
+		[]*PortForwardSession{session, session, session},
+		false,
+	); resourcev2.ErrorCode(
+		err,
+	) != "RESOURCE_LIMIT" {
 		t.Fatalf("response frame preflight: %v", err)
 	}
 }

@@ -7,15 +7,20 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/omniviewdev/plugin-sdk/pkg/interceptors"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
-	"google.golang.org/grpc"
 )
 
-func networkCatalogFixture(t *testing.T, manager *Manager, changed ...*atomic.Bool) (*resourcev2.Controller[string], *types.PluginContext) {
+func networkCatalogFixture(
+	t *testing.T,
+	manager *Manager,
+	changed ...*atomic.Bool,
+) (*resourcev2.Controller[string], *types.PluginContext) {
 	t.Helper()
 	controller, err := resourcev2.NewController(resourcev2.Config[string]{
 		Catalog: func(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
@@ -23,7 +28,12 @@ func networkCatalogFixture(t *testing.T, manager *Manager, changed ...*atomic.Bo
 			if len(changed) != 0 && changed[0].Load() {
 				revision = "native-2"
 			}
-			return resourcev2.Catalog{Provider: "opaque-provider", Revision: revision, Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}}, Types: []resourcev2.ResourceType{}}, nil
+			return resourcev2.Catalog{
+				Provider: "opaque-provider",
+				Revision: revision,
+				Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}},
+				Types:    []resourcev2.ResourceType{},
+			}, nil
 		},
 		Lifecycle: &resourcev2.Lifecycle[string]{
 			LoadConnections: func(context.Context) ([]types.Connection, error) {
@@ -48,32 +58,57 @@ func networkCatalogFixture(t *testing.T, manager *Manager, changed ...*atomic.Bo
 		t.Fatal(err)
 	}
 	manager.BindConnectionContextProvider(controller)
-	catalog, err := controller.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "fixture"}})
+	catalog, err := controller.Catalog(
+		context.Background(),
+		resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "fixture"}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return controller, &types.PluginContext{RequestID: "network-pin-fixture", Context: resourcev2.WithCatalogRevision(context.Background(), catalog.Revision), Connection: &types.Connection{ID: "fixture"}}
+	return controller, &types.PluginContext{
+		RequestID:  "network-pin-fixture",
+		Context:    resourcev2.WithCatalogRevision(context.Background(), catalog.Revision),
+		Connection: &types.Connection{ID: "fixture"},
+	}
 }
 
 func TestNetworkCatalogPinAdmission(t *testing.T) {
 	var calls atomic.Int32
-	manager := NewManager(ManagerConfig{PortChecker: canonicalPorts{}}, PluginOpts{ResourceForwarders: map[string]ResourceForwarder{"opaque/type": ResourceForwarderFunc(func(_ context.Context, pc *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
-		if pc.Connection.Data["source"] != "configured" {
-			t.Error("metadata profile reached native forwarder")
-		}
-		calls.Add(1)
-		ready := make(chan struct{})
-		close(ready)
-		return &ForwarderResult{Ready: ready, ErrCh: make(chan error)}, nil
-	})}})
+	manager := NewManager(
+		ManagerConfig{PortChecker: canonicalPorts{}},
+		PluginOpts{
+			ResourceForwarders: map[string]ResourceForwarder{
+				"opaque/type": ResourceForwarderFunc(
+					func(_ context.Context, pc *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
+						if pc.Connection.Data["source"] != "configured" {
+							t.Error("metadata profile reached native forwarder")
+						}
+						calls.Add(1)
+						ready := make(chan struct{})
+						close(ready)
+						return &ForwarderResult{Ready: ready, ErrCh: make(chan error)}, nil
+					},
+				),
+			},
+		},
+	)
 	controller, accepted := networkCatalogFixture(t, manager)
 	t.Cleanup(manager.StopAll)
-	server := grpc.NewServer(append(resourceplugin.ServerOptions(), grpc.UnaryInterceptor(interceptors.UnaryPluginContext()))...)
+	server := grpc.NewServer(
+		append(resourceplugin.ServerOptions(), grpc.UnaryInterceptor(interceptors.UnaryPluginContext()))...)
 	RegisterNetworkerPluginServer(server, &PluginServer{Impl: manager})
 	client := &PluginClient{client: networkerpb.NewNetworkerPluginClient(networkPipe(t, server, true))}
 	opts := canonicalResourceOptions(nil)
 	connection, _ := resourceConnection(opts.Connection)
-	connection.Reference = &resourcev2.ResourceReference{Address: resourcev2.ResourceAddress{Provider: "opaque-provider", Authority: "fixture", Type: "opaque/type", ID: "id", Scope: []resourcev2.ScopeEntry{}}}
+	connection.Reference = &resourcev2.ResourceReference{
+		Address: resourcev2.ResourceAddress{
+			Provider:  "opaque-provider",
+			Authority: "fixture",
+			Type:      "opaque/type",
+			ID:        "id",
+			Scope:     []resourcev2.ScopeEntry{},
+		},
+	}
 	connection.Route = &resourcev2.AccessRoute{Connection: "fixture"}
 	opts.Connection = connection
 	missing := *accepted
@@ -84,7 +119,10 @@ func TestNetworkCatalogPinAdmission(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatal("missing pin reached native")
 	}
-	if _, err := controller.UpdateConnection(context.Background(), types.Connection{ID: "fixture", Data: map[string]any{"source": "replacement"}}); err != nil {
+	if _, err := controller.UpdateConnection(
+		context.Background(),
+		types.Connection{ID: "fixture", Data: map[string]any{"source": "replacement"}},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := controller.StartConnection(context.Background(), "fixture"); err != nil {
@@ -97,7 +135,10 @@ func TestNetworkCatalogPinAdmission(t *testing.T) {
 		t.Fatal("stale pin reached native")
 	}
 	// Restore a real configured profile, then prove opaque input requires no pin.
-	if _, err := controller.UpdateConnection(context.Background(), types.Connection{ID: "fixture", Data: map[string]any{"source": "configured"}}); err != nil {
+	if _, err := controller.UpdateConnection(
+		context.Background(),
+		types.Connection{ID: "fixture", Data: map[string]any{"source": "configured"}},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := controller.StartConnection(context.Background(), "fixture"); err != nil {
@@ -117,21 +158,43 @@ func TestNetworkCatalogPinAdmission(t *testing.T) {
 func TestNetworkPostFenceClosesCreatedForward(t *testing.T) {
 	var changed atomic.Bool
 	var nativeContext context.Context
-	manager := NewManager(ManagerConfig{PortChecker: canonicalPorts{}}, PluginOpts{ResourceForwarders: map[string]ResourceForwarder{"opaque/type": ResourceForwarderFunc(func(ctx context.Context, _ *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
-		nativeContext = ctx
-		changed.Store(true)
-		ready := make(chan struct{})
-		close(ready)
-		return &ForwarderResult{Ready: ready, ErrCh: make(chan error)}, nil
-	})}})
+	manager := NewManager(
+		ManagerConfig{PortChecker: canonicalPorts{}},
+		PluginOpts{
+			ResourceForwarders: map[string]ResourceForwarder{
+				"opaque/type": ResourceForwarderFunc(
+					func(ctx context.Context, _ *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
+						nativeContext = ctx
+						changed.Store(true)
+						ready := make(chan struct{})
+						close(ready)
+						return &ForwarderResult{Ready: ready, ErrCh: make(chan error)}, nil
+					},
+				),
+			},
+		},
+	)
 	_, accepted := networkCatalogFixture(t, manager, &changed)
 	t.Cleanup(manager.StopAll)
 	opts := canonicalResourceOptions(nil)
 	connection, _ := resourceConnection(opts.Connection)
-	connection.Reference = &resourcev2.ResourceReference{Address: resourcev2.ResourceAddress{Provider: "opaque-provider", Authority: "fixture", Type: "opaque/type", ID: "id", Scope: []resourcev2.ScopeEntry{}}}
+	connection.Reference = &resourcev2.ResourceReference{
+		Address: resourcev2.ResourceAddress{
+			Provider:  "opaque-provider",
+			Authority: "fixture",
+			Type:      "opaque/type",
+			ID:        "id",
+			Scope:     []resourcev2.ScopeEntry{},
+		},
+	}
 	connection.Route = &resourcev2.AccessRoute{Connection: "fixture"}
 	opts.Connection = connection
-	if _, err := manager.StartResourcePortForwardSession(accepted, opts); resourcev2.ErrorCode(err) != "RESET_REQUIRED" {
+	if _, err := manager.StartResourcePortForwardSession(
+		accepted,
+		opts,
+	); resourcev2.ErrorCode(
+		err,
+	) != "RESET_REQUIRED" {
 		t.Fatalf("post fence: %v", err)
 	}
 	if nativeContext == nil || nativeContext.Err() == nil {
@@ -144,21 +207,26 @@ func TestForwardAdmissionCancellation(t *testing.T) {
 		for _, retire := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/retire=%t", phase, retire), func(t *testing.T) {
 				entered := make(chan struct{})
-				manager := NewManager(ManagerConfig{PortChecker: canonicalPorts{}}, PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
-					"opaque/type": ResourceForwarderFunc(func(ctx context.Context, _ *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
-						close(entered)
-						if phase == "creation" {
-							<-ctx.Done()
-							return nil, ctx.Err()
-						}
-						ready := make(chan struct{})
-						if phase == "ready-race" {
-							<-ctx.Done()
-							close(ready)
-						}
-						return &ForwarderResult{Ready: ready}, nil
-					}),
-				}})
+				manager := NewManager(
+					ManagerConfig{PortChecker: canonicalPorts{}},
+					PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
+						"opaque/type": ResourceForwarderFunc(
+							func(ctx context.Context, _ *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
+								close(entered)
+								if phase == "creation" {
+									<-ctx.Done()
+									return nil, ctx.Err()
+								}
+								ready := make(chan struct{})
+								if phase == "ready-race" {
+									<-ctx.Done()
+									close(ready)
+								}
+								return &ForwarderResult{Ready: ready}, nil
+							},
+						),
+					}},
+				)
 				controller, pc := networkCatalogFixture(t, manager)
 				t.Cleanup(manager.StopAll)
 				request, cancel := context.WithCancel(pc.Context)
@@ -217,14 +285,19 @@ func TestAcceptedForwardLifetime(t *testing.T) {
 	for _, retire := range []bool{false, true} {
 		t.Run(fmt.Sprintf("retire=%t", retire), func(t *testing.T) {
 			var native context.Context
-			manager := NewManager(ManagerConfig{PortChecker: canonicalPorts{}}, PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
-				"opaque/type": ResourceForwarderFunc(func(ctx context.Context, _ *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
-					native = ctx
-					ready := make(chan struct{})
-					close(ready)
-					return &ForwarderResult{Ready: ready}, nil
-				}),
-			}})
+			manager := NewManager(
+				ManagerConfig{PortChecker: canonicalPorts{}},
+				PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
+					"opaque/type": ResourceForwarderFunc(
+						func(ctx context.Context, _ *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
+							native = ctx
+							ready := make(chan struct{})
+							close(ready)
+							return &ForwarderResult{Ready: ready}, nil
+						},
+					),
+				}},
+			)
 			controller, pc := networkCatalogFixture(t, manager)
 			t.Cleanup(manager.StopAll)
 			request, cancel := context.WithCancel(pc.Context)
@@ -267,16 +340,21 @@ func TestForwardFailureReleasesGenerationLease(t *testing.T) {
 	for _, creation := range []bool{false, true} {
 		t.Run(fmt.Sprintf("creation=%t", creation), func(t *testing.T) {
 			failed := make(chan error, 1)
-			manager := NewManager(ManagerConfig{PortChecker: canonicalPorts{}}, PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
-				"opaque/type": ResourceForwarderFunc(func(context.Context, *types.PluginContext, ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
-					if creation {
-						return nil, fmt.Errorf("native creation failed")
-					}
-					ready := make(chan struct{})
-					close(ready)
-					return &ForwarderResult{Ready: ready, ErrCh: failed}, nil
-				}),
-			}})
+			manager := NewManager(
+				ManagerConfig{PortChecker: canonicalPorts{}},
+				PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
+					"opaque/type": ResourceForwarderFunc(
+						func(context.Context, *types.PluginContext, ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
+							if creation {
+								return nil, fmt.Errorf("native creation failed")
+							}
+							ready := make(chan struct{})
+							close(ready)
+							return &ForwarderResult{Ready: ready, ErrCh: failed}, nil
+						},
+					),
+				}},
+			)
 			controller, pc := networkCatalogFixture(t, manager)
 			t.Cleanup(manager.StopAll)
 			_, err := manager.StartResourcePortForwardSession(pc, canonicalResourceOptions(nil))
@@ -314,13 +392,18 @@ func TestForwardFailureReleasesGenerationLease(t *testing.T) {
 }
 
 func TestForwardCreationOwnsExactEntryAcrossIDReuse(t *testing.T) {
-	manager := NewManager(ManagerConfig{PortChecker: canonicalPorts{}}, PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
-		"opaque/type": ResourceForwarderFunc(func(context.Context, *types.PluginContext, ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
-			ready := make(chan struct{})
-			close(ready)
-			return &ForwarderResult{SessionID: "reused-native-id", Ready: ready}, nil
-		}),
-	}})
+	manager := NewManager(
+		ManagerConfig{PortChecker: canonicalPorts{}},
+		PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
+			"opaque/type": ResourceForwarderFunc(
+				func(context.Context, *types.PluginContext, ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
+					ready := make(chan struct{})
+					close(ready)
+					return &ForwarderResult{SessionID: "reused-native-id", Ready: ready}, nil
+				},
+			),
+		}},
+	)
 	t.Cleanup(manager.StopAll)
 	pc := &types.PluginContext{Context: context.Background()}
 	first, err := manager.createPortForwardSession(pc, canonicalResourceOptions(nil), true)

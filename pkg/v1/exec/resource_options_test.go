@@ -7,11 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
-	"google.golang.org/protobuf/encoding/protowire"
-	"google.golang.org/protobuf/proto"
 )
 
 func exactExecBody() *resourcev2.Value {
@@ -19,11 +20,26 @@ func exactExecBody() *resourcev2.Value {
 		"intMin":      {Kind: "int64", Int: "-9223372036854775808"},
 		"wideUint":    {Kind: "uint64", Uint: "18446744073709551615"},
 		"beforeEpoch": {Kind: "timestamp", Timestamp: "1969-12-31T23:59:59.999999999Z"},
-		"nested":      {Kind: "list", List: []resourcev2.Value{{Kind: "double", Double: math.Copysign(0, -1)}, {Kind: "null"}, {Kind: "map", Map: map[string]resourcev2.Value{}}}},
+		"nested": {
+			Kind: "list",
+			List: []resourcev2.Value{
+				{Kind: "double", Double: math.Copysign(0, -1)},
+				{Kind: "null"},
+				{Kind: "map", Map: map[string]resourcev2.Value{}},
+			},
+		},
 	}}
 }
+
 func exactExecOptions() SessionOptions {
-	return SessionOptions{ResourcePlugin: "provider", ResourceKey: "opaque/type::/%雪", ResourceData: exactExecBody(), Command: []string{"shell"}, Params: map[string]string{"container": "actual"}, Labels: map[string]string{"diagnostic": "not-a-grant"}}
+	return SessionOptions{
+		ResourcePlugin: "provider",
+		ResourceKey:    "opaque/type::/%雪",
+		ResourceData:   exactExecBody(),
+		Command:        []string{"shell"},
+		Params:         map[string]string{"container": "actual"},
+		Labels:         map[string]string{"diagnostic": "not-a-grant"},
+	}
 }
 
 func TestExecOptionsCanonicalBinaryRoundTrip(t *testing.T) {
@@ -32,7 +48,8 @@ func TestExecOptionsCanonicalBinaryRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wire.ResourceWireVersion != ResourceSessionWireVersion || wire.ProtoReflect().Descriptor().Fields().ByName("resource_data").Number() != 9 {
+	if wire.ResourceWireVersion != ResourceSessionWireVersion ||
+		wire.ProtoReflect().Descriptor().Fields().ByName("resource_data").Number() != 9 {
 		t.Fatal("resource payload did not select explicit canonical wire")
 	}
 	encoded, err := proto.Marshal(wire)
@@ -68,16 +85,28 @@ func TestExecOptionsCanonicalBinaryRoundTrip(t *testing.T) {
 }
 
 func TestExecOptionsUseActualReferenceWithoutFabrication(t *testing.T) {
-	ref := resourcev2.ResourceReference{Address: resourcev2.ResourceAddress{Provider: "provider", Authority: "host-issued", Type: "opaque/type", Scope: []resourcev2.ScopeEntry{}, ID: "opaque::/%雪"}}
+	ref := resourcev2.ResourceReference{
+		Address: resourcev2.ResourceAddress{
+			Provider:  "provider",
+			Authority: "host-issued",
+			Type:      "opaque/type",
+			Scope:     []resourcev2.ScopeEntry{},
+			ID:        "opaque::/%雪",
+		},
+	}
 	input := SessionOptions{Reference: &ref, Route: &resourcev2.AccessRoute{Connection: "explicit"}}
 	normalized, err := NormalizeResourceSessionOptions(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if normalized.ResourcePlugin != "provider" || normalized.ResourceKey != "opaque/type" || normalized.Reference != input.Reference || normalized.ResourceData != nil {
+	if normalized.ResourcePlugin != "provider" || normalized.ResourceKey != "opaque/type" ||
+		normalized.Reference != input.Reference ||
+		normalized.ResourceData != nil {
 		t.Fatal("normalization fabricated or replaced canonical input")
 	}
-	if err := ValidateResourceSessionOptions(SessionOptions{ResourcePlugin: "provider", ResourceKey: "type"}); err != nil {
+	if err := ValidateResourceSessionOptions(
+		SessionOptions{ResourcePlugin: "provider", ResourceKey: "type"},
+	); err != nil {
 		t.Fatal("opaque utility selector incorrectly requires a body or resource Get")
 	}
 	for _, bad := range []SessionOptions{
@@ -99,7 +128,12 @@ func TestExecOptionsRejectLegacyAndUnsupportedProtoBeforeBody(t *testing.T) {
 	if _, err := NewSessionOptionsFromProto(legacy); resourcev2.ErrorCode(err) != "UNSUPPORTED" {
 		t.Fatalf("legacy Struct field accepted: %v", err)
 	}
-	unsupported := &execpb.SessionOptions{ResourcePlugin: "p", ResourceKey: "t", ResourceWireVersion: 3, ResourceData: &resourcepb.Value{}}
+	unsupported := &execpb.SessionOptions{
+		ResourcePlugin:      "p",
+		ResourceKey:         "t",
+		ResourceWireVersion: 3,
+		ResourceData:        &resourcepb.Value{},
+	}
 	if _, err := NewSessionOptionsFromProto(unsupported); resourcev2.ErrorCode(err) != "UNSUPPORTED" {
 		t.Fatalf("version did not reject before malformed body conversion: %v", err)
 	}
@@ -120,7 +154,8 @@ func TestExecOptionsStrictJSONPreservesExactPayload(t *testing.T) {
 	if err := json.Unmarshal([]byte(source), &input); err != nil {
 		t.Fatal(err)
 	}
-	if !math.Signbit(input.ResourceData.Map["negativeZero"].Double) || input.ResourceData.Map["wide"].Uint != "18446744073709551615" {
+	if !math.Signbit(input.ResourceData.Map["negativeZero"].Double) ||
+		input.ResourceData.Map["wide"].Uint != "18446744073709551615" {
 		t.Fatal("JSON coerced canonical scalar intent")
 	}
 	for _, source := range []string{
@@ -141,8 +176,16 @@ func TestExecOptionsStrictJSONPreservesExactPayload(t *testing.T) {
 }
 
 func TestExecOptionsPreflightAggregateFrame(t *testing.T) {
-	body := &resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{"payload": {Kind: "string", String: strings.Repeat("b", 15<<20)}}}
-	opts := SessionOptions{ResourcePlugin: "p", ResourceKey: "type", Params: map[string]string{"large": strings.Repeat("m", 18<<20)}, ResourceData: body}
+	body := &resourcev2.Value{
+		Kind: "map",
+		Map:  map[string]resourcev2.Value{"payload": {Kind: "string", String: strings.Repeat("b", 15<<20)}},
+	}
+	opts := SessionOptions{
+		ResourcePlugin: "p",
+		ResourceKey:    "type",
+		Params:         map[string]string{"large": strings.Repeat("m", 18<<20)},
+		ResourceData:   body,
+	}
 	if _, err := opts.ToProto(); resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {
 		t.Fatalf("aggregate frame cap lost: %v", err)
 	}

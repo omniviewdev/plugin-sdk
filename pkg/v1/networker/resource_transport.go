@@ -2,16 +2,19 @@ package networker
 
 import (
 	"context"
+
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protowire"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/encoding/protowire"
 )
 
 func resourceUnsupported() error {
 	return resourcev2.NewError("UNSUPPORTED", "Resource forwarding requires StartResourcePortForwardSession.")
 }
+
 func resourceInvalidResponse() error {
 	return resourcev2.NewError("INVALID_REQUEST", "Resource forwarding returned no resource session.")
 }
@@ -31,7 +34,9 @@ func RegisterNetworkerPluginServer(registrar grpc.ServiceRegistrar, server netwo
 	registrar.RegisterService(&descriptor, server)
 }
 
-func networkSessionHandler(resource bool) func(any, context.Context, func(any) error, grpc.UnaryServerInterceptor) (any, error) {
+func networkSessionHandler(
+	resource bool,
+) func(any, context.Context, func(any) error, grpc.UnaryServerInterceptor) (any, error) {
 	return func(server any, ctx context.Context, decode func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 		request := new(networkerpb.PortForwardSessionOptions)
 		var legacy func([]byte) error
@@ -53,13 +58,27 @@ func networkSessionHandler(resource bool) func(any, context.Context, func(any) e
 		}
 		handler := func(ctx context.Context, message any) (any, error) {
 			if resource {
-				return server.(networkerpb.NetworkerPluginServer).StartResourcePortForwardSession(ctx, message.(*networkerpb.PortForwardSessionOptions))
+				return server.(networkerpb.NetworkerPluginServer).StartResourcePortForwardSession(
+					ctx,
+					message.(*networkerpb.PortForwardSessionOptions),
+				)
 			}
-			return server.(networkerpb.NetworkerPluginServer).StartPortForwardSession(ctx, message.(*networkerpb.PortForwardSessionOptions))
+			return server.(networkerpb.NetworkerPluginServer).StartPortForwardSession(
+				ctx,
+				message.(*networkerpb.PortForwardSessionOptions),
+			)
 		}
 		if interceptor == nil {
 			return handler(ctx, request)
 		}
-		return interceptor(ctx, request, &grpc.UnaryServerInfo{Server: server, FullMethod: "/" + networkerpb.NetworkerPlugin_ServiceDesc.ServiceName + "/" + method}, handler)
+		return interceptor(
+			ctx,
+			request,
+			&grpc.UnaryServerInfo{
+				Server:     server,
+				FullMethod: "/" + networkerpb.NetworkerPlugin_ServiceDesc.ServiceName + "/" + method,
+			},
+			handler,
+		)
 	}
 }

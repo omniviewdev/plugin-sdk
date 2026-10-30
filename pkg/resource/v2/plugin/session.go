@@ -2,10 +2,12 @@ package plugin
 
 import (
 	"context"
+	"unicode/utf8"
+
+	"google.golang.org/grpc/metadata"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
-	"google.golang.org/grpc/metadata"
-	"unicode/utf8"
 )
 
 const (
@@ -78,6 +80,7 @@ func outgoingSession(ctx context.Context) (context.Context, error) {
 	}
 	return metadata.NewOutgoingContext(ctx, md), nil
 }
+
 func attachDiagnostic(md metadata.MD, key, value string) error {
 	if value == "" {
 		return nil
@@ -91,6 +94,7 @@ func attachDiagnostic(md metadata.MD, key, value string) error {
 	md.Set(key, value)
 	return nil
 }
+
 func incomingSession(ctx context.Context, settings pkgsettings.Provider) (context.Context, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	// Wire admission must not inherit an interceptor's unrelated catalog context.

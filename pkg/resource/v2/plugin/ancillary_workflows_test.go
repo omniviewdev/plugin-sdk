@@ -2,45 +2,142 @@ package plugin
 
 import (
 	"context"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	"google.golang.org/grpc"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 )
 
 type ancillaryFixtureProvider struct{ qualifiedProvider }
 
-func (*ancillaryFixtureProvider) GetResourceGroups(context.Context, resourcev2.AccessRoute) ([]resourcev2.ResourceGroup, error) {
+func (*ancillaryFixtureProvider) GetResourceGroups(
+	context.Context,
+	resourcev2.AccessRoute,
+) ([]resourcev2.ResourceGroup, error) {
 	return []resourcev2.ResourceGroup{{ID: "group", Name: "Group", Resources: []string{"opaque/type"}}}, nil
 }
-func (*ancillaryFixtureProvider) GetResourceDefinition(context.Context, resourcev2.AccessRoute, string) (resourcev2.ResourceDefinition, error) {
-	return resourcev2.ResourceDefinition{ColumnDefs: []resourcev2.ColumnDefinition{{ID: "name", Header: "Name", Accessors: "metadata.name", ResourceLink: &resourcev2.ResourceLink{Type: "opaque/type", IDAccessor: "metadata.name", ScopeAccessors: []resourcev2.ScopeExtractor{{Dimension: "namespace", FieldPath: "metadata.namespace"}}}}}}, nil
+
+func (*ancillaryFixtureProvider) GetResourceDefinition(
+	context.Context,
+	resourcev2.AccessRoute,
+	string,
+) (resourcev2.ResourceDefinition, error) {
+	return resourcev2.ResourceDefinition{
+		ColumnDefs: []resourcev2.ColumnDefinition{
+			{
+				ID:        "name",
+				Header:    "Name",
+				Accessors: "metadata.name",
+				ResourceLink: &resourcev2.ResourceLink{
+					Type:       "opaque/type",
+					IDAccessor: "metadata.name",
+					ScopeAccessors: []resourcev2.ScopeExtractor{
+						{Dimension: "namespace", FieldPath: "metadata.namespace"},
+					},
+				},
+			},
+		},
+	}, nil
 }
-func (*ancillaryFixtureProvider) GetEditorSchemas(context.Context, resourcev2.AccessRoute) ([]resourcev2.EditorSchema, error) {
+
+func (*ancillaryFixtureProvider) GetEditorSchemas(
+	context.Context,
+	resourcev2.AccessRoute,
+) ([]resourcev2.EditorSchema, error) {
 	revision := "schema-1"
-	return []resourcev2.EditorSchema{{Type: "opaque/type", FileMatch: "*.yaml", URI: "schema://document", Language: "yaml", Binding: resourcev2.SchemaBinding{State: "available", Revision: &revision, Dialect: "json-schema", DocumentRef: &resourcev2.SchemaDocumentReference{ID: "shared-document", Revision: "document-1"}, Root: "#/definitions/Thing", Validation: "none", Unvalidated: []string{}}}}, nil
+	return []resourcev2.EditorSchema{
+		{
+			Type:      "opaque/type",
+			FileMatch: "*.yaml",
+			URI:       "schema://document",
+			Language:  "yaml",
+			Binding: resourcev2.SchemaBinding{
+				State:       "available",
+				Revision:    &revision,
+				Dialect:     "json-schema",
+				DocumentRef: &resourcev2.SchemaDocumentReference{ID: "shared-document", Revision: "document-1"},
+				Root:        "#/definitions/Thing",
+				Validation:  "none",
+				Unvalidated: []string{},
+			},
+		},
+	}, nil
 }
-func (*ancillaryFixtureProvider) GetSchemaDocument(_ context.Context, _ resourcev2.AccessRoute, ref resourcev2.SchemaDocumentReference) (resourcev2.SchemaDocument, error) {
-	return resourcev2.SchemaDocument{Reference: ref, Dialect: "json-schema", Document: []byte(`{"definitions":{"Thing":{"type":"object"}}}`)}, nil
+
+func (*ancillaryFixtureProvider) GetSchemaDocument(
+	_ context.Context,
+	_ resourcev2.AccessRoute,
+	ref resourcev2.SchemaDocumentReference,
+) (resourcev2.SchemaDocument, error) {
+	return resourcev2.SchemaDocument{
+		Reference: ref,
+		Dialect:   "json-schema",
+		Document:  []byte(`{"definitions":{"Thing":{"type":"object"}}}`),
+	}, nil
 }
+
 func testRelationship() resourcev2.RelationshipDescriptor {
-	return resourcev2.RelationshipDescriptor{Type: resourcev2.RelUses, TargetType: "opaque/type", Label: "Uses", TargetScope: []resourcev2.ScopeEntry{{Dimension: "region", Value: "opaque-region"}}, ScopeExtractors: []resourcev2.ScopeExtractor{{Dimension: "namespace", FieldPath: "metadata.namespace"}}}
+	return resourcev2.RelationshipDescriptor{
+		Type:            resourcev2.RelUses,
+		TargetType:      "opaque/type",
+		Label:           "Uses",
+		TargetScope:     []resourcev2.ScopeEntry{{Dimension: "region", Value: "opaque-region"}},
+		ScopeExtractors: []resourcev2.ScopeExtractor{{Dimension: "namespace", FieldPath: "metadata.namespace"}},
+	}
 }
-func (*ancillaryFixtureProvider) GetRelationships(context.Context, resourcev2.AccessRoute, string) ([]resourcev2.RelationshipDescriptor, error) {
+
+func (*ancillaryFixtureProvider) GetRelationships(
+	context.Context,
+	resourcev2.AccessRoute,
+	string,
+) ([]resourcev2.RelationshipDescriptor, error) {
 	return []resourcev2.RelationshipDescriptor{testRelationship()}, nil
 }
-func (*ancillaryFixtureProvider) ResolveRelationships(context.Context, resourcev2.RelationshipResolutionRequest) ([]resourcev2.ResolvedRelationship, error) {
+
+func (*ancillaryFixtureProvider) ResolveRelationships(
+	context.Context,
+	resourcev2.RelationshipResolutionRequest,
+) ([]resourcev2.ResolvedRelationship, error) {
 	return relationshipFixtureResults(), nil
 }
-func (*ancillaryFixtureProvider) GetHealth(context.Context, resourcev2.GetRequest, resourcev2.Value) (*resourcev2.ResourceHealth, error) {
+
+func (*ancillaryFixtureProvider) GetHealth(
+	context.Context,
+	resourcev2.GetRequest,
+	resourcev2.Value,
+) (*resourcev2.ResourceHealth, error) {
 	return nil, nil
 }
-func (*ancillaryFixtureProvider) GetResourceEvents(context.Context, resourcev2.GetRequest, uint32) ([]resourcev2.ResourceEvent, error) {
-	return []resourcev2.ResourceEvent{{Type: resourcev2.SeverityNormal, Reason: "Observed", Message: "native event", Count: 1, FirstSeen: time.Unix(-1, 123).UTC(), LastSeen: time.Unix(0, 456).UTC()}}, nil
+
+func (*ancillaryFixtureProvider) GetResourceEvents(
+	context.Context,
+	resourcev2.GetRequest,
+	uint32,
+) ([]resourcev2.ResourceEvent, error) {
+	return []resourcev2.ResourceEvent{
+		{
+			Type:      resourcev2.SeverityNormal,
+			Reason:    "Observed",
+			Message:   "native event",
+			Count:     1,
+			FirstSeen: time.Unix(-1, 123).UTC(),
+			LastSeen:  time.Unix(0, 456).UTC(),
+		},
+	}, nil
 }
-func (*ancillaryFixtureProvider) GetActions(context.Context, resourcev2.AccessRoute, string) ([]resourcev2.ActionDescriptor, error) {
-	return []resourcev2.ActionDescriptor{{ID: "run", Label: "Run", Scope: resourcev2.ActionScopeInstance, Streaming: true}}, nil
+
+func (*ancillaryFixtureProvider) GetActions(
+	context.Context,
+	resourcev2.AccessRoute,
+	string,
+) ([]resourcev2.ActionDescriptor, error) {
+	return []resourcev2.ActionDescriptor{
+		{ID: "run", Label: "Run", Scope: resourcev2.ActionScopeInstance, Streaming: true},
+	}, nil
 }
+
 func TestActualGRPCCanonicalAncillaryWorkflows(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, &ancillaryFixtureProvider{})
@@ -52,7 +149,8 @@ func TestActualGRPCCanonicalAncillaryWorkflows(t *testing.T) {
 		t.Fatalf("groups: %v %v", groups, err)
 	}
 	definition, err := c.GetResourceDefinition(ctx, route, "opaque/type")
-	if err != nil || len(definition.ColumnDefs) != 1 || definition.ColumnDefs[0].ResourceLink.ScopeAccessors[0].FieldPath != "metadata.namespace" {
+	if err != nil || len(definition.ColumnDefs) != 1 ||
+		definition.ColumnDefs[0].ResourceLink.ScopeAccessors[0].FieldPath != "metadata.namespace" {
 		t.Fatalf("definition: %v %v", definition, err)
 	}
 	schemas, err := c.GetEditorSchemas(ctx, route)

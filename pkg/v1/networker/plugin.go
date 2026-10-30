@@ -5,8 +5,9 @@ import (
 	"errors"
 
 	"github.com/hashicorp/go-plugin"
-	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"

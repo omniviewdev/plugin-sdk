@@ -47,7 +47,8 @@ func TestNativeCorpusOracles(t *testing.T) {
 			}
 			badCoverage := s.Coverage
 			badCoverage.Consistency = "pointInTime"
-			if s.Coverage.Consistency != "pointInTime" && c.CheckSnapshot(s, observed, badCoverage, s.Freshness) == nil {
+			if s.Coverage.Consistency != "pointInTime" &&
+				c.CheckSnapshot(s, observed, badCoverage, s.Freshness) == nil {
 				t.Fatal("oracle accepted invented point-in-time consistency")
 			}
 			badCoverage = s.Coverage

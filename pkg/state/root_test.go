@@ -5,8 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/omniviewdev/plugin-sdk/internal/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/omniviewdev/plugin-sdk/internal/testutil"
 )
 
 const testWorkspaceID = "dcb2fe7b-1d71-4ff1-a05f-a28881457038"
@@ -14,7 +15,14 @@ const testWorkspaceID = "dcb2fe7b-1d71-4ff1-a05f-a28881457038"
 func workspaceFixture(t *testing.T) string {
 	t.Helper()
 	manifest := filepath.Join(t.TempDir(), "workspace.json")
-	require.NoError(t, os.WriteFile(manifest, []byte(`{"schemaVersion":1,"workspaceID":"`+testWorkspaceID+`","profile":{"kind":"development"}}`), 0600))
+	require.NoError(
+		t,
+		os.WriteFile(
+			manifest,
+			[]byte(`{"schemaVersion":1,"workspaceID":"`+testWorkspaceID+`","profile":{"kind":"development"}}`),
+			0o600,
+		),
+	)
 	return manifest
 }
 
@@ -63,7 +71,7 @@ func TestInvalidWorkspaceManifestFailsClosed(t *testing.T) {
 	manifest := filepath.Join(t.TempDir(), "workspace.json")
 	t.Setenv(WorkspaceFileEnvironment, manifest)
 	for _, data := range []string{`{`, `{}`, `{"schemaVersion":2}`, `{"schemaVersion":1,"workspaceID":"../escape","profile":{"kind":"development"}}`, `{"schemaVersion":1,"workspaceID":"` + testWorkspaceID + `","profile":{"kind":"production"}}`} {
-		require.NoError(t, os.WriteFile(manifest, []byte(data), 0600))
+		require.NoError(t, os.WriteFile(manifest, []byte(data), 0o600))
 		_, err := ResolveRoot()
 		require.Error(t, err, data)
 	}
@@ -74,9 +82,9 @@ func TestWorkspaceRejectsSymlinkToProduction(t *testing.T) {
 	testutil.SetHome(t, home)
 	t.Setenv(WorkspaceFileEnvironment, workspaceFixture(t))
 	production := filepath.Join(home, ".omniview")
-	require.NoError(t, os.MkdirAll(production, 0700))
+	require.NoError(t, os.MkdirAll(production, 0o700))
 	profile := filepath.Join(home, ".omniview-dev", "profiles", testWorkspaceID)
-	require.NoError(t, os.MkdirAll(profile, 0700))
+	require.NoError(t, os.MkdirAll(profile, 0o700))
 	selected := filepath.Join(profile, "state")
 	require.NoError(t, os.Symlink(production, selected))
 	t.Setenv(StateDirectoryEnvironment, selected)
@@ -98,9 +106,9 @@ func TestWorkspaceRejectsAnotherProfileAlias(t *testing.T) {
 	testutil.SetHome(t, home)
 	t.Setenv(WorkspaceFileEnvironment, workspaceFixture(t))
 	other := filepath.Join(home, ".omniview-dev", "profiles", "other", "state")
-	require.NoError(t, os.MkdirAll(other, 0700))
+	require.NoError(t, os.MkdirAll(other, 0o700))
 	profile := filepath.Join(home, ".omniview-dev", "profiles", testWorkspaceID)
-	require.NoError(t, os.MkdirAll(profile, 0700))
+	require.NoError(t, os.MkdirAll(profile, 0o700))
 	require.NoError(t, os.Symlink(other, filepath.Join(profile, "state")))
 	t.Setenv(StateDirectoryEnvironment, other)
 	_, err := ResolveRoot()
@@ -113,7 +121,7 @@ func TestWorkspaceAllowsSharedProfilesContainerAlias(t *testing.T) {
 	t.Setenv(WorkspaceFileEnvironment, workspaceFixture(t))
 	profiles, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
-	require.NoError(t, os.MkdirAll(filepath.Join(home, ".omniview-dev"), 0700))
+	require.NoError(t, os.MkdirAll(filepath.Join(home, ".omniview-dev"), 0o700))
 	require.NoError(t, os.Symlink(profiles, filepath.Join(home, ".omniview-dev", "profiles")))
 	selected := filepath.Join(profiles, testWorkspaceID, "state")
 	t.Setenv(StateDirectoryEnvironment, selected)
@@ -136,7 +144,7 @@ func TestWorkspaceRejectsStateRemapWithinOwnProfile(t *testing.T) {
 			t.Setenv(WorkspaceFileEnvironment, workspaceFixture(t))
 			profile := filepath.Join(home, ".omniview-dev", "profiles", testWorkspaceID)
 			target := filepath.Join(profile, tc.target)
-			require.NoError(t, os.MkdirAll(target, 0700))
+			require.NoError(t, os.MkdirAll(target, 0o700))
 			statePath := filepath.Join(profile, "state")
 			require.NoError(t, os.Symlink(target, statePath))
 			for _, selected := range []string{statePath, target} {

@@ -111,7 +111,8 @@ func (c Corpus) CheckSnapshot(s Scenario, got []Observation, coverage Coverage, 
 		matched := false
 		for i, r := range want {
 			if !seen[i] && SameAddress(o.Record, r) {
-				if !equalJSON(o.Body, r.Body) || o.Record.Incarnation != r.Incarnation || o.Record.Revision != r.Revision {
+				if !equalJSON(o.Body, r.Body) || o.Record.Incarnation != r.Incarnation ||
+					o.Record.Revision != r.Revision {
 					return fmt.Errorf("%s: native body/tokens changed for %s", s.Name, r.Name)
 				}
 				seen[i], matched = true, true

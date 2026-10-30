@@ -13,29 +13,105 @@ func TestPublicDomainJSONRejectsMalformedIdentity(t *testing.T) {
 		name, source string
 		destination  func() any
 	}{
-		{"duplicate address field", `{"provider":"p","provider":"p","authority":"a","type":"t","scope":[],"id":"id"}`, func() any { return &ResourceAddress{} }},
-		{"unknown address field", `{"provider":"p","authority":"a","type":"t","scope":[],"id":"id","namespace":"x"}`, func() any { return &ResourceAddress{} }},
-		{"wrong field case", `{"Provider":"p","authority":"a","type":"t","scope":[],"id":"id"}`, func() any { return &ResourceAddress{} }},
-		{"missing scope", `{"provider":"p","authority":"a","type":"t","id":"id"}`, func() any { return &ResourceAddress{} }},
-		{"null scope", `{"provider":"p","authority":"a","type":"t","scope":null,"id":"id"}`, func() any { return &ResourceAddress{} }},
-		{"object scope", `{"provider":"p","authority":"a","type":"t","scope":{},"id":"id"}`, func() any { return &ResourceAddress{} }},
-		{"duplicate dimensions", `{"provider":"p","authority":"a","type":"t","scope":[{"dimension":"x","value":"a"},{"dimension":"x","value":"b"}],"id":"id"}`, func() any { return &ResourceAddress{} }},
-		{"unpaired surrogate", `{"provider":"p","authority":"a","type":"t","scope":[],"id":"\ud800"}`, func() any { return &ResourceAddress{} }},
+		{
+			"duplicate address field",
+			`{"provider":"p","provider":"p","authority":"a","type":"t","scope":[],"id":"id"}`,
+			func() any { return &ResourceAddress{} },
+		},
+		{
+			"unknown address field",
+			`{"provider":"p","authority":"a","type":"t","scope":[],"id":"id","namespace":"x"}`,
+			func() any { return &ResourceAddress{} },
+		},
+		{
+			"wrong field case",
+			`{"Provider":"p","authority":"a","type":"t","scope":[],"id":"id"}`,
+			func() any { return &ResourceAddress{} },
+		},
+		{
+			"missing scope",
+			`{"provider":"p","authority":"a","type":"t","id":"id"}`,
+			func() any { return &ResourceAddress{} },
+		},
+		{
+			"null scope",
+			`{"provider":"p","authority":"a","type":"t","scope":null,"id":"id"}`,
+			func() any { return &ResourceAddress{} },
+		},
+		{
+			"object scope",
+			`{"provider":"p","authority":"a","type":"t","scope":{},"id":"id"}`,
+			func() any { return &ResourceAddress{} },
+		},
+		{
+			"duplicate dimensions",
+			`{"provider":"p","authority":"a","type":"t","scope":[{"dimension":"x","value":"a"},{"dimension":"x","value":"b"}],"id":"id"}`,
+			func() any { return &ResourceAddress{} },
+		},
+		{
+			"unpaired surrogate",
+			`{"provider":"p","authority":"a","type":"t","scope":[],"id":"\ud800"}`,
+			func() any { return &ResourceAddress{} },
+		},
 		{"any null values", `{"dimension":"x","match":"any","values":null}`, func() any { return &ScopeConstraint{} }},
 		{"any empty values", `{"dimension":"x","match":"any","values":[]}`, func() any { return &ScopeConstraint{} }},
 		{"oneOf absent values", `{"dimension":"x","match":"oneOf"}`, func() any { return &ScopeConstraint{} }},
-		{"oneOf null values", `{"dimension":"x","match":"oneOf","values":null}`, func() any { return &ScopeConstraint{} }},
-		{"oneOf unknown field", `{"dimension":"x","match":"oneOf","values":[],"unknown":0}`, func() any { return &ScopeConstraint{} }},
-		{"duplicate nested entry member", `[{"dimension":"x","dimension":"x","match":"any"}]`, func() any { return new(QueryScope) }},
-		{"duplicate query dimension", `[{"dimension":"x","match":"any"},{"dimension":"x","match":"any"}]`, func() any { return new(QueryScope) }},
+		{
+			"oneOf null values",
+			`{"dimension":"x","match":"oneOf","values":null}`,
+			func() any { return &ScopeConstraint{} },
+		},
+		{
+			"oneOf unknown field",
+			`{"dimension":"x","match":"oneOf","values":[],"unknown":0}`,
+			func() any { return &ScopeConstraint{} },
+		},
+		{
+			"duplicate nested entry member",
+			`[{"dimension":"x","dimension":"x","match":"any"}]`,
+			func() any { return new(QueryScope) },
+		},
+		{
+			"duplicate query dimension",
+			`[{"dimension":"x","match":"any"},{"dimension":"x","match":"any"}]`,
+			func() any { return new(QueryScope) },
+		},
 		{"null query scope", `null`, func() any { return new(QueryScope) }},
-		{"empty cursor", `{"target":{"route":{"connection":"c"},"provider":"p","authority":"a","type":"t","scope":[],"representation":"native"},"cursor":""}`, func() any { return &EnumerateRequest{} }},
-		{"null cursor", `{"target":{"route":{"connection":"c"},"provider":"p","authority":"a","type":"t","scope":[],"representation":"native"},"cursor":null}`, func() any { return &EnumerateRequest{} }},
-		{"unknown route field", `{"route":{"connection":"c","principal":"caller"}}`, func() any { return &CatalogRequest{} }},
-		{"duplicate schema revision", `{"id":"doc","revision":"r","revision":"r"}`, func() any { return &SchemaDocumentReference{} }},
-		{"old catalog hint", `{"provider":"p","types":[],"revision":"r","coverage":{"kind":"complete","paths":[]},"nativeAuthorityHint":{"scheme":"fixture.v1","id":"id","continuity":"connectionLocal"}}`, func() any { return &Catalog{} }},
-		{"null type hint", `{"type":"cluster/pod","identityDimensions":[],"queryDimensions":[],"representations":[],"capabilities":[],"nativeAuthorityHint":null}`, func() any { return &ResourceType{} }},
-		{"invalid type hint", `{"type":"cluster/pod","identityDimensions":[],"queryDimensions":[],"representations":[],"capabilities":[],"nativeAuthorityHint":{"scheme":"fixture.v1","id":"id","continuity":"authoritative"}}`, func() any { return &ResourceType{} }},
+		{
+			"empty cursor",
+			`{"target":{"route":{"connection":"c"},"provider":"p","authority":"a","type":"t","scope":[],"representation":"native"},"cursor":""}`,
+			func() any { return &EnumerateRequest{} },
+		},
+		{
+			"null cursor",
+			`{"target":{"route":{"connection":"c"},"provider":"p","authority":"a","type":"t","scope":[],"representation":"native"},"cursor":null}`,
+			func() any { return &EnumerateRequest{} },
+		},
+		{
+			"unknown route field",
+			`{"route":{"connection":"c","principal":"caller"}}`,
+			func() any { return &CatalogRequest{} },
+		},
+		{
+			"duplicate schema revision",
+			`{"id":"doc","revision":"r","revision":"r"}`,
+			func() any { return &SchemaDocumentReference{} },
+		},
+		{
+			"old catalog hint",
+			`{"provider":"p","types":[],"revision":"r","coverage":{"kind":"complete","paths":[]},"nativeAuthorityHint":{"scheme":"fixture.v1","id":"id","continuity":"connectionLocal"}}`,
+			func() any { return &Catalog{} },
+		},
+		{
+			"null type hint",
+			`{"type":"cluster/pod","identityDimensions":[],"queryDimensions":[],"representations":[],"capabilities":[],"nativeAuthorityHint":null}`,
+			func() any { return &ResourceType{} },
+		},
+		{
+			"invalid type hint",
+			`{"type":"cluster/pod","identityDimensions":[],"queryDimensions":[],"representations":[],"capabilities":[],"nativeAuthorityHint":{"scheme":"fixture.v1","id":"id","continuity":"authoritative"}}`,
+			func() any { return &ResourceType{} },
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -60,7 +136,8 @@ func TestPublicDomainJSONMixedCatalogAuthorityHints(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Types[0].NativeAuthorityHint == nil || decoded.Types[0].NativeAuthorityHint.ID != "cluster" || decoded.Types[1].NativeAuthorityHint != nil {
+	if decoded.Types[0].NativeAuthorityHint == nil || decoded.Types[0].NativeAuthorityHint.ID != "cluster" ||
+		decoded.Types[1].NativeAuthorityHint != nil {
 		t.Fatal("JSON round trip inherited or lost a type authority hint")
 	}
 }
@@ -77,17 +154,21 @@ func TestPublicDomainJSONReferenceTokens(t *testing.T) {
 	if err := reference.UnmarshalJSON([]byte(base + `}`)); err != nil {
 		t.Fatal(err)
 	}
-	if reference.Incarnation != nil || reference.Address.ID != "opaque::id/%2F雪" || reference.Address.Type != "opaque/type" {
+	if reference.Incarnation != nil || reference.Address.ID != "opaque::id/%2F雪" ||
+		reference.Address.Type != "opaque/type" {
 		t.Fatal("adapter invented or normalized identity")
 	}
 }
 
 func TestPublicDomainJSONNormalizesOnlyAfterAdmission(t *testing.T) {
 	var scope QueryScope
-	if err := scope.UnmarshalJSON([]byte(`[{"dimension":"z","match":"oneOf","values":["b","a","b"]},{"dimension":"a","match":"any"}]`)); err != nil {
+	if err := scope.UnmarshalJSON(
+		[]byte(`[{"dimension":"z","match":"oneOf","values":["b","a","b"]},{"dimension":"a","match":"any"}]`),
+	); err != nil {
 		t.Fatal(err)
 	}
-	if scope[0].Dimension != "a" || scope[1].Values == nil || len(*scope[1].Values) != 2 || (*scope[1].Values)[0] != "a" {
+	if scope[0].Dimension != "a" || scope[1].Values == nil || len(*scope[1].Values) != 2 ||
+		(*scope[1].Values)[0] != "a" {
 		t.Fatalf("bad normalized scope: %#v", scope)
 	}
 	var empty ScopeConstraint
@@ -98,7 +179,11 @@ func TestPublicDomainJSONNormalizesOnlyAfterAdmission(t *testing.T) {
 		t.Fatal("empty oneOf lost actual array")
 	}
 	var request GetRequest
-	if err := request.UnmarshalJSON([]byte(`{"route":{"connection":"c"},"reference":{"address":{"provider":"p","authority":"a","type":"t","scope":[],"id":"id"}},"representation":"native"}`)); err != nil {
+	if err := request.UnmarshalJSON(
+		[]byte(
+			`{"route":{"connection":"c"},"reference":{"address":{"provider":"p","authority":"a","type":"t","scope":[],"id":"id"}},"representation":"native"}`,
+		),
+	); err != nil {
 		t.Fatal(err)
 	}
 }

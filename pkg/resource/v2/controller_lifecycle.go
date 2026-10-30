@@ -7,7 +7,10 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
-func (c *Controller[T]) routeContext(ctx context.Context, route AccessRoute) (context.Context, context.CancelFunc, error) {
+func (c *Controller[T]) routeContext(
+	ctx context.Context,
+	route AccessRoute,
+) (context.Context, context.CancelFunc, error) {
 	if route.Connection == "" {
 		return nil, nil, NewError("INVALID_REQUEST", "An explicit connection route is required.")
 	}
@@ -87,7 +90,11 @@ func (c *Controller[T]) lease(ctx context.Context, route AccessRoute) (context.C
 // registry state. A nil callback is invalid; absent Lifecycle is UNSUPPORTED.
 // Unknown profiles are NOT_FOUND and configured unstarted profiles are
 // CONNECTION_ERROR. Callback success still fails if its lease context was canceled.
-func (c *Controller[T]) WithConnection(ctx context.Context, route AccessRoute, fn func(context.Context, types.Connection) error) (err error) {
+func (c *Controller[T]) WithConnection(
+	ctx context.Context,
+	route AccessRoute,
+	fn func(context.Context, types.Connection) error,
+) (err error) {
 	var registration *Registration[T]
 	defer c.guard(&registration, &err)
 	if c.cfg.Lifecycle == nil {
@@ -126,7 +133,11 @@ func (c *Controller[T]) WithConnection(ctx context.Context, route AccessRoute, f
 // until callback return, and concurrent callbacks can share it. Honor the supplied
 // context and never synchronously retire the same generation while holding its
 // lease. A nil callback error does not suppress lease-context cancellation.
-func (c *Controller[T]) WithClient(ctx context.Context, route AccessRoute, fn func(context.Context, *T) error) (err error) {
+func (c *Controller[T]) WithClient(
+	ctx context.Context,
+	route AccessRoute,
+	fn func(context.Context, *T) error,
+) (err error) {
 	var registration *Registration[T]
 	defer c.guard(&registration, &err)
 	ctx, client, done, err := c.lease(ctx, route)
@@ -314,7 +325,10 @@ func (c *Controller[T]) stopSlot(s *clientSlot[T]) error {
 			if c.cfg.Lifecycle.OnStop != nil {
 				s.destroyErr = lifecycleCall(func() error { return c.cfg.Lifecycle.OnStop(ctx, connection, s.client) })
 			}
-			s.destroyErr = errors.Join(s.destroyErr, lifecycleCall(func() error { return c.cfg.Lifecycle.DestroyClient(ctx, s.client) }))
+			s.destroyErr = errors.Join(
+				s.destroyErr,
+				lifecycleCall(func() error { return c.cfg.Lifecycle.DestroyClient(ctx, s.client) }),
+			)
 		}
 		c.mu.Lock()
 		if c.clients[s.connection.ID] == s {

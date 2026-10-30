@@ -2,11 +2,13 @@ package plugin
 
 import (
 	"context"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	"google.golang.org/grpc"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
 type streamProvider struct {
@@ -17,10 +19,18 @@ type streamProvider struct {
 
 func (p *streamProvider) Catalog(ctx context.Context, in resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
 	c, err := p.qualifiedProvider.Catalog(ctx, in)
-	c.Types[0].Capabilities = append(c.Types[0].Capabilities, resourcev2.Capability{Operation: resourcev2.OperationAction, Scope: resourcev2.QueryScope{}})
+	c.Types[0].Capabilities = append(
+		c.Types[0].Capabilities,
+		resourcev2.Capability{Operation: resourcev2.OperationAction, Scope: resourcev2.QueryScope{}},
+	)
 	return c, err
 }
-func (p *streamProvider) StreamAction(ctx context.Context, _ resourcev2.ActionRequest, out chan<- resourcev2.ActionEvent) error {
+
+func (p *streamProvider) StreamAction(
+	ctx context.Context,
+	_ resourcev2.ActionRequest,
+	out chan<- resourcev2.ActionEvent,
+) error {
 	if p.joined != nil {
 		defer close(p.joined)
 	}
@@ -57,10 +67,17 @@ func (p *streamProvider) StreamAction(ctx context.Context, _ resourcev2.ActionRe
 	}
 	return nil
 }
+
 func actionInput() resourcev2.ActionRequest {
 	r := testGet()
-	return resourcev2.ActionRequest{Route: r.Route, Reference: r.Reference, Action: "test", Input: resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{}}}
+	return resourcev2.ActionRequest{
+		Route:     r.Route,
+		Reference: r.Reference,
+		Action:    "test",
+		Input:     resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{}},
+	}
 }
+
 func TestActualGRPCActionReadiness(t *testing.T) {
 	for _, tc := range []struct{ mode, code string }{{"valid", ""}, {"noReady", "INVALID_REQUEST"}, {"duplicate", "INVALID_REQUEST"}, {"earlyData", "INVALID_REQUEST"}, {"failed", "UNAVAILABLE"}} {
 		t.Run(tc.mode, func(t *testing.T) {
@@ -69,7 +86,11 @@ func TestActualGRPCActionReadiness(t *testing.T) {
 			RegisterServer(s, p)
 			c := NewClient(pipe(t, s))
 			out := make(chan resourcev2.ActionEvent, 8)
-			err := c.StreamAction(acceptedCatalogContext(t, context.Background(), c, actionInput().Route), actionInput(), out)
+			err := c.StreamAction(
+				acceptedCatalogContext(t, context.Background(), c, actionInput().Route),
+				actionInput(),
+				out,
+			)
 			if resourcev2.ErrorCode(err) != tc.code {
 				t.Fatalf("class %s want %s: %v", resourcev2.ErrorCode(err), tc.code, err)
 			}
@@ -95,6 +116,7 @@ func TestActualGRPCActionReadiness(t *testing.T) {
 		})
 	}
 }
+
 func TestActionCancellationJoinsProducer(t *testing.T) {
 	p := &streamProvider{mode: "wait", joined: make(chan struct{})}
 	s := grpc.NewServer()
@@ -133,9 +155,11 @@ type browserProvider struct{ qualifiedProvider }
 func (*browserProvider) ListConnections(context.Context) ([]types.Connection, error) {
 	return []types.Connection{}, nil
 }
+
 func (*browserProvider) ScopeValues(context.Context, resourcev2.AccessRoute, string) ([]string, error) {
 	return []string{"one", "two"}, nil
 }
+
 func (*browserProvider) UpdateConnection(_ context.Context, in types.Connection) (types.Connection, error) {
 	return in, nil
 }
@@ -148,6 +172,7 @@ func (*browserProvider) WatchConnections(ctx context.Context, out chan<- []types
 	}
 	return nil
 }
+
 func TestActualGRPCConnectionBrowser(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, &browserProvider{})
@@ -155,7 +180,11 @@ func TestActualGRPCConnectionBrowser(t *testing.T) {
 	if _, err := c.ListConnections(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	values, err := c.ScopeValues(acceptedCatalogContext(t, context.Background(), c, resourcev2.AccessRoute{Connection: "explicit"}), resourcev2.AccessRoute{Connection: "explicit"}, "dimension")
+	values, err := c.ScopeValues(
+		acceptedCatalogContext(t, context.Background(), c, resourcev2.AccessRoute{Connection: "explicit"}),
+		resourcev2.AccessRoute{Connection: "explicit"},
+		"dimension",
+	)
 	if err != nil || len(values) != 2 {
 		t.Fatalf("scope values: %v %v", values, err)
 	}

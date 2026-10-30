@@ -15,10 +15,12 @@ func TestCatalogRevisionRetiredSlotCannotResurrect(t *testing.T) {
 	route := AccessRoute{Connection: "explicit"}
 	cfg := controllerConfig()
 	var calls atomic.Int32
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) {
-		calls.Add(1)
-		return controllerRecord(), nil
-	}}}
+	cfg.Registrations = []Registration[string]{
+		{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) {
+			calls.Add(1)
+			return controllerRecord(), nil
+		}},
+	}
 	cfg.Lifecycle = &Lifecycle[string]{
 		LoadConnections: func(context.Context) ([]types.Connection, error) {
 			return []types.Connection{{ID: route.Connection, Data: map[string]any{"source": "A"}}}, nil
@@ -40,9 +42,16 @@ func TestCatalogRevisionRetiredSlotCannotResurrect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := GetRequest{Route: route, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"}
+	request := GetRequest{
+		Route:          route,
+		Reference:      ResourceReference{Address: controllerAddress()},
+		Representation: "document",
+	}
 	for _, source := range []string{"B", "A"} {
-		if _, err := c.UpdateConnection(ctx, types.Connection{ID: route.Connection, Data: map[string]any{"source": source}}); err != nil {
+		if _, err := c.UpdateConnection(
+			ctx,
+			types.Connection{ID: route.Connection, Data: map[string]any{"source": source}},
+		); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := c.StartConnection(ctx, route.Connection); err != nil {
@@ -70,12 +79,18 @@ func TestCatalogRevisionRetiredSlotCannotResurrect(t *testing.T) {
 func TestCatalogRevisionRejectsMalformedBeforeDispatch(t *testing.T) {
 	cfg := controllerConfig()
 	var calls atomic.Int32
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) {
-		calls.Add(1)
-		return controllerRecord(), nil
-	}}}
+	cfg.Registrations = []Registration[string]{
+		{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) {
+			calls.Add(1)
+			return controllerRecord(), nil
+		}},
+	}
 	c := newTestController(t, cfg)
-	request := GetRequest{Route: AccessRoute{Connection: "explicit"}, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"}
+	request := GetRequest{
+		Route:          AccessRoute{Connection: "explicit"},
+		Reference:      ResourceReference{Address: controllerAddress()},
+		Representation: "document",
+	}
 	for _, revision := range []string{"", strings.Repeat("x", MaxCatalogRevisionBytes+1), string([]byte{0xff})} {
 		_, err := c.Get(WithCatalogRevision(context.Background(), revision), request)
 		assertControllerCode(t, err, "RESET_REQUIRED")
@@ -96,10 +111,12 @@ func TestCatalogRevisionFencesProviderIgnoringCancellation(t *testing.T) {
 		}
 		return catalog, err
 	}
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) {
-		generation.Store(1)
-		return controllerRecord(), nil
-	}}}
+	cfg.Registrations = []Registration[string]{
+		{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) {
+			generation.Store(1)
+			return controllerRecord(), nil
+		}},
+	}
 	c := newTestController(t, cfg)
 	ctx := context.Background()
 	route := AccessRoute{Connection: "explicit"}
@@ -107,7 +124,14 @@ func TestCatalogRevisionFencesProviderIgnoringCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = c.Get(WithCatalogRevision(ctx, accepted.Revision), GetRequest{Route: route, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"})
+	_, err = c.Get(
+		WithCatalogRevision(ctx, accepted.Revision),
+		GetRequest{
+			Route:          route,
+			Reference:      ResourceReference{Address: controllerAddress()},
+			Representation: "document",
+		},
+	)
 	assertControllerCode(t, err, "RESET_REQUIRED")
 }
 
@@ -120,7 +144,16 @@ func TestDisplayEditPreservesCatalogGenerationAndCurrentSession(t *testing.T) {
 	var starts atomic.Int32
 	cfg.Lifecycle = &Lifecycle[string]{
 		LoadConnections: func(context.Context) ([]types.Connection, error) {
-			return []types.Connection{{ID: route.Connection, Name: "old", Data: map[string]any{"source": "A"}, LastRefresh: refreshed, ExpiryTime: time.Hour, Client: runtimeClient}}, nil
+			return []types.Connection{
+				{
+					ID:          route.Connection,
+					Name:        "old",
+					Data:        map[string]any{"source": "A"},
+					LastRefresh: refreshed,
+					ExpiryTime:  time.Hour,
+					Client:      runtimeClient,
+				},
+			}, nil
 		},
 		CreateClient: func(context.Context, types.Connection) (*string, error) {
 			starts.Add(1)
@@ -140,7 +173,10 @@ func TestDisplayEditPreservesCatalogGenerationAndCurrentSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.UpdateConnection(ctx, types.Connection{ID: route.Connection, Name: "new", Data: map[string]any{"source": "A"}}); err != nil {
+	if _, err := c.UpdateConnection(
+		ctx,
+		types.Connection{ID: route.Connection, Name: "new", Data: map[string]any{"source": "A"}},
+	); err != nil {
 		t.Fatal(err)
 	}
 	after, err := c.Catalog(ctx, CatalogRequest{Route: route})
@@ -157,7 +193,8 @@ func TestDisplayEditPreservesCatalogGenerationAndCurrentSession(t *testing.T) {
 	if status.Connection.Name != "new" {
 		t.Fatal("active session retained stale display metadata")
 	}
-	if !status.Connection.LastRefresh.Equal(refreshed) || status.Connection.ExpiryTime != time.Hour || status.Connection.Client != runtimeClient {
+	if !status.Connection.LastRefresh.Equal(refreshed) || status.Connection.ExpiryTime != time.Hour ||
+		status.Connection.Client != runtimeClient {
 		t.Fatal("display edit dropped native runtime state")
 	}
 }
@@ -216,7 +253,9 @@ func TestWatchCatalogFenceDropsChangedGenerationEvent(t *testing.T) {
 	defer cancel()
 	watch := &updateWatch{target: target, ctx: ctx, cancel: cancel}
 	var published atomic.Int32
-	c.updates.listeners = []*updateListener{{ctx: context.Background(), sink: controllerUpdateSink{add: func(WatchAddPayload) { published.Add(1) }}}}
+	c.updates.listeners = []*updateListener{
+		{ctx: context.Background(), sink: controllerUpdateSink{add: func(WatchAddPayload) { published.Add(1) }}},
+	}
 	sink := &updateSourceSink[string]{manager: c.updates, watch: watch, descriptor: catalog.Types[0]}
 	changed.Store(true)
 	sink.OnAdd(WatchAddPayload{Record: controllerRecord()})
@@ -264,7 +303,10 @@ func TestOverlayPrivateCredentialsStaySourceOwned(t *testing.T) {
 			if change == "clear" {
 				override.SetSensitiveData(map[string]any{})
 			}
-			if err := c.ApplyConnectionOverlay(ctx, ConnectionOverlay{Upserts: []types.Connection{override}}); err != nil {
+			if err := c.ApplyConnectionOverlay(
+				ctx,
+				ConnectionOverlay{Upserts: []types.Connection{override}},
+			); err != nil {
 				t.Fatal(err)
 			}
 			effective, err := c.GetConnection(ctx, native.ID)
@@ -379,11 +421,16 @@ func TestWatchReuseRejectsChangedCatalogWithinSameBinding(t *testing.T) {
 		return catalog, err
 	}
 	started := make(chan struct{}, 2)
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Watch: func(ctx context.Context, _ *string, _ ReadTarget, _ Representation, _ WatchEventSink) error {
-		started <- struct{}{}
-		<-ctx.Done()
-		return ctx.Err()
-	}}}
+	cfg.Registrations = []Registration[string]{
+		{
+			Type: "opaque/type",
+			Watch: func(ctx context.Context, _ *string, _ ReadTarget, _ Representation, _ WatchEventSink) error {
+				started <- struct{}{}
+				<-ctx.Done()
+				return ctx.Err()
+			},
+		},
+	}
 	c := newTestController(t, cfg)
 	target := controllerTarget()
 	ctx := context.Background()
@@ -433,8 +480,9 @@ func TestWatchReuseRejectsChangedCatalogWithinSameBinding(t *testing.T) {
 
 func TestControllerSelectsQualifiedPinAndWatchRetainsObservation(t *testing.T) {
 	cfg := controllerConfig()
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type",
-		Get: func(context.Context, *string, GetRequest) (Record, error) { return controllerRecord(), nil },
+	cfg.Registrations = []Registration[string]{{
+		Type: "opaque/type",
+		Get:  func(context.Context, *string, GetRequest) (Record, error) { return controllerRecord(), nil },
 		Watch: func(ctx context.Context, _ *string, _ ReadTarget, _ Representation, _ WatchEventSink) error {
 			<-ctx.Done()
 			return ctx.Err()
@@ -448,7 +496,11 @@ func TestControllerSelectsQualifiedPinAndWatchRetainsObservation(t *testing.T) {
 	}
 	ctx := WithCatalogRevision(context.Background(), "wrong-default")
 	ctx = WithCatalogRevisionForRoute(ctx, target.Provider, target.Route, catalog.Revision)
-	request := GetRequest{Route: target.Route, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"}
+	request := GetRequest{
+		Route:          target.Route,
+		Reference:      ResourceReference{Address: controllerAddress()},
+		Representation: "document",
+	}
 	if _, err := c.Get(ctx, request); err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +516,12 @@ func TestControllerSelectsQualifiedPinAndWatchRetainsObservation(t *testing.T) {
 	if err := c.StopResourceWatch(ctx, target.Route, target.Type); err != nil {
 		t.Fatal(err)
 	}
-	wrong := WithCatalogRevisionForRoute(WithCatalogRevision(context.Background(), catalog.Revision), target.Provider, target.Route, "wrong-qualified")
+	wrong := WithCatalogRevisionForRoute(
+		WithCatalogRevision(context.Background(), catalog.Revision),
+		target.Provider,
+		target.Route,
+		"wrong-qualified",
+	)
 	_, err = c.Get(wrong, request)
 	assertControllerCode(t, err, "RESET_REQUIRED")
 }

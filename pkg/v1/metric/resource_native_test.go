@@ -4,48 +4,57 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/status"
-	"reflect"
-	"strings"
-	"testing"
-	"time"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 )
 
 func TestMetricNativeMixedStreamAndControl(t *testing.T) {
 	received := make(chan StreamInput, 4)
 	contexts := make(chan context.Context, 1)
-	m := NewManager(nil, nil, ProviderInfo{}, nil, nil, func(ctx *StreamContext, in chan StreamInput) (chan StreamOutput, error) {
-		contexts <- ctx.Context
-		out := make(chan StreamOutput)
-		go func() {
-			defer close(out)
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case r, ok := <-in:
-					if !ok {
-						return
-					}
-					received <- r
+	m := NewManager(
+		nil,
+		nil,
+		ProviderInfo{},
+		nil,
+		nil,
+		func(ctx *StreamContext, in chan StreamInput) (chan StreamOutput, error) {
+			contexts <- ctx.Context
+			out := make(chan StreamOutput)
+			go func() {
+				defer close(out)
+				for {
 					select {
-					case out <- StreamOutput{SubscriptionID: r.SubscriptionID}:
 					case <-ctx.Done():
 						return
+					case r, ok := <-in:
+						if !ok {
+							return
+						}
+						received <- r
+						select {
+						case out <- StreamOutput{SubscriptionID: r.SubscriptionID}:
+						case <-ctx.Done():
+							return
+						}
 					}
 				}
-			}
-		}()
-		return out, nil
-	})
+			}()
+			return out, nil
+		},
+	)
 	s := grpc.NewServer(resourceplugin.ServerOptions()...)
 	RegisterMetricPluginServer(s, &PluginServer{Impl: m})
 	c := &PluginClient{client: metricpb.NewMetricPluginClient(metricPipe(t, s))}
@@ -57,7 +66,12 @@ func TestMetricNativeMixedStreamAndControl(t *testing.T) {
 		t.Fatal(e)
 	}
 	body := exactMetricBody(t, 3<<20)
-	inputs := []StreamInput{{SubscriptionID: "r", ResourceData: body}, {SubscriptionID: "cluster", ResourceKey: "cluster::metrics"}, {SubscriptionID: "r", Command: StreamCommandUnsubscribe}, {Command: StreamCommandClose}}
+	inputs := []StreamInput{
+		{SubscriptionID: "r", ResourceData: body},
+		{SubscriptionID: "cluster", ResourceKey: "cluster::metrics"},
+		{SubscriptionID: "r", Command: StreamCommandUnsubscribe},
+		{Command: StreamCommandClose},
+	}
 	for _, r := range inputs {
 		in <- r
 		select {
@@ -90,6 +104,7 @@ func TestMetricNativeMixedStreamAndControl(t *testing.T) {
 		t.Fatal("native stream did not receive cancellation")
 	}
 }
+
 func TestMetricTypedQueryAndPollingFailure(t *testing.T) {
 	c, _ := metricFixture(t, func(*QueryContext, QueryRequest) (*QueryResponse, error) {
 		return nil, errors.Join(errors.New("provider"), resourcev2.NewError("FORBIDDEN", "Safe detail."))
@@ -116,6 +131,7 @@ func TestMetricTypedQueryAndPollingFailure(t *testing.T) {
 		t.Fatal("poll error missing")
 	}
 }
+
 func TestMetricStrictJSONAndTrustedRoute(t *testing.T) {
 	for _, data := range []string{`null`, `{"resource_data":{"kind":"int64","value":9007199254740993}}`, `{"resource_key":"a","resource_key":"b"}`, `{"unknown":1}`, `{"resource_data":{"kind":"map","value":{},"value":{}}}`} {
 		var r QueryRequest
@@ -124,7 +140,12 @@ func TestMetricStrictJSONAndTrustedRoute(t *testing.T) {
 		}
 	}
 	r := QueryRequest{Route: &resourcev2.AccessRoute{Connection: "explicit"}}
-	if e := validateQuery(r, &types.PluginContext{Connection: &types.Connection{ID: "trusted"}}); resourcev2.ErrorCode(e) != "INVALID_REQUEST" {
+	if e := validateQuery(
+		r,
+		&types.PluginContext{Connection: &types.Connection{ID: "trusted"}},
+	); resourcev2.ErrorCode(
+		e,
+	) != "INVALID_REQUEST" {
 		t.Fatalf("route conflict admitted: %v", e)
 	}
 }
@@ -139,6 +160,7 @@ func (malformedMetricOutputCodec) Marshal(v any) (mem.BufferSlice, error) {
 	}
 	return encoding.GetCodecV2("proto").Marshal(v)
 }
+
 func (malformedMetricOutputCodec) Unmarshal(b mem.BufferSlice, v any) error {
 	return encoding.GetCodecV2("proto").Unmarshal(b, v)
 }
@@ -151,13 +173,25 @@ func (malformedMetricAfterReady) StreamResourceMetrics(stream metricpb.MetricPlu
 	if _, e := stream.Recv(); e != nil {
 		return e
 	}
-	if e := stream.Send(&metricpb.ResourceMetricStreamOutput{ResourceWireVersion: 2, Payload: &metricpb.ResourceMetricStreamOutput_Ready{Ready: true}}); e != nil {
+	if e := stream.Send(
+		&metricpb.ResourceMetricStreamOutput{
+			ResourceWireVersion: 2,
+			Payload:             &metricpb.ResourceMetricStreamOutput_Ready{Ready: true},
+		},
+	); e != nil {
 		return e
 	}
-	return stream.Send(&metricpb.ResourceMetricStreamOutput{ResourceWireVersion: 2, Payload: &metricpb.ResourceMetricStreamOutput_Output{Output: &metricpb.MetricStreamOutput{}}})
+	return stream.Send(
+		&metricpb.ResourceMetricStreamOutput{
+			ResourceWireVersion: 2,
+			Payload:             &metricpb.ResourceMetricStreamOutput_Output{Output: &metricpb.MetricStreamOutput{}},
+		},
+	)
 }
+
 func TestMetricMalformedStreamOutputAfterReady(t *testing.T) {
-	s := grpc.NewServer(append(resourceplugin.ServerOptions(), grpc.ForceServerCodecV2(malformedMetricOutputCodec{}))...)
+	s := grpc.NewServer(
+		append(resourceplugin.ServerOptions(), grpc.ForceServerCodecV2(malformedMetricOutputCodec{}))...)
 	metricpb.RegisterMetricPluginServer(s, malformedMetricAfterReady{})
 	c := &PluginClient{client: metricpb.NewMetricPluginClient(metricPipe(t, s))}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -175,6 +209,7 @@ func TestMetricMalformedStreamOutputAfterReady(t *testing.T) {
 		t.Fatal("malformed response failure missing")
 	}
 }
+
 func TestMetricMalformedStreamInputAfterReady(t *testing.T) {
 	called := make(chan QueryRequest, 1)
 	_, conn := metricFixture(t, func(_ *QueryContext, r QueryRequest) (*QueryResponse, error) {
@@ -255,7 +290,9 @@ func TestMetricStreamParamsRemainNonresource(t *testing.T) {
 	in <- StreamInput{ResourceKey: "cluster::metrics", Params: map[string]string{"prometheus_service_name": "prometheus", "prometheus_service_namespace": "monitoring", "prometheus_service_port": "9090"}, Interval: time.Hour}
 	select {
 	case r := <-seen:
-		if r.HasResourceIntent() || r.Params["prometheus_service_name"] != "prometheus" || r.Params["prometheus_service_namespace"] != "monitoring" || r.Params["prometheus_service_port"] != "9090" {
+		if r.HasResourceIntent() || r.Params["prometheus_service_name"] != "prometheus" ||
+			r.Params["prometheus_service_namespace"] != "monitoring" ||
+			r.Params["prometheus_service_port"] != "9090" {
 			t.Fatal("polling lost ordinary stream Params")
 		}
 	case <-time.After(time.Second):
@@ -292,7 +329,9 @@ func TestMetricClientLocalFailureKeepsClassAndSubscription(t *testing.T) {
 	in <- StreamInput{SubscriptionID: "safe-subscription", Route: &resourcev2.AccessRoute{}}
 	select {
 	case output := <-out:
-		if output.SubscriptionID != "safe-subscription" || output.OperationError == nil || output.OperationError.Code != "INVALID_REQUEST" || output.OperationError.Message == "" {
+		if output.SubscriptionID != "safe-subscription" || output.OperationError == nil ||
+			output.OperationError.Code != "INVALID_REQUEST" ||
+			output.OperationError.Message == "" {
 			t.Fatalf("local failure lost classification: %+v", output)
 		}
 	case <-time.After(time.Second):
@@ -313,7 +352,11 @@ func TestMetricDomainErrorKeepsLocalRemoteAndTransportClasses(t *testing.T) {
 	if got := metricDomainError(local); got != local {
 		t.Fatalf("local error replaced: %v", got)
 	}
-	if got := metricDomainError(status.Error(codes.Unimplemented, "unknown method")); resourcev2.ErrorCode(got) != "UNSUPPORTED" {
+	if got := metricDomainError(
+		status.Error(codes.Unimplemented, "unknown method"),
+	); resourcev2.ErrorCode(
+		got,
+	) != "UNSUPPORTED" {
 		t.Fatalf("missing capability not typed: %v", got)
 	}
 	for _, code := range []string{"FORBIDDEN", "UNSUPPORTED", "RESOURCE_LIMIT", "RESET_REQUIRED"} {
@@ -330,7 +373,12 @@ func TestMetricDomainErrorKeepsLocalRemoteAndTransportClasses(t *testing.T) {
 }
 
 func TestMetricSubscribeCatalogRevisionRoundTrip(t *testing.T) {
-	input := StreamInput{SubscriptionID: "opaque", ResourceKey: "opaque::type", Reference: metricReference(), CatalogRevision: "accepted-generation"}
+	input := StreamInput{
+		SubscriptionID:  "opaque",
+		ResourceKey:     "opaque::type",
+		Reference:       metricReference(),
+		CatalogRevision: "accepted-generation",
+	}
 	data, err := json.Marshal(input)
 	if err != nil {
 		t.Fatal(err)

@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"time"
 
-	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type PluginClient struct {
@@ -238,7 +240,10 @@ func (p *PluginClient) StopAll() {
 	}
 }
 
-func (p *PluginClient) StartResourcePortForwardSession(ctx *types.PluginContext, opts PortForwardSessionOptions) (*PortForwardSession, error) {
+func (p *PluginClient) StartResourcePortForwardSession(
+	ctx *types.PluginContext,
+	opts PortForwardSessionOptions,
+) (*PortForwardSession, error) {
 	if err := validateResourceContext(ctx, opts); err != nil {
 		return nil, err
 	}
@@ -274,5 +279,9 @@ func (p *PluginClient) StartResourcePortForwardSession(ctx *types.PluginContext,
 
 func networkResponseOptions() ([]grpc.CallOption, func() error) {
 	admission, admissionError := resourceplugin.ResponseAdmission()
-	return []grpc.CallOption{grpc.MaxCallSendMsgSize(resourceplugin.MaxWireBytes), grpc.MaxCallRecvMsgSize(resourceplugin.MaxWireBytes), admission}, admissionError
+	return []grpc.CallOption{
+		grpc.MaxCallSendMsgSize(resourceplugin.MaxWireBytes),
+		grpc.MaxCallRecvMsgSize(resourceplugin.MaxWireBytes),
+		admission,
+	}, admissionError
 }

@@ -4,9 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/omniviewdev/plugin-sdk/settings"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/omniviewdev/plugin-sdk/settings"
 
 	settingspb "github.com/omniviewdev/plugin-sdk/proto/v1/settings"
 )

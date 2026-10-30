@@ -3,13 +3,15 @@ package plugin
 import (
 	"context"
 	"errors"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
+	"testing"
+
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"testing"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
 // Cancellation and frame exhaustion can originate in gRPC before typed details exist.
@@ -44,11 +46,14 @@ func (p *outageProvider) Catalog(context.Context, resourcev2.CatalogRequest) (re
 	}
 	return resourcev2.Catalog{}, status.Error(codes.Unavailable, "process transport lost")
 }
+
 func TestActualGRPCTransportLossDiffersFromDeclaredOutage(t *testing.T) {
 	for _, declared := range []bool{false, true} {
 		s := grpc.NewServer()
 		RegisterServer(s, &outageProvider{declared: declared})
-		_, err := NewClient(pipe(t, s)).Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}})
+		_, err := NewClient(
+			pipe(t, s),
+		).Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}})
 		if status.Code(err) != codes.Unavailable {
 			t.Fatalf("grpc status changed: %v", err)
 		}
@@ -61,10 +66,13 @@ func TestActualGRPCTransportLossDiffersFromDeclaredOutage(t *testing.T) {
 		}
 	}
 }
+
 func TestOrdinaryProviderErrorClassifiesProviderError(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, &outageProvider{ordinary: true})
-	_, err := NewClient(pipe(t, s)).Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}})
+	_, err := NewClient(
+		pipe(t, s),
+	).Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}})
 	if resourcev2.ErrorCode(err) != "PROVIDER_ERROR" {
 		t.Fatalf("ordinary provider error class: %v", err)
 	}
@@ -75,16 +83,20 @@ type unknownReasonServer struct {
 }
 
 func (*unknownReasonServer) Call(context.Context, *resourcepb.Request) (*resourcepb.Response, error) {
-	s, err := status.New(codes.Unavailable, "remote diagnostic").WithDetails(&errdetails.ErrorInfo{Reason: "HOST_ROOT_GRANT", Domain: "omniview.resource.v2"})
+	s, err := status.New(codes.Unavailable, "remote diagnostic").
+		WithDetails(&errdetails.ErrorInfo{Reason: "HOST_ROOT_GRANT", Domain: "omniview.resource.v2"})
 	if err != nil {
 		return nil, err
 	}
 	return nil, s.Err()
 }
+
 func TestUnknownRemoteErrorReasonCannotCreateProviderClass(t *testing.T) {
 	s := grpc.NewServer()
 	resourcepb.RegisterResourceProviderServer(s, &unknownReasonServer{})
-	_, err := NewClient(pipe(t, s)).Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}})
+	_, err := NewClient(
+		pipe(t, s),
+	).Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}})
 	if status.Code(err) != codes.Internal {
 		t.Fatalf("unknown reason status: %v", err)
 	}
@@ -112,12 +124,16 @@ type unknownActionCodeServer struct {
 	resourcepb.UnimplementedResourceAncillaryServer
 }
 
-func (*unknownActionCodeServer) StreamAction(_ *resourcepb.ActionStreamRequest, s resourcepb.ResourceAncillary_StreamActionServer) error {
+func (*unknownActionCodeServer) StreamAction(
+	_ *resourcepb.ActionStreamRequest,
+	s resourcepb.ResourceAncillary_StreamActionServer,
+) error {
 	if err := s.Send(&resourcepb.ActionStreamEvent{Version: 2, Type: "ready"}); err != nil {
 		return err
 	}
 	return s.Send(&resourcepb.ActionStreamEvent{Version: 2, Type: "error", ErrorCode: "HOST_ROOT_GRANT"})
 }
+
 func TestUnknownActionErrorCodeRejectedBeforeDelivery(t *testing.T) {
 	s := grpc.NewServer()
 	resourcepb.RegisterResourceProviderServer(s, &actionCatalogServer{})
@@ -133,6 +149,7 @@ func TestUnknownActionErrorCodeRejectedBeforeDelivery(t *testing.T) {
 		t.Fatal("untrusted action error was delivered")
 	}
 }
+
 func TestActualStoppedGRPCTransportRemainsUntyped(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, &countProvider{})
@@ -147,6 +164,7 @@ func TestActualStoppedGRPCTransportRemainsUntyped(t *testing.T) {
 		t.Fatal("process transport loss became a provider outage")
 	}
 }
+
 func TestC02StatusMappingsPreserveExactTypedClass(t *testing.T) {
 	for _, tc := range []struct {
 		code string

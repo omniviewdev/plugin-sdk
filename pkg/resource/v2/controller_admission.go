@@ -177,7 +177,11 @@ func (c *Controller[T]) Catalog(ctx context.Context, request CatalogRequest) (ca
 					}
 				}
 				if scope, ok := intersectScope(capability.Scope, r.Scope); ok {
-					candidate := Capability{Operation: capability.Operation, Scope: scope, Guarantee: capability.Guarantee}
+					candidate := Capability{
+						Operation: capability.Operation,
+						Scope:     scope,
+						Guarantee: capability.Guarantee,
+					}
 					duplicate := false
 					for _, previous := range caps {
 						if reflect.DeepEqual(previous, candidate) {
@@ -369,21 +373,73 @@ func describeOperation(request any) (operationTarget, error) {
 	switch request := request.(type) {
 	case GetRequest:
 		a := request.Reference.Address
-		return operationTarget{route: request.Route, provider: a.Provider, typ: a.Type, representation: request.Representation, address: &a, operation: OperationGet}, ValidateGetRequest(request)
+		return operationTarget{
+				route:          request.Route,
+				provider:       a.Provider,
+				typ:            a.Type,
+				representation: request.Representation,
+				address:        &a,
+				operation:      OperationGet,
+			}, ValidateGetRequest(
+				request,
+			)
 	case EnumerateRequest:
 		t := request.Target
-		return operationTarget{route: t.Route, provider: t.Provider, typ: t.Type, representation: t.Representation, scope: t.Scope, operation: OperationEnumerate}, ValidateEnumerateRequest(request)
+		return operationTarget{
+				route:          t.Route,
+				provider:       t.Provider,
+				typ:            t.Type,
+				representation: t.Representation,
+				scope:          t.Scope,
+				operation:      OperationEnumerate,
+			}, ValidateEnumerateRequest(
+				request,
+			)
 	case NativeQueryRequest:
 		t := request.Target
-		return operationTarget{route: t.Route, provider: t.Provider, typ: t.Type, representation: t.Representation, scope: t.Scope, operation: OperationNativeQuery}, ValidateNativeQueryRequest(request)
+		return operationTarget{
+				route:          t.Route,
+				provider:       t.Provider,
+				typ:            t.Type,
+				representation: t.Representation,
+				scope:          t.Scope,
+				operation:      OperationNativeQuery,
+			}, ValidateNativeQueryRequest(
+				request,
+			)
 	case MutationRequest:
 		a := request.Reference.Address
-		return operationTarget{route: request.Route, provider: a.Provider, typ: a.Type, address: &a, operation: mutationOperation(request.Operation)}, ValidateMutationRequest(request)
+		return operationTarget{
+				route:     request.Route,
+				provider:  a.Provider,
+				typ:       a.Type,
+				address:   &a,
+				operation: mutationOperation(request.Operation),
+			}, ValidateMutationRequest(
+				request,
+			)
 	case ActionRequest:
 		a := request.Reference.Address
-		return operationTarget{route: request.Route, provider: a.Provider, typ: a.Type, address: &a, operation: OperationAction}, ValidateActionRequest(request)
+		return operationTarget{
+				route:     request.Route,
+				provider:  a.Provider,
+				typ:       a.Type,
+				address:   &a,
+				operation: OperationAction,
+			}, ValidateActionRequest(
+				request,
+			)
 	case ReadTarget:
-		return operationTarget{route: request.Route, provider: request.Provider, typ: request.Type, representation: request.Representation, scope: request.Scope, operation: OperationUpdate}, ValidateEnumerateRequest(EnumerateRequest{Target: request})
+		return operationTarget{
+				route:          request.Route,
+				provider:       request.Provider,
+				typ:            request.Type,
+				representation: request.Representation,
+				scope:          request.Scope,
+				operation:      OperationUpdate,
+			}, ValidateEnumerateRequest(
+				EnumerateRequest{Target: request},
+			)
 	default:
 		return operationTarget{}, NewError("UNSUPPORTED", "Unsupported finite resource operation.")
 	}
@@ -434,7 +490,11 @@ func AdmitOperation(ctx context.Context, provider Provider, request any) (descri
 // It requires a nonnil provider/context and an accepted route catalog observation.
 // It calls Catalog but not StreamAction, acquires no lasting lease, and grants no
 // authority. Admission success cannot replace a result or generation fence.
-func AdmitStreamingAction(ctx context.Context, provider Provider, request ActionRequest) (descriptor ResourceType, err error) {
+func AdmitStreamingAction(
+	ctx context.Context,
+	provider Provider,
+	request ActionRequest,
+) (descriptor ResourceType, err error) {
 	defer func() {
 		if recover() != nil {
 			err = NewError("INTERNAL", "Provider admission handler panicked.")
@@ -518,6 +578,7 @@ func ValidateOperationResult(request any, result any, descriptor ResourceType) e
 		return NewError("UNSUPPORTED", "Unsupported finite resource operation.")
 	}
 }
+
 func (c *Controller[T]) fenceCatalog(ctx context.Context, route AccessRoute) error {
 	if ctx.Err() != nil {
 		return NewError("RESET_REQUIRED", "The admitted catalog generation retired during the operation.")
@@ -529,7 +590,14 @@ func (c *Controller[T]) fenceCatalog(ctx context.Context, route AccessRoute) err
 	return CheckCatalogRevisionForRoute(ctx, catalog, route)
 }
 
-func (c *Controller[T]) resolve(ctx context.Context, route AccessRoute, provider, typ, representation string, scope QueryScope, address *ResourceAddress, op Operation) (*Registration[T], ResourceType, error) {
+func (c *Controller[T]) resolve(
+	ctx context.Context,
+	route AccessRoute,
+	provider, typ, representation string,
+	scope QueryScope,
+	address *ResourceAddress,
+	op Operation,
+) (*Registration[T], ResourceType, error) {
 	revision, _ := CatalogRevisionForRouteFromContext(ctx, provider, route)
 	if err := ValidateCatalogRevision(revision); err != nil {
 		return nil, ResourceType{}, err
@@ -541,7 +609,18 @@ func (c *Controller[T]) resolve(ctx context.Context, route AccessRoute, provider
 	if err := CheckCatalogRevisionForRoute(ctx, catalog, route); err != nil {
 		return nil, ResourceType{}, err
 	}
-	descriptor, scope, err := admitTarget(catalog, operationTarget{route: route, provider: provider, typ: typ, representation: representation, scope: scope, address: address, operation: op})
+	descriptor, scope, err := admitTarget(
+		catalog,
+		operationTarget{
+			route:          route,
+			provider:       provider,
+			typ:            typ,
+			representation: representation,
+			scope:          scope,
+			address:        address,
+			operation:      op,
+		},
+	)
 	if err != nil {
 		return nil, ResourceType{}, err
 	}
@@ -566,7 +645,8 @@ func (c *Controller[T]) resolve(ctx context.Context, route AccessRoute, provider
 }
 
 func sameAddress(a, b ResourceAddress) bool {
-	if a.Provider != b.Provider || a.Authority != b.Authority || a.Type != b.Type || a.ID != b.ID || len(a.Scope) != len(b.Scope) {
+	if a.Provider != b.Provider || a.Authority != b.Authority || a.Type != b.Type || a.ID != b.ID ||
+		len(a.Scope) != len(b.Scope) {
 		return false
 	}
 	for _, ae := range a.Scope {
@@ -584,7 +664,13 @@ func sameAddress(a, b ResourceAddress) bool {
 	return true
 }
 
-func checkRecord(record Record, descriptor ResourceType, provider, authority, representation string, reference *ResourceReference, scope QueryScope) error {
+func checkRecord(
+	record Record,
+	descriptor ResourceType,
+	provider, authority, representation string,
+	reference *ResourceReference,
+	scope QueryScope,
+) error {
 	if err := ValidateRecord(record); err != nil {
 		return err
 	}
@@ -599,7 +685,8 @@ func checkRecord(record Record, descriptor ResourceType, provider, authority, re
 		if !sameAddress(a, reference.Address) {
 			return NewError("INTERNAL", "Provider response changed exact resource identity.")
 		}
-		if reference.Incarnation != nil && (record.Reference.Incarnation == nil || *reference.Incarnation != *record.Reference.Incarnation) {
+		if reference.Incarnation != nil &&
+			(record.Reference.Incarnation == nil || *reference.Incarnation != *record.Reference.Incarnation) {
 			return NewError("RESET_REQUIRED", "Resource incarnation changed.")
 		}
 	}
@@ -625,7 +712,15 @@ func checkPage(page SourcePage, descriptor ResourceType, target ReadTarget, size
 		return NewError("INTERNAL", "Provider response exceeded requested source page size.")
 	}
 	for i, record := range page.Records {
-		if err := checkRecord(record, descriptor, target.Provider, target.Authority, target.Representation, nil, target.Scope); err != nil {
+		if err := checkRecord(
+			record,
+			descriptor,
+			target.Provider,
+			target.Authority,
+			target.Representation,
+			nil,
+			target.Scope,
+		); err != nil {
 			return err
 		}
 		for j := range i {
@@ -660,7 +755,11 @@ func AdmitCatalogOperation(catalog Catalog, request any) (ResourceType, error) {
 // A nonnil provider/context and accepted route catalog observation are required.
 // It calls Catalog without starting a source or retaining a lease; callers must
 // separately fence native startup, retries, and delivery. It grants no authority.
-func AdmitBestEffortTarget(ctx context.Context, provider Provider, target ReadTarget) (descriptor ResourceType, err error) {
+func AdmitBestEffortTarget(
+	ctx context.Context,
+	provider Provider,
+	target ReadTarget,
+) (descriptor ResourceType, err error) {
 	defer func() {
 		if recover() != nil {
 			err = NewError("INTERNAL", "Provider admission handler panicked.")

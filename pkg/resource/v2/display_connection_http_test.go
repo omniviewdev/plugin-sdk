@@ -34,13 +34,16 @@ func TestDisplayRenamePreservesActiveNativeHTTPRequestAndPrivateCredentials(t *t
 	connection := ownershipConnection(endpoint.URL)
 	connection.Name = "old name"
 	connection.SetSensitiveData(map[string]any{"token": "source-secret"})
-	cfg := Config[ownershipEndpointClient]{Catalog: controllerConfig().Catalog, Lifecycle: &Lifecycle[ownershipEndpointClient]{
-		LoadConnections: func(context.Context) ([]types.Connection, error) { return []types.Connection{connection}, nil },
-		CreateClient: func(_ context.Context, configured types.Connection) (*ownershipEndpointClient, error) {
-			return &ownershipEndpointClient{endpoint: ownershipEndpoint(configured), http: endpoint.Client()}, nil
+	cfg := Config[ownershipEndpointClient]{
+		Catalog: controllerConfig().Catalog,
+		Lifecycle: &Lifecycle[ownershipEndpointClient]{
+			LoadConnections: func(context.Context) ([]types.Connection, error) { return []types.Connection{connection}, nil },
+			CreateClient: func(_ context.Context, configured types.Connection) (*ownershipEndpointClient, error) {
+				return &ownershipEndpointClient{endpoint: ownershipEndpoint(configured), http: endpoint.Client()}, nil
+			},
+			DestroyClient: func(context.Context, *ownershipEndpointClient) error { return nil },
 		},
-		DestroyClient: func(context.Context, *ownershipEndpointClient) error { return nil },
-	}}
+	}
 	controller, err := NewController(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -96,14 +99,18 @@ func TestDisplayRenamePreservesActiveNativeHTTPRequestAndPrivateCredentials(t *t
 	<-entered // The real native HTTP endpoint now holds an in-flight request.
 	override := ownershipConnection(endpoint.URL)
 	override.Name = "renamed"
-	if err := controller.ApplyConnectionOverlay(ctx, ConnectionOverlay{Upserts: []types.Connection{override}}); err != nil {
+	if err := controller.ApplyConnectionOverlay(
+		ctx,
+		ConnectionOverlay{Upserts: []types.Connection{override}},
+	); err != nil {
 		t.Fatal(err)
 	}
 	current, err := controller.GetConnection(ctx, connection.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Name != "renamed" || ownershipEndpoint(current) != endpoint.URL || current.GetSensitiveData()["token"] != "source-secret" {
+	if current.Name != "renamed" || ownershipEndpoint(current) != endpoint.URL ||
+		current.GetSensitiveData()["token"] != "source-secret" {
 		t.Fatal("display overlay changed native endpoint/credentials or retained old name")
 	}
 	after, err := controller.Catalog(ctx, CatalogRequest{Route: route})
@@ -124,16 +131,20 @@ func TestDisplayRenamePreservesActiveNativeHTTPRequestAndPrivateCredentials(t *t
 	if beforeEpoch != afterEpoch {
 		t.Fatal("display rename changed native binding epoch")
 	}
-	if err := controller.WithClient(acceptedCtx, route, func(native context.Context, client *ownershipEndpointClient) error {
-		if client != active.client {
-			t.Error("display rename replaced active native client")
-		}
-		session, _ := SessionFromContext(native)
-		if session.Connection.Name != "renamed" || ownershipEndpoint(*session.Connection) != endpoint.URL {
-			t.Error("new native lease retained stale display metadata")
-		}
-		return nil
-	}); err != nil {
+	if err := controller.WithClient(
+		acceptedCtx,
+		route,
+		func(native context.Context, client *ownershipEndpointClient) error {
+			if client != active.client {
+				t.Error("display rename replaced active native client")
+			}
+			session, _ := SessionFromContext(native)
+			if session.Connection.Name != "renamed" || ownershipEndpoint(*session.Connection) != endpoint.URL {
+				t.Error("new native lease retained stale display metadata")
+			}
+			return nil
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if err := controller.WithConnection(ctx, route, func(_ context.Context, configured types.Connection) error {

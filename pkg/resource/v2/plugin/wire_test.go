@@ -2,8 +2,12 @@ package plugin
 
 import (
 	"context"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
+	"net"
+	"reflect"
+	"sync/atomic"
+	"testing"
+	"time"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding"
@@ -13,11 +17,9 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
-	"net"
-	"reflect"
-	"sync/atomic"
-	"testing"
-	"time"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
 type rawCodec struct{ data []byte }
@@ -26,6 +28,7 @@ func (r rawCodec) Name() string { return "proto" }
 func (r rawCodec) Marshal(any) (mem.BufferSlice, error) {
 	return mem.BufferSlice{mem.SliceBuffer(r.data)}, nil
 }
+
 func (r rawCodec) Unmarshal(b mem.BufferSlice, v any) error {
 	return encoding.GetCodecV2("proto").Unmarshal(b, v)
 }
@@ -34,8 +37,14 @@ type countProvider struct{ calls atomic.Int32 }
 
 func (p *countProvider) Catalog(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
 	p.calls.Add(1)
-	return resourcev2.Catalog{Provider: "p", Revision: "r", Types: []resourcev2.ResourceType{}, Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}}}, nil
+	return resourcev2.Catalog{
+		Provider: "p",
+		Revision: "r",
+		Types:    []resourcev2.ResourceType{},
+		Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}},
+	}, nil
 }
+
 func pipe(t *testing.T, s *grpc.Server) *grpc.ClientConn {
 	t.Helper()
 	l := bufconn.Listen(1 << 20)
@@ -43,20 +52,29 @@ func pipe(t *testing.T, s *grpc.Server) *grpc.ClientConn {
 	t.Cleanup(func() { s.Stop(); l.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	c, err := grpc.DialContext(ctx, "passthrough:///resource", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return l.Dial() }), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	c, err := grpc.DialContext(
+		ctx,
+		"passthrough:///resource",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return l.Dial() }),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { c.Close() })
 	return c
 }
+
 func bytesField(n protowire.Number, v []byte) []byte {
 	return protowire.AppendBytes(protowire.AppendTag(nil, n, protowire.BytesType), v)
 }
+
 func requestValue(v []byte) []byte {
 	action := append(bytesField(4, v), bytesField(3, []byte("a"))...)
 	return append([]byte{8, 2}, bytesField(7, action)...)
 }
+
 func TestRawRequestAdmissionDefaultProto(t *testing.T) {
 	valid := append([]byte{8, 2}, bytesField(2, bytesField(1, []byte("c")))...)
 	ts := bytesField(7, []byte{8, 0, 8, 0})
@@ -70,7 +88,9 @@ func TestRawRequestAdmissionDefaultProto(t *testing.T) {
 	for range MaxFields + 1 {
 		fields = append(fields, 10, 0)
 	}
-	fieldRequest := append([]byte{8, 2}, bytesField(4, bytesField(1, bytesField(5, bytesField(1, bytesField(3, fields)))))...)
+	fieldRequest := append(
+		[]byte{8, 2},
+		bytesField(4, bytesField(1, bytesField(5, bytesField(1, bytesField(3, fields)))))...)
 	nodes := make([]byte, 0, 4*(MaxNodes+1))
 	for range MaxNodes + 1 {
 		nodes = append(nodes, 10, 2, 10, 0)
@@ -104,7 +124,14 @@ func TestRawRequestAdmissionDefaultProto(t *testing.T) {
 			RegisterServer(s, p)
 			c := pipe(t, s)
 			var out resourcepb.Response
-			err := c.Invoke(context.Background(), resourcepb.ResourceProvider_Call_FullMethodName, &resourcepb.Request{}, &out, grpc.ForceCodecV2(rawCodec{data: tc.data}), grpc.MaxCallSendMsgSize(MaxWireBytes))
+			err := c.Invoke(
+				context.Background(),
+				resourcepb.ResourceProvider_Call_FullMethodName,
+				&resourcepb.Request{},
+				&out,
+				grpc.ForceCodecV2(rawCodec{data: tc.data}),
+				grpc.MaxCallSendMsgSize(MaxWireBytes),
+			)
 			if got := resourcev2.ErrorCode(domainError(err)); got != tc.code {
 				t.Fatalf("class %s, want %s: %v", got, tc.code, err)
 			}
@@ -119,7 +146,13 @@ func TestRawRequestAdmissionDefaultProto(t *testing.T) {
 		RegisterServer(s, p)
 		c := pipe(t, s)
 		var out resourcepb.Response
-		if err := c.Invoke(context.Background(), resourcepb.ResourceProvider_Call_FullMethodName, &resourcepb.Request{}, &out, grpc.ForceCodecV2(rawCodec{data: valid})); err != nil {
+		if err := c.Invoke(
+			context.Background(),
+			resourcepb.ResourceProvider_Call_FullMethodName,
+			&resourcepb.Request{},
+			&out,
+			grpc.ForceCodecV2(rawCodec{data: valid}),
+		); err != nil {
 			t.Fatal(err)
 		}
 		if p.calls.Load() != 1 {
@@ -127,8 +160,14 @@ func TestRawRequestAdmissionDefaultProto(t *testing.T) {
 		}
 	})
 }
+
 func TestRawResponseAdmission(t *testing.T) {
-	cases := [][]byte{{8, 2, 8, 2}, {8, 2, 120, 1}, append([]byte{8, 2}, bytesField(5, []byte{16, 1, 16, 1})...), {8, 2, 42, 128}}
+	cases := [][]byte{
+		{8, 2, 8, 2},
+		{8, 2, 120, 1},
+		append([]byte{8, 2}, bytesField(5, []byte{16, 1, 16, 1})...),
+		{8, 2, 42, 128},
+	}
 	entry := append(bytesField(1, []byte("k")), bytesField(2, []byte{10, 0})...)
 	for _, value := range [][]byte{{10, 0, 10, 0}, {16, 1, 26, 0}, bytesField(7, []byte{16, 0, 16, 0}), bytesField(9, append(bytesField(1, entry), bytesField(1, entry)...)), {26, 1, 255}, {16, 128}} {
 		cases = append(cases, append([]byte{8, 2}, bytesField(5, value)...))
@@ -137,7 +176,10 @@ func TestRawResponseAdmission(t *testing.T) {
 		s := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{data: data}))
 		RegisterServer(s, &countProvider{})
 		c := NewClient(pipe(t, s))
-		_, err := c.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}})
+		_, err := c.Catalog(
+			context.Background(),
+			resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}},
+		)
 		want := "INVALID_REQUEST"
 		if len(data) == 4 && data[2] == 120 {
 			want = "UNSUPPORTED"
@@ -147,8 +189,15 @@ func TestRawResponseAdmission(t *testing.T) {
 		}
 	}
 }
+
 func TestRawValueControls(t *testing.T) {
-	values := [][]byte{{10, 0}, {66, 0}, {74, 0}, bytesField(7, nil), bytesField(8, append(bytesField(1, []byte{16, 1}), bytesField(1, []byte{26, 0})...))}
+	values := [][]byte{
+		{10, 0},
+		{66, 0},
+		{74, 0},
+		bytesField(7, nil),
+		bytesField(8, append(bytesField(1, []byte{16, 1}), bytesField(1, []byte{26, 0})...)),
+	}
 	first := append(bytesField(1, []byte("a")), bytesField(2, []byte{10, 0})...)
 	second := append(bytesField(1, []byte("b")), bytesField(2, []byte{26, 0})...)
 	values = append(values, bytesField(9, append(bytesField(1, first), bytesField(1, second)...)))
@@ -164,7 +213,12 @@ func TestRawValueControls(t *testing.T) {
 		s := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{data: payload}))
 		RegisterServer(s, &countProvider{})
 		c := NewClient(pipe(t, s))
-		out, err := c.call(context.Background(), &resourcepb.Request{Operation: &resourcepb.Request_Catalog{Catalog: &resourcepb.AccessRoute{Connection: "c"}}})
+		out, err := c.call(
+			context.Background(),
+			&resourcepb.Request{
+				Operation: &resourcepb.Request_Catalog{Catalog: &resourcepb.AccessRoute{Connection: "c"}},
+			},
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -173,6 +227,7 @@ func TestRawValueControls(t *testing.T) {
 		}
 	}
 }
+
 func TestStrictProtoPreservesUnrelatedServices(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, &countProvider{})
@@ -193,10 +248,25 @@ func (p *mixedAuthorityProvider) Catalog(context.Context, resourcev2.CatalogRequ
 }
 
 func TestActualGRPCMixedCatalogAuthorityHintIsolation(t *testing.T) {
-	cluster := &resourcev2.NativeAuthorityHint{Scheme: "kubernetes.cluster.v1", ID: "cluster/opaque", Continuity: resourcev2.ContinuityStableNative}
-	helm := &resourcev2.NativeAuthorityHint{Scheme: "helm.local.v1", ID: "helm/opaque", Continuity: resourcev2.ContinuityConnectionLocal}
+	cluster := &resourcev2.NativeAuthorityHint{
+		Scheme:     "kubernetes.cluster.v1",
+		ID:         "cluster/opaque",
+		Continuity: resourcev2.ContinuityStableNative,
+	}
+	helm := &resourcev2.NativeAuthorityHint{
+		Scheme:     "helm.local.v1",
+		ID:         "helm/opaque",
+		Continuity: resourcev2.ContinuityConnectionLocal,
+	}
 	descriptor := func(name string, hint *resourcev2.NativeAuthorityHint) resourcev2.ResourceType {
-		return resourcev2.ResourceType{Type: name, IdentityDimensions: []resourcev2.Dimension{}, QueryDimensions: []resourcev2.Dimension{}, Representations: []resourcev2.Representation{testRepresentation()}, Capabilities: []resourcev2.Capability{}, NativeAuthorityHint: hint}
+		return resourcev2.ResourceType{
+			Type:                name,
+			IdentityDimensions:  []resourcev2.Dimension{},
+			QueryDimensions:     []resourcev2.Dimension{},
+			Representations:     []resourcev2.Representation{testRepresentation()},
+			Capabilities:        []resourcev2.Capability{},
+			NativeAuthorityHint: hint,
+		}
 	}
 	want := resourcev2.Catalog{
 		Provider: "mixed", Revision: "mixed-1", Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}},
@@ -210,7 +280,10 @@ func TestActualGRPCMixedCatalogAuthorityHintIsolation(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, &mixedAuthorityProvider{catalog: want})
 	client := NewClient(pipe(t, s))
-	got, err := client.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "mixed-route"}})
+	got, err := client.Catalog(
+		context.Background(),
+		resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "mixed-route"}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +300,10 @@ func TestActualGRPCMixedCatalogAuthorityHintIsolation(t *testing.T) {
 	if cluster.ID != "cluster/opaque" {
 		t.Fatal("decoded hint aliases provider storage")
 	}
-	again, err := client.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "mixed-route"}})
+	again, err := client.Catalog(
+		context.Background(),
+		resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "mixed-route"}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +321,10 @@ func TestRawRetiredCatalogAuthorityHintRejected(t *testing.T) {
 		s := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{data: data}))
 		RegisterServer(s, &countProvider{})
 		client := NewClient(pipe(t, s))
-		_, err := client.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}})
+		_, err := client.Catalog(
+			context.Background(),
+			resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}},
+		)
 		if resourcev2.ErrorCode(err) != "UNSUPPORTED" {
 			t.Fatalf("retired catalog field 4 class %s, want UNSUPPORTED: %v", resourcev2.ErrorCode(err), err)
 		}

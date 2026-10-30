@@ -3,10 +3,11 @@ package command
 import (
 	"context"
 
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	commandpb "github.com/omniviewdev/plugin-sdk/proto/v1/command"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	commandpb "github.com/omniviewdev/plugin-sdk/proto/v1/command"
 )
 
 // NOTE: Plugin servers (like this one) act akin to api controllers and are only meant for the hanlder to pass on to the Impl

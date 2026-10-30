@@ -8,10 +8,11 @@ import (
 	"sync"
 	"time"
 
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 
 	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
 )
@@ -309,12 +310,19 @@ func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) (*PortFor
 	if err := validateFrame(s); err != nil {
 		return nil, err
 	}
-	metadata := PortForwardSession{ID: s.Id, Labels: s.Labels, LocalPort: s.LocalPort, RemotePort: s.RemotePort, Encryption: PortForwardSessionEncryptionFromProto(s.Encryption)}
+	metadata := PortForwardSession{
+		ID:         s.Id,
+		Labels:     s.Labels,
+		LocalPort:  s.LocalPort,
+		RemotePort: s.RemotePort,
+		Encryption: PortForwardSessionEncryptionFromProto(s.Encryption),
+	}
 	if err := resourcev2.ValidateMetadata(metadata); err != nil {
 		return nil, err
 	}
 	if s.GetResourceConnection() != nil {
-		if !PortForwardProtocolFromProto(s.Protocol).Valid() || s.State < networkerpb.PortForwardSession_ACTIVE || s.State > networkerpb.PortForwardSession_FAILED {
+		if !PortForwardProtocolFromProto(s.Protocol).Valid() || s.State < networkerpb.PortForwardSession_ACTIVE ||
+			s.State > networkerpb.PortForwardSession_FAILED {
 			return nil, resourceInvalidResponse()
 		}
 		if s.CreatedAt == nil || s.UpdatedAt == nil {
@@ -394,7 +402,13 @@ func (c *PortForwardResourceConnection) ToProto() (*networkerpb.PortForwardResou
 	if err := validateResourceConnection(*c); err != nil {
 		return nil, err
 	}
-	out := &networkerpb.PortForwardResourceConnection{ConnectionId: c.ConnectionID, PluginId: c.PluginID, ResourceId: c.ResourceID, ResourceKey: c.ResourceKey, ResourceWireVersion: 2}
+	out := &networkerpb.PortForwardResourceConnection{
+		ConnectionId:        c.ConnectionID,
+		PluginId:            c.PluginID,
+		ResourceId:          c.ResourceID,
+		ResourceKey:         c.ResourceKey,
+		ResourceWireVersion: 2,
+	}
 	var err error
 	if c.Reference != nil {
 		out.Reference, err = resourcev2.ToProtoResourceReference(*c.Reference)
@@ -428,20 +442,36 @@ func (c *PortForwardResourceConnection) ToProto() (*networkerpb.PortForwardResou
 	return out, nil
 }
 
-func PortForwardResourceConnectionFromProto(o *networkerpb.PortForwardResourceConnection) (PortForwardResourceConnection, error) {
+func PortForwardResourceConnectionFromProto(
+	o *networkerpb.PortForwardResourceConnection,
+) (PortForwardResourceConnection, error) {
 	if o == nil {
-		return PortForwardResourceConnection{}, resourcev2.NewError("INVALID_REQUEST", "Resource connection must not be nil.")
+		return PortForwardResourceConnection{}, resourcev2.NewError(
+			"INVALID_REQUEST",
+			"Resource connection must not be nil.",
+		)
 	}
 	if err := validateFrame(o); err != nil {
 		return PortForwardResourceConnection{}, err
 	}
 	if o.ResourceWireVersion != 2 {
-		return PortForwardResourceConnection{}, resourcev2.NewError("UNSUPPORTED", "Resource wire version 2 is required.")
+		return PortForwardResourceConnection{}, resourcev2.NewError(
+			"UNSUPPORTED",
+			"Resource wire version 2 is required.",
+		)
 	}
 	if len(o.ProtoReflect().GetUnknown()) != 0 {
-		return PortForwardResourceConnection{}, resourcev2.NewError("UNSUPPORTED", "Unknown resource connection fields.")
+		return PortForwardResourceConnection{}, resourcev2.NewError(
+			"UNSUPPORTED",
+			"Unknown resource connection fields.",
+		)
 	}
-	out := PortForwardResourceConnection{ConnectionID: o.ConnectionId, PluginID: o.PluginId, ResourceID: o.ResourceId, ResourceKey: o.ResourceKey}
+	out := PortForwardResourceConnection{
+		ConnectionID: o.ConnectionId,
+		PluginID:     o.PluginId,
+		ResourceID:   o.ResourceId,
+		ResourceKey:  o.ResourceKey,
+	}
 	if o.Reference != nil {
 		v, e := resourcev2.FromProtoResourceReference(o.Reference)
 		if e != nil {
@@ -690,7 +720,14 @@ func NewPortForwardSessionOptionsFromProto(
 	if err := validateFrame(o); err != nil {
 		return nil, err
 	}
-	metadata := PortForwardSessionOptions{LocalPort: o.LocalPort, RemotePort: o.RemotePort, Protocol: PortForwardProtocolFromProto(o.Protocol), Labels: o.Labels, Params: o.Params, Encryption: PortForwardSessionEncryptionFromProto(o.Encryption)}
+	metadata := PortForwardSessionOptions{
+		LocalPort:  o.LocalPort,
+		RemotePort: o.RemotePort,
+		Protocol:   PortForwardProtocolFromProto(o.Protocol),
+		Labels:     o.Labels,
+		Params:     o.Params,
+		Encryption: PortForwardSessionEncryptionFromProto(o.Encryption),
+	}
 	if err := resourcev2.ValidateMetadata(metadata); err != nil {
 		return nil, err
 	}

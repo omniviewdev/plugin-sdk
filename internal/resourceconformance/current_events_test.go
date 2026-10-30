@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	resource "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/stretchr/testify/require"
+
+	resource "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 )
 
 type nativeEvent struct {
@@ -34,8 +35,13 @@ type nativeEventProvider struct {
 }
 
 func newNativeEventProvider(p *nativeProvider) *nativeEventProvider {
-	return &nativeEventProvider{nativeEnumerable: &nativeEnumerable{&nativeReader{p}}, events: make(chan nativeEvent, 16), watches: map[string]nativeWatch{}}
+	return &nativeEventProvider{
+		nativeEnumerable: &nativeEnumerable{&nativeReader{p}},
+		events:           make(chan nativeEvent, 16),
+		watches:          map[string]nativeWatch{},
+	}
 }
+
 func (p *nativeEventProvider) Catalog(ctx context.Context, in resource.CatalogRequest) (resource.Catalog, error) {
 	c, err := p.nativeProvider.Catalog(ctx, in)
 	if err != nil {
@@ -46,11 +52,23 @@ func (p *nativeEventProvider) Catalog(ctx context.Context, in resource.CatalogRe
 		return c, err
 	}
 	if len(s.Updates) > 0 {
-		c.Types[0].Capabilities = append(c.Types[0].Capabilities, resource.Capability{Operation: resource.OperationUpdate, Scope: queryScope(s), Guarantee: resource.BestEffortGuarantee})
+		c.Types[0].Capabilities = append(
+			c.Types[0].Capabilities,
+			resource.Capability{
+				Operation: resource.OperationUpdate,
+				Scope:     queryScope(s),
+				Guarantee: resource.BestEffortGuarantee,
+			},
+		)
 	}
 	return c, nil
 }
-func (p *nativeEventProvider) ListenForEvents(ctx context.Context, sink resource.WatchEventSink, onReady func() error) error {
+
+func (p *nativeEventProvider) ListenForEvents(
+	ctx context.Context,
+	sink resource.WatchEventSink,
+	onReady func() error,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -84,6 +102,7 @@ func (p *nativeEventProvider) ListenForEvents(ctx context.Context, sink resource
 		}
 	}
 }
+
 func (p *nativeEventProvider) EnsureResourceWatch(ctx context.Context, target resource.ReadTarget) error {
 	if _, err := p.page(ctx, resource.EnumerateRequest{Target: target}); err != nil {
 		return err
@@ -108,7 +127,13 @@ func (p *nativeEventProvider) EnsureResourceWatch(ctx context.Context, target re
 	p.watches[s.Name] = nativeWatch{cancel: cancel, done: done, target: target}
 	go func() {
 		defer close(done)
-		state := resource.WatchStateEvent{Route: target.Route, Type: s.Type, State: resource.WatchStateSynced, Count: resource.Count{Kind: "unknown"}, Guarantee: resource.BestEffortGuarantee}
+		state := resource.WatchStateEvent{
+			Route:     target.Route,
+			Type:      s.Type,
+			State:     resource.WatchStateSynced,
+			Count:     resource.Count{Kind: "unknown"},
+			Guarantee: resource.BestEffortGuarantee,
+		}
 		select {
 		case p.events <- nativeEvent{state: &state}:
 		case <-watchCtx.Done():
@@ -131,7 +156,11 @@ func (p *nativeEventProvider) EnsureResourceWatch(ctx context.Context, target re
 					r.Reference.Address.Authority = target.Authority
 					r.Body = nativeValue(change.Body)
 					r.SourceRevision = token(change.Revision)
-					event := resource.WatchUpdatePayload{Route: target.Route, Record: r, Guarantee: resource.BestEffortGuarantee}
+					event := resource.WatchUpdatePayload{
+						Route:     target.Route,
+						Record:    r,
+						Guarantee: resource.BestEffortGuarantee,
+					}
 					select {
 					case p.events <- nativeEvent{update: &event}:
 					case <-watchCtx.Done():
@@ -145,6 +174,7 @@ func (p *nativeEventProvider) EnsureResourceWatch(ctx context.Context, target re
 	}()
 	return nil
 }
+
 func (p *nativeEventProvider) StartConnectionWatch(ctx context.Context, targets []resource.ReadTarget) error {
 	for _, target := range targets {
 		if err := p.EnsureResourceWatch(ctx, target); err != nil {
@@ -153,6 +183,7 @@ func (p *nativeEventProvider) StartConnectionWatch(ctx context.Context, targets 
 	}
 	return nil
 }
+
 func (p *nativeEventProvider) StopResourceWatch(_ context.Context, route resource.AccessRoute, _ string) error {
 	p.eventMu.Lock()
 	watch, ok := p.watches[route.Connection]
@@ -164,33 +195,52 @@ func (p *nativeEventProvider) StopResourceWatch(_ context.Context, route resourc
 	}
 	return nil
 }
+
 func (p *nativeEventProvider) StopConnectionWatch(ctx context.Context, route resource.AccessRoute) error {
 	return p.StopResourceWatch(ctx, route, "")
 }
+
 func (p *nativeEventProvider) HasWatch(_ context.Context, route resource.AccessRoute) bool {
 	p.eventMu.Lock()
 	defer p.eventMu.Unlock()
 	_, ok := p.watches[route.Connection]
 	return ok
 }
-func (p *nativeEventProvider) IsResourceWatchRunning(ctx context.Context, route resource.AccessRoute, _ string) (bool, error) {
+
+func (p *nativeEventProvider) IsResourceWatchRunning(
+	ctx context.Context,
+	route resource.AccessRoute,
+	_ string,
+) (bool, error) {
 	return p.HasWatch(ctx, route), nil
 }
+
 func (p *nativeEventProvider) RestartResourceWatch(ctx context.Context, target resource.ReadTarget) error {
 	if err := p.StopResourceWatch(ctx, target.Route, target.Type); err != nil {
 		return err
 	}
 	return p.EnsureResourceWatch(ctx, target)
 }
-func (p *nativeEventProvider) GetWatchState(_ context.Context, route resource.AccessRoute) (*resource.WatchConnectionSummary, error) {
+
+func (p *nativeEventProvider) GetWatchState(
+	_ context.Context,
+	route resource.AccessRoute,
+) (*resource.WatchConnectionSummary, error) {
 	p.eventMu.Lock()
 	watch, ok := p.watches[route.Connection]
 	p.eventMu.Unlock()
 	if !ok {
 		return nil, nativeError("NOT_FOUND", "watch is not running")
 	}
-	return &resource.WatchConnectionSummary{Route: route, Resources: map[string]resource.WatchState{watch.target.Type: resource.WatchStateSynced}, ResourceCounts: map[string]resource.Count{watch.target.Type: {Kind: "unknown"}}, Scope: watch.target.Scope, Guarantee: resource.BestEffortGuarantee}, nil
+	return &resource.WatchConnectionSummary{
+		Route:          route,
+		Resources:      map[string]resource.WatchState{watch.target.Type: resource.WatchStateSynced},
+		ResourceCounts: map[string]resource.Count{watch.target.Type: {Kind: "unknown"}},
+		Scope:          watch.target.Scope,
+		Guarantee:      resource.BestEffortGuarantee,
+	}, nil
 }
+
 func (p *nativeEventProvider) Close() error {
 	p.eventMu.Lock()
 	watches := p.watches
@@ -214,12 +264,14 @@ func (s *nativeEventSink) OnAdd(resource.WatchAddPayload) { s.t.Error("unexpecte
 func (s *nativeEventSink) OnDelete(resource.WatchDeletePayload) {
 	s.t.Error("unexpected native delete")
 }
+
 func (s *nativeEventSink) OnUpdate(p resource.WatchUpdatePayload) {
 	select {
 	case s.updates <- p:
 	case <-s.ctx.Done():
 	}
 }
+
 func (s *nativeEventSink) OnStateChange(p resource.WatchStateEvent) {
 	select {
 	case s.states <- p:
@@ -227,12 +279,24 @@ func (s *nativeEventSink) OnStateChange(p resource.WatchStateEvent) {
 	}
 }
 
-func probeNativeEvents(t *testing.T, provider resource.Provider, session context.Context, receipts string, s Scenario, c Corpus) {
+func probeNativeEvents(
+	t *testing.T,
+	provider resource.Provider,
+	session context.Context,
+	receipts string,
+	s Scenario,
+	c Corpus,
+) {
 	t.Helper()
 	updates := provider.(resource.BestEffortUpdateProvider)
 	ctx, cancel := context.WithCancel(session)
 	defer cancel()
-	sink := &nativeEventSink{t: t, ctx: ctx, updates: make(chan resource.WatchUpdatePayload, 4), states: make(chan resource.WatchStateEvent, 4)}
+	sink := &nativeEventSink{
+		t:       t,
+		ctx:     ctx,
+		updates: make(chan resource.WatchUpdatePayload, 4),
+		states:  make(chan resource.WatchStateEvent, 4),
+	}
 	done := make(chan error, 1)
 	ready := make(chan struct{})
 	go func() { done <- updates.ListenForEvents(ctx, sink, func() error { close(ready); return nil }) }()
@@ -254,7 +318,7 @@ func probeNativeEvents(t *testing.T, provider resource.Provider, session context
 	case <-session.Done():
 		t.Fatal("native source did not become ready")
 	}
-	require.NoError(t, os.WriteFile(filepath.Join(receipts, "release-native-events"), []byte("release"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(receipts, "release-native-events"), []byte("release"), 0o600))
 	changes := []Change{}
 	for _, want := range s.Updates {
 		select {
@@ -269,7 +333,10 @@ func probeNativeEvents(t *testing.T, provider resource.Provider, session context
 				Revision string `json:"revision"`
 			}
 			require.NoError(t, json.Unmarshal(nativeBodyJSON(got.Record.Body), &body))
-			changes = append(changes, Change{Record: want.Record, Revision: body.Revision, Body: nativeBodyJSON(got.Record.Body)})
+			changes = append(
+				changes,
+				Change{Record: want.Record, Revision: body.Revision, Body: nativeBodyJSON(got.Record.Body)},
+			)
 		case <-session.Done():
 			t.Fatal("native update did not traverse new-major gRPC")
 		}

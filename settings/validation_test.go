@@ -41,7 +41,10 @@ func TestSensitiveValidationRedactsFeedback(t *testing.T) {
 	s := Setting{Sensitive: true, Validator: func(value any) ValidationResult {
 		return ValidationResult{Code: "secret", Message: value.(string)}
 	}}
-	if result := s.Validation("private-input"); result.Valid || strings.Contains(result.Message, "private-input") || result.Code == "secret" {
+	if result := s.Validation(
+		"private-input",
+	); result.Valid || strings.Contains(result.Message, "private-input") ||
+		result.Code == "secret" {
 		t.Fatalf("sensitive feedback leaked: %+v", result)
 	}
 	if err := s.Validate("private-input"); err == nil || strings.Contains(err.Error(), "private-input") {

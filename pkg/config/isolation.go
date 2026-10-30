@@ -8,8 +8,10 @@ import (
 	"os"
 )
 
-const StateIsolationCapability = "state-root-v1"
-const StateIsolationSDKModule = "github.com/omniviewdev/plugin-sdk"
+const (
+	StateIsolationCapability = "state-root-v1"
+	StateIsolationSDKModule  = "github.com/omniviewdev/plugin-sdk"
+)
 
 // StateIsolationProvenance is a trusted builder's attestation, not a declaration
 // an arbitrary plugin may use to grant itself permission to start. It is checked
@@ -58,8 +60,11 @@ func BuildStateIsolationProvenance(binaryPath, sdkRevision, sdkSourceSHA256 stri
 // An empty expected snapshot accepts only a commit-only attestation; source-bound
 // attestations cannot downgrade. It never starts the plugin, authenticates a
 // registry/source, proves source inclusion, or trusts plugin.yaml.
-func (p *StateIsolationProvenance) VerifyArtifact(binaryPath, expectedSDKRevision, expectedSDKSourceSHA256 string) error {
-	if p == nil || p.SchemaVersion != 1 || p.Capability != StateIsolationCapability || p.SDKModule != StateIsolationSDKModule {
+func (p *StateIsolationProvenance) VerifyArtifact(
+	binaryPath, expectedSDKRevision, expectedSDKSourceSHA256 string,
+) error {
+	if p == nil || p.SchemaVersion != 1 || p.Capability != StateIsolationCapability ||
+		p.SDKModule != StateIsolationSDKModule {
 		return fmt.Errorf("artifact has no supported state-root isolation attestation")
 	}
 	if !validRevision(expectedSDKRevision) || p.SDKRevision != expectedSDKRevision {

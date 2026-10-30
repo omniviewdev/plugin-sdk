@@ -4,22 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/encoding"
-	"google.golang.org/grpc/mem"
-	"google.golang.org/grpc/test/bufconn"
-	"google.golang.org/protobuf/encoding/protowire"
 	"math"
 	"net"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/encoding"
+	"google.golang.org/grpc/mem"
+	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/encoding/protowire"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
 
 type resourceExecFixture struct {
@@ -33,17 +35,23 @@ func (p *resourceExecFixture) CreateSession(_ *types.PluginContext, o SessionOpt
 	p.oldCalls++
 	return &Session{ID: o.ID}, nil
 }
+
 func (p *resourceExecFixture) CreateResourceSession(_ *types.PluginContext, o SessionOptions) (*Session, error) {
 	p.calls++
 	p.seen = o
 	return &Session{ID: o.ID}, p.failure
 }
+
 func execPipe(t *testing.T, s *grpc.Server) *grpc.ClientConn {
 	t.Helper()
 	l := bufconn.Listen(1 << 20)
 	go s.Serve(l)
 	t.Cleanup(func() { s.Stop(); l.Close() })
-	c, err := grpc.NewClient("passthrough:///exec-test", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return l.Dial() }))
+	c, err := grpc.NewClient(
+		"passthrough:///exec-test",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return l.Dial() }),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,9 +65,11 @@ func (execRawCodec) Name() string { return "proto" }
 func (c execRawCodec) Marshal(any) (mem.BufferSlice, error) {
 	return mem.BufferSlice{mem.SliceBuffer(c.data)}, nil
 }
+
 func (execRawCodec) Unmarshal(b mem.BufferSlice, v any) error {
 	return encoding.GetCodecV2("proto").Unmarshal(b, v)
 }
+
 func execBytes(n protowire.Number, v []byte) []byte {
 	return protowire.AppendBytes(protowire.AppendTag(nil, n, protowire.BytesType), v)
 }
@@ -74,7 +84,14 @@ func TestResourceExecActualGRPCLosslessAndOptionalBody(t *testing.T) {
 			opts := SessionOptions{ID: "same-session", ResourcePlugin: "opaque-plugin", ResourceKey: "opaque/type"}
 			var native any
 			if size > 0 {
-				native = map[string]any{"min": int64(math.MinInt64), "max": uint64(math.MaxUint64), "negativeZero": math.Copysign(0, -1), "time": time.Unix(-1, 123).UTC(), "container": []any{nil, true, []any{"nested", uint64(255), math.Copysign(0, -1)}}, "large": strings.Repeat("x", size)}
+				native = map[string]any{
+					"min":          int64(math.MinInt64),
+					"max":          uint64(math.MaxUint64),
+					"negativeZero": math.Copysign(0, -1),
+					"time":         time.Unix(-1, 123).UTC(),
+					"container":    []any{nil, true, []any{"nested", uint64(255), math.Copysign(0, -1)}},
+					"large":        strings.Repeat("x", size),
+				}
 				v, err := resourcev2.ValueFromNative(native)
 				if err != nil {
 					t.Fatal(err)
@@ -93,17 +110,21 @@ func TestResourceExecActualGRPCLosslessAndOptionalBody(t *testing.T) {
 				if err != nil || !reflect.DeepEqual(got, native) {
 					t.Fatalf("lossy native body: %v", err)
 				}
-				if !math.Signbit(got.(map[string]any)["negativeZero"].(float64)) || !math.Signbit(got.(map[string]any)["container"].([]any)[2].([]any)[2].(float64)) {
+				if !math.Signbit(got.(map[string]any)["negativeZero"].(float64)) ||
+					!math.Signbit(got.(map[string]any)["container"].([]any)[2].([]any)[2].(float64)) {
 					t.Fatal("top-level or nested negative zero lost")
 				}
 			}
 		})
 	}
 }
+
 func TestResourceExecActualGRPCErrors(t *testing.T) {
 	for _, code := range []string{"INVALID_REQUEST", "RESET_REQUIRED", "FORBIDDEN", "UNAVAILABLE"} {
 		t.Run(code, func(t *testing.T) {
-			p := &resourceExecFixture{failure: fmt.Errorf("terminal: %w", resourcev2.NewError(code, "private provider detail"))}
+			p := &resourceExecFixture{
+				failure: fmt.Errorf("terminal: %w", resourcev2.NewError(code, "private provider detail")),
+			}
 			s := grpc.NewServer()
 			RegisterExecPluginServer(s, &PluginServer{Impl: p})
 			c := &PluginClient{client: execpb.NewExecPluginClient(execPipe(t, s))}
@@ -124,6 +145,7 @@ func (s *oldExecServer) CreateSession(context.Context, *execpb.SessionOptions) (
 	s.calls++
 	return &execpb.CreateSessionResponse{}, nil
 }
+
 func TestResourceExecOldServerNeverFallsBack(t *testing.T) {
 	s := grpc.NewServer()
 	old := &oldExecServer{}
@@ -146,8 +168,18 @@ func TestResourceExecRawAdmissionBeforeProvider(t *testing.T) {
 		{"body", "CreateSession", "UNSUPPORTED", execBytes(9, []byte{74, 0})},
 		{"version", "CreateResourceSession", "UNSUPPORTED", nil},
 		{"duplicate", "CreateResourceSession", "INVALID_REQUEST", append(append([]byte{}, version...), version...)},
-		{"oneof", "CreateResourceSession", "INVALID_REQUEST", append(append([]byte{}, version...), execBytes(9, []byte{10, 0, 26, 0})...)},
-		{"utf8", "CreateResourceSession", "INVALID_REQUEST", append(append([]byte{}, version...), execBytes(6, []byte{255})...)},
+		{
+			"oneof",
+			"CreateResourceSession",
+			"INVALID_REQUEST",
+			append(append([]byte{}, version...), execBytes(9, []byte{10, 0, 26, 0})...),
+		},
+		{
+			"utf8",
+			"CreateResourceSession",
+			"INVALID_REQUEST",
+			append(append([]byte{}, version...), execBytes(6, []byte{255})...),
+		},
 	}
 	entry := append(execBytes(1, []byte("key")), execBytes(2, []byte("value"))...)
 	dup := append(execBytes(4, entry), execBytes(4, entry)...)
@@ -162,7 +194,13 @@ func TestResourceExecRawAdmissionBeforeProvider(t *testing.T) {
 			RegisterExecPluginServer(s, &PluginServer{Impl: p})
 			conn := execPipe(t, s)
 			var out execpb.ResourceSessionResponse
-			err := conn.Invoke(context.Background(), "/"+execpb.ExecPlugin_ServiceDesc.ServiceName+"/"+tc.method, &execpb.SessionOptions{}, &out, grpc.ForceCodecV2(execRawCodec{tc.data}))
+			err := conn.Invoke(
+				context.Background(),
+				"/"+execpb.ExecPlugin_ServiceDesc.ServiceName+"/"+tc.method,
+				&execpb.SessionOptions{},
+				&out,
+				grpc.ForceCodecV2(execRawCodec{tc.data}),
+			)
 			if resourcev2.ErrorCode(resourceplugin.ResourceDomainError(err)) != tc.code || p.calls+p.oldCalls != 0 {
 				t.Fatalf("admission: %v calls %d", err, p.calls+p.oldCalls)
 			}
@@ -187,7 +225,10 @@ func TestResourceExecRawResponsesRejectBeforeMaterialization(t *testing.T) {
 			s := grpc.NewServer(grpc.ForceServerCodecV2(execRawCodec{data: data}))
 			RegisterExecPluginServer(s, &PluginServer{Impl: p})
 			c := &PluginClient{client: execpb.NewExecPluginClient(execPipe(t, s))}
-			session, err := c.CreateSession(&types.PluginContext{}, SessionOptions{ResourcePlugin: "p", ResourceKey: "t"})
+			session, err := c.CreateSession(
+				&types.PluginContext{},
+				SessionOptions{ResourcePlugin: "p", ResourceKey: "t"},
+			)
 			if err == nil || session != nil {
 				t.Fatalf("bad response materialized: %+v %v", session, err)
 			}
@@ -200,7 +241,10 @@ func TestExecNonresourceActualGRPCCreateRemainsUtility(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterExecPluginServer(s, &PluginServer{Impl: p})
 	c := &PluginClient{client: execpb.NewExecPluginClient(execPipe(t, s))}
-	out, err := c.CreateSession(&types.PluginContext{}, SessionOptions{ID: "utility", Params: map[string]string{"a": "1", "b": "2"}})
+	out, err := c.CreateSession(
+		&types.PluginContext{},
+		SessionOptions{ID: "utility", Params: map[string]string{"a": "1", "b": "2"}},
+	)
 	if err != nil || out.ID != "utility" || p.oldCalls != 1 || p.calls != 0 {
 		t.Fatalf("utility changed: %+v %v", out, err)
 	}
@@ -214,7 +258,14 @@ func TestResourceExecActualGRPCValueLimit(t *testing.T) {
 	value := execBytes(3, []byte(strings.Repeat("x", resourceplugin.MaxBodyBytes+1)))
 	data := append([]byte{80, 2}, execBytes(9, value)...)
 	var response execpb.ResourceSessionResponse
-	err := conn.Invoke(context.Background(), "/"+execpb.ExecPlugin_ServiceDesc.ServiceName+"/CreateResourceSession", &execpb.SessionOptions{}, &response, grpc.ForceCodecV2(execRawCodec{data: data}), grpc.MaxCallSendMsgSize(resourceplugin.MaxWireBytes))
+	err := conn.Invoke(
+		context.Background(),
+		"/"+execpb.ExecPlugin_ServiceDesc.ServiceName+"/CreateResourceSession",
+		&execpb.SessionOptions{},
+		&response,
+		grpc.ForceCodecV2(execRawCodec{data: data}),
+		grpc.MaxCallSendMsgSize(resourceplugin.MaxWireBytes),
+	)
 	if resourcev2.ErrorCode(resourceplugin.ResourceDomainError(err)) != "RESOURCE_LIMIT" || p.calls != 0 {
 		t.Fatalf("limit lost: %v calls %d", err, p.calls)
 	}

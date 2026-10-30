@@ -10,9 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	"google.golang.org/grpc"
 )
 
 func TestActualGRPCRegisteredReadinessDoesNotProbeAndFencesRetarget(t *testing.T) {
@@ -36,7 +37,12 @@ func TestActualGRPCRegisteredReadinessDoesNotProbeAndFencesRetarget(t *testing.T
 	controller, err := resourcev2.NewController(resourcev2.Config[string]{
 		Catalog: func(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
 			catalogs.Add(1)
-			return resourcev2.Catalog{Provider: "readiness", Revision: "native", Types: []resourcev2.ResourceType{}, Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}}}, nil
+			return resourcev2.Catalog{
+				Provider: "readiness",
+				Revision: "native",
+				Types:    []resourcev2.ResourceType{},
+				Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}},
+			}, nil
 		},
 		Lifecycle: &resourcev2.Lifecycle[string]{
 			LoadConnections: func(context.Context) ([]types.Connection, error) {
@@ -104,7 +110,10 @@ func TestActualGRPCRegisteredReadinessDoesNotProbeAndFencesRetarget(t *testing.T
 		bounded, stop := context.WithTimeout(ctx, time.Second)
 		defer stop()
 		status, err := client.GetConnectionStatus(bounded, "native")
-		if err != nil || status.Status != want || status.Connection == nil || status.Connection.Data["endpoint"] != endpoint || status.Error != "" || status.Details != "" {
+		if err != nil || status.Status != want || status.Connection == nil ||
+			status.Connection.Data["endpoint"] != endpoint ||
+			status.Error != "" ||
+			status.Details != "" {
 			t.Fatalf("registered state want %s/%s: %+v %v", want, endpoint, status, err)
 		}
 	}
@@ -116,7 +125,8 @@ func TestActualGRPCRegisteredReadinessDoesNotProbeAndFencesRetarget(t *testing.T
 	if _, err := client.Catalog(ctx, resourcev2.CatalogRequest{Route: route}); err == nil {
 		t.Fatal("stopped source minted catalog binding")
 	}
-	if created.Load() != 0 || catalogs.Load() != 0 || probes.Load() != 0 || requestsA.Load() != 0 || requestsB.Load() != 0 {
+	if created.Load() != 0 || catalogs.Load() != 0 || probes.Load() != 0 || requestsA.Load() != 0 ||
+		requestsB.Load() != 0 {
 		t.Fatal("unstarted readiness performed native work")
 	}
 	started := make(chan error, 1)
@@ -171,20 +181,28 @@ func TestActualGRPCRegisteredReadinessDoesNotProbeAndFencesRetarget(t *testing.T
 	if catalogA.Revision == catalogB.Revision {
 		t.Fatal("replacement reused retired catalog binding")
 	}
-	if _, err := client.GetWatchState(resourcev2.WithCatalogRevision(ctx, catalogA.Revision), route); resourcev2.ErrorCode(err) != "RESET_REQUIRED" {
+	if _, err := client.GetWatchState(
+		resourcev2.WithCatalogRevision(ctx, catalogA.Revision),
+		route,
+	); resourcev2.ErrorCode(
+		err,
+	) != "RESET_REQUIRED" {
 		t.Fatalf("retired observation admitted watch diagnostics: %v", err)
 	}
-	if created.Load() != 2 || destroyed.Load() != 1 || probes.Load() != 0 || requestsA.Load() != 1 || requestsB.Load() != 1 {
+	if created.Load() != 2 || destroyed.Load() != 1 || probes.Load() != 0 || requestsA.Load() != 1 ||
+		requestsB.Load() != 1 {
 		t.Fatal("readiness caused native lifecycle or health side effects")
 	}
 }
 
 func TestActualGRPCReadinessUnsupportedIsNotInferredFromClient(t *testing.T) {
 	var catalogs atomic.Int32
-	controller, err := resourcev2.NewController(resourcev2.Config[int]{Catalog: func(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
-		catalogs.Add(1)
-		return resourcev2.Catalog{}, nil
-	}})
+	controller, err := resourcev2.NewController(
+		resourcev2.Config[int]{Catalog: func(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
+			catalogs.Add(1)
+			return resourcev2.Catalog{}, nil
+		}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +218,12 @@ func TestActualGRPCReadinessUnsupportedIsNotInferredFromClient(t *testing.T) {
 	if err != nil || features.Has(resourcev2.FeatureConnectionReadiness) {
 		t.Fatalf("invented registry readiness: %+v %v", features, err)
 	}
-	if _, err := client.GetConnectionStatus(context.Background(), "explicit"); resourcev2.ErrorCode(err) != "UNSUPPORTED" {
+	if _, err := client.GetConnectionStatus(
+		context.Background(),
+		"explicit",
+	); resourcev2.ErrorCode(
+		err,
+	) != "UNSUPPORTED" {
 		t.Fatalf("unsupported readiness: %v", err)
 	}
 	if catalogs.Load() != 0 {

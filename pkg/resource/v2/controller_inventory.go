@@ -164,7 +164,11 @@ func (c *Controller[T]) ApplyConnectionOverlay(ctx context.Context, overlay Conn
 // applyInventory is serialized by configMu. Staged route changes block new
 // clients until canceled generations drain, then publish one effective inventory.
 // Failed teardown leaves the prior desired state, but retired clients stay retired.
-func (c *Controller[T]) applyInventory(ctx context.Context, native, overrides map[string]types.Connection, disabled map[string]struct{}) error {
+func (c *Controller[T]) applyInventory(
+	ctx context.Context,
+	native, overrides map[string]types.Connection,
+	disabled map[string]struct{},
+) error {
 	if err := ctx.Err(); err != nil {
 		return c.classify(nil, err)
 	}
@@ -263,7 +267,10 @@ func (c *Controller[T]) applyInventory(ctx context.Context, native, overrides ma
 	return c.classify(nil, err)
 }
 
-func copyConnectionOverlay(upserts map[string]types.Connection, disabledIDs map[string]struct{}) (map[string]types.Connection, map[string]struct{}) {
+func copyConnectionOverlay(
+	upserts map[string]types.Connection,
+	disabledIDs map[string]struct{},
+) (map[string]types.Connection, map[string]struct{}) {
 	overrides := make(map[string]types.Connection, len(upserts)+1)
 	for id, connection := range upserts {
 		overrides[id] = connection

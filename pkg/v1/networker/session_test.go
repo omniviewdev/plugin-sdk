@@ -61,7 +61,8 @@ func TestConnectionInterface_StaticConnection(t *testing.T) {
 
 func TestPortForwardProtocolToProtoUnknown(t *testing.T) {
 	got := networker.PortForwardProtocol("SCTP").ToProto()
-	if got == networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_TCP || got == networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_UDP {
+	if got == networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_TCP ||
+		got == networkerpb.PortForwardProtocol_PORT_FORWARD_PROTOCOL_UDP {
 		t.Fatalf("expected unknown proto enum for unknown protocol, got %v", got)
 	}
 	if int32(got) != -1 {

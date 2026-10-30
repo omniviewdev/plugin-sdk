@@ -2,13 +2,18 @@ package plugin
 
 import (
 	"context"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
 // relationshipHealthCall keeps relationship, health, and event response checks local.
 // The shared ancillaryCallHandler owns admission and response validation.
-func (s *ancillaryServer) relationshipHealthCall(ctx context.Context, r *resourcepb.AncillaryRequest, route resourcev2.AccessRoute) (*resourcepb.AncillaryResponse, error) {
+func (s *ancillaryServer) relationshipHealthCall(
+	ctx context.Context,
+	r *resourcepb.AncillaryRequest,
+	route resourcev2.AccessRoute,
+) (*resourcepb.AncillaryResponse, error) {
 	impl := s.owner.impl
 	out := &resourcepb.AncillaryResponse{Version: 2}
 	switch r.Operation {

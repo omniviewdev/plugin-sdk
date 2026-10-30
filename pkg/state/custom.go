@@ -35,9 +35,18 @@ func validateCustomClaims(claims profilecontract.Claims, binding profilecontract
 }
 
 func protectedCustomPaths(workspace, home string, manifest profilecontract.WorkspaceIdentity) ([]string, error) {
-	paths := []string{workspace, filepath.Join(home, ".omniview"), filepath.Join(home, ".omniview-nightly"), filepath.Join(home, ".omniview-dev", "profiles")}
+	paths := []string{
+		workspace,
+		filepath.Join(home, ".omniview"),
+		filepath.Join(home, ".omniview-nightly"),
+		filepath.Join(home, ".omniview-dev", "profiles"),
+	}
 	for _, repo := range manifest.Repositories {
-		if repo.Directory == "" || repo.Directory == "." || strings.ContainsAny(repo.Directory, "\\:\x00") || filepath.IsAbs(repo.Directory) || filepath.Clean(repo.Directory) != repo.Directory || repo.Directory == ".." || strings.HasPrefix(repo.Directory, ".."+string(filepath.Separator)) {
+		if repo.Directory == "" || repo.Directory == "." || strings.ContainsAny(repo.Directory, "\\:\x00") ||
+			filepath.IsAbs(repo.Directory) ||
+			filepath.Clean(repo.Directory) != repo.Directory ||
+			repo.Directory == ".." ||
+			strings.HasPrefix(repo.Directory, ".."+string(filepath.Separator)) {
 			return nil, fmt.Errorf("invalid workspace repository path")
 		}
 		paths = append(paths, filepath.Join(workspace, repo.Directory))
@@ -64,7 +73,10 @@ func protectedCustomPaths(workspace, home string, manifest profilecontract.Works
 			}
 			paths = append(paths, collection)
 			for _, source := range registry.Repositories {
-				if source.ID == "" || source.ID == "." || source.ID == ".." || strings.ContainsAny(source.ID, "/\\\x00\r\n") || !filepath.IsAbs(source.CommonDir) || source.Worktree != "" && !filepath.IsAbs(source.Worktree) {
+				if source.ID == "" || source.ID == "." || source.ID == ".." ||
+					strings.ContainsAny(source.ID, "/\\\x00\r\n") ||
+					!filepath.IsAbs(source.CommonDir) ||
+					source.Worktree != "" && !filepath.IsAbs(source.Worktree) {
 					return nil, fmt.Errorf("invalid registered source paths")
 				}
 				paths = append(paths, source.CommonDir)
@@ -138,7 +150,10 @@ func resolveCustomRoot(manifestPath, home string, manifest profilecontract.Works
 		return "", false, err
 	}
 	var owner profilecontract.Record
-	if err := profilecontract.ReadJSON(filepath.Join(filepath.Dir(binding.StateRoot), ".omniview-profile.json"), &owner); err != nil {
+	if err := profilecontract.ReadJSON(
+		filepath.Join(filepath.Dir(binding.StateRoot), ".omniview-profile.json"),
+		&owner,
+	); err != nil {
 		return "", false, err
 	}
 	if owner != binding {

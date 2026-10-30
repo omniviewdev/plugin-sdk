@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
@@ -81,7 +82,10 @@ func (s *server) checkAncillaryCatalogs(ctx context.Context, request *resourcepb
 			if target.Route != in.Source.Route || target.Provider != sourceProvider {
 				revision, ok := resourcev2.QualifiedCatalogRevisionFromContext(ctx, target.Provider, target.Route)
 				if !ok {
-					return resourcev2.NewError("RESET_REQUIRED", "An explicit accepted catalog revision is required for each relationship target route.")
+					return resourcev2.NewError(
+						"RESET_REQUIRED",
+						"An explicit accepted catalog revision is required for each relationship target route.",
+					)
 				}
 				if err := resourcev2.ValidateCatalogRevision(revision); err != nil {
 					return err

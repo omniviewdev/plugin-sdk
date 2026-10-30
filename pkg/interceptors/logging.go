@@ -4,9 +4,10 @@ import (
 	"context"
 	"time"
 
-	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
 )
 
 // UnaryLogging returns a unary interceptor that logs each RPC call with method, duration, and error.

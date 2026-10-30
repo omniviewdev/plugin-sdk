@@ -33,6 +33,7 @@ func (e *ResourceOperationError) Error() string {
 	}{e.Code, e.Title, e.Message, e.Suggestions})
 	return string(b)
 }
+
 func (e *ResourceOperationError) Unwrap() error {
 	if e == nil {
 		return nil
@@ -46,6 +47,7 @@ func (e *ResourceOperationError) Unwrap() error {
 // ResourceOperationError.Err instead. This function does not validate or redact
 // detail, and host redaction remains authoritative.
 func NewError(code, detail string) error { return &ResourceOperationError{Code: code, Message: detail} }
+
 func ErrorCode(err error) string {
 	if err == nil {
 		return ""

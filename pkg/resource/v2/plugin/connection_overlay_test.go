@@ -2,13 +2,15 @@ package plugin
 
 import (
 	"context"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
-	"google.golang.org/grpc"
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"google.golang.org/grpc"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
 func assertConnectionNames(t *testing.T, c *Client, want map[string]string) {
@@ -28,17 +30,25 @@ func assertConnectionNames(t *testing.T, c *Client, want map[string]string) {
 		seen[connection.ID] = true
 	}
 }
+
 func TestActualGRPCConnectionOverlayResetAndNativeRefresh(t *testing.T) {
 	var mu sync.Mutex
 	native := []types.Connection{{ID: "native", Name: "native-v1"}}
 	var destroyed atomic.Int32
-	controller, err := resourcev2.NewController(resourcev2.Config[int]{Catalog: func(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
-		return resourcev2.Catalog{Provider: "test", Revision: "catalog-1", Types: []resourcev2.ResourceType{}, Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}}}, nil
-	}, Lifecycle: &resourcev2.Lifecycle[int]{LoadConnections: func(context.Context) ([]types.Connection, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		return append([]types.Connection(nil), native...), nil
-	}, CreateClient: func(context.Context, types.Connection) (*int, error) { value := 1; return &value, nil }, DestroyClient: func(context.Context, *int) error { destroyed.Add(1); return nil }}})
+	controller, err := resourcev2.NewController(
+		resourcev2.Config[int]{Catalog: func(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
+			return resourcev2.Catalog{
+				Provider: "test",
+				Revision: "catalog-1",
+				Types:    []resourcev2.ResourceType{},
+				Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}},
+			}, nil
+		}, Lifecycle: &resourcev2.Lifecycle[int]{LoadConnections: func(context.Context) ([]types.Connection, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			return append([]types.Connection(nil), native...), nil
+		}, CreateClient: func(context.Context, types.Connection) (*int, error) { value := 1; return &value, nil }, DestroyClient: func(context.Context, *int) error { destroyed.Add(1); return nil }}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +69,10 @@ func TestActualGRPCConnectionOverlayResetAndNativeRefresh(t *testing.T) {
 	if _, err = c.StartConnection(ctx, "native"); err != nil {
 		t.Fatal(err)
 	}
-	overlay := resourcev2.ConnectionOverlay{Upserts: []types.Connection{{ID: "native", Name: "override"}, {ID: "custom", Name: "host-custom"}}, DisabledIDs: []string{}}
+	overlay := resourcev2.ConnectionOverlay{
+		Upserts:     []types.Connection{{ID: "native", Name: "override"}, {ID: "custom", Name: "host-custom"}},
+		DisabledIDs: []string{},
+	}
 	if err = c.ApplyConnectionOverlay(ctx, overlay); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +115,10 @@ func TestActualGRPCConnectionOverlayResetAndNativeRefresh(t *testing.T) {
 			t.Fatal("native provenance contains overlay data")
 		}
 	}
-	if err = c.ApplyConnectionOverlay(ctx, resourcev2.ConnectionOverlay{Upserts: []types.Connection{}, DisabledIDs: []string{}}); err != nil {
+	if err = c.ApplyConnectionOverlay(
+		ctx,
+		resourcev2.ConnectionOverlay{Upserts: []types.Connection{}, DisabledIDs: []string{}},
+	); err != nil {
 		t.Fatal(err)
 	}
 	assertConnectionNames(t, c, map[string]string{"native": "native-v2", "fresh": "new-native"})
@@ -125,6 +141,7 @@ func (p *overlayObserver) ApplyConnectionOverlay(context.Context, resourcev2.Con
 	p.calls.Add(1)
 	return nil
 }
+
 func TestActualGRPCOverlayRejectsAmbiguousAndConflictingIntent(t *testing.T) {
 	p := &overlayObserver{}
 	s := grpc.NewServer()
@@ -132,7 +149,10 @@ func TestActualGRPCOverlayRejectsAmbiguousAndConflictingIntent(t *testing.T) {
 	c := NewClient(pipe(t, s))
 	ctx := context.Background()
 	for _, data := range [][]byte{[]byte(`{"upserts":[],"disabledIDs":[],"disabledIDs":[]}`), []byte(`{"upserts":[{"id":"same"}],"disabledIDs":["same"]}`), []byte(`{"upserts":[],"disabledIDs":[],"unknown":true}`)} {
-		_, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: "applyConnectionOverlay", ConnectionJson: data})
+		_, err := c.ancillary(
+			ctx,
+			&resourcepb.AncillaryRequest{Operation: "applyConnectionOverlay", ConnectionJson: data},
+		)
 		if resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
 			t.Fatalf("invalid overlay accepted: %v", err)
 		}
@@ -140,13 +160,17 @@ func TestActualGRPCOverlayRejectsAmbiguousAndConflictingIntent(t *testing.T) {
 	if p.calls.Load() != 0 {
 		t.Fatal("invalid overlay dispatched")
 	}
-	if err := c.ApplyConnectionOverlay(ctx, resourcev2.ConnectionOverlay{Upserts: []types.Connection{}, DisabledIDs: []string{}}); err != nil {
+	if err := c.ApplyConnectionOverlay(
+		ctx,
+		resourcev2.ConnectionOverlay{Upserts: []types.Connection{}, DisabledIDs: []string{}},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if p.calls.Load() != 1 {
 		t.Fatal("explicit overlay reset did not dispatch")
 	}
 }
+
 func (p *overlayObserver) NativeConnections(context.Context) ([]types.Connection, error) {
 	return []types.Connection{}, nil
 }

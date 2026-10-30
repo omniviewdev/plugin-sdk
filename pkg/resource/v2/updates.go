@@ -146,7 +146,17 @@ var AllWatchStates = []struct {
 	Value  WatchState
 	TSName string
 }{
-	{WatchStateIdle, "IDLE"}, {WatchStateSyncing, "SYNCING"}, {WatchStateSynced, "SYNCED"}, {WatchStateError, "ERROR"}, {WatchStateStopped, "STOPPED"}, {WatchStateFailed, "FAILED"}, {WatchStateForbidden, "FORBIDDEN"}, {WatchStateSkipped, "SKIPPED"},
+	{
+		WatchStateIdle,
+		"IDLE",
+	},
+	{WatchStateSyncing, "SYNCING"},
+	{WatchStateSynced, "SYNCED"},
+	{WatchStateError, "ERROR"},
+	{WatchStateStopped, "STOPPED"},
+	{WatchStateFailed, "FAILED"},
+	{WatchStateForbidden, "FORBIDDEN"},
+	{WatchStateSkipped, "SKIPPED"},
 }
 
 // AllSyncPolicies maps startup policies to UI names. Treat this shared table as

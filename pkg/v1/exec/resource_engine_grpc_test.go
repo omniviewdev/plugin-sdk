@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/omniviewdev/plugin-sdk/pkg/v1/exec"
-	"github.com/omniviewdev/plugin-sdk/pkg/v1/exec/exectest"
-	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/v1/exec"
+	"github.com/omniviewdev/plugin-sdk/pkg/v1/exec/exectest"
+	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
 
 type streamReadyManager struct {
@@ -30,7 +31,11 @@ func TestManagerNonresourceActualGRPCTerminalLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := exectest.Mount(t, exectest.WithTerminalFactory(exectest.FakeTerminalFactory(terminal)), exectest.WithHandler(exec.Handler{TTYHandler: exectest.NoopTTYHandler()}))
+	h := exectest.Mount(
+		t,
+		exectest.WithTerminalFactory(exectest.FakeTerminalFactory(terminal)),
+		exectest.WithHandler(exec.Handler{TTYHandler: exectest.NoopTTYHandler()}),
+	)
 	exec.SetSink(h.Manager, nil)
 	provider := &streamReadyManager{Manager: h.Manager, ready: make(chan struct{})}
 	server := grpc.NewServer()
@@ -38,7 +43,11 @@ func TestManagerNonresourceActualGRPCTerminalLifecycle(t *testing.T) {
 	listener := bufconn.Listen(1 << 20)
 	go server.Serve(listener)
 	t.Cleanup(func() { server.Stop(); listener.Close() })
-	connection, err := grpc.NewClient("passthrough:///terminal-lifecycle", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }))
+	connection, err := grpc.NewClient(
+		"passthrough:///terminal-lifecycle",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,10 +4,11 @@ import (
 	"context"
 	"runtime/debug"
 
-	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
 )
 
 // UnaryPanicRecovery returns a unary server interceptor that recovers from panics,

@@ -9,11 +9,14 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
 	"github.com/omniviewdev/plugin-sdk/pkg/profilecontract"
 )
 
-const StateDirectoryEnvironment = "OMNIVIEW_STATE_DIR"
-const WorkspaceFileEnvironment = "OMNIVIEW_WORKSPACE_FILE"
+const (
+	StateDirectoryEnvironment = "OMNIVIEW_STATE_DIR"
+	WorkspaceFileEnvironment  = "OMNIVIEW_WORKSPACE_FILE"
+)
 
 // ResolveRoot consumes the host's resolved root, never choosing a workspace on
 // the host's behalf. Only launches without workspace context may use production.
@@ -60,7 +63,8 @@ func ResolveRoot() (string, error) {
 		return "", fmt.Errorf("parse workspace manifest: %w", err)
 	}
 	id, err := uuid.Parse(manifest.WorkspaceID)
-	if err != nil || id == uuid.Nil || id.String() != manifest.WorkspaceID || manifest.SchemaVersion != 1 || manifest.Profile.Kind != "development" {
+	if err != nil || id == uuid.Nil || id.String() != manifest.WorkspaceID || manifest.SchemaVersion != 1 ||
+		manifest.Profile.Kind != "development" {
 		return "", fmt.Errorf("workspace requires v1 development identity and canonical nonzero UUID")
 	}
 	customRoot, custom, err := resolveCustomRoot(workspace, home, manifest)
@@ -73,7 +77,9 @@ func ResolveRoot() (string, error) {
 		}
 		return root, nil
 	}
-	expected, err := profilecontract.CanonicalPath(filepath.Join(home, ".omniview-dev", "profiles", manifest.WorkspaceID, "state"))
+	expected, err := profilecontract.CanonicalPath(
+		filepath.Join(home, ".omniview-dev", "profiles", manifest.WorkspaceID, "state"),
+	)
 	if err != nil {
 		return "", err
 	}
@@ -123,7 +129,9 @@ func ValidateComponent(name string) error {
 		return fmt.Errorf("invalid trailing dot in state path component")
 	}
 	base := strings.ToUpper(strings.SplitN(name, ".", 2)[0])
-	if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" || len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9' {
+	if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" ||
+		len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' &&
+			base[3] <= '9' {
 		return fmt.Errorf("reserved state path component %q", name)
 	}
 	return nil
@@ -154,7 +162,7 @@ func OpenDirectory(root *os.Root, name string, create bool) (*os.Root, error) {
 		return nil, err
 	}
 	if create {
-		if err := root.Mkdir(name, 0700); err != nil && !os.IsExist(err) {
+		if err := root.Mkdir(name, 0o700); err != nil && !os.IsExist(err) {
 			return nil, err
 		}
 	}

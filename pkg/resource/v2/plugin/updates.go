@@ -2,9 +2,11 @@ package plugin
 
 import (
 	"context"
+
+	"google.golang.org/grpc"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
-	"google.golang.org/grpc"
 )
 
 type updatesServer struct {
@@ -18,7 +20,13 @@ func registerUpdates(s *grpc.Server, owner *server) {
 	d.Streams = []grpc.StreamDesc{{StreamName: "Listen", Handler: listenUpdatesHandler, ServerStreams: true}}
 	s.RegisterService(&d, &updatesServer{owner: owner})
 }
-func updateCallHandler(srv interface{}, ctx context.Context, dec func(interface{}) error, i grpc.UnaryServerInterceptor) (interface{}, error) {
+
+func updateCallHandler(
+	srv interface{},
+	ctx context.Context,
+	dec func(interface{}) error,
+	i grpc.UnaryServerInterceptor,
+) (interface{}, error) {
 	r := &resourcepb.UpdateRequest{}
 	e := &envelope{message: r}
 	if err := dec(e); err != nil {
@@ -49,6 +57,7 @@ func updateCallHandler(srv interface{}, ctx context.Context, dec func(interface{
 	}
 	return i(ctx, r, &grpc.UnaryServerInfo{Server: srv, FullMethod: resourcepb.ResourceUpdates_Call_FullMethodName}, f)
 }
+
 func (s *updatesServer) call(ctx context.Context, r *resourcepb.UpdateRequest) (*resourcepb.UpdateResponse, error) {
 	if r.Version != 2 {
 		return nil, unsupported("unsupported update wire version")
@@ -130,6 +139,7 @@ func (s *updatesServer) call(ctx context.Context, r *resourcepb.UpdateRequest) (
 	}
 	return out, nil
 }
+
 func (c *Client) update(ctx context.Context, r *resourcepb.UpdateRequest) (*resourcepb.UpdateResponse, error) {
 	ctx, err := outgoingSession(ctx)
 	if err != nil {
@@ -138,7 +148,14 @@ func (c *Client) update(ctx context.Context, r *resourcepb.UpdateRequest) (*reso
 	r.Version = 2
 	out := &resourcepb.UpdateResponse{}
 	e := &envelope{message: out}
-	if err := c.conn.Invoke(ctx, resourcepb.ResourceUpdates_Call_FullMethodName, r, e, grpc.MaxCallRecvMsgSize(MaxWireBytes), grpc.MaxCallSendMsgSize(MaxWireBytes)); err != nil {
+	if err := c.conn.Invoke(
+		ctx,
+		resourcepb.ResourceUpdates_Call_FullMethodName,
+		r,
+		e,
+		grpc.MaxCallRecvMsgSize(MaxWireBytes),
+		grpc.MaxCallSendMsgSize(MaxWireBytes),
+	); err != nil {
 		return nil, domainError(err)
 	}
 	if e.err != nil {
@@ -149,6 +166,7 @@ func (c *Client) update(ctx context.Context, r *resourcepb.UpdateRequest) (*reso
 	}
 	return out, nil
 }
+
 func updateSuccess(out *resourcepb.UpdateResponse, err error) error {
 	if err != nil {
 		return err
@@ -159,6 +177,7 @@ func updateSuccess(out *resourcepb.UpdateResponse, err error) error {
 	}
 	return nil
 }
+
 func (c *Client) StartConnectionWatch(ctx context.Context, targets []resourcev2.ReadTarget) error {
 	if len(targets) == 0 || len(targets) > MaxPageSize {
 		return invalid("explicit bounded watch targets required")
@@ -174,6 +193,7 @@ func (c *Client) StartConnectionWatch(ctx context.Context, targets []resourcev2.
 	out, err := c.update(ctx, r)
 	return updateSuccess(out, err)
 }
+
 func (c *Client) StopConnectionWatch(ctx context.Context, route resourcev2.AccessRoute) error {
 	p, err := resourcev2.ToProtoAccessRoute(route)
 	if err != nil {
@@ -196,7 +216,11 @@ func (c *Client) HasWatch(ctx context.Context, route resourcev2.AccessRoute) boo
 	v, ok := out.Result.(*resourcepb.UpdateResponse_Running)
 	return ok && v.Running
 }
-func (c *Client) GetWatchState(ctx context.Context, route resourcev2.AccessRoute) (*resourcev2.WatchConnectionSummary, error) {
+
+func (c *Client) GetWatchState(
+	ctx context.Context,
+	route resourcev2.AccessRoute,
+) (*resourcev2.WatchConnectionSummary, error) {
 	p, err := resourcev2.ToProtoAccessRoute(route)
 	if err != nil {
 		return nil, err
@@ -220,6 +244,7 @@ func (c *Client) GetWatchState(ctx context.Context, route resourcev2.AccessRoute
 	}
 	return &v, nil
 }
+
 func (c *Client) EnsureResourceWatch(ctx context.Context, target resourcev2.ReadTarget) error {
 	p, err := resourcev2.ToProtoReadTarget(target)
 	if err != nil {
@@ -228,6 +253,7 @@ func (c *Client) EnsureResourceWatch(ctx context.Context, target resourcev2.Read
 	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: "ensure", Target: p})
 	return updateSuccess(out, err)
 }
+
 func (c *Client) RestartResourceWatch(ctx context.Context, target resourcev2.ReadTarget) error {
 	p, err := resourcev2.ToProtoReadTarget(target)
 	if err != nil {
@@ -236,6 +262,7 @@ func (c *Client) RestartResourceWatch(ctx context.Context, target resourcev2.Rea
 	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: "restart", Target: p})
 	return updateSuccess(out, err)
 }
+
 func (c *Client) StopResourceWatch(ctx context.Context, route resourcev2.AccessRoute, key string) error {
 	p, err := resourcev2.ToProtoAccessRoute(route)
 	if err != nil {
@@ -244,6 +271,7 @@ func (c *Client) StopResourceWatch(ctx context.Context, route resourcev2.AccessR
 	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: "stopResource", Route: p, Type: key})
 	return updateSuccess(out, err)
 }
+
 func (c *Client) IsResourceWatchRunning(ctx context.Context, route resourcev2.AccessRoute, key string) (bool, error) {
 	p, err := resourcev2.ToProtoAccessRoute(route)
 	if err != nil {

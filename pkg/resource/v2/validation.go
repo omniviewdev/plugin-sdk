@@ -38,6 +38,7 @@ func text(s string, required bool) error {
 	}
 	return nil
 }
+
 func token(s *string) error {
 	if s != nil {
 		return text(*s, true)
@@ -158,6 +159,7 @@ func metadataAdmission(v any, depthLimit, nodeLimit int, jsonOutput bool) error 
 	}
 	return visit(reflect.ValueOf(v), 0)
 }
+
 func dimensions(ds []Dimension) (map[string]bool, error) {
 	if err := admission(ds); err != nil {
 		return nil, err
@@ -174,6 +176,7 @@ func dimensions(ds []Dimension) (map[string]bool, error) {
 	}
 	return out, nil
 }
+
 func ValidateAddress(a ResourceAddress, declared ...[]Dimension) error {
 	if len(declared) > 1 {
 		return invalid("multiple identity dimension declarations")
@@ -218,6 +221,7 @@ func ValidateAddress(a ResourceAddress, declared ...[]Dimension) error {
 	}
 	return nil
 }
+
 func ValidateScope(s QueryScope, declared ...[]Dimension) error {
 	if len(declared) > 1 {
 		return invalid("multiple query dimension declarations")
@@ -273,6 +277,7 @@ func ValidateScope(s QueryScope, declared ...[]Dimension) error {
 	}
 	return nil
 }
+
 func canonicalInt(s string, unsigned bool) error {
 	if len(s) > 20 {
 		return invalid("integer out of range")
@@ -306,6 +311,7 @@ func canonicalInt(s string, unsigned bool) error {
 	}
 	return nil
 }
+
 func timestamp(s string) (time.Time, error) {
 	if len(s) < 20 || len(s) > 40 {
 		return time.Time{}, invalid("invalid timestamp")
@@ -348,6 +354,7 @@ func timestamp(s string) (time.Time, error) {
 	}
 	return t.UTC(), nil
 }
+
 func ValidateValue(v Value) error {
 	nodes, bytes := 0, 0
 	var walk func(Value, int) error
@@ -363,7 +370,13 @@ func ValidateValue(v Value) error {
 		if !utf8.ValidString(v.String) {
 			return invalid("invalid UTF-8 value")
 		}
-		if (v.Kind != "bool" && v.Bool) || (v.Kind != "string" && v.String != "") || (v.Kind != "int64" && v.Int != "") || (v.Kind != "uint64" && v.Uint != "") || (v.Kind != "double" && (v.Double != 0 || math.Signbit(v.Double))) || (v.Kind != "timestamp" && v.Timestamp != "") || (v.Kind != "list" && v.List != nil) || (v.Kind != "map" && v.Map != nil) {
+		if (v.Kind != "bool" && v.Bool) || (v.Kind != "string" && v.String != "") ||
+			(v.Kind != "int64" && v.Int != "") ||
+			(v.Kind != "uint64" && v.Uint != "") ||
+			(v.Kind != "double" && (v.Double != 0 || math.Signbit(v.Double))) ||
+			(v.Kind != "timestamp" && v.Timestamp != "") ||
+			(v.Kind != "list" && v.List != nil) ||
+			(v.Kind != "map" && v.Map != nil) {
 			return invalid("inactive value payload")
 		}
 		switch v.Kind {
@@ -417,6 +430,7 @@ func ValidateValue(v Value) error {
 	}
 	return nil
 }
+
 func validateReference(r ResourceReference) error {
 	if err := ValidateAddress(r.Address); err != nil {
 		return err
@@ -509,6 +523,7 @@ func validateSchema(s SchemaBinding) error {
 	}
 	return nil
 }
+
 func validateRepresentation(r Representation) error {
 	if err := text(r.ID, true); err != nil {
 		return err
@@ -518,6 +533,7 @@ func validateRepresentation(r Representation) error {
 	}
 	return validateSchema(r.Schema)
 }
+
 func validateCoverage(c Coverage) error {
 	if err := admission(c); err != nil {
 		return err
@@ -536,6 +552,7 @@ func validateCoverage(c Coverage) error {
 	}
 	return nil
 }
+
 func validateCount(c Count) error {
 	switch c.Kind {
 	case "unknown":
@@ -552,6 +569,7 @@ func validateCount(c Count) error {
 	}
 	return nil
 }
+
 func ValidateCatalog(c Catalog) error {
 	if err := admission(c); err != nil {
 		return err
@@ -609,6 +627,7 @@ func ValidateCatalog(c Catalog) error {
 	}
 	return nil
 }
+
 func validateTarget(t ReadTarget) error {
 	if err := admission(t); err != nil {
 		return err
@@ -623,6 +642,7 @@ func validateTarget(t ReadTarget) error {
 	}
 	return ValidateScope(t.Scope)
 }
+
 func ValidateGetRequest(v GetRequest) error {
 	if err := admission(v); err != nil {
 		return err
@@ -635,6 +655,7 @@ func ValidateGetRequest(v GetRequest) error {
 	}
 	return text(v.Representation, true)
 }
+
 func ValidateEnumerateRequest(v EnumerateRequest) error {
 	if err := validateTarget(v.Target); err != nil {
 		return err
@@ -644,8 +665,11 @@ func ValidateEnumerateRequest(v EnumerateRequest) error {
 	}
 	return token(v.Cursor)
 }
+
 func ValidateNativeQueryRequest(v NativeQueryRequest) error {
-	if err := ValidateEnumerateRequest(EnumerateRequest{Target: v.Target, PageSize: v.PageSize, Cursor: v.Cursor}); err != nil {
+	if err := ValidateEnumerateRequest(
+		EnumerateRequest{Target: v.Target, PageSize: v.PageSize, Cursor: v.Cursor},
+	); err != nil {
 		return err
 	}
 	if err := text(v.Language, true); err != nil {
@@ -653,6 +677,7 @@ func ValidateNativeQueryRequest(v NativeQueryRequest) error {
 	}
 	return ValidateValue(v.Query)
 }
+
 func ValidateMutationRequest(v MutationRequest) error {
 	if err := admission(v); err != nil {
 		return err
@@ -671,6 +696,7 @@ func ValidateMutationRequest(v MutationRequest) error {
 	}
 	return ValidateValue(v.Input)
 }
+
 func ValidateActionRequest(v ActionRequest) error {
 	if err := admission(v); err != nil {
 		return err
@@ -686,6 +712,7 @@ func ValidateActionRequest(v ActionRequest) error {
 	}
 	return ValidateValue(v.Input)
 }
+
 func ValidateRecord(r Record) error {
 	if err := admission(r); err != nil {
 		return err
@@ -707,6 +734,7 @@ func ValidateRecord(r Record) error {
 	}
 	return token(r.SourceRevision)
 }
+
 func ValidateSourcePage(p SourcePage) error {
 	if len(p.Records) > maxPageRecords {
 		return limited("page record limit")
@@ -743,7 +771,17 @@ func ValidateSourcePage(p SourcePage) error {
 	if err := validateCoverage(p.Coverage); err != nil {
 		return err
 	}
-	pageBytes += optionalStringFieldSize(p.NextCursor) + messageFieldSize(stringFieldSize(p.Count.Kind)+optionalStringFieldSize(p.Count.Value)) + messageFieldSize(coverageWireSize(p.Coverage)) + stringFieldSize(p.Consistency) + optionalStringFieldSize(p.SourceRevision)
+	pageBytes += optionalStringFieldSize(
+		p.NextCursor,
+	) + messageFieldSize(
+		stringFieldSize(p.Count.Kind)+optionalStringFieldSize(p.Count.Value),
+	) + messageFieldSize(
+		coverageWireSize(p.Coverage),
+	) + stringFieldSize(
+		p.Consistency,
+	) + optionalStringFieldSize(
+		p.SourceRevision,
+	)
 	// Include the negotiated Response version and page wrapper, not just bodies.
 	if 2+messageFieldSize(pageBytes) > MaxMessageBytes {
 		return limited("page frame byte limit")
@@ -840,6 +878,7 @@ func validateNativeAuthorityHint(v NativeAuthorityHint) error {
 		return invalid("unknown native authority continuity")
 	}
 }
+
 func validateNativeTime(t time.Time) error {
 	if t.Year() < 1 || t.Year() > 9999 || t.UTC().Year() < 1 || t.UTC().Year() > 9999 {
 		return invalid("timestamp out of range")
@@ -873,12 +912,14 @@ func validateSchemaRoot(root string) error {
 	}
 	return nil
 }
+
 func validateSchemaDocumentReference(v SchemaDocumentReference) error {
 	if err := text(v.ID, true); err != nil {
 		return err
 	}
 	return text(v.Revision, true)
 }
+
 func ValidateSchemaDocument(v SchemaDocument) error {
 	if err := admission(v); err != nil {
 		return err
@@ -899,12 +940,14 @@ func stringFieldSize(s string) int {
 	}
 	return messageFieldSize(len(s))
 }
+
 func optionalStringFieldSize(s *string) int {
 	if s == nil {
 		return 0
 	}
 	return messageFieldSize(len(*s))
 }
+
 func addressWireSize(a ResourceAddress) int {
 	size := stringFieldSize(a.Provider) + stringFieldSize(a.Authority) + stringFieldSize(a.Type) + stringFieldSize(a.ID)
 	for _, entry := range a.Scope {
@@ -912,11 +955,25 @@ func addressWireSize(a ResourceAddress) int {
 	}
 	return size
 }
+
 func referenceWireSize(r ResourceReference) int {
 	return messageFieldSize(addressWireSize(r.Address)) + optionalStringFieldSize(r.Incarnation)
 }
+
 func schemaWireSize(s SchemaBinding) int {
-	size := stringFieldSize(s.State) + optionalStringFieldSize(s.Revision) + stringFieldSize(s.Dialect) + stringFieldSize(s.Validation) + stringFieldSize(s.Root) + optionalStringFieldSize(s.UnavailableReason)
+	size := stringFieldSize(
+		s.State,
+	) + optionalStringFieldSize(
+		s.Revision,
+	) + stringFieldSize(
+		s.Dialect,
+	) + stringFieldSize(
+		s.Validation,
+	) + stringFieldSize(
+		s.Root,
+	) + optionalStringFieldSize(
+		s.UnavailableReason,
+	)
 	if len(s.Document) > 0 {
 		size += messageFieldSize(len(s.Document))
 	}
@@ -928,6 +985,7 @@ func schemaWireSize(s SchemaBinding) int {
 	}
 	return size
 }
+
 func coverageWireSize(c Coverage) int {
 	size := stringFieldSize(c.Kind) + stringFieldSize(c.Reason)
 	for _, path := range c.Paths {
@@ -935,9 +993,26 @@ func coverageWireSize(c Coverage) int {
 	}
 	return size
 }
+
 func recordWireSize(r Record) int {
-	representation := stringFieldSize(r.Representation.ID) + stringFieldSize(r.Representation.Revision) + messageFieldSize(schemaWireSize(r.Representation.Schema))
-	return messageFieldSize(referenceWireSize(r.Reference)) + messageFieldSize(valueWireSize(r.Body)) + messageFieldSize(representation) + messageFieldSize(coverageWireSize(r.Coverage)) + optionalStringFieldSize(r.SourceRevision)
+	representation := stringFieldSize(
+		r.Representation.ID,
+	) + stringFieldSize(
+		r.Representation.Revision,
+	) + messageFieldSize(
+		schemaWireSize(r.Representation.Schema),
+	)
+	return messageFieldSize(
+		referenceWireSize(r.Reference),
+	) + messageFieldSize(
+		valueWireSize(r.Body),
+	) + messageFieldSize(
+		representation,
+	) + messageFieldSize(
+		coverageWireSize(r.Coverage),
+	) + optionalStringFieldSize(
+		r.SourceRevision,
+	)
 }
 
 // RecordWireSize reports exact protobuf Record bytes without building a second
@@ -957,7 +1032,22 @@ func emptyJSONField(v reflect.Value) bool {
 	switch v.Kind() {
 	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
 		return v.Len() == 0
-	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32, reflect.Float64, reflect.Interface, reflect.Pointer:
+	case reflect.Bool,
+		reflect.Int,
+		reflect.Int8,
+		reflect.Int16,
+		reflect.Int32,
+		reflect.Int64,
+		reflect.Uint,
+		reflect.Uint8,
+		reflect.Uint16,
+		reflect.Uint32,
+		reflect.Uint64,
+		reflect.Uintptr,
+		reflect.Float32,
+		reflect.Float64,
+		reflect.Interface,
+		reflect.Pointer:
 		return v.IsZero()
 	}
 	return false

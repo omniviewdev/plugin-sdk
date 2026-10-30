@@ -105,7 +105,10 @@ func ReadJSON(path string, value any) error {
 
 func ValidateRecord(record Record) error {
 	id, err := uuid.Parse(record.WorkspaceID)
-	if record.SchemaVersion != 1 || err != nil || id == uuid.Nil || id.String() != record.WorkspaceID || !filepath.IsAbs(record.StateRoot) || filepath.Clean(record.StateRoot) != record.StateRoot || filepath.Base(record.StateRoot) != "state" {
+	if record.SchemaVersion != 1 || err != nil || id == uuid.Nil || id.String() != record.WorkspaceID ||
+		!filepath.IsAbs(record.StateRoot) ||
+		filepath.Clean(record.StateRoot) != record.StateRoot ||
+		filepath.Base(record.StateRoot) != "state" {
 		return invalid("invalid machine-local profile identity or state path")
 	}
 	canonical, err := CanonicalPath(record.StateRoot)
@@ -156,7 +159,14 @@ func (j *OwnershipJournal[M]) ValidateBoundary(root, workspaceID string, intent 
 	}
 	oldRoot := ""
 	if j.Root != root {
-		if j.Phase != "rename" || j.RenameTo != root || !filepath.IsAbs(j.Root) || filepath.Clean(j.Root) != j.Root || filepath.Dir(j.Root) != filepath.Dir(root) || intent.SchemaVersion != 1 || intent.WorkspaceID != workspaceID || intent.Profile.Kind != "development" || len(intent.Slug) > 48 || !renameSlugPattern.MatchString(intent.Slug) || intent.Slug != filepath.Base(root) {
+		if j.Phase != "rename" || j.RenameTo != root || !filepath.IsAbs(j.Root) || filepath.Clean(j.Root) != j.Root ||
+			filepath.Dir(j.Root) != filepath.Dir(root) ||
+			intent.SchemaVersion != 1 ||
+			intent.WorkspaceID != workspaceID ||
+			intent.Profile.Kind != "development" ||
+			len(intent.Slug) > 48 ||
+			!renameSlugPattern.MatchString(intent.Slug) ||
+			intent.Slug != filepath.Base(root) {
 			return "", conflict("workspace ownership boundary disagrees with selected workspace")
 		}
 		oldRoot = j.Root

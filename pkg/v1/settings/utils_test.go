@@ -3,11 +3,12 @@ package settings
 import (
 	"testing"
 
-	settingspb "github.com/omniviewdev/plugin-sdk/proto/v1/settings"
-	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
+
+	settingspb "github.com/omniviewdev/plugin-sdk/proto/v1/settings"
+	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
 )
 
 func settingWireRoundTrip(t *testing.T, setting *settingspb.Setting) *settingspb.Setting {
@@ -97,7 +98,15 @@ func TestPasswordWireCannotDeclareItselfPublic(t *testing.T) {
 func TestMalformedSettingWireCannotBecomePublicSchema(t *testing.T) {
 	for _, field := range []string{"value", "default", "option"} {
 		t.Run(field, func(t *testing.T) {
-			setting := ToProtoSetting(pkgsettings.Setting{ID: "broken", Type: pkgsettings.Text, Value: "public", Default: "public-default", Options: []pkgsettings.SettingOption{{Value: "public-option"}}})
+			setting := ToProtoSetting(
+				pkgsettings.Setting{
+					ID:      "broken",
+					Type:    pkgsettings.Text,
+					Value:   "public",
+					Default: "public-default",
+					Options: []pkgsettings.SettingOption{{Value: "public-option"}},
+				},
+			)
 			require.NotNil(t, setting)
 			malformed := &anypb.Any{TypeUrl: "invalid.test/not-json", Value: []byte("invalid")}
 			switch field {

@@ -3,13 +3,18 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+
+	"google.golang.org/grpc"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
-	"google.golang.org/grpc"
 )
 
-func (c *Client) ancillary(ctx context.Context, in *resourcepb.AncillaryRequest) (*resourcepb.AncillaryResponse, error) {
+func (c *Client) ancillary(
+	ctx context.Context,
+	in *resourcepb.AncillaryRequest,
+) (*resourcepb.AncillaryResponse, error) {
 	var err error
 	ctx, err = outgoingSession(ctx)
 	if err != nil {
@@ -18,7 +23,14 @@ func (c *Client) ancillary(ctx context.Context, in *resourcepb.AncillaryRequest)
 	in.Version = resourcev2.WireVersion
 	out := &resourcepb.AncillaryResponse{}
 	e := &envelope{message: out}
-	if err := c.conn.Invoke(ctx, resourcepb.ResourceAncillary_Call_FullMethodName, in, e, grpc.MaxCallRecvMsgSize(MaxWireBytes), grpc.MaxCallSendMsgSize(MaxWireBytes)); err != nil {
+	if err := c.conn.Invoke(
+		ctx,
+		resourcepb.ResourceAncillary_Call_FullMethodName,
+		in,
+		e,
+		grpc.MaxCallRecvMsgSize(MaxWireBytes),
+		grpc.MaxCallSendMsgSize(MaxWireBytes),
+	); err != nil {
 		return nil, domainError(err)
 	}
 	if e.err != nil {
@@ -29,6 +41,7 @@ func (c *Client) ancillary(ctx context.Context, in *resourcepb.AncillaryRequest)
 	}
 	return out, nil
 }
+
 func (c *Client) ancillaryJSON(ctx context.Context, in *resourcepb.AncillaryRequest, out any) error {
 	r, err := c.ancillary(ctx, in)
 	if err != nil {
@@ -51,14 +64,17 @@ func (c *Client) ancillaryJSON(ctx context.Context, in *resourcepb.AncillaryRequ
 	}
 	return nil
 }
+
 func ancillaryRoute(route resourcev2.AccessRoute) (*resourcepb.AccessRoute, error) {
 	return resourcev2.ToProtoAccessRoute(route)
 }
+
 func (c *Client) ListConnections(ctx context.Context) ([]types.Connection, error) {
 	var out []types.Connection
 	err := c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "listConnections"}, &out)
 	return out, err
 }
+
 func (c *Client) ScopeValues(ctx context.Context, route resourcev2.AccessRoute, dimension string) ([]string, error) {
 	var out []string
 	p, err := ancillaryRoute(route)
@@ -68,6 +84,7 @@ func (c *Client) ScopeValues(ctx context.Context, route resourcev2.AccessRoute, 
 	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "scopeValues", Route: p, Type: dimension}, &out)
 	return out, err
 }
+
 func (c *Client) UpdateConnection(ctx context.Context, in types.Connection) (types.Connection, error) {
 	var out types.Connection
 	if err := resourcev2.ValidateMetadata(in); err != nil {
@@ -83,10 +100,15 @@ func (c *Client) UpdateConnection(ctx context.Context, in types.Connection) (typ
 	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "updateConnection", ConnectionJson: data}, &out)
 	return out, err
 }
+
 func (c *Client) DeleteConnection(ctx context.Context, id string) error {
 	return c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "deleteConnection", Id: id}, &struct{}{})
 }
-func (c *Client) GetResourceGroups(ctx context.Context, route resourcev2.AccessRoute) ([]resourcev2.ResourceGroup, error) {
+
+func (c *Client) GetResourceGroups(
+	ctx context.Context,
+	route resourcev2.AccessRoute,
+) ([]resourcev2.ResourceGroup, error) {
 	var out []resourcev2.ResourceGroup
 	p, err := ancillaryRoute(route)
 	if err != nil {
@@ -95,7 +117,12 @@ func (c *Client) GetResourceGroups(ctx context.Context, route resourcev2.AccessR
 	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "groups", Route: p}, &out)
 	return out, err
 }
-func (c *Client) GetResourceDefinition(ctx context.Context, route resourcev2.AccessRoute, key string) (resourcev2.ResourceDefinition, error) {
+
+func (c *Client) GetResourceDefinition(
+	ctx context.Context,
+	route resourcev2.AccessRoute,
+	key string,
+) (resourcev2.ResourceDefinition, error) {
 	var out resourcev2.ResourceDefinition
 	p, err := ancillaryRoute(route)
 	if err != nil {
@@ -104,7 +131,11 @@ func (c *Client) GetResourceDefinition(ctx context.Context, route resourcev2.Acc
 	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "definition", Route: p, Type: key}, &out)
 	return out, err
 }
-func (c *Client) GetEditorSchemas(ctx context.Context, route resourcev2.AccessRoute) ([]resourcev2.EditorSchema, error) {
+
+func (c *Client) GetEditorSchemas(
+	ctx context.Context,
+	route resourcev2.AccessRoute,
+) ([]resourcev2.EditorSchema, error) {
 	p, err := ancillaryRoute(route)
 	if err != nil {
 		return nil, err
@@ -126,7 +157,12 @@ func (c *Client) GetEditorSchemas(ctx context.Context, route resourcev2.AccessRo
 	}
 	return out, nil
 }
-func (c *Client) GetActions(ctx context.Context, route resourcev2.AccessRoute, key string) ([]resourcev2.ActionDescriptor, error) {
+
+func (c *Client) GetActions(
+	ctx context.Context,
+	route resourcev2.AccessRoute,
+	key string,
+) ([]resourcev2.ActionDescriptor, error) {
 	var out []resourcev2.ActionDescriptor
 	p, err := ancillaryRoute(route)
 	if err != nil {
@@ -135,7 +171,12 @@ func (c *Client) GetActions(ctx context.Context, route resourcev2.AccessRoute, k
 	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "actions", Route: p, Type: key}, &out)
 	return out, err
 }
-func (c *Client) GetRelationships(ctx context.Context, route resourcev2.AccessRoute, key string) ([]resourcev2.RelationshipDescriptor, error) {
+
+func (c *Client) GetRelationships(
+	ctx context.Context,
+	route resourcev2.AccessRoute,
+	key string,
+) ([]resourcev2.RelationshipDescriptor, error) {
 	p, err := ancillaryRoute(route)
 	if err != nil {
 		return nil, err
@@ -157,12 +198,19 @@ func (c *Client) GetRelationships(ctx context.Context, route resourcev2.AccessRo
 	}
 	return out, nil
 }
-func (c *Client) ResolveRelationships(ctx context.Context, in resourcev2.RelationshipResolutionRequest) ([]resourcev2.ResolvedRelationship, error) {
+
+func (c *Client) ResolveRelationships(
+	ctx context.Context,
+	in resourcev2.RelationshipResolutionRequest,
+) ([]resourcev2.ResolvedRelationship, error) {
 	p, err := resourcev2.ToProtoRelationshipResolutionRequest(in)
 	if err != nil {
 		return nil, err
 	}
-	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: "resolveRelationships", RelationshipResolution: p})
+	r, err := c.ancillary(
+		ctx,
+		&resourcepb.AncillaryRequest{Operation: "resolveRelationships", RelationshipResolution: p},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +230,12 @@ func (c *Client) ResolveRelationships(ctx context.Context, in resourcev2.Relatio
 	}
 	return out, nil
 }
-func (c *Client) GetHealth(ctx context.Context, in resourcev2.GetRequest, body resourcev2.Value) (*resourcev2.ResourceHealth, error) {
+
+func (c *Client) GetHealth(
+	ctx context.Context,
+	in resourcev2.GetRequest,
+	body resourcev2.Value,
+) (*resourcev2.ResourceHealth, error) {
 	p, err := resourcev2.ToProtoGetRequest(in)
 	if err != nil {
 		return nil, err
@@ -207,7 +260,12 @@ func (c *Client) GetHealth(ctx context.Context, in resourcev2.GetRequest, body r
 	}
 	return &out, nil
 }
-func (c *Client) GetResourceEvents(ctx context.Context, in resourcev2.GetRequest, limit uint32) ([]resourcev2.ResourceEvent, error) {
+
+func (c *Client) GetResourceEvents(
+	ctx context.Context,
+	in resourcev2.GetRequest,
+	limit uint32,
+) ([]resourcev2.ResourceEvent, error) {
 	if limit > MaxPageSize {
 		return nil, limited("event limit exceeds bound")
 	}
@@ -235,7 +293,12 @@ func (c *Client) GetResourceEvents(ctx context.Context, in resourcev2.GetRequest
 	}
 	return out, nil
 }
-func (c *Client) GetSchemaDocument(ctx context.Context, route resourcev2.AccessRoute, reference resourcev2.SchemaDocumentReference) (resourcev2.SchemaDocument, error) {
+
+func (c *Client) GetSchemaDocument(
+	ctx context.Context,
+	route resourcev2.AccessRoute,
+	reference resourcev2.SchemaDocumentReference,
+) (resourcev2.SchemaDocument, error) {
 	p, err := ancillaryRoute(route)
 	if err != nil {
 		return resourcev2.SchemaDocument{}, err

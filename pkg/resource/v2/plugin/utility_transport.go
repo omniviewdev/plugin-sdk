@@ -61,7 +61,11 @@ func ValidateLegacyUtilityWire(data []byte, resourceFields, nonemptyFields []pro
 
 func utilityPackage(d protoreflect.MessageDescriptor) bool {
 	switch d.ParentFile().Package() {
-	case "omniview.sdk.exec.v1", "omniview.sdk.logs.v1", "omniview.sdk.metric.v1", "omniview.sdk.networker.v1", "com.omniview.pluginsdk":
+	case "omniview.sdk.exec.v1",
+		"omniview.sdk.logs.v1",
+		"omniview.sdk.metric.v1",
+		"omniview.sdk.networker.v1",
+		"com.omniview.pluginsdk":
 		return true
 	}
 	return false
@@ -86,7 +90,11 @@ func legacyUtilityRequest(d protoreflect.MessageDescriptor) bool {
 		return false
 	}
 	switch d.Name() {
-	case "SessionOptions", "CreateLogSessionRequest", "QueryMetricsRequest", "MetricStreamInput", "PortForwardSessionOptions":
+	case "SessionOptions",
+		"CreateLogSessionRequest",
+		"QueryMetricsRequest",
+		"MetricStreamInput",
+		"PortForwardSessionOptions":
 		return true
 	}
 	return false
@@ -116,10 +124,12 @@ func networkSessionResponse(d protoreflect.MessageDescriptor) bool {
 	}
 	return false
 }
+
 func networkResourcePresent(data []byte, d protoreflect.MessageDescriptor) (bool, error) {
 	budget := wireBudget{}
 	return budget.networkResourcePresent(data, d, 0)
 }
+
 func (b *wireBudget) networkResourcePresent(data []byte, d protoreflect.MessageDescriptor, depth int) (bool, error) {
 	if depth > 3 {
 		return false, invalid("invalid network utility response nesting")
@@ -139,7 +149,8 @@ func (b *wireBudget) networkResourcePresent(data []byte, d protoreflect.MessageD
 			return false, invalid("malformed network utility response")
 		}
 		resource := d.Name() == "PortForwardSession" && number == 20
-		session := (d.Name() == "PortForwardSessionByIdResponse" || d.Name() == "PortForwardSessionListResponse") && number == 1
+		session := (d.Name() == "PortForwardSessionByIdResponse" || d.Name() == "PortForwardSessionListResponse") &&
+			number == 1
 		if resource || session {
 			if wire != protowire.BytesType {
 				return false, invalid("invalid network utility response field")

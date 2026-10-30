@@ -12,19 +12,41 @@ import (
 )
 
 func controllerRepresentation() Representation {
-	return Representation{ID: "document", Revision: "representation-1", Schema: SchemaBinding{State: "absent", Validation: "none", Unvalidated: []string{}}}
+	return Representation{
+		ID:       "document",
+		Revision: "representation-1",
+		Schema:   SchemaBinding{State: "absent", Validation: "none", Unvalidated: []string{}},
+	}
 }
 
 func controllerAddress() ResourceAddress {
-	return ResourceAddress{Provider: "test", Authority: "authority", Type: "opaque/type", Scope: []ScopeEntry{}, ID: "opaque/id"}
+	return ResourceAddress{
+		Provider:  "test",
+		Authority: "authority",
+		Type:      "opaque/type",
+		Scope:     []ScopeEntry{},
+		ID:        "opaque/id",
+	}
 }
 
 func controllerRecord() Record {
-	return Record{Reference: ResourceReference{Address: controllerAddress()}, Body: Value{Kind: "map", Map: map[string]Value{}}, Representation: controllerRepresentation(), Coverage: Coverage{Kind: "complete", Paths: []string{}}}
+	return Record{
+		Reference:      ResourceReference{Address: controllerAddress()},
+		Body:           Value{Kind: "map", Map: map[string]Value{}},
+		Representation: controllerRepresentation(),
+		Coverage:       Coverage{Kind: "complete", Paths: []string{}},
+	}
 }
 
 func controllerTarget() ReadTarget {
-	return ReadTarget{Route: AccessRoute{Connection: "explicit"}, Provider: "test", Authority: "authority", Type: "opaque/type", Scope: QueryScope{}, Representation: "document"}
+	return ReadTarget{
+		Route:          AccessRoute{Connection: "explicit"},
+		Provider:       "test",
+		Authority:      "authority",
+		Type:           "opaque/type",
+		Scope:          QueryScope{},
+		Representation: "document",
+	}
 }
 
 func controllerConfig() Config[string] {
@@ -32,9 +54,32 @@ func controllerConfig() Config[string] {
 		if request.Route.Connection == "" {
 			return Catalog{}, errors.New("missing route")
 		}
-		return Catalog{Provider: "test", Revision: "catalog-1", Coverage: Coverage{Kind: "complete", Paths: []string{}}, Types: []ResourceType{{Type: "opaque/type", IdentityDimensions: []Dimension{}, QueryDimensions: []Dimension{}, Representations: []Representation{controllerRepresentation()}, Capabilities: []Capability{
-			{Operation: OperationGet, Scope: QueryScope{}}, {Operation: OperationEnumerate, Scope: QueryScope{}}, {Operation: OperationNativeQuery, Scope: QueryScope{}}, {Operation: OperationCreate, Scope: QueryScope{}}, {Operation: OperationMutationUpdate, Scope: QueryScope{}}, {Operation: OperationDelete, Scope: QueryScope{}}, {Operation: OperationAction, Scope: QueryScope{}}, {Operation: OperationUpdate, Scope: QueryScope{}, Guarantee: BestEffortGuarantee},
-		}}}}, nil
+		return Catalog{
+			Provider: "test",
+			Revision: "catalog-1",
+			Coverage: Coverage{Kind: "complete", Paths: []string{}},
+			Types: []ResourceType{
+				{
+					Type:               "opaque/type",
+					IdentityDimensions: []Dimension{},
+					QueryDimensions:    []Dimension{},
+					Representations:    []Representation{controllerRepresentation()},
+					Capabilities: []Capability{
+						{
+							Operation: OperationGet,
+							Scope:     QueryScope{},
+						},
+						{Operation: OperationEnumerate, Scope: QueryScope{}},
+						{Operation: OperationNativeQuery, Scope: QueryScope{}},
+						{Operation: OperationCreate, Scope: QueryScope{}},
+						{Operation: OperationMutationUpdate, Scope: QueryScope{}},
+						{Operation: OperationDelete, Scope: QueryScope{}},
+						{Operation: OperationAction, Scope: QueryScope{}},
+						{Operation: OperationUpdate, Scope: QueryScope{}, Guarantee: BestEffortGuarantee},
+					},
+				},
+			},
+		}, nil
 	}}
 }
 
@@ -87,13 +132,15 @@ func TestControllerRequiresOnlyCatalog(t *testing.T) {
 func TestControllerGetOnlyProvider(t *testing.T) {
 	cfg := controllerConfig()
 	calls := 0
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Get: func(_ context.Context, client *string, _ GetRequest) (Record, error) {
-		if client != nil {
-			t.Fatal("client fabricated without lifecycle")
-		}
-		calls++
-		return controllerRecord(), nil
-	}}}
+	cfg.Registrations = []Registration[string]{
+		{Type: "opaque/type", Get: func(_ context.Context, client *string, _ GetRequest) (Record, error) {
+			if client != nil {
+				t.Fatal("client fabricated without lifecycle")
+			}
+			calls++
+			return controllerRecord(), nil
+		}},
+	}
 	c := newTestController(t, cfg)
 	catalog, err := c.Catalog(context.Background(), CatalogRequest{Route: AccessRoute{Connection: "explicit"}})
 	if err != nil {
@@ -102,11 +149,21 @@ func TestControllerGetOnlyProvider(t *testing.T) {
 	if len(catalog.Types[0].Capabilities) != 1 || catalog.Types[0].Capabilities[0].Operation != OperationGet {
 		t.Fatal("get-only catalog widened")
 	}
-	_, err = c.Get(acceptedControllerContext(t, context.Background(), c), GetRequest{Route: AccessRoute{Connection: "explicit"}, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"})
+	_, err = c.Get(
+		acceptedControllerContext(t, context.Background(), c),
+		GetRequest{
+			Route:          AccessRoute{Connection: "explicit"},
+			Reference:      ResourceReference{Address: controllerAddress()},
+			Representation: "document",
+		},
+	)
 	if err != nil || calls != 1 {
 		t.Fatalf("get failed: %v; calls %d", err, calls)
 	}
-	_, err = c.Enumerate(acceptedControllerContext(t, context.Background(), c), EnumerateRequest{Target: controllerTarget()})
+	_, err = c.Enumerate(
+		acceptedControllerContext(t, context.Background(), c),
+		EnumerateRequest{Target: controllerTarget()},
+	)
 	assertControllerCode(t, err, "UNSUPPORTED")
 }
 
@@ -119,18 +176,26 @@ func TestControllerCreateOnlyRejectsOtherMutationsBeforeDispatch(t *testing.T) {
 		return catalog, err
 	}
 	calls := 0
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Mutate: func(context.Context, *string, MutationRequest) (Record, error) {
-		calls++
-		return controllerRecord(), nil
-	}}}
+	cfg.Registrations = []Registration[string]{
+		{Type: "opaque/type", Mutate: func(context.Context, *string, MutationRequest) (Record, error) {
+			calls++
+			return controllerRecord(), nil
+		}},
+	}
 	c := newTestController(t, cfg)
 	ctx := acceptedControllerContext(t, context.Background(), c)
 	catalog, err := c.Catalog(ctx, CatalogRequest{Route: controllerTarget().Route})
-	if err != nil || len(catalog.Types[0].Capabilities) != 1 || catalog.Types[0].Capabilities[0].Operation != OperationCreate {
+	if err != nil || len(catalog.Types[0].Capabilities) != 1 ||
+		catalog.Types[0].Capabilities[0].Operation != OperationCreate {
 		t.Fatalf("create-only discovery widened: %+v, %v", catalog, err)
 	}
 	for _, verb := range []string{"update", "delete", "replace"} {
-		request := MutationRequest{Route: controllerTarget().Route, Reference: controllerRecord().Reference, Operation: verb, Input: Value{Kind: "null"}}
+		request := MutationRequest{
+			Route:     controllerTarget().Route,
+			Reference: controllerRecord().Reference,
+			Operation: verb,
+			Input:     Value{Kind: "null"},
+		}
 		_, err := AdmitOperation(ctx, c, request)
 		assertControllerCode(t, err, "UNSUPPORTED")
 		_, err = c.Mutate(ctx, request)
@@ -139,7 +204,15 @@ func TestControllerCreateOnlyRejectsOtherMutationsBeforeDispatch(t *testing.T) {
 	if calls != 0 {
 		t.Fatal("unsupported mutation reached callback")
 	}
-	_, err = c.Mutate(ctx, MutationRequest{Route: controllerTarget().Route, Reference: controllerRecord().Reference, Operation: "create", Input: Value{Kind: "null"}})
+	_, err = c.Mutate(
+		ctx,
+		MutationRequest{
+			Route:     controllerTarget().Route,
+			Reference: controllerRecord().Reference,
+			Operation: "create",
+			Input:     Value{Kind: "null"},
+		},
+	)
 	if err != nil || calls != 1 {
 		t.Fatalf("create failed: %v; calls %d", err, calls)
 	}
@@ -156,13 +229,22 @@ func TestMutationAdmissionUsesEachVerbScope(t *testing.T) {
 	descriptor.Capabilities = nil
 	for _, operation := range []Operation{OperationCreate, OperationMutationUpdate, OperationDelete} {
 		values := []string{string(operation)}
-		descriptor.Capabilities = append(descriptor.Capabilities, Capability{Operation: operation, Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &values}}})
+		descriptor.Capabilities = append(
+			descriptor.Capabilities,
+			Capability{
+				Operation: operation,
+				Scope:     QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &values}},
+			},
+		)
 	}
 	for _, operation := range []Operation{OperationCreate, OperationMutationUpdate, OperationDelete} {
 		for _, region := range []string{"create", "mutationUpdate", "delete"} {
 			address := controllerAddress()
 			address.Scope = []ScopeEntry{{Dimension: "region", Value: region}}
-			_, _, err := admitTarget(catalog, operationTarget{provider: address.Provider, typ: address.Type, address: &address, operation: operation})
+			_, _, err := admitTarget(
+				catalog,
+				operationTarget{provider: address.Provider, typ: address.Type, address: &address, operation: operation},
+			)
 			if region == string(operation) {
 				if err != nil {
 					t.Fatal(err)
@@ -177,14 +259,34 @@ func TestMutationAdmissionUsesEachVerbScope(t *testing.T) {
 func TestControllerNativeQueryOnlySourceCursor(t *testing.T) {
 	cfg := controllerConfig()
 	cursor := "native-source-token"
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", NativeQuery: func(_ context.Context, _ *string, request NativeQueryRequest) (SourcePage, error) {
-		if request.Cursor == nil || *request.Cursor != cursor {
-			t.Fatal("native cursor changed")
-		}
-		return SourcePage{Records: []Record{controllerRecord()}, NextCursor: &cursor, Count: Count{Kind: "unknown"}, Coverage: Coverage{Kind: "complete"}, Consistency: "bestEffort"}, nil
-	}}}
+	cfg.Registrations = []Registration[string]{
+		{
+			Type: "opaque/type",
+			NativeQuery: func(_ context.Context, _ *string, request NativeQueryRequest) (SourcePage, error) {
+				if request.Cursor == nil || *request.Cursor != cursor {
+					t.Fatal("native cursor changed")
+				}
+				return SourcePage{
+					Records:     []Record{controllerRecord()},
+					NextCursor:  &cursor,
+					Count:       Count{Kind: "unknown"},
+					Coverage:    Coverage{Kind: "complete"},
+					Consistency: "bestEffort",
+				}, nil
+			},
+		},
+	}
 	c := newTestController(t, cfg)
-	page, err := c.NativeQuery(acceptedControllerContext(t, context.Background(), c), NativeQueryRequest{Target: controllerTarget(), Language: "native", Query: Value{Kind: "map", Map: map[string]Value{}}, Cursor: &cursor, PageSize: 1})
+	page, err := c.NativeQuery(
+		acceptedControllerContext(t, context.Background(), c),
+		NativeQueryRequest{
+			Target:   controllerTarget(),
+			Language: "native",
+			Query:    Value{Kind: "map", Map: map[string]Value{}},
+			Cursor:   &cursor,
+			PageSize: 1,
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,19 +300,51 @@ func TestControllerNativeQueryOnlySourceCursor(t *testing.T) {
 	if len(catalog.Types[0].Capabilities) != 1 || catalog.Types[0].Capabilities[0].Operation != OperationNativeQuery {
 		t.Fatal("native-only catalog widened")
 	}
-	_, err = c.Get(acceptedControllerContext(t, context.Background(), c), GetRequest{Route: controllerTarget().Route, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"})
+	_, err = c.Get(
+		acceptedControllerContext(t, context.Background(), c),
+		GetRequest{
+			Route:          controllerTarget().Route,
+			Reference:      ResourceReference{Address: controllerAddress()},
+			Representation: "document",
+		},
+	)
 	assertControllerCode(t, err, "UNSUPPORTED")
 }
 
 func TestControllerReadOnlyNeverDispatchesWrites(t *testing.T) {
 	cfg := controllerConfig()
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) { return controllerRecord(), nil }, Enumerate: func(context.Context, *string, EnumerateRequest) (SourcePage, error) { return SourcePage{}, nil }}}
+	cfg.Registrations = []Registration[string]{
+		{
+			Type:      "opaque/type",
+			Get:       func(context.Context, *string, GetRequest) (Record, error) { return controllerRecord(), nil },
+			Enumerate: func(context.Context, *string, EnumerateRequest) (SourcePage, error) { return SourcePage{}, nil },
+		},
+	}
 	c := newTestController(t, cfg)
-	_, err := c.Mutate(acceptedControllerContext(t, context.Background(), c), MutationRequest{Route: controllerTarget().Route, Reference: ResourceReference{Address: controllerAddress()}, Operation: "replace", Input: Value{Kind: "null"}})
+	_, err := c.Mutate(
+		acceptedControllerContext(t, context.Background(), c),
+		MutationRequest{
+			Route:     controllerTarget().Route,
+			Reference: ResourceReference{Address: controllerAddress()},
+			Operation: "replace",
+			Input:     Value{Kind: "null"},
+		},
+	)
 	assertControllerCode(t, err, "UNSUPPORTED")
-	_, err = c.Action(acceptedControllerContext(t, context.Background(), c), ActionRequest{Route: controllerTarget().Route, Reference: ResourceReference{Address: controllerAddress()}, Action: "run", Input: Value{Kind: "null"}})
+	_, err = c.Action(
+		acceptedControllerContext(t, context.Background(), c),
+		ActionRequest{
+			Route:     controllerTarget().Route,
+			Reference: ResourceReference{Address: controllerAddress()},
+			Action:    "run",
+			Input:     Value{Kind: "null"},
+		},
+	)
 	assertControllerCode(t, err, "UNSUPPORTED")
-	_, err = c.Get(acceptedControllerContext(t, context.Background(), c), GetRequest{Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"})
+	_, err = c.Get(
+		acceptedControllerContext(t, context.Background(), c),
+		GetRequest{Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"},
+	)
 	assertControllerCode(t, err, "INVALID_REQUEST")
 }
 
@@ -222,12 +356,21 @@ func TestControllerCatalogMustDeclareHandlerOperation(t *testing.T) {
 		catalog.Types[0].Capabilities = []Capability{}
 		return catalog, err
 	}
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) {
-		t.Fatal("undeclared handler dispatched")
-		return Record{}, nil
-	}}}
+	cfg.Registrations = []Registration[string]{
+		{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) {
+			t.Fatal("undeclared handler dispatched")
+			return Record{}, nil
+		}},
+	}
 	c := newTestController(t, cfg)
-	_, err := c.Get(acceptedControllerContext(t, context.Background(), c), GetRequest{Route: controllerTarget().Route, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"})
+	_, err := c.Get(
+		acceptedControllerContext(t, context.Background(), c),
+		GetRequest{
+			Route:          controllerTarget().Route,
+			Reference:      ResourceReference{Address: controllerAddress()},
+			Representation: "document",
+		},
+	)
 	assertControllerCode(t, err, "UNSUPPORTED")
 }
 
@@ -265,19 +408,28 @@ func TestControllerStopCancelsAndDestroysExactlyOnce(t *testing.T) {
 	var destroyed atomic.Int32
 	cfg.Lifecycle = controllerLifecycle(&destroyed)
 	entered := make(chan struct{})
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Get: func(ctx context.Context, client *string, _ GetRequest) (Record, error) {
-		if client == nil || *client != "explicit" {
-			return Record{}, errors.New("wrong client route")
-		}
-		close(entered)
-		<-ctx.Done()
-		return Record{}, ctx.Err()
-	}}}
+	cfg.Registrations = []Registration[string]{
+		{Type: "opaque/type", Get: func(ctx context.Context, client *string, _ GetRequest) (Record, error) {
+			if client == nil || *client != "explicit" {
+				return Record{}, errors.New("wrong client route")
+			}
+			close(entered)
+			<-ctx.Done()
+			return Record{}, ctx.Err()
+		}},
+	}
 	c := newTestController(t, cfg)
 	startTestConnection(t, c)
 	getDone := make(chan error, 1)
 	go func() {
-		_, err := c.Get(acceptedControllerContext(t, context.Background(), c), GetRequest{Route: controllerTarget().Route, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"})
+		_, err := c.Get(
+			acceptedControllerContext(t, context.Background(), c),
+			GetRequest{
+				Route:          controllerTarget().Route,
+				Reference:      ResourceReference{Address: controllerAddress()},
+				Representation: "document",
+			},
+		)
 		getDone <- err
 	}()
 	select {
@@ -395,11 +547,17 @@ func (f controllerClassifier) ClassifyError(err error) error { return f(err) }
 func TestControllerClassifierPrecedenceAndPanic(t *testing.T) {
 	cfg := controllerConfig()
 	cfg.ErrorClassifier = controllerClassifier(func(error) error { return NewError("FORBIDDEN", "global") })
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) {
-		return Record{}, errors.New("native error")
-	}, ErrorClassifier: controllerClassifier(func(error) error { return NewError("NOT_FOUND", "registration") })}}
+	cfg.Registrations = []Registration[string]{
+		{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) {
+			return Record{}, errors.New("native error")
+		}, ErrorClassifier: controllerClassifier(func(error) error { return NewError("NOT_FOUND", "registration") })},
+	}
 	c := newTestController(t, cfg)
-	request := GetRequest{Route: controllerTarget().Route, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"}
+	request := GetRequest{
+		Route:          controllerTarget().Route,
+		Reference:      ResourceReference{Address: controllerAddress()},
+		Representation: "document",
+	}
 	_, err := c.Get(acceptedControllerContext(t, context.Background(), c), request)
 	assertControllerCode(t, err, "NOT_FOUND")
 	cfg.Registrations[0].ErrorClassifier = controllerClassifier(func(error) error { panic("private data") })
@@ -416,23 +574,32 @@ func TestControllerRejectsChangedResponseIdentityAndRevision(t *testing.T) {
 	for _, change := range []string{"identity", "representation", "coverage", "revision"} {
 		t.Run(change, func(t *testing.T) {
 			cfg := controllerConfig()
-			cfg.Registrations = []Registration[string]{{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) {
-				record := controllerRecord()
-				switch change {
-				case "identity":
-					record.Reference.Address.ID = "different"
-				case "representation":
-					record.Representation.Revision = "different"
-				case "coverage":
-					record.Coverage.Kind = "invented"
-				case "revision":
-					empty := ""
-					record.SourceRevision = &empty
-				}
-				return record, nil
-			}}}
+			cfg.Registrations = []Registration[string]{
+				{Type: "opaque/type", Get: func(context.Context, *string, GetRequest) (Record, error) {
+					record := controllerRecord()
+					switch change {
+					case "identity":
+						record.Reference.Address.ID = "different"
+					case "representation":
+						record.Representation.Revision = "different"
+					case "coverage":
+						record.Coverage.Kind = "invented"
+					case "revision":
+						empty := ""
+						record.SourceRevision = &empty
+					}
+					return record, nil
+				}},
+			}
 			c := newTestController(t, cfg)
-			_, err := c.Get(acceptedControllerContext(t, context.Background(), c), GetRequest{Route: controllerTarget().Route, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"})
+			_, err := c.Get(
+				acceptedControllerContext(t, context.Background(), c),
+				GetRequest{
+					Route:          controllerTarget().Route,
+					Reference:      ResourceReference{Address: controllerAddress()},
+					Representation: "document",
+				},
+			)
 			if err == nil {
 				t.Fatal("invalid response accepted")
 			}
@@ -446,10 +613,21 @@ func TestControllerDynamicExactTypeRegistration(t *testing.T) {
 		if route.Connection != "explicit" || typ != "opaque/type" {
 			return Registration[string]{}, errors.New("wrong dynamic target")
 		}
-		return Registration[string]{Type: typ, Connection: route.Connection, Get: func(context.Context, *string, GetRequest) (Record, error) { return controllerRecord(), nil }}, nil
+		return Registration[string]{
+			Type:       typ,
+			Connection: route.Connection,
+			Get:        func(context.Context, *string, GetRequest) (Record, error) { return controllerRecord(), nil },
+		}, nil
 	}
 	c := newTestController(t, cfg)
-	_, err := c.Get(acceptedControllerContext(t, context.Background(), c), GetRequest{Route: controllerTarget().Route, Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"})
+	_, err := c.Get(
+		acceptedControllerContext(t, context.Background(), c),
+		GetRequest{
+			Route:          controllerTarget().Route,
+			Reference:      ResourceReference{Address: controllerAddress()},
+			Representation: "document",
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,16 +646,27 @@ func TestControllerScopeAndRouteAdmission(t *testing.T) {
 		return catalog, err
 	}
 	calls := 0
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Connection: "explicit", Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &allowed}}, Get: func(_ context.Context, _ *string, request GetRequest) (Record, error) {
-		calls++
-		record := controllerRecord()
-		record.Reference = request.Reference
-		return record, nil
-	}}}
+	cfg.Registrations = []Registration[string]{
+		{
+			Type:       "opaque/type",
+			Connection: "explicit",
+			Scope:      QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &allowed}},
+			Get: func(_ context.Context, _ *string, request GetRequest) (Record, error) {
+				calls++
+				record := controllerRecord()
+				record.Reference = request.Reference
+				return record, nil
+			},
+		},
+	}
 	c := newTestController(t, cfg)
 	address := controllerAddress()
 	address.Scope = []ScopeEntry{{Dimension: "region", Value: "east"}}
-	request := GetRequest{Route: controllerTarget().Route, Reference: ResourceReference{Address: address}, Representation: "document"}
+	request := GetRequest{
+		Route:          controllerTarget().Route,
+		Reference:      ResourceReference{Address: address},
+		Representation: "document",
+	}
 	if _, err := c.Get(acceptedControllerContext(t, context.Background(), c), request); err != nil {
 		t.Fatal(err)
 	}
@@ -499,13 +688,24 @@ func TestControllerScopeAndRouteAdmission(t *testing.T) {
 func TestControllerSourceAndRecordRevisionsStayIndependent(t *testing.T) {
 	cfg := controllerConfig()
 	pageRevision, recordRevision := "snapshot-20", "object-12"
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Enumerate: func(context.Context, *string, EnumerateRequest) (SourcePage, error) {
-		record := controllerRecord()
-		record.SourceRevision = &recordRevision
-		return SourcePage{Records: []Record{record}, Count: Count{Kind: "unknown"}, Coverage: Coverage{Kind: "complete"}, Consistency: "pointInTime", SourceRevision: &pageRevision}, nil
-	}}}
+	cfg.Registrations = []Registration[string]{
+		{Type: "opaque/type", Enumerate: func(context.Context, *string, EnumerateRequest) (SourcePage, error) {
+			record := controllerRecord()
+			record.SourceRevision = &recordRevision
+			return SourcePage{
+				Records:        []Record{record},
+				Count:          Count{Kind: "unknown"},
+				Coverage:       Coverage{Kind: "complete"},
+				Consistency:    "pointInTime",
+				SourceRevision: &pageRevision,
+			}, nil
+		}},
+	}
 	c := newTestController(t, cfg)
-	page, err := c.Enumerate(acceptedControllerContext(t, context.Background(), c), EnumerateRequest{Target: controllerTarget(), PageSize: 1})
+	page, err := c.Enumerate(
+		acceptedControllerContext(t, context.Background(), c),
+		EnumerateRequest{Target: controllerTarget(), PageSize: 1},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -558,30 +758,40 @@ func TestControllerRejectsInvalidSourcePageMetadata(t *testing.T) {
 	for _, change := range []string{"count", "pageSize", "cursor", "revision", "coverage", "identity"} {
 		t.Run(change, func(t *testing.T) {
 			cfg := controllerConfig()
-			cfg.Registrations = []Registration[string]{{Type: "opaque/type", Enumerate: func(context.Context, *string, EnumerateRequest) (SourcePage, error) {
-				page := SourcePage{Records: []Record{controllerRecord()}, Count: Count{Kind: "unknown"}, Coverage: Coverage{Kind: "complete"}, Consistency: "bestEffort"}
-				empty := ""
-				switch change {
-				case "count":
-					zero := "0"
-					page.Count = Count{Kind: "exact", Value: &zero}
-				case "pageSize":
-					other := controllerRecord()
-					other.Reference.Address.ID = "second"
-					page.Records = append(page.Records, other)
-				case "cursor":
-					page.NextCursor = &empty
-				case "revision":
-					page.SourceRevision = &empty
-				case "coverage":
-					page.Coverage.Kind = "invented"
-				case "identity":
-					page.Records[0].Reference.Address.Authority = "other"
-				}
-				return page, nil
-			}}}
+			cfg.Registrations = []Registration[string]{
+				{Type: "opaque/type", Enumerate: func(context.Context, *string, EnumerateRequest) (SourcePage, error) {
+					page := SourcePage{
+						Records:     []Record{controllerRecord()},
+						Count:       Count{Kind: "unknown"},
+						Coverage:    Coverage{Kind: "complete"},
+						Consistency: "bestEffort",
+					}
+					empty := ""
+					switch change {
+					case "count":
+						zero := "0"
+						page.Count = Count{Kind: "exact", Value: &zero}
+					case "pageSize":
+						other := controllerRecord()
+						other.Reference.Address.ID = "second"
+						page.Records = append(page.Records, other)
+					case "cursor":
+						page.NextCursor = &empty
+					case "revision":
+						page.SourceRevision = &empty
+					case "coverage":
+						page.Coverage.Kind = "invented"
+					case "identity":
+						page.Records[0].Reference.Address.Authority = "other"
+					}
+					return page, nil
+				}},
+			}
 			c := newTestController(t, cfg)
-			_, err := c.Enumerate(acceptedControllerContext(t, context.Background(), c), EnumerateRequest{Target: controllerTarget(), PageSize: 1})
+			_, err := c.Enumerate(
+				acceptedControllerContext(t, context.Background(), c),
+				EnumerateRequest{Target: controllerTarget(), PageSize: 1},
+			)
 			if err == nil {
 				t.Fatal("invalid source page accepted")
 			}
@@ -603,8 +813,17 @@ func (controllerStreamOnly) StreamAction(context.Context, ActionRequest, chan<- 
 
 func TestStreamingActionAdmissionDoesNotRequireFiniteAction(t *testing.T) {
 	provider := controllerStreamOnly{catalog: controllerConfig().Catalog}
-	request := ActionRequest{Route: controllerTarget().Route, Reference: ResourceReference{Address: controllerAddress()}, Action: "stream", Input: Value{Kind: "null"}}
-	if _, err := AdmitStreamingAction(acceptedControllerContext(t, context.Background(), provider), provider, request); err != nil {
+	request := ActionRequest{
+		Route:     controllerTarget().Route,
+		Reference: ResourceReference{Address: controllerAddress()},
+		Action:    "stream",
+		Input:     Value{Kind: "null"},
+	}
+	if _, err := AdmitStreamingAction(
+		acceptedControllerContext(t, context.Background(), provider),
+		provider,
+		request,
+	); err != nil {
 		t.Fatal(err)
 	}
 	_, err := AdmitOperation(acceptedControllerContext(t, context.Background(), provider), provider, request)
@@ -631,16 +850,22 @@ func TestControllerFeaturesReflectInstalledHandlers(t *testing.T) {
 	}
 	var destroyed atomic.Int32
 	cfg.Lifecycle = controllerLifecycle(&destroyed)
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Watch: func(ctx context.Context, _ *string, _ ReadTarget, _ Representation, _ WatchEventSink) error {
-		<-ctx.Done()
-		return ctx.Err()
-	}}}
+	cfg.Registrations = []Registration[string]{
+		{
+			Type: "opaque/type",
+			Watch: func(ctx context.Context, _ *string, _ ReadTarget, _ Representation, _ WatchEventSink) error {
+				<-ctx.Done()
+				return ctx.Err()
+			},
+		},
+	}
 	withHandlers := newTestController(t, cfg)
 	features, err = DetectFeatures(context.Background(), withHandlers)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !features.Has(FeatureConnections) || !features.Has(FeatureBestEffortUpdates) || features.Has(FeatureConnectionBrowser) {
+	if !features.Has(FeatureConnections) || !features.Has(FeatureBestEffortUpdates) ||
+		features.Has(FeatureConnectionBrowser) {
 		t.Fatal("installed traits reported incorrectly")
 	}
 	cfg.Registrations[0].SyncPolicy = SyncNever
@@ -662,10 +887,13 @@ func TestControllerDynamicUpdateFeatureRequiresExplicitConfiguration(t *testing.
 	}
 	cfg.DynamicUpdates = false
 	cfg.ResolveRegistration = func(_ context.Context, _ AccessRoute, typ string) (Registration[string], error) {
-		return Registration[string]{Type: typ, Watch: func(ctx context.Context, _ *string, _ ReadTarget, _ Representation, _ WatchEventSink) error {
-			<-ctx.Done()
-			return ctx.Err()
-		}}, nil
+		return Registration[string]{
+			Type: typ,
+			Watch: func(ctx context.Context, _ *string, _ ReadTarget, _ Representation, _ WatchEventSink) error {
+				<-ctx.Done()
+				return ctx.Err()
+			},
+		}, nil
 	}
 	c := newTestController(t, cfg)
 	features, err := c.Features(context.Background())
@@ -723,7 +951,13 @@ func TestControllerOverlaySurvivesNativeRefreshAndResets(t *testing.T) {
 	if _, err := c.StartConnection(context.Background(), "other"); err != nil {
 		t.Fatal(err)
 	}
-	overlay := ConnectionOverlay{Upserts: []types.Connection{{ID: "explicit", Name: "Override", Data: map[string]any{"endpoint": "https://override.invalid"}}, {ID: "manual", Name: "Manual"}}, DisabledIDs: []string{"other"}}
+	overlay := ConnectionOverlay{
+		Upserts: []types.Connection{
+			{ID: "explicit", Name: "Override", Data: map[string]any{"endpoint": "https://override.invalid"}},
+			{ID: "manual", Name: "Manual"},
+		},
+		DisabledIDs: []string{"other"},
+	}
 	if err := c.ApplyConnectionOverlay(context.Background(), overlay); err != nil {
 		t.Fatal(err)
 	}
@@ -776,14 +1010,21 @@ func TestControllerNativeSnapshotExcludesDesiredOverlay(t *testing.T) {
 	if _, err := c.LoadConnections(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.ApplyConnectionOverlay(context.Background(), ConnectionOverlay{Upserts: []types.Connection{{ID: "explicit", Name: "Override"}, {ID: "manual", Name: "Manual"}}, DisabledIDs: []string{"other"}}); err != nil {
+	if err := c.ApplyConnectionOverlay(
+		context.Background(),
+		ConnectionOverlay{
+			Upserts:     []types.Connection{{ID: "explicit", Name: "Override"}, {ID: "manual", Name: "Manual"}},
+			DisabledIDs: []string{"other"},
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 	native, err := c.NativeConnections(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loads.Load() != 1 || len(native) != 2 || native[0].ID != "explicit" || native[0].Name != "Explicit" || native[1].ID != "other" {
+	if loads.Load() != 1 || len(native) != 2 || native[0].ID != "explicit" || native[0].Name != "Explicit" ||
+		native[1].ID != "other" {
 		t.Fatalf("native provenance mixed with overlay: %v", native)
 	}
 	native[0].Name = "Caller copy"
@@ -792,7 +1033,8 @@ func TestControllerNativeSnapshotExcludesDesiredOverlay(t *testing.T) {
 		t.Fatal("native snapshot slice aliases managed inventory")
 	}
 	effective, err := c.LoadConnections(context.Background())
-	if err != nil || len(effective) != 2 || effective[0].ID != "explicit" || effective[0].Name != "Override" || effective[1].ID != "manual" {
+	if err != nil || len(effective) != 2 || effective[0].ID != "explicit" || effective[0].Name != "Override" ||
+		effective[1].ID != "manual" {
 		t.Fatalf("load published raw native inventory: %v %v", effective, err)
 	}
 }
@@ -825,7 +1067,18 @@ func TestControllerOverlayFailureDoesNotPublishDesiredConfiguration(t *testing.T
 	cfg.Lifecycle.DestroyClient = func(context.Context, *string) error { destroyed.Add(1); return errors.New("teardown failed") }
 	c := newTestController(t, cfg)
 	startTestConnection(t, c)
-	err := c.ApplyConnectionOverlay(context.Background(), ConnectionOverlay{Upserts: []types.Connection{{ID: "explicit", Name: "Not committed", Data: map[string]any{"endpoint": "https://uncommitted.invalid"}}}})
+	err := c.ApplyConnectionOverlay(
+		context.Background(),
+		ConnectionOverlay{
+			Upserts: []types.Connection{
+				{
+					ID:   "explicit",
+					Name: "Not committed",
+					Data: map[string]any{"endpoint": "https://uncommitted.invalid"},
+				},
+			},
+		},
+	)
 	if err == nil {
 		t.Fatal("failed client teardown acknowledged overlay")
 	}
@@ -843,7 +1096,10 @@ func TestControllerDirectConnectionEditsRetainOverlayOwnership(t *testing.T) {
 	if _, err := c.LoadConnections(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.UpdateConnection(context.Background(), types.Connection{ID: "explicit", Name: "Desired"}); err != nil {
+	if _, err := c.UpdateConnection(
+		context.Background(),
+		types.Connection{ID: "explicit", Name: "Desired"},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.UpdateConnection(context.Background(), types.Connection{ID: "manual", Name: "Manual"}); err != nil {

@@ -3,10 +3,11 @@ package utils
 import (
 	"strings"
 
-	logging "github.com/omniviewdev/plugin-sdk/log"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/stats"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/interceptors"
 )

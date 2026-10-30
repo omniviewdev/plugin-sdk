@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
@@ -9,7 +10,10 @@ import (
 
 // connectionCall keeps connection payload checks beside their optional provider traits.
 // The shared ancillaryCallHandler owns admission and response validation.
-func (s *ancillaryServer) connectionCall(ctx context.Context, r *resourcepb.AncillaryRequest) (*resourcepb.AncillaryResponse, error) {
+func (s *ancillaryServer) connectionCall(
+	ctx context.Context,
+	r *resourcepb.AncillaryRequest,
+) (*resourcepb.AncillaryResponse, error) {
 	impl := s.owner.impl
 	switch r.Operation {
 	case "nativeConnections":

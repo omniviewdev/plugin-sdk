@@ -1,10 +1,11 @@
 package exec
 
 import (
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
 
 // sessionOptionMetadata deliberately excludes the tagged body: metadata and
@@ -27,7 +28,17 @@ func optionError(code, detail string) error { return resourcev2.NewError(code, d
 // ValidateSessionOptions bounds and checks ordinary options and optional C01
 // inputs without resolving a connection or acquiring resource data.
 func ValidateSessionOptions(o SessionOptions) error {
-	metadata := sessionOptionMetadata{o.Params, o.Labels, o.ID, o.ResourcePlugin, o.ResourceKey, o.Reference, o.Route, o.Command, o.TTY}
+	metadata := sessionOptionMetadata{
+		o.Params,
+		o.Labels,
+		o.ID,
+		o.ResourcePlugin,
+		o.ResourceKey,
+		o.Reference,
+		o.Route,
+		o.Command,
+		o.TTY,
+	}
 	if err := resourcev2.ValidateMetadata(metadata); err != nil {
 		return err
 	}
@@ -70,17 +81,24 @@ func NormalizeResourceSessionOptions(o SessionOptions) (SessionOptions, error) {
 		return SessionOptions{}, err
 	}
 	if !o.HasResourceIntent() {
-		return SessionOptions{}, optionError("INVALID_REQUEST", "Resource session requires an explicit resource target.")
+		return SessionOptions{}, optionError(
+			"INVALID_REQUEST",
+			"Resource session requires an explicit resource target.",
+		)
 	}
 	if o.Reference != nil {
 		o.ResourcePlugin = o.Reference.Address.Provider
 		o.ResourceKey = o.Reference.Address.Type
 	}
 	if o.ResourcePlugin == "" || o.ResourceKey == "" {
-		return SessionOptions{}, optionError("INVALID_REQUEST", "Resource session requires explicit provider and type selectors.")
+		return SessionOptions{}, optionError(
+			"INVALID_REQUEST",
+			"Resource session requires explicit provider and type selectors.",
+		)
 	}
 	return o, nil
 }
+
 func ValidateResourceSessionOptions(o SessionOptions) error {
 	_, err := NormalizeResourceSessionOptions(o)
 	return err
@@ -100,7 +118,15 @@ func (o *SessionOptions) ToProto() (*execpb.SessionOptions, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &execpb.SessionOptions{Id: opts.ID, Command: opts.Command, Tty: opts.TTY, Params: opts.Params, Labels: opts.Labels, ResourcePlugin: opts.ResourcePlugin, ResourceKey: opts.ResourceKey}
+	out := &execpb.SessionOptions{
+		Id:             opts.ID,
+		Command:        opts.Command,
+		Tty:            opts.TTY,
+		Params:         opts.Params,
+		Labels:         opts.Labels,
+		ResourcePlugin: opts.ResourcePlugin,
+		ResourceKey:    opts.ResourceKey,
+	}
 	if opts.HasResourceIntent() {
 		out.ResourceWireVersion = ResourceSessionWireVersion
 	}
@@ -181,15 +207,33 @@ func NewSessionOptionsFromProto(p *execpb.SessionOptions) (*SessionOptions, erro
 	if retired {
 		return nil, optionError("UNSUPPORTED", "Legacy or unknown resource exec option is unsupported.")
 	}
-	resourceIntent := p.ResourceData != nil || p.ResourcePlugin != "" || p.ResourceKey != "" || p.Reference != nil || p.Route != nil || p.ResourceWireVersion != 0
+	resourceIntent := p.ResourceData != nil || p.ResourcePlugin != "" || p.ResourceKey != "" || p.Reference != nil ||
+		p.Route != nil ||
+		p.ResourceWireVersion != 0
 	if resourceIntent && p.ResourceWireVersion != ResourceSessionWireVersion {
 		return nil, optionError("UNSUPPORTED", "Resource exec wire version is unsupported.")
 	}
 	if resourceIntent && len(unknown) > 0 {
 		return nil, optionError("UNSUPPORTED", "Unknown resource exec option field.")
 	}
-	opts := SessionOptions{ID: p.Id, Command: p.Command, TTY: p.Tty, Params: p.Params, Labels: p.Labels, ResourcePlugin: p.ResourcePlugin, ResourceKey: p.ResourceKey}
-	metadata := sessionOptionMetadata{Params: opts.Params, Labels: opts.Labels, ID: opts.ID, ResourcePlugin: opts.ResourcePlugin, ResourceKey: opts.ResourceKey, Command: opts.Command, TTY: opts.TTY}
+	opts := SessionOptions{
+		ID:             p.Id,
+		Command:        p.Command,
+		TTY:            p.Tty,
+		Params:         p.Params,
+		Labels:         p.Labels,
+		ResourcePlugin: p.ResourcePlugin,
+		ResourceKey:    p.ResourceKey,
+	}
+	metadata := sessionOptionMetadata{
+		Params:         opts.Params,
+		Labels:         opts.Labels,
+		ID:             opts.ID,
+		ResourcePlugin: opts.ResourcePlugin,
+		ResourceKey:    opts.ResourceKey,
+		Command:        opts.Command,
+		TTY:            opts.TTY,
+	}
 	if err := resourcev2.ValidateMetadata(metadata); err != nil {
 		return nil, err
 	}

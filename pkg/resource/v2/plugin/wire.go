@@ -1,15 +1,18 @@
 package plugin
 
 import (
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	"google.golang.org/protobuf/encoding/protowire"
-	"google.golang.org/protobuf/reflect/protoreflect"
 	"math"
 	"unicode/utf8"
+
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/reflect/protoreflect"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 )
 
 // WirePolicy is an implementation-candidate transport ceiling, not predicate policy or an SLO.
 const WirePolicy = resourcev2.ResourceWirePolicy
+
 const (
 	MaxWireBytes = resourcev2.MaxMessageBytes
 	MaxBodyBytes = resourcev2.MaxDocumentBytes
@@ -43,6 +46,7 @@ func ValidateWire(data []byte, descriptor protoreflect.MessageDescriptor) error 
 	b := wireBudget{}
 	return b.message(data, descriptor, 0)
 }
+
 func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, depth int) error {
 	if depth > MaxDepth {
 		return limited("resource nesting exceeds limit")
@@ -140,7 +144,8 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 			if f.Kind() == protoreflect.Uint32Kind && v > math.MaxUint32 {
 				return invalid("protobuf integer overflow")
 			}
-			if (f.Kind() == protoreflect.Int32Kind || f.Kind() == protoreflect.EnumKind) && int64(v) != int64(int32(v)) {
+			if (f.Kind() == protoreflect.Int32Kind || f.Kind() == protoreflect.EnumKind) &&
+				int64(v) != int64(int32(v)) {
 				return invalid("protobuf integer overflow")
 			}
 			if d.Name() == "TimestampValue" && number == 2 && v >= 1000000000 {
@@ -152,7 +157,8 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 					return invalid("timestamp outside RFC3339 range")
 				}
 			}
-			if d.FullName() == "google.protobuf.Timestamp" && ((number == 1 && (int64(v) < -62135596800 || int64(v) > 253402300799)) || (number == 2 && v >= 1000000000)) {
+			if d.FullName() == "google.protobuf.Timestamp" &&
+				((number == 1 && (int64(v) < -62135596800 || int64(v) > 253402300799)) || (number == 2 && v >= 1000000000)) {
 				return invalid("invalid session timestamp")
 			}
 			if d.FullName() == "google.protobuf.Duration" {
@@ -162,7 +168,8 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 					durationNanos = int64(v)
 				}
 			}
-			if (d.Name() == "EnumerateInput" && number == 2 || d.Name() == "NativeQueryInput" && number == 4) && v > MaxPageSize {
+			if (d.Name() == "EnumerateInput" && number == 2 || d.Name() == "NativeQueryInput" && number == 4) &&
+				v > MaxPageSize {
 				return limited("page size exceeds limit")
 			}
 		case protowire.Fixed64Type:
@@ -171,7 +178,8 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 				return invalid("truncated fixed64")
 			}
 			data = data[m:]
-			if f.Kind() == protoreflect.DoubleKind && (math.IsNaN(math.Float64frombits(v)) || math.IsInf(math.Float64frombits(v), 0)) {
+			if f.Kind() == protoreflect.DoubleKind &&
+				(math.IsNaN(math.Float64frombits(v)) || math.IsInf(math.Float64frombits(v), 0)) {
 				return invalid("nonfinite double")
 			}
 		case protowire.Fixed32Type:
@@ -230,13 +238,16 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 				if d.Name() == "MapValue" && duplicateWireKey(&keys, number, rawEntryKey(v)) {
 					return invalid("duplicate map key")
 				}
-				if (d.Name() == "ResourceAddress" && number == 4 || d.Name() == "QueryScope" && number == 1) && duplicateWireKey(&keys, number, rawEntryKey(v)) {
+				if (d.Name() == "ResourceAddress" && number == 4 || d.Name() == "QueryScope" && number == 1) &&
+					duplicateWireKey(&keys, number, rawEntryKey(v)) {
 					return invalid("duplicate scope dimension")
 				}
-				if (d.Name() == "ResourceMetadata" && number == 1 || d.Name() == "WatchConnectionSummary" && (number == 2 || number == 3)) && duplicateWireKey(&keys, number, rawEntryKey(v)) {
+				if (d.Name() == "ResourceMetadata" && number == 1 || d.Name() == "WatchConnectionSummary" && (number == 2 || number == 3)) &&
+					duplicateWireKey(&keys, number, rawEntryKey(v)) {
 					return invalid("duplicate metadata map key")
 				}
-				if d.Name() == "RelationshipDescriptor" && (number == 8 || number == 9) && duplicateWireKey(&keys, 0, rawEntryKey(v)) {
+				if d.Name() == "RelationshipDescriptor" && (number == 8 || number == 9) &&
+					duplicateWireKey(&keys, 0, rawEntryKey(v)) {
 					return invalid("duplicate relationship scope dimension")
 				}
 			}
@@ -248,7 +259,8 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 	if versionField != 0 && version != 2 {
 		return unsupported("resource utility wire version must be 2")
 	}
-	if d.FullName() == "google.protobuf.Duration" && (durationSeconds < -315576000000 || durationSeconds > 315576000000 || durationNanos < -999999999 || durationNanos > 999999999 || durationSeconds > 0 && durationNanos < 0 || durationSeconds < 0 && durationNanos > 0) {
+	if d.FullName() == "google.protobuf.Duration" &&
+		(durationSeconds < -315576000000 || durationSeconds > 315576000000 || durationNanos < -999999999 || durationNanos > 999999999 || durationSeconds > 0 && durationNanos < 0 || durationSeconds < 0 && durationNanos > 0) {
 		return invalid("invalid utility duration")
 	}
 	if d.Name() == "Value" && selections == 0 {
@@ -279,6 +291,7 @@ func duplicateWireKey(keys *map[wireKey]struct{}, field protoreflect.FieldNumber
 	(*keys)[k] = struct{}{}
 	return false
 }
+
 func rawEntryKey(data []byte) string {
 	for len(data) > 0 {
 		n, t, k := protowire.ConsumeTag(data)

@@ -2,14 +2,16 @@ package plugin
 
 import (
 	"context"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
+	"testing"
+	"time"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"testing"
-	"time"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
 type mismatchConnectionProvider struct{ countProvider }
@@ -17,21 +19,30 @@ type mismatchConnectionProvider struct{ countProvider }
 func (*mismatchConnectionProvider) LoadConnections(context.Context) ([]types.Connection, error) {
 	return []types.Connection{}, nil
 }
+
 func (*mismatchConnectionProvider) GetConnection(context.Context, string) (types.Connection, error) {
 	return types.Connection{ID: "other"}, nil
 }
+
 func (*mismatchConnectionProvider) StopConnection(context.Context, string) (types.Connection, error) {
 	return types.Connection{ID: "other"}, nil
 }
+
 func (*mismatchConnectionProvider) StartConnection(context.Context, string) (types.ConnectionStatus, error) {
 	return types.ConnectionStatus{Connection: &types.Connection{ID: "other"}}, nil
 }
+
 func (*mismatchConnectionProvider) CheckConnection(context.Context, string) (types.ConnectionStatus, error) {
 	return types.ConnectionStatus{Connection: &types.Connection{ID: "other"}}, nil
 }
+
 func (*mismatchConnectionProvider) GetConnectionStatus(context.Context, string) (types.ConnectionStatus, error) {
-	return types.ConnectionStatus{Connection: &types.Connection{ID: "other"}, Status: types.ConnectionStatusDisconnected}, nil
+	return types.ConnectionStatus{
+		Connection: &types.Connection{ID: "other"},
+		Status:     types.ConnectionStatusDisconnected,
+	}, nil
 }
+
 func assertConnectionMismatch(t *testing.T, c *Client) {
 	t.Helper()
 	for _, operation := range []string{"get", "stop", "start", "check", "state"} {
@@ -55,6 +66,7 @@ func assertConnectionMismatch(t *testing.T, c *Client) {
 		})
 	}
 }
+
 func TestServerBindsConnectionResponseIDs(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, &mismatchConnectionProvider{})
@@ -78,13 +90,15 @@ func (s *maliciousConnectionServer) Call(_ context.Context, in *resourcepb.Reque
 	}
 	return &resourcepb.Response{Version: 2, Result: &resourcepb.Response_Connection{Connection: out}}, nil
 }
+
 func TestClientBindsUntrustedConnectionResponseIDs(t *testing.T) {
 	s := grpc.NewServer()
 	resourcepb.RegisterResourceProviderServer(s, &maliciousConnectionServer{})
 	assertConnectionMismatch(t, NewClient(pipe(t, s)))
 }
+
 func TestActualGRPCConnectionJSONRejectsAmbiguity(t *testing.T) {
-	for _, data := range [][]byte{[]byte(`{"id":"requested","id":"requested"}`), []byte(`{"id":"requested","unknown":true}`), []byte{'{', '"', 'i', 'd', '"', ':', '"', 255, '"', '}'}} {
+	for _, data := range [][]byte{[]byte(`{"id":"requested","id":"requested"}`), []byte(`{"id":"requested","unknown":true}`), {'{', '"', 'i', 'd', '"', ':', '"', 255, '"', '}'}} {
 		s := grpc.NewServer()
 		resourcepb.RegisterResourceProviderServer(s, &maliciousConnectionServer{json: data})
 		_, err := NewClient(pipe(t, s)).GetConnection(context.Background(), "requested")

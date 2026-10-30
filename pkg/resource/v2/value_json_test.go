@@ -20,8 +20,14 @@ func TestTaggedJSONExactScalars(t *testing.T) {
 		{`{"kind":"int64","value":"-9223372036854775808"}`, Value{Kind: "int64", Int: "-9223372036854775808"}},
 		{`{"kind":"uint64","value":"18446744073709551615"}`, Value{Kind: "uint64", Uint: "18446744073709551615"}},
 		{`{"kind":"double","value":-0}`, Value{Kind: "double", Double: math.Copysign(0, -1)}},
-		{`{"kind":"timestamp","value":"1969-12-31T23:59:59.999999999Z"}`, Value{Kind: "timestamp", Timestamp: "1969-12-31T23:59:59.999999999Z"}},
-		{`{"kind":"timestamp","value":"2000-01-01T01:00:00.123456789+01:00"}`, Value{Kind: "timestamp", Timestamp: "2000-01-01T00:00:00.123456789Z"}},
+		{
+			`{"kind":"timestamp","value":"1969-12-31T23:59:59.999999999Z"}`,
+			Value{Kind: "timestamp", Timestamp: "1969-12-31T23:59:59.999999999Z"},
+		},
+		{
+			`{"kind":"timestamp","value":"2000-01-01T01:00:00.123456789+01:00"}`,
+			Value{Kind: "timestamp", Timestamp: "2000-01-01T00:00:00.123456789Z"},
+		},
 		{`{"kind":"list","value":[]}`, Value{Kind: "list", List: []Value{}}},
 		{`{"kind":"map","value":{}}`, Value{Kind: "map", Map: map[string]Value{}}},
 	}
@@ -120,11 +126,16 @@ func TestTaggedJSONNestedDeterministicOrder(t *testing.T) {
 }
 
 func TestNativeJSONNumericPolicy(t *testing.T) {
-	v, err := JSONToValue([]byte(`{"signed":9007199254740993,"min":-9223372036854775808,"unsigned":18446744073709551615,"fraction":1.25,"exponent":1e0,"timestamp":"2000-01-01T00:00:00Z"}`))
+	v, err := JSONToValue(
+		[]byte(
+			`{"signed":9007199254740993,"min":-9223372036854775808,"unsigned":18446744073709551615,"fraction":1.25,"exponent":1e0,"timestamp":"2000-01-01T00:00:00Z"}`,
+		),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.Map["signed"].Int != "9007199254740993" || v.Map["min"].Int != "-9223372036854775808" || v.Map["unsigned"].Uint != "18446744073709551615" {
+	if v.Map["signed"].Int != "9007199254740993" || v.Map["min"].Int != "-9223372036854775808" ||
+		v.Map["unsigned"].Uint != "18446744073709551615" {
 		t.Fatalf("integer token rounded: %#v", v.Map)
 	}
 	if v.Map["fraction"].Kind != "double" || v.Map["exponent"].Kind != "double" || v.Map["timestamp"].Kind != "string" {
@@ -139,7 +150,13 @@ func TestNativeJSONNumericPolicy(t *testing.T) {
 
 func TestNativeReciprocalKeepsTypes(t *testing.T) {
 	instant := time.Unix(-1, 999999999).UTC()
-	input := map[string]any{"i": int64(math.MinInt64), "u": uint64(math.MaxUint64), "d": math.Copysign(0, -1), "t": instant, "list": []any{nil, true, "x"}}
+	input := map[string]any{
+		"i":    int64(math.MinInt64),
+		"u":    uint64(math.MaxUint64),
+		"d":    math.Copysign(0, -1),
+		"t":    instant,
+		"list": []any{nil, true, "x"},
+	}
 	v, err := ValueFromNative(input)
 	if err != nil {
 		t.Fatal(err)

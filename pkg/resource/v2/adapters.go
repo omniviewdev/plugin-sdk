@@ -35,7 +35,9 @@ func toValue(v Value) *resourcepb.Value {
 		p.Selection = &resourcepb.Value_DoubleValue{DoubleValue: v.Double}
 	case "timestamp":
 		t, _ := timestamp(v.Timestamp)
-		p.Selection = &resourcepb.Value_TimestampValue{TimestampValue: &resourcepb.TimestampValue{Seconds: t.Unix(), Nanos: uint32(t.Nanosecond())}}
+		p.Selection = &resourcepb.Value_TimestampValue{
+			TimestampValue: &resourcepb.TimestampValue{Seconds: t.Unix(), Nanos: uint32(t.Nanosecond())},
+		}
 	case "list":
 		list := &resourcepb.ListValue{Values: make([]*resourcepb.Value, len(v.List))}
 		for i, x := range v.List {
@@ -56,32 +58,46 @@ func toValue(v Value) *resourcepb.Value {
 	}
 	return p
 }
+
 func toScopeEntry(v ScopeEntry) *resourcepb.ScopeEntry {
 	return &resourcepb.ScopeEntry{Dimension: v.Dimension, Value: v.Value}
 }
+
 func toResourceAddress(v ResourceAddress) *resourcepb.ResourceAddress {
-	p := &resourcepb.ResourceAddress{Provider: v.Provider, Authority: v.Authority, Type: v.Type, Id: v.ID, Scope: make([]*resourcepb.ScopeEntry, len(v.Scope))}
+	p := &resourcepb.ResourceAddress{
+		Provider:  v.Provider,
+		Authority: v.Authority,
+		Type:      v.Type,
+		Id:        v.ID,
+		Scope:     make([]*resourcepb.ScopeEntry, len(v.Scope)),
+	}
 	for i, x := range v.Scope {
 		p.Scope[i] = toScopeEntry(x)
 	}
 	sort.Slice(p.Scope, func(i, j int) bool { return p.Scope[i].Dimension < p.Scope[j].Dimension })
 	return p
 }
+
 func toAccessRoute(v AccessRoute) *resourcepb.AccessRoute {
 	return &resourcepb.AccessRoute{Connection: v.Connection}
 }
+
 func toResourceReference(v ResourceReference) *resourcepb.ResourceReference {
 	return &resourcepb.ResourceReference{Address: toResourceAddress(v.Address), Incarnation: copyToken(v.Incarnation)}
 }
+
 func toScopeConstraint(v ScopeConstraint) *resourcepb.ScopeConstraint {
 	p := &resourcepb.ScopeConstraint{Dimension: v.Dimension}
 	if v.Match == ScopeAny {
 		p.Selection = &resourcepb.ScopeConstraint_Any{Any: &resourcepb.AnyScope{}}
 	} else {
-		p.Selection = &resourcepb.ScopeConstraint_OneOf{OneOf: &resourcepb.OneOfScope{Values: canonicalScopeValues(copyStrings(*v.Values))}}
+		p.Selection = &resourcepb.ScopeConstraint_OneOf{
+			OneOf: &resourcepb.OneOfScope{Values: canonicalScopeValues(copyStrings(*v.Values))},
+		}
 	}
 	return p
 }
+
 func toQueryScope(v QueryScope) *resourcepb.QueryScope {
 	p := &resourcepb.QueryScope{Constraints: make([]*resourcepb.ScopeConstraint, len(v))}
 	for i, x := range v {
@@ -90,24 +106,46 @@ func toQueryScope(v QueryScope) *resourcepb.QueryScope {
 	sort.Slice(p.Constraints, func(i, j int) bool { return p.Constraints[i].Dimension < p.Constraints[j].Dimension })
 	return p
 }
+
 func toSchemaBinding(v SchemaBinding) *resourcepb.SchemaBinding {
-	p := &resourcepb.SchemaBinding{State: v.State, Revision: copyToken(v.Revision), Dialect: v.Dialect, Root: v.Root, Document: append([]byte(nil), v.Document...), Validation: v.Validation, Unvalidated: copyStrings(v.Unvalidated), UnavailableReason: copyToken(v.UnavailableReason)}
+	p := &resourcepb.SchemaBinding{
+		State:             v.State,
+		Revision:          copyToken(v.Revision),
+		Dialect:           v.Dialect,
+		Root:              v.Root,
+		Document:          append([]byte(nil), v.Document...),
+		Validation:        v.Validation,
+		Unvalidated:       copyStrings(v.Unvalidated),
+		UnavailableReason: copyToken(v.UnavailableReason),
+	}
 	if v.DocumentRef != nil {
 		p.DocumentRef = toSchemaDocumentReference(*v.DocumentRef)
 	}
 	return p
 }
+
 func toRepresentation(v Representation) *resourcepb.Representation {
 	return &resourcepb.Representation{Id: v.ID, Revision: v.Revision, Schema: toSchemaBinding(v.Schema)}
 }
+
 func toDimension(v Dimension) *resourcepb.Dimension {
 	return &resourcepb.Dimension{Name: v.Name, AllowEmpty: v.AllowEmpty}
 }
+
 func toCapability(v Capability) *resourcepb.Capability {
 	return &resourcepb.Capability{Operation: string(v.Operation), Scope: toQueryScope(v.Scope), Guarantee: v.Guarantee}
 }
+
 func toResourceType(v ResourceType) *resourcepb.ResourceType {
-	p := &resourcepb.ResourceType{Type: v.Type, DisplayName: v.DisplayName, DefaultRepresentation: v.DefaultRepresentation, IdentityDimensions: make([]*resourcepb.Dimension, len(v.IdentityDimensions)), QueryDimensions: make([]*resourcepb.Dimension, len(v.QueryDimensions)), Representations: make([]*resourcepb.Representation, len(v.Representations)), Capabilities: make([]*resourcepb.Capability, len(v.Capabilities))}
+	p := &resourcepb.ResourceType{
+		Type:                  v.Type,
+		DisplayName:           v.DisplayName,
+		DefaultRepresentation: v.DefaultRepresentation,
+		IdentityDimensions:    make([]*resourcepb.Dimension, len(v.IdentityDimensions)),
+		QueryDimensions:       make([]*resourcepb.Dimension, len(v.QueryDimensions)),
+		Representations:       make([]*resourcepb.Representation, len(v.Representations)),
+		Capabilities:          make([]*resourcepb.Capability, len(v.Capabilities)),
+	}
 	if v.NativeAuthorityHint != nil {
 		p.NativeAuthorityHint = toNativeAuthorityHint(*v.NativeAuthorityHint)
 	}
@@ -125,49 +163,107 @@ func toResourceType(v ResourceType) *resourcepb.ResourceType {
 	}
 	return p
 }
+
 func toNativeAuthorityHint(v NativeAuthorityHint) *resourcepb.NativeAuthorityHint {
 	return &resourcepb.NativeAuthorityHint{Scheme: v.Scheme, Id: v.ID, Continuity: v.Continuity}
 }
+
 func toCatalog(v Catalog) *resourcepb.Catalog {
-	p := &resourcepb.Catalog{Provider: v.Provider, Revision: v.Revision, Types: make([]*resourcepb.ResourceType, len(v.Types)), Coverage: toCoverage(v.Coverage)}
+	p := &resourcepb.Catalog{
+		Provider: v.Provider,
+		Revision: v.Revision,
+		Types:    make([]*resourcepb.ResourceType, len(v.Types)),
+		Coverage: toCoverage(v.Coverage),
+	}
 	for i, x := range v.Types {
 		p.Types[i] = toResourceType(x)
 	}
 	return p
 }
+
 func toReadTarget(v ReadTarget) *resourcepb.ReadTarget {
-	return &resourcepb.ReadTarget{Route: toAccessRoute(v.Route), Provider: v.Provider, Authority: v.Authority, Type: v.Type, Scope: toQueryScope(v.Scope), Representation: v.Representation}
+	return &resourcepb.ReadTarget{
+		Route:          toAccessRoute(v.Route),
+		Provider:       v.Provider,
+		Authority:      v.Authority,
+		Type:           v.Type,
+		Scope:          toQueryScope(v.Scope),
+		Representation: v.Representation,
+	}
 }
+
 func toGetRequest(v GetRequest) *resourcepb.GetInput {
-	return &resourcepb.GetInput{Route: toAccessRoute(v.Route), Reference: toResourceReference(v.Reference), Representation: v.Representation}
+	return &resourcepb.GetInput{
+		Route:          toAccessRoute(v.Route),
+		Reference:      toResourceReference(v.Reference),
+		Representation: v.Representation,
+	}
 }
+
 func toEnumerateRequest(v EnumerateRequest) *resourcepb.EnumerateInput {
 	return &resourcepb.EnumerateInput{Target: toReadTarget(v.Target), PageSize: v.PageSize, Cursor: copyToken(v.Cursor)}
 }
+
 func toNativeQueryRequest(v NativeQueryRequest) *resourcepb.NativeQueryInput {
-	return &resourcepb.NativeQueryInput{Target: toReadTarget(v.Target), Language: v.Language, Query: toValue(v.Query), PageSize: v.PageSize, Cursor: copyToken(v.Cursor)}
+	return &resourcepb.NativeQueryInput{
+		Target:   toReadTarget(v.Target),
+		Language: v.Language,
+		Query:    toValue(v.Query),
+		PageSize: v.PageSize,
+		Cursor:   copyToken(v.Cursor),
+	}
 }
+
 func toCoverage(v Coverage) *resourcepb.Coverage {
 	return &resourcepb.Coverage{Kind: v.Kind, Paths: copyStrings(v.Paths), Reason: v.Reason}
 }
+
 func toCount(v Count) *resourcepb.Count {
 	return &resourcepb.Count{Kind: v.Kind, Value: copyToken(v.Value)}
 }
+
 func toRecord(v Record) *resourcepb.Record {
-	return &resourcepb.Record{Reference: toResourceReference(v.Reference), Body: toValue(v.Body), Representation: toRepresentation(v.Representation), Coverage: toCoverage(v.Coverage), SourceRevision: copyToken(v.SourceRevision)}
+	return &resourcepb.Record{
+		Reference:      toResourceReference(v.Reference),
+		Body:           toValue(v.Body),
+		Representation: toRepresentation(v.Representation),
+		Coverage:       toCoverage(v.Coverage),
+		SourceRevision: copyToken(v.SourceRevision),
+	}
 }
+
 func toSourcePage(v SourcePage) *resourcepb.SourcePage {
-	p := &resourcepb.SourcePage{Records: make([]*resourcepb.Record, len(v.Records)), NextCursor: copyToken(v.NextCursor), Count: toCount(v.Count), Coverage: toCoverage(v.Coverage), Consistency: v.Consistency, SourceRevision: copyToken(v.SourceRevision)}
+	p := &resourcepb.SourcePage{
+		Records:        make([]*resourcepb.Record, len(v.Records)),
+		NextCursor:     copyToken(v.NextCursor),
+		Count:          toCount(v.Count),
+		Coverage:       toCoverage(v.Coverage),
+		Consistency:    v.Consistency,
+		SourceRevision: copyToken(v.SourceRevision),
+	}
 	for i, x := range v.Records {
 		p.Records[i] = toRecord(x)
 	}
 	return p
 }
+
 func toMutationRequest(v MutationRequest) *resourcepb.MutationInput {
-	return &resourcepb.MutationInput{Route: toAccessRoute(v.Route), Reference: toResourceReference(v.Reference), Operation: v.Operation, Input: toValue(v.Input), ExpectedRevision: copyToken(v.ExpectedRevision)}
+	return &resourcepb.MutationInput{
+		Route:            toAccessRoute(v.Route),
+		Reference:        toResourceReference(v.Reference),
+		Operation:        v.Operation,
+		Input:            toValue(v.Input),
+		ExpectedRevision: copyToken(v.ExpectedRevision),
+	}
 }
+
 func toActionRequest(v ActionRequest) *resourcepb.ActionInput {
-	return &resourcepb.ActionInput{Route: toAccessRoute(v.Route), Reference: toResourceReference(v.Reference), Action: v.Action, Input: toValue(v.Input)}
+	return &resourcepb.ActionInput{
+		Route:     toAccessRoute(v.Route),
+		Reference: toResourceReference(v.Reference),
+		Action:    v.Action,
+		Input:     toValue(v.Input),
+	}
 }
 
 func (d *adapterDecoder) scopeEntry(p *resourcepb.ScopeEntry) ScopeEntry {
@@ -177,12 +273,19 @@ func (d *adapterDecoder) scopeEntry(p *resourcepb.ScopeEntry) ScopeEntry {
 	}
 	return ScopeEntry{Dimension: p.Dimension, Value: p.Value}
 }
+
 func (d *adapterDecoder) address(p *resourcepb.ResourceAddress) ResourceAddress {
 	if p == nil {
 		d.fail("missing address")
 		return ResourceAddress{}
 	}
-	v := ResourceAddress{Provider: p.Provider, Authority: p.Authority, Type: p.Type, ID: p.Id, Scope: make([]ScopeEntry, len(p.Scope))}
+	v := ResourceAddress{
+		Provider:  p.Provider,
+		Authority: p.Authority,
+		Type:      p.Type,
+		ID:        p.Id,
+		Scope:     make([]ScopeEntry, len(p.Scope)),
+	}
 	for i, p := range p.Scope {
 		v.Scope[i] = d.scopeEntry(p)
 	}
@@ -195,6 +298,7 @@ func (d *adapterDecoder) address(p *resourcepb.ResourceAddress) ResourceAddress 
 	sort.Slice(v.Scope, func(i, j int) bool { return v.Scope[i].Dimension < v.Scope[j].Dimension })
 	return v
 }
+
 func (d *adapterDecoder) route(p *resourcepb.AccessRoute) AccessRoute {
 	if p == nil {
 		d.fail("missing route")
@@ -202,6 +306,7 @@ func (d *adapterDecoder) route(p *resourcepb.AccessRoute) AccessRoute {
 	}
 	return AccessRoute{Connection: p.Connection}
 }
+
 func (d *adapterDecoder) reference(p *resourcepb.ResourceReference) ResourceReference {
 	if p == nil {
 		d.fail("missing reference")
@@ -209,6 +314,7 @@ func (d *adapterDecoder) reference(p *resourcepb.ResourceReference) ResourceRefe
 	}
 	return ResourceReference{Address: d.address(p.Address), Incarnation: copyToken(p.Incarnation)}
 }
+
 func (d *adapterDecoder) constraint(p *resourcepb.ScopeConstraint) ScopeConstraint {
 	if p == nil {
 		d.fail("missing scope constraint")
@@ -235,6 +341,7 @@ func (d *adapterDecoder) constraint(p *resourcepb.ScopeConstraint) ScopeConstrai
 	}
 	return v
 }
+
 func (d *adapterDecoder) scope(p *resourcepb.QueryScope) QueryScope {
 	if p == nil {
 		return QueryScope{}
@@ -251,18 +358,29 @@ func (d *adapterDecoder) scope(p *resourcepb.QueryScope) QueryScope {
 	}
 	return normalizeScopeOwned(v)
 }
+
 func (d *adapterDecoder) schema(p *resourcepb.SchemaBinding) SchemaBinding {
 	if p == nil {
 		d.fail("missing schema binding")
 		return SchemaBinding{}
 	}
-	v := SchemaBinding{State: p.State, Revision: copyToken(p.Revision), Dialect: p.Dialect, Root: p.Root, Document: append([]byte(nil), p.Document...), Validation: p.Validation, Unvalidated: copyStrings(p.Unvalidated), UnavailableReason: copyToken(p.UnavailableReason)}
+	v := SchemaBinding{
+		State:             p.State,
+		Revision:          copyToken(p.Revision),
+		Dialect:           p.Dialect,
+		Root:              p.Root,
+		Document:          append([]byte(nil), p.Document...),
+		Validation:        p.Validation,
+		Unvalidated:       copyStrings(p.Unvalidated),
+		UnavailableReason: copyToken(p.UnavailableReason),
+	}
 	if p.DocumentRef != nil {
 		reference := d.schemaDocumentReference(p.DocumentRef)
 		v.DocumentRef = &reference
 	}
 	return v
 }
+
 func (d *adapterDecoder) representation(p *resourcepb.Representation) Representation {
 	if p == nil {
 		d.fail("missing representation")
@@ -270,6 +388,7 @@ func (d *adapterDecoder) representation(p *resourcepb.Representation) Representa
 	}
 	return Representation{ID: p.Id, Revision: p.Revision, Schema: d.schema(p.Schema)}
 }
+
 func (d *adapterDecoder) dimension(p *resourcepb.Dimension) Dimension {
 	if p == nil {
 		d.fail("missing dimension")
@@ -277,6 +396,7 @@ func (d *adapterDecoder) dimension(p *resourcepb.Dimension) Dimension {
 	}
 	return Dimension{Name: p.Name, AllowEmpty: p.AllowEmpty}
 }
+
 func (d *adapterDecoder) capability(p *resourcepb.Capability) Capability {
 	if p == nil {
 		d.fail("missing capability")
@@ -284,12 +404,21 @@ func (d *adapterDecoder) capability(p *resourcepb.Capability) Capability {
 	}
 	return Capability{Operation: Operation(p.Operation), Scope: d.scope(p.Scope), Guarantee: p.Guarantee}
 }
+
 func (d *adapterDecoder) resourceType(p *resourcepb.ResourceType) ResourceType {
 	if p == nil {
 		d.fail("missing resource type")
 		return ResourceType{}
 	}
-	v := ResourceType{Type: p.Type, DisplayName: p.DisplayName, DefaultRepresentation: p.DefaultRepresentation, IdentityDimensions: make([]Dimension, len(p.IdentityDimensions)), QueryDimensions: make([]Dimension, len(p.QueryDimensions)), Representations: make([]Representation, len(p.Representations)), Capabilities: make([]Capability, len(p.Capabilities))}
+	v := ResourceType{
+		Type:                  p.Type,
+		DisplayName:           p.DisplayName,
+		DefaultRepresentation: p.DefaultRepresentation,
+		IdentityDimensions:    make([]Dimension, len(p.IdentityDimensions)),
+		QueryDimensions:       make([]Dimension, len(p.QueryDimensions)),
+		Representations:       make([]Representation, len(p.Representations)),
+		Capabilities:          make([]Capability, len(p.Capabilities)),
+	}
 	if p.NativeAuthorityHint != nil {
 		hint := d.nativeAuthorityHint(p.NativeAuthorityHint)
 		v.NativeAuthorityHint = &hint
@@ -308,6 +437,7 @@ func (d *adapterDecoder) resourceType(p *resourcepb.ResourceType) ResourceType {
 	}
 	return v
 }
+
 func (d *adapterDecoder) nativeAuthorityHint(p *resourcepb.NativeAuthorityHint) NativeAuthorityHint {
 	if p == nil {
 		d.fail("missing native authority hint")
@@ -315,24 +445,39 @@ func (d *adapterDecoder) nativeAuthorityHint(p *resourcepb.NativeAuthorityHint) 
 	}
 	return NativeAuthorityHint{Scheme: p.Scheme, ID: p.Id, Continuity: p.Continuity}
 }
+
 func (d *adapterDecoder) catalog(p *resourcepb.Catalog) Catalog {
 	if p == nil {
 		d.fail("missing catalog")
 		return Catalog{}
 	}
-	v := Catalog{Provider: p.Provider, Revision: p.Revision, Types: make([]ResourceType, len(p.Types)), Coverage: d.coverage(p.Coverage)}
+	v := Catalog{
+		Provider: p.Provider,
+		Revision: p.Revision,
+		Types:    make([]ResourceType, len(p.Types)),
+		Coverage: d.coverage(p.Coverage),
+	}
 	for i, p := range p.Types {
 		v.Types[i] = d.resourceType(p)
 	}
 	return v
 }
+
 func (d *adapterDecoder) target(p *resourcepb.ReadTarget) ReadTarget {
 	if p == nil {
 		d.fail("missing target")
 		return ReadTarget{}
 	}
-	return ReadTarget{Route: d.route(p.Route), Provider: p.Provider, Authority: p.Authority, Type: p.Type, Scope: d.scope(p.Scope), Representation: p.Representation}
+	return ReadTarget{
+		Route:          d.route(p.Route),
+		Provider:       p.Provider,
+		Authority:      p.Authority,
+		Type:           p.Type,
+		Scope:          d.scope(p.Scope),
+		Representation: p.Representation,
+	}
 }
+
 func (d *adapterDecoder) get(p *resourcepb.GetInput) GetRequest {
 	if p == nil {
 		d.fail("missing get request")
@@ -340,6 +485,7 @@ func (d *adapterDecoder) get(p *resourcepb.GetInput) GetRequest {
 	}
 	return GetRequest{Route: d.route(p.Route), Reference: d.reference(p.Reference), Representation: p.Representation}
 }
+
 func (d *adapterDecoder) enumerate(p *resourcepb.EnumerateInput) EnumerateRequest {
 	if p == nil {
 		d.fail("missing enumerate request")
@@ -347,13 +493,21 @@ func (d *adapterDecoder) enumerate(p *resourcepb.EnumerateInput) EnumerateReques
 	}
 	return EnumerateRequest{Target: d.target(p.Target), PageSize: p.PageSize, Cursor: copyToken(p.Cursor)}
 }
+
 func (d *adapterDecoder) nativeQuery(p *resourcepb.NativeQueryInput) NativeQueryRequest {
 	if p == nil {
 		d.fail("missing native query request")
 		return NativeQueryRequest{}
 	}
-	return NativeQueryRequest{Target: d.target(p.Target), Language: p.Language, Query: d.value(p.Query), PageSize: p.PageSize, Cursor: copyToken(p.Cursor)}
+	return NativeQueryRequest{
+		Target:   d.target(p.Target),
+		Language: p.Language,
+		Query:    d.value(p.Query),
+		PageSize: p.PageSize,
+		Cursor:   copyToken(p.Cursor),
+	}
 }
+
 func (d *adapterDecoder) coverage(p *resourcepb.Coverage) Coverage {
 	if p == nil {
 		d.fail("missing coverage")
@@ -361,6 +515,7 @@ func (d *adapterDecoder) coverage(p *resourcepb.Coverage) Coverage {
 	}
 	return Coverage{Kind: p.Kind, Paths: copyStrings(p.Paths), Reason: p.Reason}
 }
+
 func (d *adapterDecoder) count(p *resourcepb.Count) Count {
 	if p == nil {
 		d.fail("missing count")
@@ -368,13 +523,21 @@ func (d *adapterDecoder) count(p *resourcepb.Count) Count {
 	}
 	return Count{Kind: p.Kind, Value: copyToken(p.Value)}
 }
+
 func (d *adapterDecoder) record(p *resourcepb.Record) Record {
 	if p == nil {
 		d.fail("missing record")
 		return Record{}
 	}
-	return Record{Reference: d.reference(p.Reference), Body: d.value(p.Body), Representation: d.representation(p.Representation), Coverage: d.coverage(p.Coverage), SourceRevision: copyToken(p.SourceRevision)}
+	return Record{
+		Reference:      d.reference(p.Reference),
+		Body:           d.value(p.Body),
+		Representation: d.representation(p.Representation),
+		Coverage:       d.coverage(p.Coverage),
+		SourceRevision: copyToken(p.SourceRevision),
+	}
 }
+
 func (d *adapterDecoder) page(p *resourcepb.SourcePage) SourcePage {
 	if p == nil {
 		d.fail("missing page")
@@ -384,25 +547,45 @@ func (d *adapterDecoder) page(p *resourcepb.SourcePage) SourcePage {
 		d.err = limited("page record limit")
 		return SourcePage{}
 	}
-	v := SourcePage{Records: make([]Record, len(p.Records)), NextCursor: copyToken(p.NextCursor), Count: d.count(p.Count), Coverage: d.coverage(p.Coverage), Consistency: p.Consistency, SourceRevision: copyToken(p.SourceRevision)}
+	v := SourcePage{
+		Records:        make([]Record, len(p.Records)),
+		NextCursor:     copyToken(p.NextCursor),
+		Count:          d.count(p.Count),
+		Coverage:       d.coverage(p.Coverage),
+		Consistency:    p.Consistency,
+		SourceRevision: copyToken(p.SourceRevision),
+	}
 	for i, p := range p.Records {
 		v.Records[i] = d.record(p)
 	}
 	return v
 }
+
 func (d *adapterDecoder) mutation(p *resourcepb.MutationInput) MutationRequest {
 	if p == nil {
 		d.fail("missing mutation request")
 		return MutationRequest{}
 	}
-	return MutationRequest{Route: d.route(p.Route), Reference: d.reference(p.Reference), Operation: p.Operation, Input: d.value(p.Input), ExpectedRevision: copyToken(p.ExpectedRevision)}
+	return MutationRequest{
+		Route:            d.route(p.Route),
+		Reference:        d.reference(p.Reference),
+		Operation:        p.Operation,
+		Input:            d.value(p.Input),
+		ExpectedRevision: copyToken(p.ExpectedRevision),
+	}
 }
+
 func (d *adapterDecoder) action(p *resourcepb.ActionInput) ActionRequest {
 	if p == nil {
 		d.fail("missing action request")
 		return ActionRequest{}
 	}
-	return ActionRequest{Route: d.route(p.Route), Reference: d.reference(p.Reference), Action: p.Action, Input: d.value(p.Input)}
+	return ActionRequest{
+		Route:     d.route(p.Route),
+		Reference: d.reference(p.Reference),
+		Action:    p.Action,
+		Input:     d.value(p.Input),
+	}
 }
 
 func validateEntry(v ScopeEntry) error {
@@ -415,7 +598,13 @@ func validateDimension(v Dimension) error        { return text(v.Name, true) }
 func validateConstraint(v ScopeConstraint) error { return ValidateScope(QueryScope{v}) }
 func validateCapability(v Capability) error {
 	switch v.Operation {
-	case OperationGet, OperationEnumerate, OperationNativeQuery, OperationCreate, OperationMutationUpdate, OperationDelete, OperationAction:
+	case OperationGet,
+		OperationEnumerate,
+		OperationNativeQuery,
+		OperationCreate,
+		OperationMutationUpdate,
+		OperationDelete,
+		OperationAction:
 		if v.Guarantee != "" {
 			return invalid("finite capability has update guarantee")
 		}
@@ -428,8 +617,16 @@ func validateCapability(v Capability) error {
 	}
 	return ValidateScope(v.Scope)
 }
+
 func validateType(v ResourceType) error {
-	return ValidateCatalog(Catalog{Provider: "validation", Revision: "validation", Coverage: Coverage{Kind: "complete"}, Types: []ResourceType{v}})
+	return ValidateCatalog(
+		Catalog{
+			Provider: "validation",
+			Revision: "validation",
+			Coverage: Coverage{Kind: "complete"},
+			Types:    []ResourceType{v},
+		},
+	)
 }
 
 // Transport adapter contract: these synchronous codecs perform no I/O and have no
@@ -601,6 +798,7 @@ func FromProtoCatalogRequest(p *resourcepb.AccessRoute) (CatalogRequest, error) 
 func toSchemaDocumentReference(v SchemaDocumentReference) *resourcepb.SchemaDocumentReference {
 	return &resourcepb.SchemaDocumentReference{Id: v.ID, Revision: v.Revision}
 }
+
 func (d *adapterDecoder) schemaDocumentReference(p *resourcepb.SchemaDocumentReference) SchemaDocumentReference {
 	if p == nil {
 		d.fail("missing schema document reference")
@@ -608,15 +806,25 @@ func (d *adapterDecoder) schemaDocumentReference(p *resourcepb.SchemaDocumentRef
 	}
 	return SchemaDocumentReference{ID: p.Id, Revision: p.Revision}
 }
+
 func toSchemaDocument(v SchemaDocument) *resourcepb.SchemaDocument {
-	return &resourcepb.SchemaDocument{Reference: toSchemaDocumentReference(v.Reference), Dialect: v.Dialect, Document: append([]byte(nil), v.Document...)}
+	return &resourcepb.SchemaDocument{
+		Reference: toSchemaDocumentReference(v.Reference),
+		Dialect:   v.Dialect,
+		Document:  append([]byte(nil), v.Document...),
+	}
 }
+
 func (d *adapterDecoder) schemaDocument(p *resourcepb.SchemaDocument) SchemaDocument {
 	if p == nil {
 		d.fail("missing schema document")
 		return SchemaDocument{}
 	}
-	return SchemaDocument{Reference: d.schemaDocumentReference(p.Reference), Dialect: p.Dialect, Document: append([]byte(nil), p.Document...)}
+	return SchemaDocument{
+		Reference: d.schemaDocumentReference(p.Reference),
+		Dialect:   p.Dialect,
+		Document:  append([]byte(nil), p.Document...),
+	}
 }
 
 // ToProtoSchemaDocumentReference encodes an opaque schema document identity and revision without fetching it.

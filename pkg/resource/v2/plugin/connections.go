@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"time"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
-	"io"
-	"time"
 )
 
 func (s *server) connection(ctx context.Context, in *resourcepb.ConnectionInput) (*resourcepb.ConnectionOutput, error) {
@@ -85,6 +86,7 @@ func (s *server) connection(ctx context.Context, in *resourcepb.ConnectionInput)
 	}
 	return out, nil
 }
+
 func decodeConnection(data []byte, out any) error {
 	if err := resourcev2.ValidateJSON(data); err != nil {
 		return err
@@ -100,8 +102,16 @@ func decodeConnection(data []byte, out any) error {
 	}
 	return resourcev2.ValidateMetadata(out)
 }
+
 func (c *Client) connection(ctx context.Context, operation, id string, out any, isStatus bool) error {
-	r, err := c.call(ctx, &resourcepb.Request{Operation: &resourcepb.Request_Connection{Connection: &resourcepb.ConnectionInput{Operation: operation, Id: id}}})
+	r, err := c.call(
+		ctx,
+		&resourcepb.Request{
+			Operation: &resourcepb.Request_Connection{
+				Connection: &resourcepb.ConnectionInput{Operation: operation, Id: id},
+			},
+		},
+	)
 	if err != nil {
 		return err
 	}
@@ -131,6 +141,7 @@ func (c *Client) connection(ctx context.Context, operation, id string, out any, 
 	}
 	return bindConnectionResult(operation, id, out)
 }
+
 func bindConnectionResult(operation, id string, result any) error {
 	if operation == "load" || operation == "close" {
 		return nil
@@ -148,7 +159,10 @@ func bindConnectionResult(operation, id string, result any) error {
 		if v.Connection != nil && v.Connection.ID == id {
 			if operation == "state" {
 				switch v.Status {
-				case types.ConnectionStatusDisconnected, types.ConnectionStatusPending, types.ConnectionStatusConnected, types.ConnectionStatusFailed:
+				case types.ConnectionStatusDisconnected,
+					types.ConnectionStatusPending,
+					types.ConnectionStatusConnected,
+					types.ConnectionStatusFailed:
 				default:
 					return invalid("invalid registered connection state")
 				}
@@ -165,26 +179,31 @@ func bindConnectionResult(operation, id string, result any) error {
 	}
 	return invalid("connection response id mismatch")
 }
+
 func (c *Client) LoadConnections(ctx context.Context) ([]types.Connection, error) {
 	var out []types.Connection
 	err := c.connection(ctx, "load", "", &out, false)
 	return out, err
 }
+
 func (c *Client) GetConnection(ctx context.Context, id string) (types.Connection, error) {
 	var out types.Connection
 	err := c.connection(ctx, "get", id, &out, false)
 	return out, err
 }
+
 func (c *Client) StartConnection(ctx context.Context, id string) (types.ConnectionStatus, error) {
 	var out types.ConnectionStatus
 	err := c.connection(ctx, "start", id, &out, true)
 	return out, err
 }
+
 func (c *Client) StopConnection(ctx context.Context, id string) (types.Connection, error) {
 	var out types.Connection
 	err := c.connection(ctx, "stop", id, &out, false)
 	return out, err
 }
+
 func (c *Client) CheckConnection(ctx context.Context, id string) (types.ConnectionStatus, error) {
 	var out types.ConnectionStatus
 	err := c.connection(ctx, "check", id, &out, true)

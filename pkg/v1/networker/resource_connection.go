@@ -6,10 +6,11 @@ import (
 	"io"
 	"slices"
 
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
 // preflightResource bounds the enclosing frame before allocating a protobuf Value tree.
@@ -22,7 +23,13 @@ func preflightResource(parent proto.Message, field int, connection Connection) e
 	if err != nil {
 		return err
 	}
-	if proto.Size(parent)+protowire.SizeTag(protowire.Number(field))+protowire.SizeBytes(size) > resourcev2.MaxMessageBytes {
+	if proto.Size(
+		parent,
+	)+protowire.SizeTag(
+		protowire.Number(field),
+	)+protowire.SizeBytes(
+		size,
+	) > resourcev2.MaxMessageBytes {
 		return resourcev2.NewError("RESOURCE_LIMIT", "Port forward frame exceeds wire limit.")
 	}
 	return nil

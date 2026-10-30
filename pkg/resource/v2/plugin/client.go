@@ -2,9 +2,11 @@ package plugin
 
 import (
 	"context"
+
+	"google.golang.org/grpc"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
-	"google.golang.org/grpc"
 )
 
 type Client struct{ conn grpc.ClientConnInterface }
@@ -19,7 +21,14 @@ func (c *Client) call(ctx context.Context, r *resourcepb.Request) (*resourcepb.R
 	r.Version = resourcev2.WireVersion
 	out := &resourcepb.Response{}
 	e := &envelope{message: out}
-	if err := c.conn.Invoke(ctx, resourcepb.ResourceProvider_Call_FullMethodName, r, e, grpc.MaxCallRecvMsgSize(MaxWireBytes), grpc.MaxCallSendMsgSize(MaxWireBytes)); err != nil {
+	if err := c.conn.Invoke(
+		ctx,
+		resourcepb.ResourceProvider_Call_FullMethodName,
+		r,
+		e,
+		grpc.MaxCallRecvMsgSize(MaxWireBytes),
+		grpc.MaxCallSendMsgSize(MaxWireBytes),
+	); err != nil {
 		return nil, domainError(err)
 	}
 	if e.err != nil {
@@ -30,6 +39,7 @@ func (c *Client) call(ctx context.Context, r *resourcepb.Request) (*resourcepb.R
 	}
 	return out, nil
 }
+
 func (c *Client) Catalog(ctx context.Context, in resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
 	p, err := resourcev2.ToProtoCatalogRequest(in)
 	if err != nil {
@@ -44,6 +54,7 @@ func (c *Client) Catalog(ctx context.Context, in resourcev2.CatalogRequest) (res
 	}
 	return resourcev2.FromProtoCatalog(out.GetCatalog())
 }
+
 func (c *Client) Get(ctx context.Context, in resourcev2.GetRequest) (resourcev2.Record, error) {
 	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
 	if err != nil {
@@ -69,6 +80,7 @@ func (c *Client) Get(ctx context.Context, in resourcev2.GetRequest) (resourcev2.
 	}
 	return value, nil
 }
+
 func (c *Client) Enumerate(ctx context.Context, in resourcev2.EnumerateRequest) (resourcev2.SourcePage, error) {
 	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
 	if err != nil {
@@ -94,6 +106,7 @@ func (c *Client) Enumerate(ctx context.Context, in resourcev2.EnumerateRequest) 
 	}
 	return value, nil
 }
+
 func (c *Client) NativeQuery(ctx context.Context, in resourcev2.NativeQueryRequest) (resourcev2.SourcePage, error) {
 	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
 	if err != nil {
@@ -119,6 +132,7 @@ func (c *Client) NativeQuery(ctx context.Context, in resourcev2.NativeQueryReque
 	}
 	return value, nil
 }
+
 func (c *Client) Mutate(ctx context.Context, in resourcev2.MutationRequest) (resourcev2.Record, error) {
 	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
 	if err != nil {
@@ -144,6 +158,7 @@ func (c *Client) Mutate(ctx context.Context, in resourcev2.MutationRequest) (res
 	}
 	return value, nil
 }
+
 func (c *Client) Action(ctx context.Context, in resourcev2.ActionRequest) (resourcev2.Value, error) {
 	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
 	if err != nil {

@@ -2,12 +2,14 @@ package plugin
 
 import (
 	"context"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 	"strings"
 	"testing"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
 func TestCatalogPinSessionRoundTrip(t *testing.T) {
@@ -43,7 +45,17 @@ func TestCatalogPinRawMalformedAndMissingFailClosed(t *testing.T) {
 		conn := pipe(t, s)
 		ctx := metadata.NewOutgoingContext(context.Background(), metadata.MD{catalogRevisionMetadata: values})
 		var out resourcepb.Response
-		err := conn.Invoke(ctx, resourcepb.ResourceProvider_Call_FullMethodName, &resourcepb.Request{Version: 2, Operation: &resourcepb.Request_Get{Get: &resourcepb.GetInput{Route: &resourcepb.AccessRoute{Connection: "explicit"}}}}, &out)
+		err := conn.Invoke(
+			ctx,
+			resourcepb.ResourceProvider_Call_FullMethodName,
+			&resourcepb.Request{
+				Version: 2,
+				Operation: &resourcepb.Request_Get{
+					Get: &resourcepb.GetInput{Route: &resourcepb.AccessRoute{Connection: "explicit"}},
+				},
+			},
+			&out,
+		)
 		if resourcev2.ErrorCode(domainError(err)) != "RESET_REQUIRED" {
 			t.Fatalf("metadata %q: %v", values, err)
 		}
@@ -57,7 +69,9 @@ func TestCatalogDiscoveryDoesNotRequirePin(t *testing.T) {
 	p := &countProvider{}
 	s := grpc.NewServer()
 	RegisterServer(s, p)
-	_, err := NewClient(pipe(t, s)).Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "explicit"}})
+	_, err := NewClient(
+		pipe(t, s),
+	).Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "explicit"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +82,10 @@ type changingCatalogProvider struct {
 	revision string
 }
 
-func (p *changingCatalogProvider) Catalog(ctx context.Context, in resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
+func (p *changingCatalogProvider) Catalog(
+	ctx context.Context,
+	in resourcev2.CatalogRequest,
+) (resourcev2.Catalog, error) {
 	catalog, err := p.qualifiedProvider.Catalog(ctx, in)
 	catalog.Revision = p.revision
 	return catalog, err

@@ -207,7 +207,10 @@ func (s *PluginServer) ClosePortForwardSession(
 	return &networkerpb.PortForwardSessionByIdResponse{Session: session}, nil
 }
 
-func (s *PluginServer) StartResourcePortForwardSession(ctx context.Context, in *networkerpb.PortForwardSessionOptions) (*networkerpb.ResourcePortForwardSessionResponse, error) {
+func (s *PluginServer) StartResourcePortForwardSession(
+	ctx context.Context,
+	in *networkerpb.PortForwardSessionOptions,
+) (*networkerpb.ResourcePortForwardSessionResponse, error) {
 	var err error
 	ctx, err = resourceplugin.IncomingSessionContext(ctx)
 	if err != nil {

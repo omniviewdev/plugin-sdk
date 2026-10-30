@@ -1,11 +1,12 @@
 package logs
 
 import (
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
-	"google.golang.org/protobuf/encoding/protowire"
-	"google.golang.org/protobuf/proto"
 )
 
 const ResourceSessionWireVersion = resourcev2.WireVersion
@@ -26,6 +27,7 @@ func resourceError(code, detail string) error { return resourcev2.NewError(code,
 func (o CreateSessionOptions) HasResourceIntent() bool {
 	return o.ResourceData != nil || o.Reference != nil || o.Route != nil || o.ResourceKey != "" || o.ResourceID != ""
 }
+
 func (o CreateSessionOptions) Validate() error {
 	metadata := struct {
 		ResourceKey, ResourceID string
@@ -58,17 +60,23 @@ func (o CreateSessionOptions) Validate() error {
 	}
 	return nil
 }
+
 func validateRoute(ctx *types.PluginContext, o CreateSessionOptions) error {
 	if o.Route != nil && (ctx == nil || ctx.Connection == nil || ctx.Connection.ID != o.Route.Connection) {
 		return resourceError("INVALID_REQUEST", "Resource route must match trusted connection.")
 	}
 	return nil
 }
+
 func (o CreateSessionOptions) ToProto() (*logspb.CreateLogSessionRequest, error) {
 	if err := o.Validate(); err != nil {
 		return nil, err
 	}
-	p := &logspb.CreateLogSessionRequest{ResourceKey: o.ResourceKey, ResourceId: o.ResourceID, Options: o.Options.ToProto()}
+	p := &logspb.CreateLogSessionRequest{
+		ResourceKey: o.ResourceKey,
+		ResourceId:  o.ResourceID,
+		Options:     o.Options.ToProto(),
+	}
 	if o.HasResourceIntent() {
 		p.ResourceWireVersion = ResourceSessionWireVersion
 	}
@@ -104,6 +112,7 @@ func (o CreateSessionOptions) ToProto() (*logspb.CreateLogSessionRequest, error)
 	}
 	return p, nil
 }
+
 func CreateSessionOptionsFromProto(p *logspb.CreateLogSessionRequest) (CreateSessionOptions, error) {
 	var o CreateSessionOptions
 	if p == nil {
@@ -115,7 +124,9 @@ func CreateSessionOptionsFromProto(p *logspb.CreateLogSessionRequest) (CreateSes
 	if len(p.ProtoReflect().GetUnknown()) != 0 {
 		return o, resourceError("UNSUPPORTED", "Unknown or retired logs resource field.")
 	}
-	intent := p.ResourceKey != "" || p.ResourceId != "" || p.ResourceData != nil || p.Reference != nil || p.Route != nil || p.ResourceWireVersion != 0
+	intent := p.ResourceKey != "" || p.ResourceId != "" || p.ResourceData != nil || p.Reference != nil ||
+		p.Route != nil ||
+		p.ResourceWireVersion != 0
 	if intent && p.ResourceWireVersion != ResourceSessionWireVersion {
 		return o, resourceError("UNSUPPORTED", "Unsupported logs resource wire version.")
 	}
@@ -154,6 +165,7 @@ func CreateSessionOptionsFromProto(p *logspb.CreateLogSessionRequest) (CreateSes
 	}
 	return o, o.Validate()
 }
+
 func validateResourceSessionResult(s *LogSession) error {
 	if s == nil || s.ID == "" {
 		return resourceError("PROVIDER_ERROR", "Logs response requires a session ID.")

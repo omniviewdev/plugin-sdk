@@ -12,6 +12,7 @@ func validateGuarantee(v string) error {
 	}
 	return nil
 }
+
 func validateWatchState(v WatchState) error {
 	if v < WatchStateIdle || v > WatchStateSkipped {
 		return invalid("unknown watch state")
@@ -34,9 +35,13 @@ func validateWatchAdd(v WatchAddPayload) error {
 	}
 	return ValidateRecord(v.Record)
 }
+
 func validateWatchUpdate(v WatchUpdatePayload) error {
-	return validateWatchAdd(WatchAddPayload{Route: v.Route, Record: v.Record, Metadata: v.Metadata, Guarantee: v.Guarantee})
+	return validateWatchAdd(
+		WatchAddPayload{Route: v.Route, Record: v.Record, Metadata: v.Metadata, Guarantee: v.Guarantee},
+	)
 }
+
 func validateWatchDelete(v WatchDeletePayload) error {
 	if err := admission(v); err != nil {
 		return err
@@ -57,12 +62,14 @@ func validateWatchDelete(v WatchDeletePayload) error {
 		if !sameAddress(v.Reference.Address, v.LastKnown.Reference.Address) {
 			return invalid("last-known record address mismatch")
 		}
-		if v.Reference.Incarnation != nil && (v.LastKnown.Reference.Incarnation == nil || *v.Reference.Incarnation != *v.LastKnown.Reference.Incarnation) {
+		if v.Reference.Incarnation != nil &&
+			(v.LastKnown.Reference.Incarnation == nil || *v.Reference.Incarnation != *v.LastKnown.Reference.Incarnation) {
 			return invalid("last-known record incarnation mismatch")
 		}
 	}
 	return nil
 }
+
 func validateWatchStateEvent(v WatchStateEvent) error {
 	if err := admission(v); err != nil {
 		return err
@@ -84,6 +91,7 @@ func validateWatchStateEvent(v WatchStateEvent) error {
 	}
 	return validateGuarantee(v.Guarantee)
 }
+
 func validateWatchSummary(v WatchConnectionSummary) error {
 	if err := admission(v); err != nil {
 		return err
@@ -123,18 +131,23 @@ func updateErrorCode(err *ResourceOperationError) string {
 	}
 	return ErrorCode(err)
 }
+
 func toResourceMetadata(v ResourceMetadata) *resourcepb.ResourceMetadata {
 	keys := make([]string, 0, len(v.Labels))
 	for k := range v.Labels {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	p := &resourcepb.ResourceMetadata{Labels: make([]*resourcepb.LabelEntry, 0, len(keys)), CreatedAt: toOptionalTimestamp(v.CreatedAt)}
+	p := &resourcepb.ResourceMetadata{
+		Labels:    make([]*resourcepb.LabelEntry, 0, len(keys)),
+		CreatedAt: toOptionalTimestamp(v.CreatedAt),
+	}
 	for _, k := range keys {
 		p.Labels = append(p.Labels, &resourcepb.LabelEntry{Key: k, Value: v.Labels[k]})
 	}
 	return p
 }
+
 func (d *adapterDecoder) metadata(p *resourcepb.ResourceMetadata) ResourceMetadata {
 	if p == nil {
 		return ResourceMetadata{Labels: map[string]string{}}
@@ -157,33 +170,63 @@ func (d *adapterDecoder) metadata(p *resourcepb.ResourceMetadata) ResourceMetada
 	}
 	return v
 }
+
 func toWatchAddPayload(v WatchAddPayload) *resourcepb.WatchAddPayload {
-	return &resourcepb.WatchAddPayload{Route: toAccessRoute(v.Route), Record: toRecord(v.Record), Metadata: toResourceMetadata(v.Metadata), Guarantee: v.Guarantee}
+	return &resourcepb.WatchAddPayload{
+		Route:     toAccessRoute(v.Route),
+		Record:    toRecord(v.Record),
+		Metadata:  toResourceMetadata(v.Metadata),
+		Guarantee: v.Guarantee,
+	}
 }
+
 func (d *adapterDecoder) watchAdd(p *resourcepb.WatchAddPayload) WatchAddPayload {
 	if p == nil {
 		d.fail("missing add payload")
 		return WatchAddPayload{}
 	}
-	return WatchAddPayload{Route: d.route(p.Route), Record: d.record(p.Record), Metadata: d.metadata(p.Metadata), Guarantee: p.Guarantee}
+	return WatchAddPayload{
+		Route:     d.route(p.Route),
+		Record:    d.record(p.Record),
+		Metadata:  d.metadata(p.Metadata),
+		Guarantee: p.Guarantee,
+	}
 }
+
 func toWatchUpdatePayload(v WatchUpdatePayload) *resourcepb.WatchUpdatePayload {
-	return &resourcepb.WatchUpdatePayload{Route: toAccessRoute(v.Route), Record: toRecord(v.Record), Metadata: toResourceMetadata(v.Metadata), Guarantee: v.Guarantee}
+	return &resourcepb.WatchUpdatePayload{
+		Route:     toAccessRoute(v.Route),
+		Record:    toRecord(v.Record),
+		Metadata:  toResourceMetadata(v.Metadata),
+		Guarantee: v.Guarantee,
+	}
 }
+
 func (d *adapterDecoder) watchUpdate(p *resourcepb.WatchUpdatePayload) WatchUpdatePayload {
 	if p == nil {
 		d.fail("missing update payload")
 		return WatchUpdatePayload{}
 	}
-	return WatchUpdatePayload{Route: d.route(p.Route), Record: d.record(p.Record), Metadata: d.metadata(p.Metadata), Guarantee: p.Guarantee}
+	return WatchUpdatePayload{
+		Route:     d.route(p.Route),
+		Record:    d.record(p.Record),
+		Metadata:  d.metadata(p.Metadata),
+		Guarantee: p.Guarantee,
+	}
 }
+
 func toWatchDeletePayload(v WatchDeletePayload) *resourcepb.WatchDeletePayload {
-	p := &resourcepb.WatchDeletePayload{Route: toAccessRoute(v.Route), Reference: toResourceReference(v.Reference), Guarantee: v.Guarantee}
+	p := &resourcepb.WatchDeletePayload{
+		Route:     toAccessRoute(v.Route),
+		Reference: toResourceReference(v.Reference),
+		Guarantee: v.Guarantee,
+	}
 	if v.LastKnown != nil {
 		p.LastKnown = toRecord(*v.LastKnown)
 	}
 	return p
 }
+
 func (d *adapterDecoder) watchDelete(p *resourcepb.WatchDeletePayload) WatchDeletePayload {
 	if p == nil {
 		d.fail("missing delete payload")
@@ -196,15 +239,32 @@ func (d *adapterDecoder) watchDelete(p *resourcepb.WatchDeletePayload) WatchDele
 	}
 	return v
 }
+
 func toWatchStateEvent(v WatchStateEvent) *resourcepb.WatchStateEvent {
-	return &resourcepb.WatchStateEvent{Route: toAccessRoute(v.Route), Type: v.Type, State: int32(v.State), Count: toCount(v.Count), ErrorCode: updateErrorCode(v.Error), Message: v.Message, Guarantee: v.Guarantee}
+	return &resourcepb.WatchStateEvent{
+		Route:     toAccessRoute(v.Route),
+		Type:      v.Type,
+		State:     int32(v.State),
+		Count:     toCount(v.Count),
+		ErrorCode: updateErrorCode(v.Error),
+		Message:   v.Message,
+		Guarantee: v.Guarantee,
+	}
 }
+
 func (d *adapterDecoder) watchState(p *resourcepb.WatchStateEvent) WatchStateEvent {
 	if p == nil {
 		d.fail("missing watch state")
 		return WatchStateEvent{}
 	}
-	v := WatchStateEvent{Route: d.route(p.Route), Type: p.Type, State: WatchState(p.State), Count: d.count(p.Count), Message: p.Message, Guarantee: p.Guarantee}
+	v := WatchStateEvent{
+		Route:     d.route(p.Route),
+		Type:      p.Type,
+		State:     WatchState(p.State),
+		Count:     d.count(p.Count),
+		Message:   p.Message,
+		Guarantee: p.Guarantee,
+	}
 	if p.ErrorCode != "" {
 		if !IsErrorCode(p.ErrorCode) {
 			d.fail("unknown update error code")
@@ -214,8 +274,15 @@ func (d *adapterDecoder) watchState(p *resourcepb.WatchStateEvent) WatchStateEve
 	}
 	return v
 }
+
 func toWatchConnectionSummary(v WatchConnectionSummary) *resourcepb.WatchConnectionSummary {
-	p := &resourcepb.WatchConnectionSummary{Route: toAccessRoute(v.Route), Scope: toQueryScope(v.Scope), Guarantee: v.Guarantee, Resources: make([]*resourcepb.ResourceWatchState, 0, len(v.Resources)), ResourceCounts: make([]*resourcepb.ResourceWatchCount, 0, len(v.ResourceCounts))}
+	p := &resourcepb.WatchConnectionSummary{
+		Route:          toAccessRoute(v.Route),
+		Scope:          toQueryScope(v.Scope),
+		Guarantee:      v.Guarantee,
+		Resources:      make([]*resourcepb.ResourceWatchState, 0, len(v.Resources)),
+		ResourceCounts: make([]*resourcepb.ResourceWatchCount, 0, len(v.ResourceCounts)),
+	}
 	keys := make([]string, 0, len(v.Resources))
 	for k := range v.Resources {
 		keys = append(keys, k)
@@ -230,10 +297,14 @@ func toWatchConnectionSummary(v WatchConnectionSummary) *resourcepb.WatchConnect
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		p.ResourceCounts = append(p.ResourceCounts, &resourcepb.ResourceWatchCount{Type: k, Count: toCount(v.ResourceCounts[k])})
+		p.ResourceCounts = append(
+			p.ResourceCounts,
+			&resourcepb.ResourceWatchCount{Type: k, Count: toCount(v.ResourceCounts[k])},
+		)
 	}
 	return p
 }
+
 func (d *adapterDecoder) watchSummary(p *resourcepb.WatchConnectionSummary) WatchConnectionSummary {
 	if p == nil {
 		d.fail("missing watch summary")
@@ -263,7 +334,13 @@ func (d *adapterDecoder) watchSummary(p *resourcepb.WatchConnectionSummary) Watc
 		}
 		counts[entry.Type] = struct{}{}
 	}
-	v := WatchConnectionSummary{Route: d.route(p.Route), Scope: d.scope(p.Scope), Guarantee: p.Guarantee, Resources: make(map[string]WatchState, len(p.Resources)), ResourceCounts: make(map[string]Count, len(p.ResourceCounts))}
+	v := WatchConnectionSummary{
+		Route:          d.route(p.Route),
+		Scope:          d.scope(p.Scope),
+		Guarantee:      p.Guarantee,
+		Resources:      make(map[string]WatchState, len(p.Resources)),
+		ResourceCounts: make(map[string]Count, len(p.ResourceCounts)),
+	}
 	for _, entry := range p.Resources {
 		v.Resources[entry.Type] = WatchState(entry.State)
 	}

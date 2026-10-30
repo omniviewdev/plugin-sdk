@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
@@ -34,7 +35,11 @@ func presentationJSON(value any) (*resourcepb.AncillaryResponse, error) {
 
 // presentationCall preserves operation-specific target and schema validation.
 // The shared ancillaryCallHandler owns admission and response validation.
-func (s *ancillaryServer) presentationCall(ctx context.Context, r *resourcepb.AncillaryRequest, route resourcev2.AccessRoute) (*resourcepb.AncillaryResponse, error) {
+func (s *ancillaryServer) presentationCall(
+	ctx context.Context,
+	r *resourcepb.AncillaryRequest,
+	route resourcev2.AccessRoute,
+) (*resourcepb.AncillaryResponse, error) {
 	impl := s.owner.impl
 	out := &resourcepb.AncillaryResponse{Version: 2}
 	switch r.Operation {

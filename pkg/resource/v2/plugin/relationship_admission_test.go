@@ -5,9 +5,10 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"google.golang.org/grpc"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
-	"google.golang.org/grpc"
 )
 
 type relationshipBoundaryProvider struct {
@@ -16,7 +17,10 @@ type relationshipBoundaryProvider struct {
 	mutate func([]resourcev2.ResolvedRelationship)
 }
 
-func (p *relationshipBoundaryProvider) ResolveRelationships(context.Context, resourcev2.RelationshipResolutionRequest) ([]resourcev2.ResolvedRelationship, error) {
+func (p *relationshipBoundaryProvider) ResolveRelationships(
+	context.Context,
+	resourcev2.RelationshipResolutionRequest,
+) ([]resourcev2.ResolvedRelationship, error) {
 	p.calls.Add(1)
 	out := relationshipFixtureResults()
 	if p.mutate != nil {
@@ -37,9 +41,13 @@ func TestActualGRPCRelationshipBindingAdmission(t *testing.T) {
 				}
 			case "scope":
 				selected := []string{"inside"}
-				request.Targets[0].Scope = resourcev2.QueryScope{{Dimension: "region", Match: resourcev2.ScopeOneOf, Values: &selected}}
+				request.Targets[0].Scope = resourcev2.QueryScope{
+					{Dimension: "region", Match: resourcev2.ScopeOneOf, Values: &selected},
+				}
 				p.mutate = func(out []resourcev2.ResolvedRelationship) {
-					out[0].Targets[0].Reference.Address.Scope = []resourcev2.ScopeEntry{{Dimension: "region", Value: "outside"}}
+					out[0].Targets[0].Reference.Address.Scope = []resourcev2.ScopeEntry{
+						{Dimension: "region", Value: "outside"},
+					}
 				}
 			case "missing":
 				request.Targets = nil
@@ -47,9 +55,13 @@ func TestActualGRPCRelationshipBindingAdmission(t *testing.T) {
 			s := grpc.NewServer()
 			RegisterServer(s, p)
 			client := NewClient(pipe(t, s))
-			out, err := client.ResolveRelationships(acceptedRelationshipContext(t, context.Background(), client, request), request)
+			out, err := client.ResolveRelationships(
+				acceptedRelationshipContext(t, context.Background(), client, request),
+				request,
+			)
 			if mode == "valid" {
-				if err != nil || len(out) != 1 || out[0].Targets[0].Reference.Address.Authority != "target-authority" || out[0].Targets[0].Reference.Address.Type != "opaque/linked-type" {
+				if err != nil || len(out) != 1 || out[0].Targets[0].Reference.Address.Authority != "target-authority" ||
+					out[0].Targets[0].Reference.Address.Type != "opaque/linked-type" {
 					t.Fatalf("cross-type binding failed: %v %v", out, err)
 				}
 			} else if err == nil {
@@ -75,7 +87,12 @@ func TestActualGRPCMalformedRelationshipRequestDoesNotDispatch(t *testing.T) {
 		RegisterServer(s, p)
 		conn := pipe(t, s)
 		var response resourcepb.AncillaryResponse
-		err := conn.Invoke(acceptedWireContext(t, context.Background(), NewClient(conn), testGet().Route), resourcepb.ResourceAncillary_Call_FullMethodName, request, &response)
+		err := conn.Invoke(
+			acceptedWireContext(t, context.Background(), NewClient(conn), testGet().Route),
+			resourcepb.ResourceAncillary_Call_FullMethodName,
+			request,
+			&response,
+		)
 		if err == nil || p.calls.Load() != 0 {
 			t.Fatalf("malformed request dispatched: calls=%d err=%v", p.calls.Load(), err)
 		}
@@ -87,7 +104,10 @@ type unboundRelationshipServer struct {
 	mode string
 }
 
-func (s *unboundRelationshipServer) Call(context.Context, *resourcepb.AncillaryRequest) (*resourcepb.AncillaryResponse, error) {
+func (s *unboundRelationshipServer) Call(
+	context.Context,
+	*resourcepb.AncillaryRequest,
+) (*resourcepb.AncillaryResponse, error) {
 	out := relationshipFixtureResults()
 	switch s.mode {
 	case "authority":
@@ -99,7 +119,12 @@ func (s *unboundRelationshipServer) Call(context.Context, *resourcepb.AncillaryR
 	if err != nil {
 		return nil, err
 	}
-	return &resourcepb.AncillaryResponse{Version: 2, Result: &resourcepb.AncillaryResponse_Resolved{Resolved: &resourcepb.ResolvedRelationships{Relationships: []*resourcepb.ResolvedRelationship{p}}}}, nil
+	return &resourcepb.AncillaryResponse{
+		Version: 2,
+		Result: &resourcepb.AncillaryResponse_Resolved{
+			Resolved: &resourcepb.ResolvedRelationships{Relationships: []*resourcepb.ResolvedRelationship{p}},
+		},
+	}, nil
 }
 
 func TestActualGRPCClientRejectsUnboundRelationshipResponse(t *testing.T) {
@@ -110,7 +135,9 @@ func TestActualGRPCClientRejectsUnboundRelationshipResponse(t *testing.T) {
 			request := relationshipFixtureRequest()
 			if mode == "scope" {
 				selected := []string{"inside"}
-				request.Targets[0].Scope = resourcev2.QueryScope{{Dimension: "region", Match: resourcev2.ScopeOneOf, Values: &selected}}
+				request.Targets[0].Scope = resourcev2.QueryScope{
+					{Dimension: "region", Match: resourcev2.ScopeOneOf, Values: &selected},
+				}
 			}
 			if mode == "missing" {
 				request.Targets = nil

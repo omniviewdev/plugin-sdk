@@ -23,7 +23,11 @@ type handlerRegistry struct {
 	log       logging.Logger
 }
 
-func newHandlerRegistry(log logging.Logger, handlers map[string]Handler, resolvers map[string]SourceResolver) *handlerRegistry {
+func newHandlerRegistry(
+	log logging.Logger,
+	handlers map[string]Handler,
+	resolvers map[string]SourceResolver,
+) *handlerRegistry {
 	if log == nil {
 		log = logging.NewNop()
 	}

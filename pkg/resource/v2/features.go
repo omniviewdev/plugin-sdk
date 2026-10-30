@@ -57,7 +57,19 @@ func ValidateFeatures(f FeatureSet) error {
 		}
 		seen[feature] = true
 		switch feature {
-		case FeatureConnections, FeatureConnectionReadiness, FeatureConnectionBrowser, FeatureConnectionOverlay, FeatureScopeValues, FeaturePresentation, FeatureEditorSchemas, FeatureSchemaDocuments, FeatureRelationships, FeatureHealth, FeatureActionCatalog, FeatureStreamingActions, FeatureBestEffortUpdates:
+		case FeatureConnections,
+			FeatureConnectionReadiness,
+			FeatureConnectionBrowser,
+			FeatureConnectionOverlay,
+			FeatureScopeValues,
+			FeaturePresentation,
+			FeatureEditorSchemas,
+			FeatureSchemaDocuments,
+			FeatureRelationships,
+			FeatureHealth,
+			FeatureActionCatalog,
+			FeatureStreamingActions,
+			FeatureBestEffortUpdates:
 		default:
 			return NewError("UNSUPPORTED", "unknown ancillary feature")
 		}

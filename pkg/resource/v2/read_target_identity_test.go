@@ -8,14 +8,20 @@ import (
 func TestCanonicalReadTargetOwnsSelectionsAndNormalizesEquality(t *testing.T) {
 	values := []string{"west", "east", "west"}
 	target := controllerTarget()
-	target.Scope = QueryScope{{Dimension: "zone", Match: ScopeOneOf, Values: &values}, {Dimension: "namespace", Match: ScopeAny}}
+	target.Scope = QueryScope{
+		{Dimension: "zone", Match: ScopeOneOf, Values: &values},
+		{Dimension: "namespace", Match: ScopeAny},
+	}
 	snapshot, key, err := CanonicalReadTarget(target)
 	if err != nil {
 		t.Fatal(err)
 	}
 	canonicalValues := []string{"east", "west"}
 	equivalent := target
-	equivalent.Scope = QueryScope{{Dimension: "namespace", Match: ScopeAny}, {Dimension: "zone", Match: ScopeOneOf, Values: &canonicalValues}}
+	equivalent.Scope = QueryScope{
+		{Dimension: "namespace", Match: ScopeAny},
+		{Dimension: "zone", Match: ScopeOneOf, Values: &canonicalValues},
+	}
 	_, equivalentKey, err := CanonicalReadTarget(equivalent)
 	if err != nil {
 		t.Fatal(err)

@@ -11,12 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/omniviewdev/plugin-sdk/pkg/interceptors"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
-	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding"
@@ -24,6 +18,13 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/interceptors"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
+	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
 )
 
 type canonicalPorts struct{}
@@ -36,7 +37,10 @@ func networkPipe(t *testing.T, server *grpc.Server, pluginMetadata ...bool) *grp
 	listener := bufconn.Listen(1 << 20)
 	go server.Serve(listener)
 	t.Cleanup(func() { server.Stop(); listener.Close() })
-	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() })}
+	options := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+	}
 	if len(pluginMetadata) != 0 && pluginMetadata[0] {
 		options = append(options, grpc.WithUnaryInterceptor(sdk.ClientPluginContextInterceptor(nil)))
 	}
@@ -49,7 +53,17 @@ func networkPipe(t *testing.T, server *grpc.Server, pluginMetadata ...bool) *grp
 }
 
 func canonicalResourceOptions(body *resourcev2.Value) PortForwardSessionOptions {
-	return PortForwardSessionOptions{Protocol: PortForwardProtocolTCP, ConnectionType: PortForwardConnectionTypeResource, RemotePort: 80, Connection: PortForwardResourceConnection{PluginID: "opaque-provider", ResourceKey: "opaque/type", ResourceID: "opaque::id/%2F", ResourceData: body}}
+	return PortForwardSessionOptions{
+		Protocol:       PortForwardProtocolTCP,
+		ConnectionType: PortForwardConnectionTypeResource,
+		RemotePort:     80,
+		Connection: PortForwardResourceConnection{
+			PluginID:     "opaque-provider",
+			ResourceKey:  "opaque/type",
+			ResourceID:   "opaque::id/%2F",
+			ResourceData: body,
+		},
+	}
 }
 
 func TestResourceNetworkActualNativeGRPCLosslessAndLifecycle(t *testing.T) {
@@ -57,22 +71,38 @@ func TestResourceNetworkActualNativeGRPCLosslessAndLifecycle(t *testing.T) {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			var seen PortForwardResourceConnection
 			var calls atomic.Int32
-			manager := NewManager(ManagerConfig{PortChecker: canonicalPorts{}}, PluginOpts{ResourceForwarders: map[string]ResourceForwarder{"opaque/type": ResourceForwarderFunc(func(ctx context.Context, _ *types.PluginContext, o ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
-				seen = o.Resource
-				calls.Add(1)
-				ready := make(chan struct{})
-				close(ready)
-				return &ForwarderResult{Ready: ready, ErrCh: make(chan error)}, nil
-			})}})
+			manager := NewManager(
+				ManagerConfig{PortChecker: canonicalPorts{}},
+				PluginOpts{
+					ResourceForwarders: map[string]ResourceForwarder{
+						"opaque/type": ResourceForwarderFunc(
+							func(ctx context.Context, _ *types.PluginContext, o ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
+								seen = o.Resource
+								calls.Add(1)
+								ready := make(chan struct{})
+								close(ready)
+								return &ForwarderResult{Ready: ready, ErrCh: make(chan error)}, nil
+							},
+						),
+					},
+				},
+			)
 			t.Cleanup(manager.StopAll)
 			_, accepted := networkCatalogFixture(t, manager)
-			server := grpc.NewServer(append(resourceplugin.ServerOptions(), grpc.UnaryInterceptor(interceptors.UnaryPluginContext()))...)
+			server := grpc.NewServer(
+				append(resourceplugin.ServerOptions(), grpc.UnaryInterceptor(interceptors.UnaryPluginContext()))...)
 			RegisterNetworkerPluginServer(server, &PluginServer{Impl: manager})
 			client := &PluginClient{client: networkerpb.NewNetworkerPluginClient(networkPipe(t, server, true))}
 			var body *resourcev2.Value
 			var native any
 			if size > 0 {
-				native = map[string]any{"min": int64(math.MinInt64), "max": uint64(math.MaxUint64), "preEpoch": time.Unix(-1, 123).UTC(), "nested": []any{[]any{math.Copysign(0, -1)}}, "large": strings.Repeat("x", size)}
+				native = map[string]any{
+					"min":      int64(math.MinInt64),
+					"max":      uint64(math.MaxUint64),
+					"preEpoch": time.Unix(-1, 123).UTC(),
+					"nested":   []any{[]any{math.Copysign(0, -1)}},
+					"large":    strings.Repeat("x", size),
+				}
 				value, err := resourcev2.ValueFromNative(native)
 				if err != nil {
 					t.Fatal(err)
@@ -83,7 +113,16 @@ func TestResourceNetworkActualNativeGRPCLosslessAndLifecycle(t *testing.T) {
 			target, _ := resourceConnection(opts.Connection)
 			if size > 0 {
 				token := "opaque::incarnation/%2F"
-				target.Reference = &resourcev2.ResourceReference{Address: resourcev2.ResourceAddress{Provider: "opaque-provider", Authority: "fixture", Type: "opaque/type", Scope: []resourcev2.ScopeEntry{{Dimension: "namespace", Value: "opaque::scope/%2F"}}, ID: "opaque::id/%2F"}, Incarnation: &token}
+				target.Reference = &resourcev2.ResourceReference{
+					Address: resourcev2.ResourceAddress{
+						Provider:  "opaque-provider",
+						Authority: "fixture",
+						Type:      "opaque/type",
+						Scope:     []resourcev2.ScopeEntry{{Dimension: "namespace", Value: "opaque::scope/%2F"}},
+						ID:        "opaque::id/%2F",
+					},
+					Incarnation: &token,
+				}
 				target.Route = &resourcev2.AccessRoute{Connection: "fixture"}
 			}
 			opts.Connection = target
@@ -131,7 +170,10 @@ func TestResourceNetworkActualNativeGRPCLosslessAndLifecycle(t *testing.T) {
 				t.Fatalf("list: %v", err)
 			}
 			assertSession(listed[0], nil)
-			found, err := client.FindPortForwardSessions(&pc, FindPortForwardSessionRequest{ResourceID: "opaque::id/%2F"})
+			found, err := client.FindPortForwardSessions(
+				&pc,
+				FindPortForwardSessionRequest{ResourceID: "opaque::id/%2F"},
+			)
 			if err != nil || len(found) != 1 {
 				t.Fatalf("find: %v", err)
 			}
@@ -146,10 +188,14 @@ type oldNetworkServer struct {
 	calls atomic.Int32
 }
 
-func (s *oldNetworkServer) StartPortForwardSession(context.Context, *networkerpb.PortForwardSessionOptions) (*networkerpb.PortForwardSessionByIdResponse, error) {
+func (s *oldNetworkServer) StartPortForwardSession(
+	context.Context,
+	*networkerpb.PortForwardSessionOptions,
+) (*networkerpb.PortForwardSessionByIdResponse, error) {
 	s.calls.Add(1)
 	return &networkerpb.PortForwardSessionByIdResponse{}, nil
 }
+
 func TestResourceNetworkOldServerNoFallback(t *testing.T) {
 	server := grpc.NewServer()
 	old := &oldNetworkServer{}
@@ -167,9 +213,11 @@ func (networkRawCodec) Name() string { return "proto" }
 func (c networkRawCodec) Marshal(any) (mem.BufferSlice, error) {
 	return mem.BufferSlice{mem.SliceBuffer(c.data)}, nil
 }
+
 func (networkRawCodec) Unmarshal(data mem.BufferSlice, v any) error {
 	return encoding.GetCodecV2("proto").Unmarshal(data, v)
 }
+
 func networkBytes(field protowire.Number, data []byte) []byte {
 	return protowire.AppendBytes(protowire.AppendTag(nil, field, protowire.BytesType), data)
 }
@@ -179,14 +227,22 @@ type networkAdmissionProvider struct {
 	calls atomic.Int32
 }
 
-func (p *networkAdmissionProvider) StartPortForwardSession(*types.PluginContext, PortForwardSessionOptions) (*PortForwardSession, error) {
+func (p *networkAdmissionProvider) StartPortForwardSession(
+	*types.PluginContext,
+	PortForwardSessionOptions,
+) (*PortForwardSession, error) {
 	p.calls.Add(1)
 	return nil, nil
 }
-func (p *networkAdmissionProvider) StartResourcePortForwardSession(*types.PluginContext, PortForwardSessionOptions) (*PortForwardSession, error) {
+
+func (p *networkAdmissionProvider) StartResourcePortForwardSession(
+	*types.PluginContext,
+	PortForwardSessionOptions,
+) (*PortForwardSession, error) {
 	p.calls.Add(1)
 	return nil, nil
 }
+
 func TestResourceNetworkMalformedDefaultProtoRequestAdmission(t *testing.T) {
 	version := []byte{56, 2}
 	duplicate := append(append([]byte{}, version...), version...)
@@ -196,10 +252,25 @@ func TestResourceNetworkMalformedDefaultProtoRequestAdmission(t *testing.T) {
 	}{
 		{"old-resource", "StartPortForwardSession", "UNSUPPORTED", networkBytes(10, nil)},
 		{"missing-version", "StartResourcePortForwardSession", "UNSUPPORTED", networkBytes(10, nil)},
-		{"reserved-struct", "StartResourcePortForwardSession", "UNSUPPORTED", networkBytes(10, append(append([]byte{}, version...), networkBytes(5, nil)...))},
+		{
+			"reserved-struct",
+			"StartResourcePortForwardSession",
+			"UNSUPPORTED",
+			networkBytes(10, append(append([]byte{}, version...), networkBytes(5, nil)...)),
+		},
 		{"duplicate-version", "StartResourcePortForwardSession", "INVALID_REQUEST", networkBytes(10, duplicate)},
-		{"value-oneof", "StartResourcePortForwardSession", "INVALID_REQUEST", networkBytes(10, append(append([]byte{}, version...), networkBytes(6, []byte{10, 0, 26, 0})...))},
-		{"utf8-selector", "StartResourcePortForwardSession", "INVALID_REQUEST", networkBytes(10, append(append([]byte{}, version...), networkBytes(4, []byte{255})...))},
+		{
+			"value-oneof",
+			"StartResourcePortForwardSession",
+			"INVALID_REQUEST",
+			networkBytes(10, append(append([]byte{}, version...), networkBytes(6, []byte{10, 0, 26, 0})...)),
+		},
+		{
+			"utf8-selector",
+			"StartResourcePortForwardSession",
+			"INVALID_REQUEST",
+			networkBytes(10, append(append([]byte{}, version...), networkBytes(4, []byte{255})...)),
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -207,7 +278,13 @@ func TestResourceNetworkMalformedDefaultProtoRequestAdmission(t *testing.T) {
 			server := grpc.NewServer()
 			RegisterNetworkerPluginServer(server, &PluginServer{Impl: provider})
 			connection := networkPipe(t, server)
-			err := connection.Invoke(context.Background(), "/"+networkerpb.NetworkerPlugin_ServiceDesc.ServiceName+"/"+tc.method, &networkerpb.PortForwardSessionOptions{}, &networkerpb.ResourcePortForwardSessionResponse{}, grpc.ForceCodecV2(networkRawCodec{tc.data}))
+			err := connection.Invoke(
+				context.Background(),
+				"/"+networkerpb.NetworkerPlugin_ServiceDesc.ServiceName+"/"+tc.method,
+				&networkerpb.PortForwardSessionOptions{},
+				&networkerpb.ResourcePortForwardSessionResponse{},
+				grpc.ForceCodecV2(networkRawCodec{tc.data}),
+			)
 			if resourcev2.ErrorCode(resourceplugin.ResourceDomainError(err)) != tc.code || provider.calls.Load() != 0 {
 				t.Fatalf("admission: %v calls %d", err, provider.calls.Load())
 			}
@@ -217,7 +294,12 @@ func TestResourceNetworkMalformedDefaultProtoRequestAdmission(t *testing.T) {
 
 func TestResourceNetworkMalformedDefaultProtoResponses(t *testing.T) {
 	version := []byte{56, 2}
-	badConnections := [][]byte{nil, append(append([]byte{}, version...), version...), append(append([]byte{}, version...), networkBytes(5, nil)...), append(append([]byte{}, version...), networkBytes(6, []byte{10, 0, 26, 0})...)}
+	badConnections := [][]byte{
+		nil,
+		append(append([]byte{}, version...), version...),
+		append(append([]byte{}, version...), networkBytes(5, nil)...),
+		append(append([]byte{}, version...), networkBytes(6, []byte{10, 0, 26, 0})...),
+	}
 	for index, bad := range badConnections {
 		t.Run(fmt.Sprint(index), func(t *testing.T) {
 			session := networkBytes(20, bad)
@@ -228,10 +310,15 @@ func TestResourceNetworkMalformedDefaultProtoResponses(t *testing.T) {
 						data = append([]byte{8, 2}, networkBytes(2, session)...)
 					}
 					var served atomic.Int32
-					server := grpc.NewServer(grpc.ForceServerCodecV2(networkRawCodec{data: data}), grpc.UnaryInterceptor(func(ctx context.Context, request any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-						served.Add(1)
-						return handler(ctx, request)
-					}))
+					server := grpc.NewServer(
+						grpc.ForceServerCodecV2(networkRawCodec{data: data}),
+						grpc.UnaryInterceptor(
+							func(ctx context.Context, request any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+								served.Add(1)
+								return handler(ctx, request)
+							},
+						),
+					)
 					networkerpb.RegisterNetworkerPluginServer(server, &malformedNetworkServer{})
 					connection := networkPipe(t, server)
 					var response any = &networkerpb.PortForwardSessionByIdResponse{}
@@ -257,7 +344,12 @@ func TestResourceNetworkMalformedDefaultProtoResponses(t *testing.T) {
 						request = wire
 					}
 					options, admissionError := networkResponseOptions()
-					err := connection.Invoke(context.Background(), "/"+networkerpb.NetworkerPlugin_ServiceDesc.ServiceName+"/"+method, request, response, options...)
+					err := connection.Invoke(
+						context.Background(),
+						"/"+networkerpb.NetworkerPlugin_ServiceDesc.ServiceName+"/"+method,
+						request,
+						response,
+						options...)
 					if err == nil {
 						err = admissionError()
 					}
@@ -274,35 +366,71 @@ type malformedNetworkServer struct {
 	networkerpb.UnimplementedNetworkerPluginServer
 }
 
-func (*malformedNetworkServer) StartResourcePortForwardSession(context.Context, *networkerpb.PortForwardSessionOptions) (*networkerpb.ResourcePortForwardSessionResponse, error) {
+func (*malformedNetworkServer) StartResourcePortForwardSession(
+	context.Context,
+	*networkerpb.PortForwardSessionOptions,
+) (*networkerpb.ResourcePortForwardSessionResponse, error) {
 	return &networkerpb.ResourcePortForwardSessionResponse{}, nil
 }
-func (*malformedNetworkServer) GetPortForwardSession(context.Context, *networkerpb.PortForwardSessionByIdRequest) (*networkerpb.PortForwardSessionByIdResponse, error) {
+
+func (*malformedNetworkServer) GetPortForwardSession(
+	context.Context,
+	*networkerpb.PortForwardSessionByIdRequest,
+) (*networkerpb.PortForwardSessionByIdResponse, error) {
 	return &networkerpb.PortForwardSessionByIdResponse{}, nil
 }
-func (*malformedNetworkServer) ClosePortForwardSession(context.Context, *networkerpb.PortForwardSessionByIdRequest) (*networkerpb.PortForwardSessionByIdResponse, error) {
+
+func (*malformedNetworkServer) ClosePortForwardSession(
+	context.Context,
+	*networkerpb.PortForwardSessionByIdRequest,
+) (*networkerpb.PortForwardSessionByIdResponse, error) {
 	return &networkerpb.PortForwardSessionByIdResponse{}, nil
 }
-func (*malformedNetworkServer) ListPortForwardSessions(context.Context, *emptypb.Empty) (*networkerpb.PortForwardSessionListResponse, error) {
+
+func (*malformedNetworkServer) ListPortForwardSessions(
+	context.Context,
+	*emptypb.Empty,
+) (*networkerpb.PortForwardSessionListResponse, error) {
 	return &networkerpb.PortForwardSessionListResponse{}, nil
 }
-func (*malformedNetworkServer) FindPortForwardSessions(context.Context, *networkerpb.FindPortForwardSessionRequest) (*networkerpb.PortForwardSessionListResponse, error) {
+
+func (*malformedNetworkServer) FindPortForwardSessions(
+	context.Context,
+	*networkerpb.FindPortForwardSessionRequest,
+) (*networkerpb.PortForwardSessionListResponse, error) {
 	return &networkerpb.PortForwardSessionListResponse{}, nil
 }
 
 func TestResourceNetworkStaticLegacyLifecycle(t *testing.T) {
 	var calls atomic.Int32
-	manager := NewManager(ManagerConfig{PortChecker: canonicalPorts{}}, PluginOpts{StaticForwarders: map[string]StaticForwarder{"fixture": StaticForwarderFunc(func(context.Context, *types.PluginContext, StaticPortForwardHandlerOpts) (*ForwarderResult, error) {
-		calls.Add(1)
-		ready := make(chan struct{})
-		close(ready)
-		return &ForwarderResult{Ready: ready, ErrCh: make(chan error)}, nil
-	})}})
+	manager := NewManager(
+		ManagerConfig{PortChecker: canonicalPorts{}},
+		PluginOpts{
+			StaticForwarders: map[string]StaticForwarder{
+				"fixture": StaticForwarderFunc(
+					func(context.Context, *types.PluginContext, StaticPortForwardHandlerOpts) (*ForwarderResult, error) {
+						calls.Add(1)
+						ready := make(chan struct{})
+						close(ready)
+						return &ForwarderResult{Ready: ready, ErrCh: make(chan error)}, nil
+					},
+				),
+			},
+		},
+	)
 	t.Cleanup(manager.StopAll)
 	server := grpc.NewServer()
 	RegisterNetworkerPluginServer(server, &PluginServer{Impl: manager})
 	client := &PluginClient{client: networkerpb.NewNetworkerPluginClient(networkPipe(t, server))}
-	session, err := client.StartPortForwardSession(&types.PluginContext{}, PortForwardSessionOptions{Protocol: PortForwardProtocolTCP, ConnectionType: PortForwardConnectionTypeStatic, Connection: PortForwardStaticConnection{Address: "fixture"}, RemotePort: 80})
+	session, err := client.StartPortForwardSession(
+		&types.PluginContext{},
+		PortForwardSessionOptions{
+			Protocol:       PortForwardProtocolTCP,
+			ConnectionType: PortForwardConnectionTypeStatic,
+			Connection:     PortForwardStaticConnection{Address: "fixture"},
+			RemotePort:     80,
+		},
+	)
 	if err != nil || calls.Load() != 1 {
 		t.Fatalf("static start: %v", err)
 	}
@@ -319,13 +447,19 @@ type networkFailureProvider struct {
 	failure error
 }
 
-func (p *networkFailureProvider) StartResourcePortForwardSession(*types.PluginContext, PortForwardSessionOptions) (*PortForwardSession, error) {
+func (p *networkFailureProvider) StartResourcePortForwardSession(
+	*types.PluginContext,
+	PortForwardSessionOptions,
+) (*PortForwardSession, error) {
 	return nil, p.failure
 }
+
 func TestResourceNetworkC02Errors(t *testing.T) {
 	for _, code := range []string{"INVALID_REQUEST", "RESET_REQUIRED", "FORBIDDEN", "UNAVAILABLE"} {
 		t.Run(code, func(t *testing.T) {
-			provider := &networkFailureProvider{failure: fmt.Errorf("forwarder: %w", resourcev2.NewError(code, "private detail"))}
+			provider := &networkFailureProvider{
+				failure: fmt.Errorf("forwarder: %w", resourcev2.NewError(code, "private detail")),
+			}
 			server := grpc.NewServer()
 			RegisterNetworkerPluginServer(server, &PluginServer{Impl: provider})
 			client := &PluginClient{client: networkerpb.NewNetworkerPluginClient(networkPipe(t, server))}

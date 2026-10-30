@@ -3,15 +3,17 @@ package metric
 import (
 	"bytes"
 	"encoding/json"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
+	"io"
+
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"io"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 )
 
 const ResourceWireVersion uint32 = 2
@@ -19,6 +21,7 @@ const ResourceWireVersion uint32 = 2
 func (r QueryRequest) HasResourceIntent() bool {
 	return r.ResourceData != nil || r.Reference != nil || r.Route != nil
 }
+
 func (r StreamInput) HasResourceIntent() bool {
 	return r.ResourceData != nil || r.Reference != nil || r.Route != nil
 }
@@ -57,6 +60,7 @@ func validateQuery(r QueryRequest, ctx *types.PluginContext) error {
 	}
 	return nil
 }
+
 func validateStream(r StreamInput) error {
 	metadata := r
 	metadata.ResourceData = nil
@@ -70,11 +74,22 @@ func validateStream(r StreamInput) error {
 	} else if r.CatalogRevision != "" {
 		return metricError("INVALID_REQUEST", "A nonreference metric frame cannot carry a catalog pin.")
 	}
-	return validateQuery(QueryRequest{ResourceKey: r.ResourceKey, ResourceID: r.ResourceID, ResourceNamespace: r.ResourceNamespace, ResourceData: r.ResourceData, Reference: r.Reference, Route: r.Route}, nil)
+	return validateQuery(
+		QueryRequest{
+			ResourceKey:       r.ResourceKey,
+			ResourceID:        r.ResourceID,
+			ResourceNamespace: r.ResourceNamespace,
+			ResourceData:      r.ResourceData,
+			Reference:         r.Reference,
+			Route:             r.Route,
+		},
+		nil,
+	)
 }
 
 // ValidateStreamInput checks a frame before a host enqueues it on a shared stream.
 func ValidateStreamInput(input StreamInput) error { return validateStream(input) }
+
 func strictJSON(data []byte, target any) error {
 	if err := resourcev2.ValidateJSON(data); err != nil {
 		return err
@@ -125,7 +140,22 @@ func scanMetricJSON(d *json.Decoder, depth int) error {
 			}
 			if depth == 0 {
 				switch name {
-				case "resource_key", "resource_id", "resource_namespace", "resource_data", "reference", "route", "catalog_revision", "metric_ids", "shape", "start_time", "end_time", "step", "params", "subscription_id", "command", "interval":
+				case "resource_key",
+					"resource_id",
+					"resource_namespace",
+					"resource_data",
+					"reference",
+					"route",
+					"catalog_revision",
+					"metric_ids",
+					"shape",
+					"start_time",
+					"end_time",
+					"step",
+					"params",
+					"subscription_id",
+					"command",
+					"interval":
 				default:
 					return metricError("INVALID_REQUEST", "Unknown metric JSON field.")
 				}
@@ -148,6 +178,7 @@ func scanMetricJSON(d *json.Decoder, depth int) error {
 	}
 	return nil
 }
+
 func (r *QueryRequest) UnmarshalJSON(data []byte) error {
 	type plain QueryRequest
 	var p plain
@@ -160,6 +191,7 @@ func (r *QueryRequest) UnmarshalJSON(data []byte) error {
 	*r = QueryRequest(p)
 	return nil
 }
+
 func (r *StreamInput) UnmarshalJSON(data []byte) error {
 	type plain StreamInput
 	var p plain
@@ -172,11 +204,19 @@ func (r *StreamInput) UnmarshalJSON(data []byte) error {
 	*r = StreamInput(p)
 	return nil
 }
+
 func queryToProto(r QueryRequest, resource bool) (*metricpb.QueryMetricsRequest, error) {
 	if err := validateQuery(r, nil); err != nil {
 		return nil, err
 	}
-	p := &metricpb.QueryMetricsRequest{ResourceKey: r.ResourceKey, ResourceId: r.ResourceID, ResourceNamespace: r.ResourceNamespace, MetricIds: r.MetricIDs, Shape: r.Shape.ToProto(), Params: r.Params}
+	p := &metricpb.QueryMetricsRequest{
+		ResourceKey:       r.ResourceKey,
+		ResourceId:        r.ResourceID,
+		ResourceNamespace: r.ResourceNamespace,
+		MetricIds:         r.MetricIDs,
+		Shape:             r.Shape.ToProto(),
+		Params:            r.Params,
+	}
 	if resource {
 		p.ResourceWireVersion = 2
 	}
@@ -210,6 +250,7 @@ func queryToProto(r QueryRequest, resource bool) (*metricpb.QueryMetricsRequest,
 	}
 	return p, err
 }
+
 func preflight(p proto.Message, v *resourcev2.Value, field protowire.Number) error {
 	n := proto.Size(p)
 	if v != nil {
@@ -224,6 +265,7 @@ func preflight(p proto.Message, v *resourcev2.Value, field protowire.Number) err
 	}
 	return nil
 }
+
 func queryFromProto(p *metricpb.QueryMetricsRequest, resource bool) (QueryRequest, error) {
 	if p == nil {
 		return QueryRequest{}, metricError("INVALID_REQUEST", "Missing metric request.")
@@ -241,11 +283,22 @@ func queryFromProto(p *metricpb.QueryMetricsRequest, resource bool) (QueryReques
 		if resource {
 			return QueryRequest{}, metricError("UNSUPPORTED", "Unknown metric request fields.")
 		}
-		if err := resourceplugin.ValidateLegacyUtilityWire(unknown, []protowire.Number{4, 11, 12, 13, 14}, nil); err != nil {
+		if err := resourceplugin.ValidateLegacyUtilityWire(
+			unknown,
+			[]protowire.Number{4, 11, 12, 13, 14},
+			nil,
+		); err != nil {
 			return QueryRequest{}, err
 		}
 	}
-	r := QueryRequest{ResourceKey: p.ResourceKey, ResourceID: p.ResourceId, ResourceNamespace: p.ResourceNamespace, MetricIDs: p.MetricIds, Shape: MetricShapeFromProto(p.Shape), Params: p.Params}
+	r := QueryRequest{
+		ResourceKey:       p.ResourceKey,
+		ResourceID:        p.ResourceId,
+		ResourceNamespace: p.ResourceNamespace,
+		MetricIDs:         p.MetricIds,
+		Shape:             MetricShapeFromProto(p.Shape),
+		Params:            p.Params,
+	}
 	if p.StartTime != nil {
 		r.StartTime = p.StartTime.AsTime()
 	}
@@ -281,6 +334,7 @@ func queryFromProto(p *metricpb.QueryMetricsRequest, resource bool) (QueryReques
 	}
 	return r, validateQuery(r, nil)
 }
+
 func streamToProto(r StreamInput, resource bool) (*metricpb.MetricStreamInput, error) {
 	if err := validateStream(r); err != nil {
 		return nil, err
@@ -288,7 +342,15 @@ func streamToProto(r StreamInput, resource bool) (*metricpb.MetricStreamInput, e
 	if !resource && r.HasResourceIntent() {
 		return nil, metricError("UNSUPPORTED", "Legacy metric stream cannot carry resource input.")
 	}
-	p := &metricpb.MetricStreamInput{SubscriptionId: r.SubscriptionID, Command: r.Command.ToProto(), ResourceKey: r.ResourceKey, ResourceId: r.ResourceID, ResourceNamespace: r.ResourceNamespace, MetricIds: r.MetricIDs, Interval: durationpb.New(r.Interval)}
+	p := &metricpb.MetricStreamInput{
+		SubscriptionId:    r.SubscriptionID,
+		Command:           r.Command.ToProto(),
+		ResourceKey:       r.ResourceKey,
+		ResourceId:        r.ResourceID,
+		ResourceNamespace: r.ResourceNamespace,
+		MetricIds:         r.MetricIDs,
+		Interval:          durationpb.New(r.Interval),
+	}
 	p.Params = r.Params
 	p.CatalogRevision = r.CatalogRevision
 	if resource {
@@ -315,6 +377,7 @@ func streamToProto(r StreamInput, resource bool) (*metricpb.MetricStreamInput, e
 	}
 	return p, err
 }
+
 func streamFromProto(p *metricpb.MetricStreamInput, resource bool) (StreamInput, error) {
 	if p == nil {
 		return StreamInput{}, metricError("INVALID_REQUEST", "Missing stream frame.")
@@ -326,20 +389,42 @@ func streamFromProto(p *metricpb.MetricStreamInput, resource bool) (StreamInput,
 		if resource {
 			return StreamInput{}, metricError("UNSUPPORTED", "Unknown metric stream fields.")
 		}
-		if err := resourceplugin.ValidateLegacyUtilityWire(unknown, []protowire.Number{6, 9, 10, 11, 12, 13, 15}, nil); err != nil {
+		if err := resourceplugin.ValidateLegacyUtilityWire(
+			unknown,
+			[]protowire.Number{6, 9, 10, 11, 12, 13, 15},
+			nil,
+		); err != nil {
 			return StreamInput{}, err
 		}
 	}
 	if p.ResourceOpen {
 		return StreamInput{}, metricError("INVALID_REQUEST", "Unexpected resource stream handshake.")
 	}
-	q := &metricpb.QueryMetricsRequest{ResourceKey: p.ResourceKey, ResourceId: p.ResourceId, ResourceNamespace: p.ResourceNamespace, ResourceData: p.ResourceData, ResourceWireVersion: p.ResourceWireVersion, Reference: p.Reference, Route: p.Route}
+	q := &metricpb.QueryMetricsRequest{
+		ResourceKey:         p.ResourceKey,
+		ResourceId:          p.ResourceId,
+		ResourceNamespace:   p.ResourceNamespace,
+		ResourceData:        p.ResourceData,
+		ResourceWireVersion: p.ResourceWireVersion,
+		Reference:           p.Reference,
+		Route:               p.Route,
+	}
 	q.Params = p.Params
 	r, err := queryFromProto(q, resource)
 	if err != nil {
 		return StreamInput{}, err
 	}
-	out := StreamInput{SubscriptionID: p.SubscriptionId, Command: MetricStreamCommandFromProto(p.Command), ResourceKey: r.ResourceKey, ResourceID: r.ResourceID, ResourceNamespace: r.ResourceNamespace, ResourceData: r.ResourceData, Reference: r.Reference, Route: r.Route, MetricIDs: p.MetricIds}
+	out := StreamInput{
+		SubscriptionID:    p.SubscriptionId,
+		Command:           MetricStreamCommandFromProto(p.Command),
+		ResourceKey:       r.ResourceKey,
+		ResourceID:        r.ResourceID,
+		ResourceNamespace: r.ResourceNamespace,
+		ResourceData:      r.ResourceData,
+		Reference:         r.Reference,
+		Route:             r.Route,
+		MetricIDs:         p.MetricIds,
+	}
 	out.Params = p.Params
 	out.CatalogRevision = p.CatalogRevision
 	if p.Interval != nil {

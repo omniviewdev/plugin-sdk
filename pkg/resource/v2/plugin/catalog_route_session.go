@@ -3,9 +3,10 @@ package plugin
 import (
 	"context"
 
+	"google.golang.org/grpc/metadata"
+
 	"github.com/omniviewdev/plugin-sdk/internal/catalogadmission"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	"google.golang.org/grpc/metadata"
 )
 
 func outgoingCatalogRoutes(ctx context.Context, md metadata.MD) (context.Context, error) {

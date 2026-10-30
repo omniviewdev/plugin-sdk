@@ -60,7 +60,8 @@ func Unmarshal(ctx context.Context, frame []byte, defaultRevision string, limits
 			}
 			size := int(binary.BigEndian.Uint16(frame[offset : offset+2]))
 			offset += 2
-			if size == 0 || size > limits.RevisionBytes || size > len(frame)-offset || !utf8.Valid(frame[offset:offset+size]) {
+			if size == 0 || size > limits.RevisionBytes || size > len(frame)-offset ||
+				!utf8.Valid(frame[offset:offset+size]) {
 				return invalid()
 			}
 			fields[j] = string(frame[offset : offset+size])

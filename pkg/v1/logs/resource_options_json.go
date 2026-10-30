@@ -3,8 +3,9 @@ package logs
 import (
 	"bytes"
 	"encoding/json"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"io"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 )
 
 // UnmarshalJSON preserves raw validation evidence and admits only exact field names.

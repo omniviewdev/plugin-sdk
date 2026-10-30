@@ -1,8 +1,9 @@
 package interceptors
 
 import (
-	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
 )
 
 // DefaultUnaryInterceptors returns the standard interceptor chain for unary RPCs.

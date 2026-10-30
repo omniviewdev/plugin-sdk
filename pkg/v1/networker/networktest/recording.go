@@ -50,7 +50,11 @@ func (r *RecordingObserver) Changes() []SessionStateChange {
 }
 
 // WaitForState blocks until a change with the given state for the given session is recorded.
-func (r *RecordingObserver) WaitForState(sessionID string, state networker.SessionState, timeout time.Duration) *SessionStateChange {
+func (r *RecordingObserver) WaitForState(
+	sessionID string,
+	state networker.SessionState,
+	timeout time.Duration,
+) *SessionStateChange {
 	deadline := time.After(timeout)
 	for {
 		r.mu.Lock()

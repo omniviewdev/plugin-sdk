@@ -2,11 +2,13 @@ package logs
 
 import (
 	"encoding/json"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
-	"google.golang.org/protobuf/encoding/protowire"
 	"strings"
 	"testing"
+
+	"google.golang.org/protobuf/encoding/protowire"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 
 func TestLogsStrictResourceJSON(t *testing.T) {
@@ -23,6 +25,7 @@ func TestLogsStrictResourceJSON(t *testing.T) {
 		}
 	}
 }
+
 func TestLogsOptionWireNoStructFallback(t *testing.T) {
 	retired := &logspb.CreateLogSessionRequest{}
 	retired.ProtoReflect().SetUnknown(protowire.AppendBytes(protowire.AppendTag(nil, 3, protowire.BytesType), nil))
@@ -32,6 +35,7 @@ func TestLogsOptionWireNoStructFallback(t *testing.T) {
 		}
 	}
 }
+
 func TestLogsLegacyManagerRejectsResourceIntent(t *testing.T) {
 	manager := NewManager(ManagerConfig{Sink: nativeLogSink{}})
 	defer manager.Close()
@@ -41,6 +45,7 @@ func TestLogsLegacyManagerRejectsResourceIntent(t *testing.T) {
 		}
 	}
 }
+
 func TestLogsResourceBodyLimitBeforeProtoAllocation(t *testing.T) {
 	body := resourcev2.Value{Kind: "string", String: strings.Repeat("x", resourcev2.MaxMessageBytes)}
 	if _, err := (CreateSessionOptions{ResourceData: &body}).ToProto(); resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {

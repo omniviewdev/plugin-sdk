@@ -102,7 +102,11 @@ func (c *metadataCopy) value(v reflect.Value) reflect.Value {
 		if v.IsNil() {
 			return v
 		}
-		out, seen := c.remember(v, v.Len(), func() reflect.Value { return reflect.MakeSlice(v.Type(), v.Len(), v.Len()) })
+		out, seen := c.remember(
+			v,
+			v.Len(),
+			func() reflect.Value { return reflect.MakeSlice(v.Type(), v.Len(), v.Len()) },
+		)
 		if seen {
 			return out
 		}

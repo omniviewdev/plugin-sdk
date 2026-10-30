@@ -13,8 +13,16 @@ const MaxCatalogRevisionMetadataBytes = 32 * 1024
 // a source or relationship target. It takes precedence over the explicit default
 // and never discovers or substitutes a current catalog. Duplicate route entries
 // remain ambiguous and fail admission, even when their revisions are equal.
-func WithCatalogRevisionForRoute(ctx context.Context, provider string, route AccessRoute, revision string) context.Context {
-	return catalogadmission.Append(ctx, catalogadmission.Observation{Provider: provider, Connection: route.Connection, Revision: revision})
+func WithCatalogRevisionForRoute(
+	ctx context.Context,
+	provider string,
+	route AccessRoute,
+	revision string,
+) context.Context {
+	return catalogadmission.Append(
+		ctx,
+		catalogadmission.Observation{Provider: provider, Connection: route.Connection, Revision: revision},
+	)
 }
 
 // CatalogRevisionForRouteFromContext selects the qualified observation first,

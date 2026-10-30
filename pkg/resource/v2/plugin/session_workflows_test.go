@@ -2,11 +2,13 @@ package plugin
 
 import (
 	"context"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	"google.golang.org/grpc"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
 type observedSession struct {
@@ -22,39 +24,58 @@ func (p *workflowContextProvider) observe(ctx context.Context, method string) {
 	s, _ := resourcev2.SessionFromContext(ctx)
 	p.seen <- observedSession{method: method, session: s}
 }
-func (p *workflowContextProvider) Catalog(ctx context.Context, in resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
+
+func (p *workflowContextProvider) Catalog(
+	ctx context.Context,
+	in resourcev2.CatalogRequest,
+) (resourcev2.Catalog, error) {
 	p.observe(ctx, "catalog")
 	c, err := p.qualifiedProvider.Catalog(ctx, in)
-	c.Types[0].Capabilities = append(c.Types[0].Capabilities, resourcev2.Capability{Operation: resourcev2.OperationAction, Scope: resourcev2.QueryScope{}})
+	c.Types[0].Capabilities = append(
+		c.Types[0].Capabilities,
+		resourcev2.Capability{Operation: resourcev2.OperationAction, Scope: resourcev2.QueryScope{}},
+	)
 	return c, err
 }
+
 func (p *workflowContextProvider) ListConnections(ctx context.Context) ([]types.Connection, error) {
 	p.observe(ctx, "browser")
 	return []types.Connection{}, nil
 }
+
 func (p *workflowContextProvider) WatchConnections(ctx context.Context, _ chan<- []types.Connection) error {
 	p.observe(ctx, "connectionStream")
 	return nil
 }
+
 func (p *workflowContextProvider) LoadConnections(ctx context.Context) ([]types.Connection, error) {
 	p.observe(ctx, "lifecycle")
 	return []types.Connection{}, nil
 }
+
 func (p *workflowContextProvider) GetConnection(context.Context, string) (types.Connection, error) {
 	return types.Connection{}, nil
 }
+
 func (p *workflowContextProvider) StartConnection(context.Context, string) (types.ConnectionStatus, error) {
 	var out types.ConnectionStatus
 	return out, nil
 }
+
 func (p *workflowContextProvider) StopConnection(context.Context, string) (types.Connection, error) {
 	return types.Connection{}, nil
 }
+
 func (p *workflowContextProvider) CheckConnection(context.Context, string) (types.ConnectionStatus, error) {
 	var out types.ConnectionStatus
 	return out, nil
 }
-func (p *workflowContextProvider) StreamAction(ctx context.Context, _ resourcev2.ActionRequest, out chan<- resourcev2.ActionEvent) error {
+
+func (p *workflowContextProvider) StreamAction(
+	ctx context.Context,
+	_ resourcev2.ActionRequest,
+	out chan<- resourcev2.ActionEvent,
+) error {
 	p.observe(ctx, "actionStream")
 	select {
 	case out <- resourcev2.ActionEvent{Type: "ready"}:
@@ -63,19 +84,32 @@ func (p *workflowContextProvider) StreamAction(ctx context.Context, _ resourcev2
 		return ctx.Err()
 	}
 }
-func (p *workflowContextProvider) GetRelationships(context.Context, resourcev2.AccessRoute, string) ([]resourcev2.RelationshipDescriptor, error) {
+
+func (p *workflowContextProvider) GetRelationships(
+	context.Context,
+	resourcev2.AccessRoute,
+	string,
+) ([]resourcev2.RelationshipDescriptor, error) {
 	return []resourcev2.RelationshipDescriptor{testRelationship()}, nil
 }
-func (p *workflowContextProvider) ResolveRelationships(ctx context.Context, _ resourcev2.RelationshipResolutionRequest) ([]resourcev2.ResolvedRelationship, error) {
+
+func (p *workflowContextProvider) ResolveRelationships(
+	ctx context.Context,
+	_ resourcev2.RelationshipResolutionRequest,
+) ([]resourcev2.ResolvedRelationship, error) {
 	p.observe(ctx, "relationships")
 	return relationshipFixtureResults(), nil
 }
+
 func TestDiagnosticsCrossAncillaryLifecycleAndActionStreams(t *testing.T) {
 	p := &workflowContextProvider{seen: make(chan observedSession, 16)}
 	s := grpc.NewServer()
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
-	ctx := resourcev2.WithSession(context.Background(), resourcev2.Session{RequestID: "workflow-request", RequesterID: "diagnostic-requester"})
+	ctx := resourcev2.WithSession(
+		context.Background(),
+		resourcev2.Session{RequestID: "workflow-request", RequesterID: "diagnostic-requester"},
+	)
 	ctx = acceptedRelationshipContext(t, ctx, c, relationshipFixtureRequest())
 	if _, err := c.ListConnections(ctx); err != nil {
 		t.Fatal(err)
@@ -112,17 +146,30 @@ type updateContextProvider struct {
 	seen chan resourcev2.Session
 }
 
-func (p *updateContextProvider) ListenForEvents(ctx context.Context, sink resourcev2.WatchEventSink, ready func() error) error {
+func (p *updateContextProvider) ListenForEvents(
+	ctx context.Context,
+	sink resourcev2.WatchEventSink,
+	ready func() error,
+) error {
 	s, _ := resourcev2.SessionFromContext(ctx)
 	p.seen <- s
 	return p.updateProvider.ListenForEvents(ctx, sink, ready)
 }
+
 func TestDiagnosticsCrossAdvisoryListener(t *testing.T) {
-	p := &updateContextProvider{updateProvider: updateProvider{trigger: make(chan struct{}, 1)}, seen: make(chan resourcev2.Session, 1)}
+	p := &updateContextProvider{
+		updateProvider: updateProvider{trigger: make(chan struct{}, 1)},
+		seen:           make(chan resourcev2.Session, 1),
+	}
 	s := grpc.NewServer()
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
-	ctx, cancel := context.WithCancel(resourcev2.WithSession(context.Background(), resourcev2.Session{RequestID: "updates-request", RequesterID: "not-a-principal"}))
+	ctx, cancel := context.WithCancel(
+		resourcev2.WithSession(
+			context.Background(),
+			resourcev2.Session{RequestID: "updates-request", RequesterID: "not-a-principal"},
+		),
+	)
 	defer cancel()
 	ready := make(chan struct{})
 	done := make(chan error, 1)

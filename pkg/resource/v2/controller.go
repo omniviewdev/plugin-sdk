@@ -81,7 +81,8 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 	if cfg.Catalog == nil {
 		return nil, NewError("INVALID_REQUEST", "Catalog handler is required.")
 	}
-	if cfg.Lifecycle != nil && (cfg.Lifecycle.LoadConnections == nil || cfg.Lifecycle.CreateClient == nil || cfg.Lifecycle.DestroyClient == nil) {
+	if cfg.Lifecycle != nil &&
+		(cfg.Lifecycle.LoadConnections == nil || cfg.Lifecycle.CreateClient == nil || cfg.Lifecycle.DestroyClient == nil) {
 		return nil, NewError("INVALID_REQUEST", "Lifecycle requires load, create, and destroy handlers.")
 	}
 	if cfg.DynamicUpdates && cfg.ResolveRegistration == nil {
@@ -106,7 +107,18 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	controller := &Controller[T]{cfg: cfg, ctx: ctx, cancel: cancel, connections: make(map[string]types.Connection), nativeConnections: make(map[string]types.Connection), overrides: make(map[string]types.Connection), disabled: make(map[string]struct{}), changing: make(map[string]bool), clients: make(map[string]*clientSlot[T]), failedStarts: make(map[string]bool)}
+	controller := &Controller[T]{
+		cfg:               cfg,
+		ctx:               ctx,
+		cancel:            cancel,
+		connections:       make(map[string]types.Connection),
+		nativeConnections: make(map[string]types.Connection),
+		overrides:         make(map[string]types.Connection),
+		disabled:          make(map[string]struct{}),
+		changing:          make(map[string]bool),
+		clients:           make(map[string]*clientSlot[T]),
+		failedStarts:      make(map[string]bool),
+	}
 	controller.catalogNonce = nonce
 	controller.updates = newUpdateManager(controller)
 	return controller, nil
@@ -148,10 +160,12 @@ func (c *Controller[T]) guard(r **Registration[T], err *error) {
 	*err = c.classify(*r, *err)
 }
 
-var _ Provider = (*Controller[struct{}])(nil)
-var _ ConnectionLifecycle = (*Controller[struct{}])(nil)
-var _ ConnectionReadinessProvider = (*Controller[struct{}])(nil)
-var _ Closer = (*Controller[struct{}])(nil)
+var (
+	_ Provider                    = (*Controller[struct{}])(nil)
+	_ ConnectionLifecycle         = (*Controller[struct{}])(nil)
+	_ ConnectionReadinessProvider = (*Controller[struct{}])(nil)
+	_ Closer                      = (*Controller[struct{}])(nil)
+)
 
 // Features reports installed ancillary implementations rather than Controller's
 // static method set. Wrappers with additional native traits extend this result.
@@ -169,7 +183,12 @@ func (c *Controller[T]) Features(ctx context.Context) (FeatureSet, error) {
 	}
 	features := FeatureSet{Traits: []Feature{}}
 	if c.cfg.Lifecycle != nil {
-		features.Traits = append(features.Traits, FeatureConnections, FeatureConnectionReadiness, FeatureConnectionOverlay)
+		features.Traits = append(
+			features.Traits,
+			FeatureConnections,
+			FeatureConnectionReadiness,
+			FeatureConnectionOverlay,
+		)
 	}
 	updates := c.cfg.DynamicUpdates
 	for _, registration := range c.cfg.Registrations {

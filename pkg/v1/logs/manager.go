@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -210,7 +211,10 @@ func (m *Manager) CreateSession(
 // The configured-generation lease covers admission, not asynchronous acquisition
 // or the accepted session. Integrators must close affected sessions when retiring
 // a connection; registry retirement alone does not cancel or await this work.
-func (m *Manager) CreateResourceSession(pluginctx *types.PluginContext, opts CreateSessionOptions) (*LogSession, error) {
+func (m *Manager) CreateResourceSession(
+	pluginctx *types.PluginContext,
+	opts CreateSessionOptions,
+) (*LogSession, error) {
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
@@ -218,11 +222,17 @@ func (m *Manager) CreateResourceSession(pluginctx *types.PluginContext, opts Cre
 		return nil, err
 	}
 	var session *LogSession
-	err := resourcev2.WithUtilityConnection(pluginctx, m.connectionProvider, opts.Reference, opts.Route, func(bound *types.PluginContext) error {
-		var err error
-		session, err = m.createSession(bound, opts)
-		return err
-	})
+	err := resourcev2.WithUtilityConnection(
+		pluginctx,
+		m.connectionProvider,
+		opts.Reference,
+		opts.Route,
+		func(bound *types.PluginContext) error {
+			var err error
+			session, err = m.createSession(bound, opts)
+			return err
+		},
+	)
 	if err != nil {
 		if session != nil {
 			_ = m.CloseSession(pluginctx, session.ID)
@@ -525,7 +535,12 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	m.fanOutSources(ss, h, result.Sources, opts, logger)
 }
 
-func (m *Manager) streamFromHandler(ss *sessionState, handler Handler, opts CreateSessionOptions, logger logging.Logger) {
+func (m *Manager) streamFromHandler(
+	ss *sessionState,
+	handler Handler,
+	opts CreateSessionOptions,
+	logger logging.Logger,
+) {
 	var sources []LogSource
 	if handler.SourceBuilder != nil {
 		sources = handler.SourceBuilder(opts.ResourceID, opts.ResourceData, opts.Options)

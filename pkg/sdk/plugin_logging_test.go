@@ -6,9 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/omniviewdev/plugin-sdk/internal/testutil"
 	logging "github.com/omniviewdev/plugin-sdk/log"
-	"github.com/stretchr/testify/require"
 )
 
 func writeTestPluginYAML(t *testing.T, homeDir string, pluginID string) {
@@ -70,8 +71,15 @@ func TestNewPluginReadsOnlySelectedStateRoot(t *testing.T) {
 	t.Setenv("OMNIVIEW_STATE_DIR", root)
 	t.Setenv("OMNIVIEW_WORKSPACE_FILE", "")
 	pluginDir := filepath.Join(root, "plugins", "isolated-plugin")
-	require.NoError(t, os.MkdirAll(pluginDir, 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(pluginDir, "plugin.yaml"), []byte("id: isolated-plugin\nversion: selected\n"), 0600))
+	require.NoError(t, os.MkdirAll(pluginDir, 0o700))
+	require.NoError(
+		t,
+		os.WriteFile(
+			filepath.Join(pluginDir, "plugin.yaml"),
+			[]byte("id: isolated-plugin\nversion: selected\n"),
+			0o600,
+		),
+	)
 	writeTestPluginYAML(t, home, "isolated-plugin")
 	oldDefault := logging.Default()
 	t.Cleanup(func() { logging.SetDefault(oldDefault) })

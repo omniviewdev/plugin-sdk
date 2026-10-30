@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	settingspb "github.com/omniviewdev/plugin-sdk/proto/v1/settings"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -16,6 +15,8 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+
+	settingspb "github.com/omniviewdev/plugin-sdk/proto/v1/settings"
 )
 
 type settingValueWireServer struct {
@@ -23,7 +24,10 @@ type settingValueWireServer struct {
 	values map[string]*anypb.Any
 }
 
-func (s *settingValueWireServer) GetSettingValue(_ context.Context, request *settingspb.GetSettingValueRequest) (*settingspb.GetSettingValueResponse, error) {
+func (s *settingValueWireServer) GetSettingValue(
+	_ context.Context,
+	request *settingspb.GetSettingValueRequest,
+) (*settingspb.GetSettingValueResponse, error) {
 	value, ok := s.values[request.GetId()]
 	if !ok {
 		return nil, status.Error(codes.NotFound, "setting does not exist")
@@ -41,7 +45,11 @@ func TestClientGetSettingValueRPCDecodesValuesAndErrors(t *testing.T) {
 		{name: "string", value: "ready", want: "ready"},
 		{name: "empty string", value: "", want: ""},
 		{name: "boolean", value: false, want: false},
-		{name: "structured", value: map[string]any{"limit": 7, "names": []string{"a", "b"}}, want: map[string]any{"limit": float64(7), "names": []any{"a", "b"}}},
+		{
+			name:  "structured",
+			value: map[string]any{"limit": 7, "names": []string{"a", "b"}},
+			want:  map[string]any{"limit": float64(7), "names": []any{"a", "b"}},
+		},
 		{name: "null", value: nil, want: nil},
 	}
 	values := make(map[string]*anypb.Any, len(cases)+3)
@@ -72,9 +80,15 @@ func TestClientGetSettingValueRPCDecodesValuesAndErrors(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	connection, err := grpc.DialContext(ctx, "passthrough:///settings-contract", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-		return listener.DialContext(ctx)
-	}), grpc.WithBlock())
+	connection, err := grpc.DialContext(
+		ctx,
+		"passthrough:///settings-contract",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return listener.DialContext(ctx)
+		}),
+		grpc.WithBlock(),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
 	client := &Client{client: settingspb.NewSettingsPluginClient(connection)}

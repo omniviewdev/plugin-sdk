@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"io"
 
-	logging "github.com/omniviewdev/plugin-sdk/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
+
+	"google.golang.org/protobuf/proto"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
-	"google.golang.org/protobuf/proto"
 )
 
 type PluginServer struct {
@@ -62,7 +64,9 @@ func (s *PluginServer) CreateSession(
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	if opts.HasResourceIntent() {
-		return nil, resourceplugin.ResourceRPCError(resourceError("UNSUPPORTED", "Resource logs require CreateResourceSession."))
+		return nil, resourceplugin.ResourceRPCError(
+			resourceError("UNSUPPORTED", "Resource logs require CreateResourceSession."),
+		)
 	}
 
 	resp, err := s.Impl.CreateSession(logsPluginContext(ctx), opts)
@@ -76,13 +80,18 @@ func (s *PluginServer) CreateSession(
 	}, nil
 }
 
-func (s *PluginServer) CreateResourceSession(ctx context.Context, in *logspb.CreateLogSessionRequest) (*logspb.ResourceLogSessionResponse, error) {
+func (s *PluginServer) CreateResourceSession(
+	ctx context.Context,
+	in *logspb.CreateLogSessionRequest,
+) (*logspb.ResourceLogSessionResponse, error) {
 	ctx, err := resourceplugin.IncomingSessionContext(ctx)
 	if err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	if in == nil || in.ResourceWireVersion != ResourceSessionWireVersion {
-		return nil, resourceplugin.ResourceRPCError(resourceError("UNSUPPORTED", "Unsupported logs resource wire version."))
+		return nil, resourceplugin.ResourceRPCError(
+			resourceError("UNSUPPORTED", "Unsupported logs resource wire version."),
+		)
 	}
 	opts, err := CreateSessionOptionsFromProto(in)
 	if err != nil {
@@ -103,9 +112,14 @@ func (s *PluginServer) CreateResourceSession(ctx context.Context, in *logspb.Cre
 	if err := validateResourceSessionResult(session); err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
-	response := &logspb.ResourceLogSessionResponse{ResourceWireVersion: ResourceSessionWireVersion, Session: session.ToProto()}
+	response := &logspb.ResourceLogSessionResponse{
+		ResourceWireVersion: ResourceSessionWireVersion,
+		Session:             session.ToProto(),
+	}
 	if proto.Size(response) > resourcev2.MaxMessageBytes {
-		return nil, resourceplugin.ResourceRPCError(resourceError("RESOURCE_LIMIT", "Logs response exceeds wire limit."))
+		return nil, resourceplugin.ResourceRPCError(
+			resourceError("RESOURCE_LIMIT", "Logs response exceeds wire limit."),
+		)
 	}
 	return response, nil
 }

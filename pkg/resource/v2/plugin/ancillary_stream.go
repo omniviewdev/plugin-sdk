@@ -2,16 +2,19 @@ package plugin
 
 import (
 	"context"
+	"io"
+
+	"google.golang.org/grpc"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
-	"google.golang.org/grpc"
-	"io"
 )
 
 func streamContext(stream grpc.ServerStream, s *ancillaryServer) (context.Context, error) {
 	return incomingSession(stream.Context(), s.owner.settings)
 }
+
 func watchConnectionsHandler(srv interface{}, stream grpc.ServerStream) error {
 	s := srv.(*ancillaryServer)
 	r := &resourcepb.AncillaryRequest{}
@@ -83,6 +86,7 @@ func watchConnectionsHandler(srv interface{}, stream grpc.ServerStream) error {
 		}
 	}
 }
+
 func streamActionHandler(srv interface{}, stream grpc.ServerStream) error {
 	s := srv.(*ancillaryServer)
 	r := &resourcepb.ActionStreamRequest{}
@@ -199,12 +203,19 @@ func streamActionHandler(srv interface{}, stream grpc.ServerStream) error {
 		}
 	}
 }
+
 func (c *Client) openStream(ctx context.Context, index int, method string, request any) (grpc.ClientStream, error) {
 	ctx, err := outgoingSession(ctx)
 	if err != nil {
 		return nil, err
 	}
-	s, err := c.conn.NewStream(ctx, &resourcepb.ResourceAncillary_ServiceDesc.Streams[index], method, grpc.MaxCallRecvMsgSize(MaxWireBytes), grpc.MaxCallSendMsgSize(MaxWireBytes))
+	s, err := c.conn.NewStream(
+		ctx,
+		&resourcepb.ResourceAncillary_ServiceDesc.Streams[index],
+		method,
+		grpc.MaxCallRecvMsgSize(MaxWireBytes),
+		grpc.MaxCallSendMsgSize(MaxWireBytes),
+	)
 	if err != nil {
 		return nil, domainError(err)
 	}
@@ -216,10 +227,16 @@ func (c *Client) openStream(ctx context.Context, index int, method string, reque
 	}
 	return s, nil
 }
+
 func (c *Client) WatchConnections(ctx context.Context, out chan<- []types.Connection) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	s, err := c.openStream(ctx, 0, resourcepb.ResourceAncillary_WatchConnections_FullMethodName, &resourcepb.AncillaryRequest{Version: 2, Operation: "watchConnections"})
+	s, err := c.openStream(
+		ctx,
+		0,
+		resourcepb.ResourceAncillary_WatchConnections_FullMethodName,
+		&resourcepb.AncillaryRequest{Version: 2, Operation: "watchConnections"},
+	)
 	if err != nil {
 		return err
 	}
@@ -249,7 +266,12 @@ func (c *Client) WatchConnections(ctx context.Context, out chan<- []types.Connec
 		}
 	}
 }
-func (c *Client) StreamAction(ctx context.Context, in resourcev2.ActionRequest, out chan<- resourcev2.ActionEvent) error {
+
+func (c *Client) StreamAction(
+	ctx context.Context,
+	in resourcev2.ActionRequest,
+	out chan<- resourcev2.ActionEvent,
+) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if _, err := resourcev2.AdmitStreamingAction(ctx, c, in); err != nil {
@@ -259,7 +281,12 @@ func (c *Client) StreamAction(ctx context.Context, in resourcev2.ActionRequest, 
 	if err != nil {
 		return err
 	}
-	s, err := c.openStream(ctx, 1, resourcepb.ResourceAncillary_StreamAction_FullMethodName, &resourcepb.ActionStreamRequest{Version: 2, Action: p})
+	s, err := c.openStream(
+		ctx,
+		1,
+		resourcepb.ResourceAncillary_StreamAction_FullMethodName,
+		&resourcepb.ActionStreamRequest{Version: 2, Action: p},
+	)
 	if err != nil {
 		return err
 	}

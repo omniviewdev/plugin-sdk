@@ -2,11 +2,12 @@ package logtest
 
 import (
 	"context"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"io"
 	"strings"
 	"sync"
 	"time"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	logs "github.com/omniviewdev/plugin-sdk/pkg/v1/logs"

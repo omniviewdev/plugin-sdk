@@ -1,8 +1,9 @@
 package resourcev2
 
 import (
-	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 	"testing"
+
+	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
 func TestRelationshipAdapterChecksTargetCountBeforeConversion(t *testing.T) {

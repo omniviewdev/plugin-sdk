@@ -6,10 +6,11 @@ import (
 	"slices"
 
 	"github.com/hashicorp/go-plugin"
-	logging "github.com/omniviewdev/plugin-sdk/log"
-	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
+	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"

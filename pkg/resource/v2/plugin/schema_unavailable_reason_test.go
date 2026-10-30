@@ -9,12 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/protobuf/proto"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
 type nativeSchemaReasonProvider struct {
@@ -22,7 +23,10 @@ type nativeSchemaReasonProvider struct {
 	endpoint string
 }
 
-func (p *nativeSchemaReasonProvider) GetEditorSchemas(ctx context.Context, _ resourcev2.AccessRoute) ([]resourcev2.EditorSchema, error) {
+func (p *nativeSchemaReasonProvider) GetEditorSchemas(
+	ctx context.Context,
+	_ resourcev2.AccessRoute,
+) ([]resourcev2.EditorSchema, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, p.endpoint+"/native", nil)
 	if err != nil {
 		return nil, err
@@ -37,7 +41,20 @@ func (p *nativeSchemaReasonProvider) GetEditorSchemas(ctx context.Context, _ res
 		return nil, err
 	}
 	revision := "native-schema-v1"
-	native := resourcev2.EditorSchema{Type: "native:pod", FileMatch: "*.yaml", URI: "schema://native/pod", Language: "yaml", Binding: resourcev2.SchemaBinding{State: "available", Revision: &revision, Dialect: "https://json-schema.org/draft/2020-12/schema", Document: document, Validation: "none", Unvalidated: []string{}}}
+	native := resourcev2.EditorSchema{
+		Type:      "native:pod",
+		FileMatch: "*.yaml",
+		URI:       "schema://native/pod",
+		Language:  "yaml",
+		Binding: resourcev2.SchemaBinding{
+			State:       "available",
+			Revision:    &revision,
+			Dialect:     "https://json-schema.org/draft/2020-12/schema",
+			Document:    document,
+			Validation:  "none",
+			Unvalidated: []string{},
+		},
+	}
 	request, err = http.NewRequestWithContext(ctx, http.MethodGet, p.endpoint+"/helm", nil)
 	if err != nil {
 		return nil, err
@@ -51,7 +68,18 @@ func (p *nativeSchemaReasonProvider) GetEditorSchemas(ctx context.Context, _ res
 		return nil, resourcev2.NewError("PROVIDER_ERROR", "Unexpected native schema status.")
 	}
 	reason := "FORBIDDEN"
-	helm := resourcev2.EditorSchema{Type: "helm:values", FileMatch: "values.yaml", URI: "schema://helm/values", Language: "yaml", Binding: resourcev2.SchemaBinding{State: "unavailable", Validation: "none", Unvalidated: []string{}, UnavailableReason: &reason}}
+	helm := resourcev2.EditorSchema{
+		Type:      "helm:values",
+		FileMatch: "values.yaml",
+		URI:       "schema://helm/values",
+		Language:  "yaml",
+		Binding: resourcev2.SchemaBinding{
+			State:             "unavailable",
+			Validation:        "none",
+			Unvalidated:       []string{},
+			UnavailableReason: &reason,
+		},
+	}
 	return []resourcev2.EditorSchema{native, helm}, nil
 }
 
@@ -79,18 +107,34 @@ func TestActualRPCSchemaUnavailableReasonRetainsNativeSchemas(t *testing.T) {
 		t.Fatal("actual native document was not retained")
 	}
 	binding := schemas[1].Binding
-	if binding.State != "unavailable" || binding.UnavailableReason == nil || *binding.UnavailableReason != "FORBIDDEN" || binding.Validation != "none" || len(binding.Document) != 0 || len(binding.Unvalidated) != 0 {
+	if binding.State != "unavailable" || binding.UnavailableReason == nil ||
+		*binding.UnavailableReason != "FORBIDDEN" ||
+		binding.Validation != "none" ||
+		len(binding.Document) != 0 ||
+		len(binding.Unvalidated) != 0 {
 		t.Fatalf("unavailable role misrepresented: %+v", binding)
 	}
 	output, err := json.Marshal(schemas)
-	if err != nil || strings.Contains(string(output), "sensitive") || !strings.Contains(string(output), `"unavailableReason":"FORBIDDEN"`) {
+	if err != nil || strings.Contains(string(output), "sensitive") ||
+		!strings.Contains(string(output), `"unavailableReason":"FORBIDDEN"`) {
 		t.Fatalf("unsafe/unobservable availability reason: %s %v", output, err)
 	}
 }
 
 func TestSchemaUnavailableReasonStrictAdmissionBeforeDecode(t *testing.T) {
 	cases := []struct{ state, reason string }{
-		{"available", "FORBIDDEN"}, {"absent", "FORBIDDEN"}, {"unavailable", ""}, {"unavailable", "forbidden"}, {"unavailable", "FORBIDDEN secret"}, {"unavailable", "https://credential.invalid"}, {"unavailable", strings.Repeat("A", 65)}, {"unavailable", "UNREVIEWED_CODE"}, {"unavailable", "FORBIDDEN_é"},
+		{
+			"available",
+			"FORBIDDEN",
+		},
+		{"absent", "FORBIDDEN"},
+		{"unavailable", ""},
+		{"unavailable", "forbidden"},
+		{"unavailable", "FORBIDDEN secret"},
+		{"unavailable", "https://credential.invalid"},
+		{"unavailable", strings.Repeat("A", 65)},
+		{"unavailable", "UNREVIEWED_CODE"},
+		{"unavailable", "FORBIDDEN_é"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.state+"/"+tc.reason, func(t *testing.T) {
@@ -102,17 +146,40 @@ func TestSchemaUnavailableReasonStrictAdmissionBeforeDecode(t *testing.T) {
 			}
 			decoded := new(resourcepb.SchemaBinding)
 			envelope := NewTransportEnvelope(decoded, false)
-			if err := encoding.GetCodecV2("proto").Unmarshal(mem.BufferSlice{mem.SliceBuffer(data)}, envelope); err != nil {
+			if err := encoding.GetCodecV2("proto").
+				Unmarshal(mem.BufferSlice{mem.SliceBuffer(data)}, envelope); err != nil {
 				t.Fatal(err)
 			}
 			if resourcev2.ErrorCode(envelope.AdmissionError()) != "INVALID_REQUEST" || decoded.State != "" {
 				t.Fatalf("invalid schema materialized before admission: %+v %v", decoded, envelope.AdmissionError())
 			}
-			value := resourcev2.SchemaBinding{State: tc.state, Validation: "none", Unvalidated: []string{}, UnavailableReason: &reason}
-			if _, err := resourcev2.ToProtoEditorSchema(resourcev2.EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: value}); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+			value := resourcev2.SchemaBinding{
+				State:             tc.state,
+				Validation:        "none",
+				Unvalidated:       []string{},
+				UnavailableReason: &reason,
+			}
+			if _, err := resourcev2.ToProtoEditorSchema(
+				resourcev2.EditorSchema{
+					Type:      "resource/type",
+					FileMatch: "*.json",
+					URI:       "omniview://schema",
+					Language:  "json",
+					Binding:   value,
+				},
+			); resourcev2.ErrorCode(
+				err,
+			) != "INVALID_REQUEST" {
 				t.Fatalf("native invalid reason admitted: %v", err)
 			}
-			input, _ := json.Marshal(map[string]any{"state": tc.state, "validation": "none", "unvalidated": []string{}, "unavailableReason": tc.reason})
+			input, _ := json.Marshal(
+				map[string]any{
+					"state":             tc.state,
+					"validation":        "none",
+					"unvalidated":       []string{},
+					"unavailableReason": tc.reason,
+				},
+			)
 			var binding resourcev2.SchemaBinding
 			if err := json.Unmarshal(input, &binding); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
 				t.Fatalf("invalid JSON schema reason admitted: %s %v", input, err)
@@ -120,10 +187,19 @@ func TestSchemaUnavailableReasonStrictAdmissionBeforeDecode(t *testing.T) {
 		})
 	}
 	var absent resourcev2.SchemaBinding
-	if err := json.Unmarshal([]byte(`{"state":"unavailable","validation":"none","unvalidated":[]}`), &absent); err != nil || absent.UnavailableReason != nil {
+	if err := json.Unmarshal(
+		[]byte(`{"state":"unavailable","validation":"none","unvalidated":[]}`),
+		&absent,
+	); err != nil ||
+		absent.UnavailableReason != nil {
 		t.Fatalf("absent reason synthesized: %+v %v", absent, err)
 	}
-	if err := json.Unmarshal([]byte(`{"state":"unavailable","validation":"none","unvalidated":[],"unavailableReason":null}`), &absent); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+	if err := json.Unmarshal(
+		[]byte(`{"state":"unavailable","validation":"none","unvalidated":[],"unavailableReason":null}`),
+		&absent,
+	); resourcev2.ErrorCode(
+		err,
+	) != "INVALID_REQUEST" {
 		t.Fatalf("explicit null reason admitted: %v", err)
 	}
 }

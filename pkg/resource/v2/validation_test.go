@@ -52,11 +52,21 @@ func TestAddressAndScopeDimensionAdmission(t *testing.T) {
 func TestScopeNormalizationFollowsDuplicateAdmission(t *testing.T) {
 	values := []string{"z", "a", "z"}
 	scope := QueryScope{{Dimension: "z", Match: ScopeOneOf, Values: &values}, {Dimension: "a", Match: ScopeAny}}
-	p, err := ToProtoReadTarget(ReadTarget{Route: AccessRoute{Connection: "route"}, Provider: "provider", Authority: "authority", Type: "resource/type", Representation: "native", Scope: scope})
+	p, err := ToProtoReadTarget(
+		ReadTarget{
+			Route:          AccessRoute{Connection: "route"},
+			Provider:       "provider",
+			Authority:      "authority",
+			Type:           "resource/type",
+			Representation: "native",
+			Scope:          scope,
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Scope.Constraints[0].Dimension != "a" || p.Scope.Constraints[1].GetOneOf().Values[0] != "a" || len(p.Scope.Constraints[1].GetOneOf().Values) != 2 {
+	if p.Scope.Constraints[0].Dimension != "a" || p.Scope.Constraints[1].GetOneOf().Values[0] != "a" ||
+		len(p.Scope.Constraints[1].GetOneOf().Values) != 2 {
 		t.Fatal("scope not normalized")
 	}
 	if values[0] != "z" || len(values) != 3 || scope[0].Dimension != "z" {
@@ -79,7 +89,13 @@ func TestOptionalEmptyTokensReject(t *testing.T) {
 	if err := ValidateRecord(r); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("empty source revision: %v", err)
 	}
-	p := SourcePage{Records: []Record{}, Count: Count{Kind: "unknown"}, Coverage: Coverage{Kind: "complete"}, Consistency: "bestEffort", NextCursor: codecToken("")}
+	p := SourcePage{
+		Records:     []Record{},
+		Count:       Count{Kind: "unknown"},
+		Coverage:    Coverage{Kind: "complete"},
+		Consistency: "bestEffort",
+		NextCursor:  codecToken(""),
+	}
 	if err := ValidateSourcePage(p); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("empty cursor: %v", err)
 	}
@@ -92,45 +108,128 @@ func TestOptionalEmptyTokensReject(t *testing.T) {
 
 func TestSchemaDocumentBindingAndLocalRoot(t *testing.T) {
 	ref := SchemaDocumentReference{ID: "shared-document", Revision: "doc-1"}
-	binding := SchemaBinding{State: "available", Revision: codecToken("schema-1"), Dialect: "json-schema", DocumentRef: &ref, Root: "#/$defs/a~1b/%E9%9B%AA", Validation: "none"}
-	if _, err := ToProtoEditorSchema(EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: binding}); err != nil {
+	binding := SchemaBinding{
+		State:       "available",
+		Revision:    codecToken("schema-1"),
+		Dialect:     "json-schema",
+		DocumentRef: &ref,
+		Root:        "#/$defs/a~1b/%E9%9B%AA",
+		Validation:  "none",
+	}
+	if _, err := ToProtoEditorSchema(
+		EditorSchema{
+			Type:      "resource/type",
+			FileMatch: "*.json",
+			URI:       "omniview://schema",
+			Language:  "json",
+			Binding:   binding,
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 	for _, root := range []string{"https://outside/schema", "#", "#/bad~2escape", "#/%ff", "#/%", "#/space here", "#/bad#fragment"} {
 		b := binding
 		b.Root = root
-		if _, err := ToProtoEditorSchema(EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: b}); ErrorCode(err) != "INVALID_REQUEST" {
+		if _, err := ToProtoEditorSchema(
+			EditorSchema{
+				Type:      "resource/type",
+				FileMatch: "*.json",
+				URI:       "omniview://schema",
+				Language:  "json",
+				Binding:   b,
+			},
+		); ErrorCode(
+			err,
+		) != "INVALID_REQUEST" {
 			t.Fatalf("invalid root %q: %v", root, err)
 		}
 	}
 	both := binding
 	both.Document = []byte(`{}`)
-	if _, err := ToProtoEditorSchema(EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: both}); ErrorCode(err) != "INVALID_REQUEST" {
+	if _, err := ToProtoEditorSchema(
+		EditorSchema{
+			Type:      "resource/type",
+			FileMatch: "*.json",
+			URI:       "omniview://schema",
+			Language:  "json",
+			Binding:   both,
+		},
+	); ErrorCode(
+		err,
+	) != "INVALID_REQUEST" {
 		t.Fatalf("ambiguous document binding: %v", err)
 	}
 	missing := binding
 	missing.DocumentRef = nil
-	if _, err := ToProtoEditorSchema(EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: missing}); ErrorCode(err) != "INVALID_REQUEST" {
+	if _, err := ToProtoEditorSchema(
+		EditorSchema{
+			Type:      "resource/type",
+			FileMatch: "*.json",
+			URI:       "omniview://schema",
+			Language:  "json",
+			Binding:   missing,
+		},
+	); ErrorCode(
+		err,
+	) != "INVALID_REQUEST" {
 		t.Fatalf("missing document binding: %v", err)
 	}
 	inline := binding
 	inline.DocumentRef = nil
 	inline.Document = []byte(`{"x":1,"x":2}`)
-	if _, err := ToProtoEditorSchema(EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: inline}); ErrorCode(err) != "INVALID_REQUEST" {
+	if _, err := ToProtoEditorSchema(
+		EditorSchema{
+			Type:      "resource/type",
+			FileMatch: "*.json",
+			URI:       "omniview://schema",
+			Language:  "json",
+			Binding:   inline,
+		},
+	); ErrorCode(
+		err,
+	) != "INVALID_REQUEST" {
 		t.Fatalf("duplicate schema JSON: %v", err)
 	}
 	reduced := binding
 	reduced.Validation = "reduced"
-	if _, err := ToProtoEditorSchema(EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: reduced}); ErrorCode(err) != "INVALID_REQUEST" {
+	if _, err := ToProtoEditorSchema(
+		EditorSchema{
+			Type:      "resource/type",
+			FileMatch: "*.json",
+			URI:       "omniview://schema",
+			Language:  "json",
+			Binding:   reduced,
+		},
+	); ErrorCode(
+		err,
+	) != "INVALID_REQUEST" {
 		t.Fatalf("reduced validation lacks claims: %v", err)
 	}
 	reduced.Unvalidated = []string{"external-ref"}
-	if _, err := ToProtoEditorSchema(EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: reduced}); err != nil {
+	if _, err := ToProtoEditorSchema(
+		EditorSchema{
+			Type:      "resource/type",
+			FileMatch: "*.json",
+			URI:       "omniview://schema",
+			Language:  "json",
+			Binding:   reduced,
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 	full := reduced
 	full.Validation = "full"
-	if _, err := ToProtoEditorSchema(EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: full}); ErrorCode(err) != "INVALID_REQUEST" {
+	if _, err := ToProtoEditorSchema(
+		EditorSchema{
+			Type:      "resource/type",
+			FileMatch: "*.json",
+			URI:       "omniview://schema",
+			Language:  "json",
+			Binding:   full,
+		},
+	); ErrorCode(
+		err,
+	) != "INVALID_REQUEST" {
 		t.Fatalf("full validation hides limitations: %v", err)
 	}
 }
@@ -148,7 +247,17 @@ func TestCatalogHintCoverageAndGuarantees(t *testing.T) {
 		t.Fatalf("failure disguised as catalog: %v", err)
 	}
 	c.Coverage = Coverage{Kind: "complete"}
-	c.Types = []ResourceType{{Type: "cluster/pod", NativeAuthorityHint: &NativeAuthorityHint{Scheme: "fixture.v1", ID: "id", Continuity: ContinuityConnectionLocal}}, {Type: "localHelm/release"}}
+	c.Types = []ResourceType{
+		{
+			Type: "cluster/pod",
+			NativeAuthorityHint: &NativeAuthorityHint{
+				Scheme:     "fixture.v1",
+				ID:         "id",
+				Continuity: ContinuityConnectionLocal,
+			},
+		},
+		{Type: "localHelm/release"},
+	}
 	if err := ValidateCatalog(c); err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +265,12 @@ func TestCatalogHintCoverageAndGuarantees(t *testing.T) {
 	if err := ValidateCatalog(c); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("unknown hint continuity: %v", err)
 	}
-	c = Catalog{Provider: "p", Revision: "r", Coverage: Coverage{Kind: "complete"}, Types: []ResourceType{{Type: "resource/type", Capabilities: []Capability{{Operation: OperationUpdate}}}}}
+	c = Catalog{
+		Provider: "p",
+		Revision: "r",
+		Coverage: Coverage{Kind: "complete"},
+		Types:    []ResourceType{{Type: "resource/type", Capabilities: []Capability{{Operation: OperationUpdate}}}},
+	}
 	if _, err := ToProtoCatalog(c); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("missing update guarantee: %v", err)
 	}
@@ -167,23 +281,70 @@ func TestCatalogHintCoverageAndGuarantees(t *testing.T) {
 }
 
 func TestUnavailableSchemaKeepsKnownProvenance(t *testing.T) {
-	binding := SchemaBinding{State: "unavailable", Revision: codecToken("known-schema-revision"), Dialect: "known-dialect", Root: "#/known~1root", DocumentRef: &SchemaDocumentReference{ID: "document", Revision: "known-document-revision"}, Validation: "none"}
-	adapterRoundTrip(t, EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: binding}, ToProtoEditorSchema, FromProtoEditorSchema)
+	binding := SchemaBinding{
+		State:       "unavailable",
+		Revision:    codecToken("known-schema-revision"),
+		Dialect:     "known-dialect",
+		Root:        "#/known~1root",
+		DocumentRef: &SchemaDocumentReference{ID: "document", Revision: "known-document-revision"},
+		Validation:  "none",
+	}
+	adapterRoundTrip(
+		t,
+		EditorSchema{
+			Type:      "resource/type",
+			FileMatch: "*.json",
+			URI:       "omniview://schema",
+			Language:  "json",
+			Binding:   binding,
+		},
+		ToProtoEditorSchema,
+		FromProtoEditorSchema,
+	)
 	binding.Document = []byte(`{}`)
-	if _, err := ToProtoEditorSchema(EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: binding}); ErrorCode(err) != "INVALID_REQUEST" {
+	if _, err := ToProtoEditorSchema(
+		EditorSchema{
+			Type:      "resource/type",
+			FileMatch: "*.json",
+			URI:       "omniview://schema",
+			Language:  "json",
+			Binding:   binding,
+		},
+	); ErrorCode(
+		err,
+	) != "INVALID_REQUEST" {
 		t.Fatalf("unavailable inline document: %v", err)
 	}
 	binding.Document = nil
 	binding.State = "absent"
-	if _, err := ToProtoEditorSchema(EditorSchema{Type: "resource/type", FileMatch: "*.json", URI: "omniview://schema", Language: "json", Binding: binding}); ErrorCode(err) != "INVALID_REQUEST" {
+	if _, err := ToProtoEditorSchema(
+		EditorSchema{
+			Type:      "resource/type",
+			FileMatch: "*.json",
+			URI:       "omniview://schema",
+			Language:  "json",
+			Binding:   binding,
+		},
+	); ErrorCode(
+		err,
+	) != "INVALID_REQUEST" {
 		t.Fatalf("absent schema has fabricated provenance: %v", err)
 	}
 }
 
 func TestDefaultRepresentationIsExplicitAndDeclared(t *testing.T) {
 	representation := codecRecord().Representation
-	typ := ResourceType{Type: "resource/type", Representations: []Representation{representation}, DefaultRepresentation: representation.ID}
-	catalog := Catalog{Provider: "provider", Revision: "catalog-1", Coverage: Coverage{Kind: "complete"}, Types: []ResourceType{typ}}
+	typ := ResourceType{
+		Type:                  "resource/type",
+		Representations:       []Representation{representation},
+		DefaultRepresentation: representation.ID,
+	}
+	catalog := Catalog{
+		Provider: "provider",
+		Revision: "catalog-1",
+		Coverage: Coverage{Kind: "complete"},
+		Types:    []ResourceType{typ},
+	}
 	adapterRoundTrip(t, catalog, ToProtoCatalog, FromProtoCatalog)
 	typ.DefaultRepresentation = "undeclared"
 	catalog.Types[0] = typ

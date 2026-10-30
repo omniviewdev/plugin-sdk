@@ -147,18 +147,23 @@ func (l *logger) Log(ctx context.Context, level Level, msg string, fields ...Fie
 func (l *logger) Trace(ctx context.Context, msg string, fields ...Field) {
 	l.Log(ctx, LevelTrace, msg, fields...)
 }
+
 func (l *logger) Debug(ctx context.Context, msg string, fields ...Field) {
 	l.Log(ctx, LevelDebug, msg, fields...)
 }
+
 func (l *logger) Info(ctx context.Context, msg string, fields ...Field) {
 	l.Log(ctx, LevelInfo, msg, fields...)
 }
+
 func (l *logger) Warn(ctx context.Context, msg string, fields ...Field) {
 	l.Log(ctx, LevelWarn, msg, fields...)
 }
+
 func (l *logger) Error(ctx context.Context, msg string, fields ...Field) {
 	l.Log(ctx, LevelError, msg, fields...)
 }
+
 func (l *logger) Fatal(ctx context.Context, msg string, fields ...Field) {
 	l.Log(ctx, LevelFatal, msg, fields...)
 }
@@ -166,18 +171,23 @@ func (l *logger) Fatal(ctx context.Context, msg string, fields ...Field) {
 func (l *logger) Tracew(ctx context.Context, msg string, kv ...any) {
 	l.Log(ctx, LevelTrace, msg, kvFields(kv...)...)
 }
+
 func (l *logger) Debugw(ctx context.Context, msg string, kv ...any) {
 	l.Log(ctx, LevelDebug, msg, kvFields(kv...)...)
 }
+
 func (l *logger) Infow(ctx context.Context, msg string, kv ...any) {
 	l.Log(ctx, LevelInfo, msg, kvFields(kv...)...)
 }
+
 func (l *logger) Warnw(ctx context.Context, msg string, kv ...any) {
 	l.Log(ctx, LevelWarn, msg, kvFields(kv...)...)
 }
+
 func (l *logger) Errorw(ctx context.Context, msg string, kv ...any) {
 	l.Log(ctx, LevelError, msg, kvFields(kv...)...)
 }
+
 func (l *logger) Fatalw(ctx context.Context, msg string, kv ...any) {
 	l.Log(ctx, LevelFatal, msg, kvFields(kv...)...)
 }

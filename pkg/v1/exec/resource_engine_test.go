@@ -25,8 +25,11 @@ func TestManagerLegacyRejectsResourceIntentBeforeNative(t *testing.T) {
 	}}))
 	body := resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{}}
 	for _, opts := range []exec.SessionOptions{
-		{ResourcePlugin: "test"}, {ResourceKey: "pod"}, {ResourceData: &body},
-		{Reference: &resourcev2.ResourceReference{}}, {Route: &resourcev2.AccessRoute{}},
+		{ResourcePlugin: "test"},
+		{ResourceKey: "pod"},
+		{ResourceData: &body},
+		{Reference: &resourcev2.ResourceReference{}},
+		{Route: &resourcev2.AccessRoute{}},
 	} {
 		if _, err := h.Manager.CreateSession(nil, opts); resourcev2.ErrorCode(err) != "UNSUPPORTED" {
 			t.Fatalf("legacy resource intent must be unsupported: %v", err)
@@ -42,7 +45,11 @@ func TestManagerNonresourceTerminalLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := exectest.Mount(t, exectest.WithTerminalFactory(exectest.FakeTerminalFactory(terminal)), exectest.WithHandler(exec.Handler{TTYHandler: exectest.NoopTTYHandler()}))
+	h := exectest.Mount(
+		t,
+		exectest.WithTerminalFactory(exectest.FakeTerminalFactory(terminal)),
+		exectest.WithHandler(exec.Handler{TTYHandler: exectest.NoopTTYHandler()}),
+	)
 	session, err := h.CreateSession(exec.SessionOptions{Command: []string{"sh"}})
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +78,12 @@ func TestManagerResourceNativeReceivesExactValueAndDetachedLifetime(t *testing.T
 		"uint":      {Kind: "uint64", Uint: "18446744073709551615"},
 		"double":    {Kind: "double", Double: 1.2345678901234567},
 		"timestamp": {Kind: "timestamp", Timestamp: "2026-10-28T01:02:03.123456789Z"},
-		"nested":    {Kind: "list", List: []resourcev2.Value{{Kind: "map", Map: map[string]resourcev2.Value{"text": {Kind: "string", String: "exact"}}}}},
+		"nested": {
+			Kind: "list",
+			List: []resourcev2.Value{
+				{Kind: "map", Map: map[string]resourcev2.Value{"text": {Kind: "string", String: "exact"}}},
+			},
+		},
 	}}
 	var nativeContext context.Context
 	handler := defaultHandler()
@@ -88,7 +100,10 @@ func TestManagerResourceNativeReceivesExactValueAndDetachedLifetime(t *testing.T
 	h := exectest.Mount(t, exectest.WithHandler(handler))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	session, err := h.Manager.CreateResourceSession(&types.PluginContext{Context: ctx}, exec.SessionOptions{ResourcePlugin: "test", ResourceKey: "pod", ResourceData: &body})
+	session, err := h.Manager.CreateResourceSession(
+		&types.PluginContext{Context: ctx},
+		exec.SessionOptions{ResourcePlugin: "test", ResourceKey: "pod", ResourceData: &body},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,8 +136,18 @@ func TestManagerResourceCancellationDuringNativeAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := exectest.Mount(t, exectest.WithHandler(handler), exectest.WithTerminalFactory(exectest.FakeTerminalFactory(terminal)))
-	if _, err := h.Manager.CreateResourceSession(&types.PluginContext{Context: ctx}, exec.SessionOptions{ResourcePlugin: "test", ResourceKey: "pod"}); !errors.Is(err, context.Canceled) {
+	h := exectest.Mount(
+		t,
+		exectest.WithHandler(handler),
+		exectest.WithTerminalFactory(exectest.FakeTerminalFactory(terminal)),
+	)
+	if _, err := h.Manager.CreateResourceSession(
+		&types.PluginContext{Context: ctx},
+		exec.SessionOptions{ResourcePlugin: "test", ResourceKey: "pod"},
+	); !errors.Is(
+		err,
+		context.Canceled,
+	) {
 		t.Fatalf("expected cancellation, got %v", err)
 	}
 	sessions, err := h.Manager.ListSessions(nil)
@@ -136,13 +161,20 @@ func TestManagerResourceCancellationDuringNativeAdmission(t *testing.T) {
 
 func TestManagerResourceCanceledBeforeFactory(t *testing.T) {
 	calls := 0
-	h := exectest.Mount(t, exectest.WithHandler(defaultHandler()), exectest.WithTerminalFactory(func() (exec.Terminal, error) {
-		calls++
-		return exectest.NewFakeTerminal()
-	}))
+	h := exectest.Mount(
+		t,
+		exectest.WithHandler(defaultHandler()),
+		exectest.WithTerminalFactory(func() (exec.Terminal, error) {
+			calls++
+			return exectest.NewFakeTerminal()
+		}),
+	)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := h.Manager.CreateResourceSession(&types.PluginContext{Context: ctx}, exec.SessionOptions{ResourcePlugin: "test", ResourceKey: "pod"})
+	_, err := h.Manager.CreateResourceSession(
+		&types.PluginContext{Context: ctx},
+		exec.SessionOptions{ResourcePlugin: "test", ResourceKey: "pod"},
+	)
 	if !errors.Is(err, context.Canceled) || calls != 0 {
 		t.Fatalf("err=%v factory calls=%d", err, calls)
 	}
@@ -162,7 +194,10 @@ func TestManagerResourceDeadlineDuringNativeAdmission(t *testing.T) {
 		}
 	}
 	h := exectest.Mount(t, exectest.WithHandler(handler))
-	_, err := h.Manager.CreateResourceSession(&types.PluginContext{Context: ctx}, exec.SessionOptions{ResourcePlugin: "test", ResourceKey: "pod"})
+	_, err := h.Manager.CreateResourceSession(
+		&types.PluginContext{Context: ctx},
+		exec.SessionOptions{ResourcePlugin: "test", ResourceKey: "pod"},
+	)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected deadline, got %v", err)
 	}

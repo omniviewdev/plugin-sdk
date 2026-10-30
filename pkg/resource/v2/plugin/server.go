@@ -3,11 +3,13 @@ package plugin
 import (
 	"context"
 	"errors"
+
 	goplugin "github.com/hashicorp/go-plugin"
+	"google.golang.org/grpc"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
-	"google.golang.org/grpc"
 )
 
 type GRPCPlugin struct {
@@ -20,9 +22,11 @@ func (p *GRPCPlugin) GRPCServer(_ *goplugin.GRPCBroker, s *grpc.Server) error {
 	register(s, p.Impl, p.SettingsProvider)
 	return nil
 }
+
 func (p *GRPCPlugin) GRPCClient(_ context.Context, _ *goplugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
 	return NewClient(c), nil
 }
+
 func ServerOptions() []grpc.ServerOption {
 	return []grpc.ServerOption{grpc.MaxRecvMsgSize(MaxWireBytes), grpc.MaxSendMsgSize(MaxWireBytes)}
 }
@@ -42,7 +46,13 @@ func register(s *grpc.Server, p resourcev2.Provider, settings pkgsettings.Provid
 	registerAncillary(s, owner)
 	registerUpdates(s, owner)
 }
-func callHandler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+
+func callHandler(
+	srv interface{},
+	ctx context.Context,
+	dec func(interface{}) error,
+	interceptor grpc.UnaryServerInterceptor,
+) (interface{}, error) {
 	req := &resourcepb.Request{}
 	e := &envelope{message: req}
 	if err := dec(e); err != nil {
@@ -57,8 +67,14 @@ func callHandler(srv interface{}, ctx context.Context, dec func(interface{}) err
 	if interceptor == nil {
 		return handler(ctx, req)
 	}
-	return interceptor(ctx, req, &grpc.UnaryServerInfo{Server: srv, FullMethod: resourcepb.ResourceProvider_Call_FullMethodName}, handler)
+	return interceptor(
+		ctx,
+		req,
+		&grpc.UnaryServerInfo{Server: srv, FullMethod: resourcepb.ResourceProvider_Call_FullMethodName},
+		handler,
+	)
 }
+
 func (s *server) Call(ctx context.Context, r *resourcepb.Request) (*resourcepb.Response, error) {
 	if r.GetVersion() != resourcev2.WireVersion {
 		return nil, rpcError(unsupported("unsupported resource wire version"))
@@ -69,14 +85,22 @@ func (s *server) Call(ctx context.Context, r *resourcepb.Request) (*resourcepb.R
 		return nil, rpcError(err)
 	}
 	switch r.Operation.(type) {
-	case *resourcepb.Request_Get, *resourcepb.Request_Enumerate, *resourcepb.Request_NativeQuery, *resourcepb.Request_Mutate, *resourcepb.Request_Action:
+	case *resourcepb.Request_Get,
+		*resourcepb.Request_Enumerate,
+		*resourcepb.Request_NativeQuery,
+		*resourcepb.Request_Mutate,
+		*resourcepb.Request_Action:
 		if err := s.checkCatalogRoute(ctx, finiteRoute(r)); err != nil {
 			return nil, rpcError(s.classify(err))
 		}
 	}
 	out, err := s.dispatch(ctx, r)
 	switch r.Operation.(type) {
-	case *resourcepb.Request_Get, *resourcepb.Request_Enumerate, *resourcepb.Request_NativeQuery, *resourcepb.Request_Mutate, *resourcepb.Request_Action:
+	case *resourcepb.Request_Get,
+		*resourcepb.Request_Enumerate,
+		*resourcepb.Request_NativeQuery,
+		*resourcepb.Request_Mutate,
+		*resourcepb.Request_Action:
 		if fenceErr := s.checkCatalogRoute(ctx, finiteRoute(r)); fenceErr != nil {
 			return nil, rpcError(s.classify(fenceErr))
 		}
@@ -90,6 +114,7 @@ func (s *server) Call(ctx context.Context, r *resourcepb.Request) (*resourcepb.R
 	}
 	return out, nil
 }
+
 func (s *server) classify(err error) (out error) {
 	out = err
 	defer func() {
@@ -111,6 +136,7 @@ func (s *server) classify(err error) (out error) {
 	}
 	return err
 }
+
 func (s *server) dispatch(ctx context.Context, r *resourcepb.Request) (*resourcepb.Response, error) {
 	out := &resourcepb.Response{}
 	switch op := r.Operation.(type) {

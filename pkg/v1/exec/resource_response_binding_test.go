@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type changedResourceSessionProvider struct {
@@ -26,8 +27,14 @@ type changedResourceSessionServer struct {
 	id string
 }
 
-func (p *changedResourceSessionServer) CreateResourceSession(context.Context, *execpb.SessionOptions) (*execpb.ResourceSessionResponse, error) {
-	return &execpb.ResourceSessionResponse{ResourceWireVersion: ResourceSessionWireVersion, Session: &execpb.Session{Id: p.id, CreatedAt: timestamppb.Now()}}, nil
+func (p *changedResourceSessionServer) CreateResourceSession(
+	context.Context,
+	*execpb.SessionOptions,
+) (*execpb.ResourceSessionResponse, error) {
+	return &execpb.ResourceSessionResponse{
+		ResourceWireVersion: ResourceSessionWireVersion,
+		Session:             &execpb.Session{Id: p.id, CreatedAt: timestamppb.Now()},
+	}, nil
 }
 
 func TestResourceExecActualGRPCResponseIDBinding(t *testing.T) {
@@ -46,14 +53,20 @@ func TestResourceExecActualGRPCResponseIDBinding(t *testing.T) {
 			t.Run(boundary+"/"+tc.name, func(t *testing.T) {
 				server := grpc.NewServer()
 				if boundary == "sdk-server" {
-					RegisterExecPluginServer(server, &PluginServer{Impl: &changedResourceSessionProvider{id: tc.returned}})
+					RegisterExecPluginServer(
+						server,
+						&PluginServer{Impl: &changedResourceSessionProvider{id: tc.returned}},
+					)
 				} else {
 					// Generated registration intentionally bypasses SDK server checks. The
 					// client must bind the actual peer response independently.
 					execpb.RegisterExecPluginServer(server, &changedResourceSessionServer{id: tc.returned})
 				}
 				client := &PluginClient{client: execpb.NewExecPluginClient(execPipe(t, server))}
-				session, err := client.CreateSession(&types.PluginContext{}, SessionOptions{ID: tc.requested, ResourcePlugin: "provider", ResourceKey: "opaque-type"})
+				session, err := client.CreateSession(
+					&types.PluginContext{},
+					SessionOptions{ID: tc.requested, ResourcePlugin: "provider", ResourceKey: "opaque-type"},
+				)
 				if tc.allowed {
 					if err != nil || session == nil || session.ID != tc.returned {
 						t.Fatalf("valid creation identity rejected: %+v %v", session, err)

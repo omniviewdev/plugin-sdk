@@ -5,9 +5,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+
+	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
 // Protobuf-tree depth includes wrappers; semantic Value depth does not.
@@ -228,6 +229,7 @@ func toProto[D any, P proto.Message](v D, validate func(D) error, encode func(D)
 	}
 	return p, nil
 }
+
 func fromProto[D any, P proto.Message](p P, decode func(*adapterDecoder, P) D, validate func(D) error) (D, error) {
 	var zero D
 	if err := admitProto(p); err != nil {

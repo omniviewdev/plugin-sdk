@@ -3,7 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding"
@@ -11,6 +11,8 @@ import (
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 )
 
 // envelope retains admission failure within a single RPC, without global state.
@@ -31,6 +33,7 @@ func (c strictCodec) Marshal(v any) (mem.BufferSlice, error) {
 	}
 	return c.fallback.Marshal(v)
 }
+
 func (c strictCodec) Unmarshal(data mem.BufferSlice, v any) error {
 	e, wrapped := v.(*envelope)
 	var p proto.Message
@@ -42,7 +45,8 @@ func (c strictCodec) Unmarshal(data mem.BufferSlice, v any) error {
 	if !wrapped && p != nil && legacyUtilityRequest(p.ProtoReflect().Descriptor()) {
 		return c.fallback.Unmarshal(data, v)
 	}
-	if p == nil || (!strictRoot(p.ProtoReflect().Descriptor()) && !(wrapped && (e.legacyExec || e.forceStrict || e.legacyValidator != nil))) {
+	if p == nil ||
+		(!strictRoot(p.ProtoReflect().Descriptor()) && !(wrapped && (e.legacyExec || e.forceStrict || e.legacyValidator != nil))) {
 		return c.fallback.Unmarshal(data, v)
 	}
 	var err error
@@ -74,6 +78,7 @@ func (c strictCodec) Unmarshal(data mem.BufferSlice, v any) error {
 	}
 	return nil
 }
+
 func rpcError(err error) error {
 	if err == nil {
 		return nil
@@ -126,6 +131,7 @@ func rpcError(err error) error {
 	}
 	return detailed.Err()
 }
+
 func domainError(err error) error {
 	if err == nil {
 		return nil
@@ -150,6 +156,7 @@ func domainError(err error) error {
 	}
 	return status.Error(st.Code(), "resource transport failed")
 }
+
 func responseError(message proto.Message, err error) error {
 	if err != nil {
 		return err
@@ -159,6 +166,7 @@ func responseError(message proto.Message, err error) error {
 	}
 	return nil
 }
+
 func sendResource(stream interface{ SendMsg(any) error }, message proto.Message) error {
 	if err := responseError(message, nil); err != nil {
 		return err

@@ -15,12 +15,13 @@ import (
 	"time"
 
 	goplugin "github.com/hashicorp/go-plugin"
+	"github.com/stretchr/testify/require"
+
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
 	resource "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
-	"github.com/stretchr/testify/require"
 )
 
 // generationCommand is a test-only source refresh file, never a plugin RPC.
@@ -35,11 +36,23 @@ func generationConnection(endpoint string) types.Connection {
 }
 
 func generationRepresentation() resource.Representation {
-	return resource.Representation{ID: "document", Revision: "document-1", Schema: resource.SchemaBinding{State: "absent", Validation: "none", Unvalidated: []string{}}}
+	return resource.Representation{
+		ID:       "document",
+		Revision: "document-1",
+		Schema:   resource.SchemaBinding{State: "absent", Validation: "none", Unvalidated: []string{}},
+	}
 }
 
 func generationReference() resource.ResourceReference {
-	return resource.ResourceReference{Address: resource.ResourceAddress{Provider: "generation", Authority: "native", Type: "native/object", Scope: []resource.ScopeEntry{}, ID: "object"}}
+	return resource.ResourceReference{
+		Address: resource.ResourceAddress{
+			Provider:  "generation",
+			Authority: "native",
+			Type:      "native/object",
+			Scope:     []resource.ScopeEntry{},
+			ID:        "object",
+		},
+	}
 }
 
 // TestGenerationChild serves the canonical SDK controller in a disposable process.
@@ -56,7 +69,22 @@ func TestGenerationChild(t *testing.T) {
 	var reads atomic.Int64
 	controller, err := resource.NewController(resource.Config[string]{
 		Catalog: func(context.Context, resource.CatalogRequest) (resource.Catalog, error) {
-			return resource.Catalog{Provider: "generation", Revision: "native-catalog", Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}, Types: []resource.ResourceType{{Type: "native/object", IdentityDimensions: []resource.Dimension{}, QueryDimensions: []resource.Dimension{}, Representations: []resource.Representation{generationRepresentation()}, Capabilities: []resource.Capability{{Operation: resource.OperationGet, Scope: resource.QueryScope{}}}}}}, nil
+			return resource.Catalog{
+				Provider: "generation",
+				Revision: "native-catalog",
+				Coverage: resource.Coverage{Kind: "complete", Paths: []string{}},
+				Types: []resource.ResourceType{
+					{
+						Type:               "native/object",
+						IdentityDimensions: []resource.Dimension{},
+						QueryDimensions:    []resource.Dimension{},
+						Representations:    []resource.Representation{generationRepresentation()},
+						Capabilities: []resource.Capability{
+							{Operation: resource.OperationGet, Scope: resource.QueryScope{}},
+						},
+					},
+				},
+			}, nil
 		},
 		Lifecycle: &resource.Lifecycle[string]{
 			LoadConnections: func(context.Context) ([]types.Connection, error) {
@@ -68,30 +96,55 @@ func TestGenerationChild(t *testing.T) {
 			},
 			DestroyClient: func(context.Context, *string) error { return nil },
 		},
-		Registrations: []resource.Registration[string]{{Type: "native/object", Get: func(ctx context.Context, endpoint *string, request resource.GetRequest) (resource.Record, error) {
-			n := reads.Add(1)
-			if err := os.WriteFile(filepath.Join(control, fmt.Sprintf("entered-%d", n)), []byte(*endpoint), 0600); err != nil {
-				return resource.Record{}, err
-			}
-			stop := context.AfterFunc(ctx, func() {
-				_ = os.WriteFile(filepath.Join(control, fmt.Sprintf("canceled-%d", n)), []byte("canceled"), 0600)
-			})
-			defer stop()
-			// Deliberately ignore cancellation: the controller must fence this result.
-			response, err := (&http.Client{Timeout: 10 * time.Second}).Get(*endpoint)
-			if err != nil {
-				return resource.Record{}, err
-			}
-			defer response.Body.Close()
-			body, err := io.ReadAll(io.LimitReader(response.Body, 1024))
-			if err != nil {
-				return resource.Record{}, err
-			}
-			if err := os.WriteFile(filepath.Join(control, fmt.Sprintf("returned-%d", n)), body, 0600); err != nil {
-				return resource.Record{}, err
-			}
-			return resource.Record{Reference: request.Reference, Body: resource.Value{Kind: "map", Map: map[string]resource.Value{"native": {Kind: "string", String: string(body)}}}, Representation: generationRepresentation(), Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}}, nil
-		}}},
+		Registrations: []resource.Registration[string]{
+			{
+				Type: "native/object",
+				Get: func(ctx context.Context, endpoint *string, request resource.GetRequest) (resource.Record, error) {
+					n := reads.Add(1)
+					if err := os.WriteFile(
+						filepath.Join(control, fmt.Sprintf("entered-%d", n)),
+						[]byte(*endpoint),
+						0o600,
+					); err != nil {
+						return resource.Record{}, err
+					}
+					stop := context.AfterFunc(ctx, func() {
+						_ = os.WriteFile(
+							filepath.Join(control, fmt.Sprintf("canceled-%d", n)),
+							[]byte("canceled"),
+							0o600,
+						)
+					})
+					defer stop()
+					// Deliberately ignore cancellation: the controller must fence this result.
+					response, err := (&http.Client{Timeout: 10 * time.Second}).Get(*endpoint)
+					if err != nil {
+						return resource.Record{}, err
+					}
+					defer response.Body.Close()
+					body, err := io.ReadAll(io.LimitReader(response.Body, 1024))
+					if err != nil {
+						return resource.Record{}, err
+					}
+					if err := os.WriteFile(
+						filepath.Join(control, fmt.Sprintf("returned-%d", n)),
+						body,
+						0o600,
+					); err != nil {
+						return resource.Record{}, err
+					}
+					return resource.Record{
+						Reference: request.Reference,
+						Body: resource.Value{
+							Kind: "map",
+							Map:  map[string]resource.Value{"native": {Kind: "string", String: string(body)}},
+						},
+						Representation: generationRepresentation(),
+						Coverage:       resource.Coverage{Kind: "complete", Paths: []string{}},
+					}, nil
+				},
+			},
+		},
 	})
 	require.NoError(t, err)
 	defer controller.Close()
@@ -121,10 +174,14 @@ func TestGenerationChild(t *testing.T) {
 				_, err = controller.StartConnection(ctx, "generation")
 			}
 			if err != nil {
-				_ = os.WriteFile(filepath.Join(control, "control-error"), []byte(err.Error()), 0600)
+				_ = os.WriteFile(filepath.Join(control, "control-error"), []byte(err.Error()), 0o600)
 				return
 			}
-			if err = os.WriteFile(filepath.Join(control, fmt.Sprintf("applied-%d", last)), []byte(command.Endpoint), 0600); err != nil {
+			if err = os.WriteFile(
+				filepath.Join(control, fmt.Sprintf("applied-%d", last)),
+				[]byte(command.Endpoint),
+				0o600,
+			); err != nil {
 				return
 			}
 		}
@@ -141,11 +198,30 @@ func startGenerationProcess(t *testing.T, endpoint string) (resource.Provider, s
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(socket)) })
 	dir := filepath.Join(root, "plugins", fixturePluginID)
-	require.NoError(t, os.MkdirAll(dir, 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "plugin.yaml"), []byte("id: "+fixturePluginID+"\nversion: 0.0.0\n"), 0600))
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(dir, "plugin.yaml"), []byte("id: "+fixturePluginID+"\nversion: 0.0.0\n"), 0o600),
+	)
 	meta := config.PluginMeta{ID: fixturePluginID}
 	handshake := meta.GenerateHandshakeConfig()
-	env := []string{"HOME=" + home, "USERPROFILE=" + home, "TMPDIR=" + socket, "XDG_CONFIG_HOME=" + filepath.Join(home, "config"), "XDG_CACHE_HOME=" + filepath.Join(home, "cache"), "XDG_DATA_HOME=" + filepath.Join(home, "data"), "GOWORK=off", "OMNIVIEW_STATE_DIR=" + root, "OMNIVIEW_TELEMETRY_ENABLED=false", "OMNIVIEW_TELEMETRY_PROFILING=false", "P45_GENERATION_CHILD=1", "P45_GENERATION_CONTROL=" + control, "P45_GENERATION_ENDPOINT=" + endpoint, handshake.MagicCookieKey + "=" + handshake.MagicCookieValue, "PLUGIN_PROTOCOL_VERSIONS=1"}
+	env := []string{
+		"HOME=" + home,
+		"USERPROFILE=" + home,
+		"TMPDIR=" + socket,
+		"XDG_CONFIG_HOME=" + filepath.Join(home, "config"),
+		"XDG_CACHE_HOME=" + filepath.Join(home, "cache"),
+		"XDG_DATA_HOME=" + filepath.Join(home, "data"),
+		"GOWORK=off",
+		"OMNIVIEW_STATE_DIR=" + root,
+		"OMNIVIEW_TELEMETRY_ENABLED=false",
+		"OMNIVIEW_TELEMETRY_PROFILING=false",
+		"P45_GENERATION_CHILD=1",
+		"P45_GENERATION_CONTROL=" + control,
+		"P45_GENERATION_ENDPOINT=" + endpoint,
+		handshake.MagicCookieKey + "=" + handshake.MagicCookieValue,
+		"PLUGIN_PROTOCOL_VERSIONS=1",
+	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestGenerationChild$")
 	cmd.Env = env
 	if launcher := os.Getenv("P44_CLEAN_ENV_LAUNCHER"); launcher != "" {
@@ -154,7 +230,18 @@ func startGenerationProcess(t *testing.T, endpoint string) (resource.Provider, s
 		cmd = exec.Command(launcher, args...)
 		cmd.Env = []string{"GOWORK=off"}
 	}
-	client := goplugin.NewClient(&goplugin.ClientConfig{HandshakeConfig: handshake, SkipHostEnv: true, VersionedPlugins: map[int]goplugin.PluginSet{sdk.CurrentProtocolVersion: {"resource": &resourceplugin.GRPCPlugin{}}}, Cmd: cmd, AllowedProtocols: []goplugin.Protocol{goplugin.ProtocolGRPC}, StartTimeout: 15 * time.Second})
+	client := goplugin.NewClient(
+		&goplugin.ClientConfig{
+			HandshakeConfig: handshake,
+			SkipHostEnv:     true,
+			VersionedPlugins: map[int]goplugin.PluginSet{
+				sdk.CurrentProtocolVersion: {"resource": &resourceplugin.GRPCPlugin{}},
+			},
+			Cmd:              cmd,
+			AllowedProtocols: []goplugin.Protocol{goplugin.ProtocolGRPC},
+			StartTimeout:     15 * time.Second,
+		},
+	)
 	t.Cleanup(func() { client.Kill(); require.True(t, client.Exited()) })
 	rpc, err := client.Client()
 	require.NoError(t, err)
@@ -186,7 +273,7 @@ func generationRefresh(t *testing.T, control string, sequence int, endpoint stri
 	body, err := json.Marshal(generationCommand{Sequence: sequence, Endpoint: endpoint})
 	require.NoError(t, err)
 	temporary := filepath.Join(control, "command.tmp")
-	require.NoError(t, os.WriteFile(temporary, body, 0600))
+	require.NoError(t, os.WriteFile(temporary, body, 0o600))
 	require.NoError(t, os.Rename(temporary, filepath.Join(control, "command.json")))
 }
 
@@ -210,7 +297,11 @@ func TestCurrentSDKGenerationFence(t *testing.T) {
 			close(release)
 		}
 	}()
-	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { bReads.Add(1); _, _ = io.WriteString(w, "native-B") }))
+	b := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) { bReads.Add(1); _, _ = io.WriteString(w, "native-B") },
+		),
+	)
 	defer b.Close()
 	provider, control := startGenerationProcess(t, a.URL)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -227,7 +318,10 @@ func TestCurrentSDKGenerationFence(t *testing.T) {
 		return c
 	}
 	get := func(revision string) (resource.Record, error) {
-		return provider.(resource.Getter).Get(resource.WithCatalogRevision(ctx, revision), resource.GetRequest{Route: route, Reference: generationReference(), Representation: "document"})
+		return provider.(resource.Getter).Get(
+			resource.WithCatalogRevision(ctx, revision),
+			resource.GetRequest{Route: route, Reference: generationReference(), Representation: "document"},
+		)
 	}
 	acceptedA := catalog()
 	generationRefresh(t, control, 1, b.URL)
@@ -275,7 +369,12 @@ func TestCurrentSDKGenerationFence(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("retired native result escaped completion fence")
 	}
-	require.Equal(t, "native-A", generationReceipt(t, control, "returned-3"), "native provider returned data despite cancellation")
+	require.Equal(
+		t,
+		"native-A",
+		generationReceipt(t, control, "returned-3"),
+		"native provider returned data despite cancellation",
+	)
 	require.Equal(t, b.URL, generationReceipt(t, control, "applied-3"))
 	require.EqualValues(t, 2, aReads.Load())
 	currentB := catalog()
@@ -285,9 +384,17 @@ func TestCurrentSDKGenerationFence(t *testing.T) {
 	require.EqualValues(t, 2, bReads.Load())
 	hostReference := generationReference()
 	hostReference.Address.Authority = "host-issued/opaque:α"
-	record, err = provider.(resource.Getter).Get(resource.WithCatalogRevision(ctx, currentB.Revision), resource.GetRequest{Route: route, Reference: hostReference, Representation: "document"})
+	record, err = provider.(resource.Getter).Get(
+		resource.WithCatalogRevision(ctx, currentB.Revision),
+		resource.GetRequest{Route: route, Reference: hostReference, Representation: "document"},
+	)
 	require.NoError(t, err)
 	require.Equal(t, hostReference, record.Reference)
-	require.Equal(t, "native-B", record.Body.Map["native"].String, "admitted host authority must retain actual selected native data")
+	require.Equal(
+		t,
+		"native-B",
+		record.Body.Map["native"].String,
+		"admitted host authority must retain actual selected native data",
+	)
 	require.EqualValues(t, 3, bReads.Load())
 }

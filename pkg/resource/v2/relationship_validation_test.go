@@ -12,10 +12,56 @@ func relationshipAdmissionFixture() (RelationshipResolutionRequest, []ResolvedRe
 	values := []string{"team"}
 	route := AccessRoute{Connection: "target-connection"}
 	req := RelationshipResolutionRequest{
-		Source:  GetRequest{Route: AccessRoute{Connection: "source-connection"}, Reference: ResourceReference{Address: ResourceAddress{Provider: "source", Authority: "source-authority", Type: "source/type", Scope: []ScopeEntry{}, ID: "source"}}, Representation: "native"},
-		Targets: []ReadTarget{{Route: route, Provider: "target", Authority: "target-authority", Type: "opaque/target", Scope: QueryScope{{Dimension: "namespace", Match: ScopeOneOf, Values: &values}}, Representation: "native"}},
+		Source: GetRequest{
+			Route: AccessRoute{Connection: "source-connection"},
+			Reference: ResourceReference{
+				Address: ResourceAddress{
+					Provider:  "source",
+					Authority: "source-authority",
+					Type:      "source/type",
+					Scope:     []ScopeEntry{},
+					ID:        "source",
+				},
+			},
+			Representation: "native",
+		},
+		Targets: []ReadTarget{
+			{
+				Route:          route,
+				Provider:       "target",
+				Authority:      "target-authority",
+				Type:           "opaque/target",
+				Scope:          QueryScope{{Dimension: "namespace", Match: ScopeOneOf, Values: &values}},
+				Representation: "native",
+			},
+		},
 	}
-	results := []ResolvedRelationship{{Descriptor: RelationshipDescriptor{Type: RelUses, TargetType: "opaque/target", Label: "uses", Direction: EdgeOutgoing, TargetScope: []ScopeEntry{}, ScopeExtractors: []ScopeExtractor{}}, Targets: []RelationshipTarget{{Route: route, Reference: ResourceReference{Address: ResourceAddress{Provider: "target", Authority: "target-authority", Type: "opaque/target", Scope: scope, ID: "target"}}}}}}
+	results := []ResolvedRelationship{
+		{
+			Descriptor: RelationshipDescriptor{
+				Type:            RelUses,
+				TargetType:      "opaque/target",
+				Label:           "uses",
+				Direction:       EdgeOutgoing,
+				TargetScope:     []ScopeEntry{},
+				ScopeExtractors: []ScopeExtractor{},
+			},
+			Targets: []RelationshipTarget{
+				{
+					Route: route,
+					Reference: ResourceReference{
+						Address: ResourceAddress{
+							Provider:  "target",
+							Authority: "target-authority",
+							Type:      "opaque/target",
+							Scope:     scope,
+							ID:        "target",
+						},
+					},
+				},
+			},
+		},
+	}
 	return req, results
 }
 
@@ -105,7 +151,12 @@ func TestRelationshipRequestStrictJSON(t *testing.T) {
 		strings.Replace(base, `"target-authority"`, "\"\xff\"", 1),
 		`{"source":null,"targets":[]}`,
 		`{"targets":[]}`,
-		strings.Replace(base, `"scope":[{"dimension":"namespace","match":"oneOf","values":["team"]}]`, `"scope":null`, 1),
+		strings.Replace(
+			base,
+			`"scope":[{"dimension":"namespace","match":"oneOf","values":["team"]}]`,
+			`"scope":null`,
+			1,
+		),
 	}
 	for _, data := range cases {
 		var got RelationshipResolutionRequest
@@ -129,7 +180,12 @@ func TestRelationshipRequestStrictJSON(t *testing.T) {
 	if err := json.Unmarshal(encoded, &got); err != nil {
 		t.Fatalf("canonical empty request rejected: %v", err)
 	}
-	if err := json.Unmarshal([]byte(strings.Replace(string(encoded), `"targets":[]`, `"targets":null`, 1)), &got); ErrorCode(err) != "INVALID_REQUEST" {
+	if err := json.Unmarshal(
+		[]byte(strings.Replace(string(encoded), `"targets":[]`, `"targets":null`, 1)),
+		&got,
+	); ErrorCode(
+		err,
+	) != "INVALID_REQUEST" {
 		t.Fatalf("null target array admitted: %v", err)
 	}
 }
@@ -163,7 +219,15 @@ func TestRelationshipNativeScopeAdmission(t *testing.T) {
 	} {
 		req, _ := relationshipAdmissionFixture()
 		target := req.Targets[0]
-		if _, err := MatchRelationshipTarget(req, target.Route, target.Provider, target.Type, scope); ErrorCode(err) != "INVALID_REQUEST" {
+		if _, err := MatchRelationshipTarget(
+			req,
+			target.Route,
+			target.Provider,
+			target.Type,
+			scope,
+		); ErrorCode(
+			err,
+		) != "INVALID_REQUEST" {
 			t.Fatalf("invalid native scope admitted: %v", err)
 		}
 	}
@@ -172,7 +236,10 @@ func TestRelationshipNativeScopeAdmission(t *testing.T) {
 func TestRelationshipIdentityScopeProjection(t *testing.T) {
 	req, results := relationshipAdmissionFixture()
 	target := &results[0].Targets[0]
-	target.Reference.Address.Scope = append(target.Reference.Address.Scope, ScopeEntry{Dimension: "account", Value: "account-1"})
+	target.Reference.Address.Scope = append(
+		target.Reference.Address.Scope,
+		ScopeEntry{Dimension: "account", Value: "account-1"},
+	)
 	if err := ValidateRelationshipResolutionResult(req, results); err != nil {
 		t.Fatalf("extra identity dimension must not change query coverage: %v", err)
 	}

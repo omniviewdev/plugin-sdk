@@ -28,6 +28,7 @@ func ValidateResourceDefinition(v ResourceDefinition) error {
 	}
 	return nil
 }
+
 func validateResourceLink(v ResourceLink) error {
 	if err := text(v.IDAccessor, true); err != nil {
 		return err
@@ -61,6 +62,7 @@ func validateResourceLink(v ResourceLink) error {
 	}
 	return nil
 }
+
 func ValidateResourceGroups(v []ResourceGroup) error {
 	if err := admission(v); err != nil {
 		return err
@@ -87,6 +89,7 @@ func ValidateResourceGroups(v []ResourceGroup) error {
 	}
 	return nil
 }
+
 func ValidateActionDescriptors(v []ActionDescriptor) error {
 	if err := admission(v); err != nil {
 		return err
@@ -115,6 +118,7 @@ func ValidateActionDescriptors(v []ActionDescriptor) error {
 	}
 	return nil
 }
+
 func validateActionSchema(schema Schema) error {
 	var property func(SchemaProperty, int) error
 	property = func(p SchemaProperty, depth int) error {

@@ -107,6 +107,7 @@ func (s Schema) MarshalJSON() ([]byte, error) {
 		Required   []string                  `json:"required,omitempty"`
 	}{"object", s.Properties, s.Required})
 }
+
 func (s *Schema) UnmarshalJSON(data []byte) error {
 	if err := ValidateJSON(data); err != nil {
 		return err

@@ -246,6 +246,7 @@ func taggedValue(raw any, depth int, nodes *int) (Value, error) {
 	}
 	return v, nil
 }
+
 func (v *Value) UnmarshalJSON(data []byte) error {
 	if v == nil {
 		return invalid("nil value receiver")
@@ -265,6 +266,7 @@ func (v *Value) UnmarshalJSON(data []byte) error {
 	*v = out
 	return nil
 }
+
 func appendJSONString(dst []byte, s string) []byte {
 	const hex = "0123456789abcdef"
 	dst = append(dst, '"')
@@ -298,6 +300,7 @@ func appendJSONString(dst []byte, s string) []byte {
 	}
 	return append(dst, '"')
 }
+
 func appendTagged(dst []byte, v Value) ([]byte, error) {
 	dst = append(dst, `{"kind":`...)
 	dst = appendJSONString(dst, v.Kind)
@@ -361,6 +364,7 @@ func appendTagged(dst []byte, v Value) ([]byte, error) {
 	}
 	return dst, nil
 }
+
 func (v Value) MarshalJSON() ([]byte, error) {
 	if err := ValidateValue(v); err != nil {
 		return nil, err
@@ -578,6 +582,7 @@ func quotedJSONSize(s string) int {
 	}
 	return size
 }
+
 func taggedJSONSize(v Value, depth int, budget *jsonValueBudget) (int, error) {
 	budget.nodes += 2
 	budget.fields++

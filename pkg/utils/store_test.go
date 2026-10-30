@@ -5,8 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/omniviewdev/plugin-sdk/internal/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/omniviewdev/plugin-sdk/internal/testutil"
 )
 
 func isolatedStore(t *testing.T) (string, string) {
@@ -15,10 +16,10 @@ func isolatedStore(t *testing.T) (string, string) {
 	testutil.SetHome(t, home)
 	t.Setenv("OMNIVIEW_STATE_DIR", root)
 	t.Setenv("OMNIVIEW_WORKSPACE_FILE", "")
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "plugins", "test-plugin"), 0700))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "plugins", "test-plugin"), 0o700))
 	production := filepath.Join(home, ".omniview", "plugins", "test-plugin", "store")
-	require.NoError(t, os.MkdirAll(production, 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(production, "resource"), []byte("production sentinel"), 0600))
+	require.NoError(t, os.MkdirAll(production, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(production, "resource"), []byte("production sentinel"), 0o600))
 	return root, production
 }
 
@@ -33,7 +34,7 @@ func TestStoreOperationsStayInSelectedRoot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "workspace A", string(data))
 	other := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(other, "plugins", "test-plugin"), 0700))
+	require.NoError(t, os.MkdirAll(filepath.Join(other, "plugins", "test-plugin"), 0o700))
 	t.Setenv("OMNIVIEW_STATE_DIR", other)
 	file, err = GetStore("resource", "test-plugin")
 	require.NoError(t, err)
@@ -54,7 +55,7 @@ func TestStoreRejectsTraversalAndSymlinkEscapes(t *testing.T) {
 	root, _ := isolatedStore(t)
 	outside := t.TempDir()
 	sentinel := filepath.Join(outside, "sentinel")
-	require.NoError(t, os.WriteFile(sentinel, []byte("untouched"), 0600))
+	require.NoError(t, os.WriteFile(sentinel, []byte("untouched"), 0o600))
 	for _, id := range []string{"../outside", "/tmp/outside", `a\b`} {
 		_, err := GetStore("resource", id)
 		require.Error(t, err)
@@ -70,7 +71,7 @@ func TestStoreRejectsTraversalAndSymlinkEscapes(t *testing.T) {
 	require.Error(t, err)
 	require.Error(t, RemoveStore("sentinel", "test-plugin"))
 	require.NoError(t, os.Remove(filepath.Join(pluginDir, "store")))
-	require.NoError(t, os.Mkdir(filepath.Join(pluginDir, "store"), 0700))
+	require.NoError(t, os.Mkdir(filepath.Join(pluginDir, "store"), 0o700))
 	require.NoError(t, os.Symlink(sentinel, filepath.Join(pluginDir, "store", "resource")))
 	_, err = GetStore("resource", "test-plugin")
 	require.Error(t, err)

@@ -3,11 +3,13 @@ package metric
 import (
 	"context"
 	"errors"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"sync"
 	"time"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+
 	"github.com/google/uuid"
+
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/settings"
 
@@ -113,15 +115,21 @@ func (m *Manager) query(ctx *types.PluginContext, req QueryRequest) (*QueryRespo
 	}
 
 	var response *QueryResponse
-	err := resourcev2.WithUtilityConnection(ctx, m.connectionProvider, req.Reference, req.Route, func(pc *types.PluginContext) error {
-		native := context.Background()
-		if pc != nil && pc.Context != nil {
-			native = pc.Context
-		}
-		var err error
-		response, err = m.queryFunc(m.queryContext(native, pc), req)
-		return err
-	})
+	err := resourcev2.WithUtilityConnection(
+		ctx,
+		m.connectionProvider,
+		req.Reference,
+		req.Route,
+		func(pc *types.PluginContext) error {
+			native := context.Background()
+			if pc != nil && pc.Context != nil {
+				native = pc.Context
+			}
+			var err error
+			response, err = m.queryFunc(m.queryContext(native, pc), req)
+			return err
+		},
+	)
 	return response, err
 }
 
@@ -138,7 +146,12 @@ func (m *Manager) StreamMetrics(ctx context.Context, in chan StreamInput) (chan 
 	return m.admitStream(ctx, in, false, nil)
 }
 
-func (m *Manager) admitStream(ctx context.Context, in chan StreamInput, resource bool, finished chan struct{}) (chan StreamOutput, error) {
+func (m *Manager) admitStream(
+	ctx context.Context,
+	in chan StreamInput,
+	resource bool,
+	finished chan struct{},
+) (chan StreamOutput, error) {
 	filtered := make(chan StreamInput)
 	ctx, cancel := context.WithCancel(ctx)
 	rejected := make(chan StreamOutput)
@@ -167,7 +180,15 @@ func (m *Manager) admitStream(ctx context.Context, in chan StreamInput, resource
 				err := validateStream(input)
 				pc := types.PluginContextFromContext(ctx)
 				if err == nil {
-					err = validateQuery(QueryRequest{ResourceKey: input.ResourceKey, ResourceData: input.ResourceData, Reference: input.Reference, Route: input.Route}, pc)
+					err = validateQuery(
+						QueryRequest{
+							ResourceKey:  input.ResourceKey,
+							ResourceData: input.ResourceData,
+							Reference:    input.Reference,
+							Route:        input.Route,
+						},
+						pc,
+					)
 				}
 				if err == nil && input.Route != nil && (pc == nil || pc.Connection == nil) {
 					err = metricError("INVALID_REQUEST", "Resource route requires an actual selected connection.")
@@ -177,7 +198,11 @@ func (m *Manager) admitStream(ctx context.Context, in chan StreamInput, resource
 				}
 				var candidateBytes uint64
 				if err == nil && input.Command == StreamCommandSubscribe {
-					candidateBytes = streamAdmissionMetadataBytes(input.SubscriptionID, input.Reference, input.CatalogRevision)
+					candidateBytes = streamAdmissionMetadataBytes(
+						input.SubscriptionID,
+						input.Reference,
+						input.CatalogRevision,
+					)
 					bindingsMu.Lock()
 					_, used := bindings[input.SubscriptionID]
 					if used {
@@ -193,7 +218,10 @@ func (m *Manager) admitStream(ctx context.Context, in chan StreamInput, resource
 				if err != nil {
 					var operation *resourcev2.ResourceOperationError
 					if !errors.As(err, &operation) {
-						operation = &resourcev2.ResourceOperationError{Code: "INVALID_REQUEST", Message: "Invalid metric stream input."}
+						operation = &resourcev2.ResourceOperationError{
+							Code:    "INVALID_REQUEST",
+							Message: "Invalid metric stream input.",
+						}
 					}
 					id := input.SubscriptionID
 					if resourcev2.ValidateMetadata(struct{ ID string }{id}) != nil {
@@ -221,7 +249,12 @@ func (m *Manager) admitStream(ctx context.Context, in chan StreamInput, resource
 						}
 						reference = &copy
 					}
-					bindings[input.SubscriptionID] = binding{reference: reference, revision: input.CatalogRevision, active: true, bytes: candidateBytes}
+					bindings[input.SubscriptionID] = binding{
+						reference: reference,
+						revision:  input.CatalogRevision,
+						active:    true,
+						bytes:     candidateBytes,
+					}
 					retainedBytes += candidateBytes
 				} else if previous, exists := bindings[input.SubscriptionID]; exists && previous.active {
 					compact := streamAdmissionMetadataBytes(input.SubscriptionID, nil, "")
@@ -278,7 +311,10 @@ func (m *Manager) admitStream(ctx context.Context, in chan StreamInput, resource
 				if err := m.checkStreamCatalog(ctx, bound.reference, bound.revision); err != nil {
 					var operation *resourcev2.ResourceOperationError
 					if !errors.As(err, &operation) {
-						operation = &resourcev2.ResourceOperationError{Code: resourcev2.ErrorCode(err), Message: "Metric catalog admission failed."}
+						operation = &resourcev2.ResourceOperationError{
+							Code:    resourcev2.ErrorCode(err),
+							Message: "Metric catalog admission failed.",
+						}
 					}
 					output = StreamOutput{SubscriptionID: output.SubscriptionID, OperationError: operation}
 				}
@@ -293,7 +329,11 @@ func (m *Manager) admitStream(ctx context.Context, in chan StreamInput, resource
 	return out, nil
 }
 
-func (m *Manager) checkStreamCatalog(ctx context.Context, reference *resourcev2.ResourceReference, revision string) error {
+func (m *Manager) checkStreamCatalog(
+	ctx context.Context,
+	reference *resourcev2.ResourceReference,
+	revision string,
+) error {
 	if reference == nil {
 		return nil
 	}
@@ -308,7 +348,10 @@ func (m *Manager) checkStreamCatalog(ctx context.Context, reference *resourcev2.
 	if !ok {
 		return metricError("UNSUPPORTED", "Canonical metric catalog admission is unavailable.")
 	}
-	catalog, err := provider.Catalog(ctx, resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: pc.Connection.ID}})
+	catalog, err := provider.Catalog(
+		ctx,
+		resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: pc.Connection.ID}},
+	)
 	if err != nil {
 		return err
 	}
@@ -334,24 +377,28 @@ func (m *Manager) connectedStream(ctx context.Context, in chan StreamInput) (cha
 	ready := make(chan result, 1)
 	go func() {
 		published := false
-		err := m.connectionProvider.WithConnection(ctx, resourcev2.AccessRoute{Connection: pc.Connection.ID}, func(bound context.Context, connection types.Connection) error {
-			copy := *pc
-			copy.Connection = &connection
-			bound = types.WithPluginContext(bound, &copy)
-			finished := make(chan struct{})
-			out, err := m.admitStream(bound, in, true, finished)
-			ready <- result{out: out, err: err}
-			published = true
-			if err != nil {
-				return err
-			}
-			select {
-			case <-finished:
-				return nil
-			case <-bound.Done():
-				return bound.Err()
-			}
-		})
+		err := m.connectionProvider.WithConnection(
+			ctx,
+			resourcev2.AccessRoute{Connection: pc.Connection.ID},
+			func(bound context.Context, connection types.Connection) error {
+				copy := *pc
+				copy.Connection = &connection
+				bound = types.WithPluginContext(bound, &copy)
+				finished := make(chan struct{})
+				out, err := m.admitStream(bound, in, true, finished)
+				ready <- result{out: out, err: err}
+				published = true
+				if err != nil {
+					return err
+				}
+				select {
+				case <-finished:
+					return nil
+				case <-bound.Done():
+					return bound.Err()
+				}
+			},
+		)
 		if !published {
 			ready <- result{err: err}
 		}
@@ -367,7 +414,15 @@ func (m *Manager) connectedStream(ctx context.Context, in chan StreamInput) (cha
 func (m *Manager) stream(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
 	if m.streamFunc != nil {
 		qctx := m.queryContext(ctx, types.PluginContextFromContext(ctx))
-		return m.streamFunc(&StreamContext{Context: ctx, PluginID: qctx.PluginID, Connection: qctx.Connection, ConnectionID: qctx.ConnectionID}, in)
+		return m.streamFunc(
+			&StreamContext{
+				Context:      ctx,
+				PluginID:     qctx.PluginID,
+				Connection:   qctx.Connection,
+				ConnectionID: qctx.ConnectionID,
+			},
+			in,
+		)
 	}
 
 	out := make(chan StreamOutput, 256)
@@ -405,7 +460,12 @@ func (m *Manager) stream(ctx context.Context, in chan StreamInput) (chan StreamO
 	return out, nil
 }
 
-func (m *Manager) handleStreamCommand(parentCtx context.Context, input StreamInput, out chan StreamOutput, polls *sync.WaitGroup) {
+func (m *Manager) handleStreamCommand(
+	parentCtx context.Context,
+	input StreamInput,
+	out chan StreamOutput,
+	polls *sync.WaitGroup,
+) {
 	switch input.Command {
 	case StreamCommandSubscribe:
 		m.subscribe(parentCtx, input, out, polls)
@@ -416,7 +476,12 @@ func (m *Manager) handleStreamCommand(parentCtx context.Context, input StreamInp
 	}
 }
 
-func (m *Manager) subscribe(parentCtx context.Context, input StreamInput, out chan StreamOutput, polls *sync.WaitGroup) {
+func (m *Manager) subscribe(
+	parentCtx context.Context,
+	input StreamInput,
+	out chan StreamOutput,
+	polls *sync.WaitGroup,
+) {
 	subID := input.SubscriptionID
 	if subID == "" {
 		subID = uuid.NewString()

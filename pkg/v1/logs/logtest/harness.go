@@ -2,9 +2,10 @@ package logtest
 
 import (
 	"context"
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"testing"
 	"time"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
 
@@ -113,10 +114,12 @@ func (h *Harness) CreateSession(resourceKey string, opts ...SessionOption) *logs
 	}
 
 	pctx := newTestPluginContext(h.ctx)
-	session, err := h.manager.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: resourceKey,
+	session, err := h.manager.CreateResourceSession(pctx, logs.CreateSessionOptions{
+		ResourceKey:  resourceKey,
 		ResourceID:   cfg.resourceID,
 		ResourceData: cfg.resourceData,
-		Options:      cfg.options})
+		Options:      cfg.options,
+	})
 	if err != nil {
 		h.t.Fatalf("CreateSession failed: %v", err)
 	}

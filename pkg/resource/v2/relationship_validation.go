@@ -110,14 +110,24 @@ func relationshipScopesConflict(a, b relationshipScopeIndex) bool {
 
 // MatchRelationshipTarget selects exactly one host binding for an observed link.
 // Neither source identity nor a provider default can supply a missing binding.
-func MatchRelationshipTarget(req RelationshipResolutionRequest, route AccessRoute, provider, typ string, scope []ScopeEntry) (ReadTarget, error) {
+func MatchRelationshipTarget(
+	req RelationshipResolutionRequest,
+	route AccessRoute,
+	provider, typ string,
+	scope []ScopeEntry,
+) (ReadTarget, error) {
 	if err := ValidateRelationshipResolutionRequest(req); err != nil {
 		return ReadTarget{}, err
 	}
 	return matchRelationshipTarget(req, route, provider, typ, scope)
 }
 
-func matchRelationshipTarget(req RelationshipResolutionRequest, route AccessRoute, provider, typ string, scope []ScopeEntry) (ReadTarget, error) {
+func matchRelationshipTarget(
+	req RelationshipResolutionRequest,
+	route AccessRoute,
+	provider, typ string,
+	scope []ScopeEntry,
+) (ReadTarget, error) {
 	if err := admission(scope); err != nil {
 		return ReadTarget{}, err
 	}

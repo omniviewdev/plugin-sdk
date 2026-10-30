@@ -14,8 +14,10 @@ import (
 // MaxCatalogRevisionBytes bounds trusted admission context and its wire encoding.
 const MaxCatalogRevisionBytes = 4096
 
-type catalogRevisionKey struct{}
-type catalogSlotKey struct{}
+type (
+	catalogRevisionKey struct{}
+	catalogSlotKey     struct{}
+)
 
 // WithCatalogRevision pins the exact catalog observation accepted by the caller.
 // A revision conveys admission context, not permission or authority.
@@ -96,7 +98,11 @@ func boundCatalogRevision(nonce [32]byte, revision string) string {
 	binary.BigEndian.PutUint64(size[:], uint64(len(revision)))
 	h.Write(size[:])
 	h.Write([]byte(revision))
-	return "ovc1." + base64.RawURLEncoding.EncodeToString(nonce[:]) + "." + base64.RawURLEncoding.EncodeToString(h.Sum(nil))
+	return "ovc1." + base64.RawURLEncoding.EncodeToString(
+		nonce[:],
+	) + "." + base64.RawURLEncoding.EncodeToString(
+		h.Sum(nil),
+	)
 }
 
 // CatalogBindingEpoch returns the opaque client-slot epoch of an SDK-owned

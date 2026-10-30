@@ -18,20 +18,31 @@ func (catalogOnly) Catalog(ctx context.Context, request resourcev2.CatalogReques
 	if request.Route.Connection == "" {
 		return resourcev2.Catalog{}, resourcev2.NewError("INVALID_REQUEST", "Select a connection.")
 	}
-	return resourcev2.Catalog{Provider: "example", Revision: "metadata-1", Coverage: resourcev2.Coverage{Kind: "complete"}}, nil
+	return resourcev2.Catalog{
+		Provider: "example",
+		Revision: "metadata-1",
+		Coverage: resourcev2.Coverage{Kind: "complete"},
+	}, nil
 }
 
 var _ resourcev2.Provider = catalogOnly{}
 
 func ExampleProvider() {
 	var provider resourcev2.Provider = catalogOnly{}
-	catalog, err := provider.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "profile"}})
+	catalog, err := provider.Catalog(
+		context.Background(),
+		resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "profile"}},
+	)
 	fmt.Println(catalog.Provider, err)
 	// Output: example <nil>
 }
 
 func exampleRepresentation() resourcev2.Representation {
-	return resourcev2.Representation{ID: "document", Revision: "1", Schema: resourcev2.SchemaBinding{State: "absent", Validation: "none"}}
+	return resourcev2.Representation{
+		ID:       "document",
+		Revision: "1",
+		Schema:   resourcev2.SchemaBinding{State: "absent", Validation: "none"},
+	}
 }
 
 func exampleCatalog(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
@@ -52,7 +63,12 @@ func ExampleGetter() {
 		Registrations: []resourcev2.Registration[struct{}]{{
 			Type: "document",
 			Get: func(ctx context.Context, _ *struct{}, request resourcev2.GetRequest) (resourcev2.Record, error) {
-				return resourcev2.Record{Reference: request.Reference, Body: resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{}}, Representation: exampleRepresentation(), Coverage: resourcev2.Coverage{Kind: "complete"}}, ctx.Err()
+				return resourcev2.Record{
+					Reference:      request.Reference,
+					Body:           resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{}},
+					Representation: exampleRepresentation(),
+					Coverage:       resourcev2.Coverage{Kind: "complete"},
+				}, ctx.Err()
 			},
 		}},
 	})
@@ -110,10 +126,14 @@ func ExampleLifecycle() {
 	if _, err := provider.StartConnection(ctx, "profile"); err != nil {
 		panic(err)
 	}
-	err = provider.WithConnection(ctx, resourcev2.AccessRoute{Connection: "profile"}, func(_ context.Context, profile types.Connection) error {
-		fmt.Println(profile.ID)
-		return nil
-	})
+	err = provider.WithConnection(
+		ctx,
+		resourcev2.AccessRoute{Connection: "profile"},
+		func(_ context.Context, profile types.Connection) error {
+			fmt.Println(profile.ID)
+			return nil
+		},
+	)
 	if err != nil {
 		panic(err)
 	}
@@ -127,7 +147,10 @@ func ExampleLifecycle() {
 // must synchronize publication and fence operations against generation retirement.
 type generatedProvider struct{ catalog resourcev2.Catalog }
 
-func (p *generatedProvider) Catalog(ctx context.Context, request resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
+func (p *generatedProvider) Catalog(
+	ctx context.Context,
+	request resourcev2.CatalogRequest,
+) (resourcev2.Catalog, error) {
 	if request.Route.Connection != "profile" {
 		return resourcev2.Catalog{}, resourcev2.NewError("NOT_FOUND", "Unknown connection.")
 	}
@@ -147,8 +170,17 @@ func ExampleNewCatalogBindingEpoch() {
 	if err != nil {
 		panic(err)
 	}
-	provider := &generatedProvider{catalog: resourcev2.Catalog{Provider: "custom", Revision: revision, Coverage: resourcev2.Coverage{Kind: "complete"}}}
-	catalog, err := provider.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "profile"}})
+	provider := &generatedProvider{
+		catalog: resourcev2.Catalog{
+			Provider: "custom",
+			Revision: revision,
+			Coverage: resourcev2.Coverage{Kind: "complete"},
+		},
+	}
+	catalog, err := provider.Catalog(
+		context.Background(),
+		resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "profile"}},
+	)
 	if err != nil {
 		panic(err)
 	}

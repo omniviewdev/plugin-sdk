@@ -13,5 +13,5 @@ type Clock interface {
 // RealClock delegates to the standard time package.
 type RealClock struct{}
 
-func (RealClock) Now() time.Time                        { return time.Now() }
+func (RealClock) Now() time.Time                         { return time.Now() }
 func (RealClock) After(d time.Duration) <-chan time.Time { return time.After(d) }

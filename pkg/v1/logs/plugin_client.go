@@ -5,12 +5,13 @@ import (
 	"errors"
 	"io"
 
-	logging "github.com/omniviewdev/plugin-sdk/log"
-	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	logging "github.com/omniviewdev/plugin-sdk/log"
+	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
@@ -84,8 +85,15 @@ func (c *PluginClient) CreateResourceSession(ctx *types.PluginContext, opts Crea
 		return nil, err
 	}
 	admission, admissionError := resourceplugin.ResponseAdmission()
-	resp, err := c.client.CreateResourceSession(rpcContext, request,
-		grpc.MaxCallSendMsgSize(resourceplugin.MaxWireBytes), grpc.MaxCallRecvMsgSize(resourceplugin.MaxWireBytes), admission)
+	resp, err := c.client.CreateResourceSession(
+		rpcContext,
+		request,
+		grpc.MaxCallSendMsgSize(
+			resourceplugin.MaxWireBytes,
+		),
+		grpc.MaxCallRecvMsgSize(resourceplugin.MaxWireBytes),
+		admission,
+	)
 	if err != nil {
 		if status.Code(err) == codes.Unimplemented {
 			return nil, resourceError("UNSUPPORTED", "Resource logs RPC unavailable.")

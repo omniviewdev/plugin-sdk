@@ -71,6 +71,7 @@ func scopeEntries(scope map[string]string) []resource.ScopeEntry {
 	sort.Slice(out, func(i, j int) bool { return out[i].Dimension < out[j].Dimension })
 	return out
 }
+
 func queryScope(s Scenario) resource.QueryScope {
 	out := make(resource.QueryScope, 0, len(s.Selection))
 	for k, v := range s.Selection {
@@ -81,12 +82,14 @@ func queryScope(s Scenario) resource.QueryScope {
 	sort.Slice(out, func(i, j int) bool { return out[i].Dimension < out[j].Dimension })
 	return out
 }
+
 func token(s string) *string {
 	if s == "" {
 		return nil
 	}
 	return &s
 }
+
 func representation(s Scenario) resource.Representation {
 	schema := resource.SchemaBinding{State: "absent", Validation: "none", Unvalidated: []string{}}
 	if s.Schema != nil {
@@ -97,8 +100,24 @@ func representation(s Scenario) resource.Representation {
 	}
 	return resource.Representation{ID: "native", Revision: "representation:opaque/1", Schema: schema}
 }
+
 func nativeRecord(r Record, s Scenario) resource.Record {
-	return resource.Record{Reference: resource.ResourceReference{Address: resource.ResourceAddress{Provider: r.Provider, Authority: r.Authority, Type: r.Type, Scope: scopeEntries(r.Scope), ID: r.ID}, Incarnation: token(r.Incarnation)}, Body: nativeValue(r.Body), Representation: representation(s), Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}, SourceRevision: token(r.Revision)}
+	return resource.Record{
+		Reference: resource.ResourceReference{
+			Address: resource.ResourceAddress{
+				Provider:  r.Provider,
+				Authority: r.Authority,
+				Type:      r.Type,
+				Scope:     scopeEntries(r.Scope),
+				ID:        r.ID,
+			},
+			Incarnation: token(r.Incarnation),
+		},
+		Body:           nativeValue(r.Body),
+		Representation: representation(s),
+		Coverage:       resource.Coverage{Kind: "complete", Paths: []string{}},
+		SourceRevision: token(r.Revision),
+	}
 }
 func nativeError(code, message string) error { return resource.NewError(code, message) }
 
@@ -113,8 +132,16 @@ type nativeProvider struct {
 }
 
 func newNativeProvider(state, profile string) *nativeProvider {
-	return &nativeProvider{corpus: NativeCorpus(), state: state, profile: profile, active: map[string]bool{}, bindingEpochs: map[string]string{}, nativeCatalogRevision: "catalog:opaque/1"}
+	return &nativeProvider{
+		corpus:                NativeCorpus(),
+		state:                 state,
+		profile:               profile,
+		active:                map[string]bool{},
+		bindingEpochs:         map[string]string{},
+		nativeCatalogRevision: "catalog:opaque/1",
+	}
 }
+
 func (p *nativeProvider) scenario(route resource.AccessRoute) (Scenario, error) {
 	p.mu.Lock()
 	active := p.active[route.Connection]
@@ -129,6 +156,7 @@ func (p *nativeProvider) scenario(route resource.AccessRoute) (Scenario, error) 
 	}
 	return Scenario{}, nativeError("NOT_FOUND", "unknown source route")
 }
+
 func (p *nativeProvider) Catalog(ctx context.Context, in resource.CatalogRequest) (resource.Catalog, error) {
 	s, err := p.scenario(in.Route)
 	if err != nil {
@@ -166,8 +194,23 @@ func (p *nativeProvider) Catalog(ctx context.Context, in resource.CatalogRequest
 	if err != nil {
 		return resource.Catalog{}, err
 	}
-	return resource.Catalog{Provider: r.Provider, Revision: revision, Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}, Types: []resource.ResourceType{{Type: s.Type, DisplayName: s.Type, IdentityDimensions: dims, QueryDimensions: dims, Representations: []resource.Representation{representation(s)}, Capabilities: caps}}}, nil
+	return resource.Catalog{
+		Provider: r.Provider,
+		Revision: revision,
+		Coverage: resource.Coverage{Kind: "complete", Paths: []string{}},
+		Types: []resource.ResourceType{
+			{
+				Type:               s.Type,
+				DisplayName:        s.Type,
+				IdentityDimensions: dims,
+				QueryDimensions:    dims,
+				Representations:    []resource.Representation{representation(s)},
+				Capabilities:       caps,
+			},
+		},
+	}, nil
 }
+
 func (p *nativeProvider) LoadConnections(context.Context) ([]types.Connection, error) {
 	out := []types.Connection{}
 	for _, s := range p.corpus.Scenarios {
@@ -175,6 +218,7 @@ func (p *nativeProvider) LoadConnections(context.Context) ([]types.Connection, e
 	}
 	return out, nil
 }
+
 func (p *nativeProvider) GetConnection(_ context.Context, id string) (types.Connection, error) {
 	for _, s := range p.corpus.Scenarios {
 		if s.Name == id {
@@ -183,6 +227,7 @@ func (p *nativeProvider) GetConnection(_ context.Context, id string) (types.Conn
 	}
 	return types.Connection{}, nativeError("NOT_FOUND", "unknown route")
 }
+
 func (p *nativeProvider) StartConnection(ctx context.Context, id string) (types.ConnectionStatus, error) {
 	c, err := p.GetConnection(ctx, id)
 	if err != nil {
@@ -201,6 +246,7 @@ func (p *nativeProvider) StartConnection(ctx context.Context, id string) (types.
 	p.mu.Unlock()
 	return types.ConnectionStatus{Connection: &c, Status: types.ConnectionStatusConnected}, nil
 }
+
 func (p *nativeProvider) CheckConnection(ctx context.Context, id string) (types.ConnectionStatus, error) {
 	_, err := p.scenario(resource.AccessRoute{Connection: id})
 	if err != nil {
@@ -209,16 +255,18 @@ func (p *nativeProvider) CheckConnection(ctx context.Context, id string) (types.
 	c, _ := p.GetConnection(ctx, id)
 	return types.ConnectionStatus{Connection: &c, Status: types.ConnectionStatusConnected}, nil
 }
+
 func (p *nativeProvider) StopConnection(ctx context.Context, id string) (types.Connection, error) {
 	p.mu.Lock()
 	delete(p.active, id)
 	delete(p.bindingEpochs, id)
 	p.mu.Unlock()
-	if err := os.WriteFile(filepath.Join(p.state, id+".closed"), []byte("closed"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(p.state, id+".closed"), []byte("closed"), 0o600); err != nil {
 		return types.Connection{}, err
 	}
 	return p.GetConnection(ctx, id)
 }
+
 func (p *nativeProvider) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -247,7 +295,8 @@ func (p *nativeReader) Get(ctx context.Context, in resource.GetRequest) (resourc
 		for _, name := range page.Records {
 			r := nativeRecord(p.corpus.Record(name), s)
 			r.Reference.Address.Authority = in.Reference.Address.Authority
-			if reflect.DeepEqual(r.Reference.Address, in.Reference.Address) && (in.Reference.Incarnation == nil || reflect.DeepEqual(in.Reference.Incarnation, r.Reference.Incarnation)) {
+			if reflect.DeepEqual(r.Reference.Address, in.Reference.Address) &&
+				(in.Reference.Incarnation == nil || reflect.DeepEqual(in.Reference.Incarnation, r.Reference.Incarnation)) {
 				return r, nil
 			}
 		}
@@ -263,16 +312,22 @@ func (p *nativeEnumerable) Enumerate(ctx context.Context, in resource.EnumerateR
 
 type nativeEnumerationOnly struct{ *nativeProvider }
 
-func (p *nativeEnumerationOnly) Enumerate(ctx context.Context, in resource.EnumerateRequest) (resource.SourcePage, error) {
+func (p *nativeEnumerationOnly) Enumerate(
+	ctx context.Context,
+	in resource.EnumerateRequest,
+) (resource.SourcePage, error) {
 	return p.page(ctx, in)
 }
+
 func (p *nativeProvider) page(ctx context.Context, in resource.EnumerateRequest) (resource.SourcePage, error) {
 	s, err := p.scenario(in.Target.Route)
 	if err != nil {
 		return resource.SourcePage{}, err
 	}
 	r := p.corpus.Record(s.Pages[0].Records[0])
-	if in.Target.Provider != r.Provider || in.Target.Authority == "" || in.Target.Type != s.Type || in.Target.Representation != "native" || !reflect.DeepEqual(in.Target.Scope, queryScope(s)) {
+	if in.Target.Provider != r.Provider || in.Target.Authority == "" || in.Target.Type != s.Type ||
+		in.Target.Representation != "native" ||
+		!reflect.DeepEqual(in.Target.Scope, queryScope(s)) {
 		return resource.SourcePage{}, nativeError("INVALID_REQUEST", "target outside selected native source")
 	}
 	cursor := ""
@@ -280,11 +335,11 @@ func (p *nativeProvider) page(ctx context.Context, in resource.EnumerateRequest)
 		cursor = *in.Cursor
 	}
 	if cursor == "verification:wait-for-cancel" {
-		if err := os.WriteFile(filepath.Join(p.state, s.Name+".waiting"), []byte("waiting"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(p.state, s.Name+".waiting"), []byte("waiting"), 0o600); err != nil {
 			return resource.SourcePage{}, err
 		}
 		<-ctx.Done()
-		if err := os.WriteFile(filepath.Join(p.state, s.Name+".cancelled"), []byte("cancelled"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(p.state, s.Name+".cancelled"), []byte("cancelled"), 0o600); err != nil {
 			return resource.SourcePage{}, err
 		}
 		return resource.SourcePage{}, ctx.Err()
@@ -304,7 +359,13 @@ func (p *nativeProvider) page(ctx context.Context, in resource.EnumerateRequest)
 			coverage.Kind = "partial"
 			coverage.Reason = "selected listing truncated; eventual visibility"
 		}
-		out := resource.SourcePage{Records: []resource.Record{}, NextCursor: token(page.Next), Count: resource.Count{Kind: "unknown"}, Coverage: coverage, Consistency: s.Coverage.Consistency}
+		out := resource.SourcePage{
+			Records:     []resource.Record{},
+			NextCursor:  token(page.Next),
+			Count:       resource.Count{Kind: "unknown"},
+			Coverage:    coverage,
+			Consistency: s.Coverage.Consistency,
+		}
 		for _, name := range page.Records {
 			record := nativeRecord(p.corpus.Record(name), s)
 			record.Reference.Address.Authority = in.Target.Authority
@@ -318,7 +379,10 @@ func (p *nativeProvider) page(ctx context.Context, in resource.EnumerateRequest)
 // This profile has no Getter or Enumerator: native acquisition is independent.
 type nativeQueryOnly struct{ *nativeProvider }
 
-func (p *nativeQueryOnly) NativeQuery(ctx context.Context, in resource.NativeQueryRequest) (resource.SourcePage, error) {
+func (p *nativeQueryOnly) NativeQuery(
+	ctx context.Context,
+	in resource.NativeQueryRequest,
+) (resource.SourcePage, error) {
 	if in.Language != "fixture.compute.v1" || in.Query.Kind != "int64" {
 		return resource.SourcePage{}, nativeError("UNSUPPORTED", "unsupported native fixture query")
 	}
@@ -332,6 +396,20 @@ func (p *nativeQueryOnly) NativeQuery(ctx context.Context, in resource.NativeQue
 	}
 	// Computed output differs from input. This proves transport result encoding,
 	// not CEL evaluation (which belongs to the host).
-	page.Records[0].Body = resource.Value{Kind: "map", Map: map[string]resource.Value{"computed": {Kind: "int64", Int: strconv.FormatInt(n+1, 10)}, "beforeEpoch": {Kind: "timestamp", Timestamp: "1969-12-31T23:59:59.999999999Z"}, "nested": {Kind: "list", List: []resource.Value{{Kind: "uint64", Uint: "18446744073709551615"}, {Kind: "null"}, {Kind: "bool", Bool: true}}}}}
+	page.Records[0].Body = resource.Value{
+		Kind: "map",
+		Map: map[string]resource.Value{
+			"computed":    {Kind: "int64", Int: strconv.FormatInt(n+1, 10)},
+			"beforeEpoch": {Kind: "timestamp", Timestamp: "1969-12-31T23:59:59.999999999Z"},
+			"nested": {
+				Kind: "list",
+				List: []resource.Value{
+					{Kind: "uint64", Uint: "18446744073709551615"},
+					{Kind: "null"},
+					{Kind: "bool", Bool: true},
+				},
+			},
+		},
+	}
 	return page, nil
 }
