@@ -3,6 +3,7 @@ package logs
 import (
 	"context"
 	"errors"
+	"maps"
 
 	"github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
@@ -30,6 +31,7 @@ type Provider interface {
 // Plugin implements the hashicorp go-plugin interfaces for log capability.
 type Plugin struct {
 	plugin.Plugin
+
 	Impl Provider
 }
 
@@ -51,7 +53,7 @@ func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
-) (interface{}, error) {
+) (any, error) {
 	return &PluginClient{
 		client: logspb.NewLogPluginClient(c),
 		log:    logging.Default().Named("logs.plugin.client"),
@@ -73,9 +75,7 @@ func RegisterPlugin(
 	}
 
 	resolvers := make(map[string]SourceResolver)
-	for key, resolver := range opts.SourceResolvers {
-		resolvers[key] = resolver
-	}
+	maps.Copy(resolvers, opts.SourceResolvers)
 
 	loggerForManager := p.Log
 	if loggerForManager == nil {

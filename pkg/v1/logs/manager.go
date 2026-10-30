@@ -28,11 +28,18 @@ import (
 const (
 	// MaxConcurrentStreamsPerSession bounds simultaneous source readers in one session.
 	MaxConcurrentStreamsPerSession = 20
-	MaxScannerBuffer               = 1024 * 1024 // 1MB max line length
-	scannerInitBuf                 = 4096        // 4KB initial; grows to MaxScannerBuffer on demand
-	ReconnectMaxAttempts           = 5
-	ReconnectInitialDelay          = 1 * time.Second
-	ReconnectMaxDelay              = 30 * time.Second
+	// MaxScannerBuffer limits a single log line to one mebibyte.
+	MaxScannerBuffer = 1024 * 1024
+	scannerInitBuf   = 4096 // 4KB initial; grows to MaxScannerBuffer on demand
+	// ReconnectMaxAttempts bounds retries after the initial stream attempt.
+	ReconnectMaxAttempts = 5
+	// ReconnectInitialDelay is the first retry's backoff.
+	ReconnectInitialDelay = 1 * time.Second
+	// ReconnectMaxDelay caps exponential retry backoff.
+	ReconnectMaxDelay   = 30 * time.Second
+	sessionCloseTimeout = 10 * time.Second
+	streamOutputBuffer  = 256
+	reconnectBackoffMultiplier = 2
 )
 
 // ---------------------------------------------------------------------------
@@ -78,16 +85,13 @@ func (s *sessionState) snapshot() LogSession {
 	return cp
 }
 
-// transition performs a CAS on session status. Returns true if the transition
-// succeeded (old status matched `from`).
-func (s *sessionState) transition(from, to LogSessionStatus) bool {
+// transition changes status only when the current status matches from.
+func (s *sessionState) transition(from, to LogSessionStatus) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.session.Status != from {
-		return false
+	if s.session.Status == from {
+		s.session.Status = to
 	}
-	s.session.Status = to
-	return true
 }
 
 // setStatus forces the status to the given value.
@@ -362,7 +366,7 @@ func (m *Manager) CloseSession(_ *types.PluginContext, sessionID string) error {
 	// to prevent blocking forever if a goroutine is stuck.
 	select {
 	case <-ss.done:
-	case <-m.clock.After(10 * time.Second):
+	case <-m.clock.After(sessionCloseTimeout):
 		m.log.Warnw(ss.ctx, "CloseSession timed out waiting for goroutines", "session_id", sessionID)
 	}
 	return nil
@@ -402,7 +406,7 @@ func (m *Manager) UpdateSessionOptions(
 func (m *Manager) Stream(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
 	m.mu.Lock()
 	if m.sink == nil {
-		m.out = make(chan StreamOutput, 256)
+		m.out = make(chan StreamOutput, streamOutputBuffer)
 		m.sink = NewChannelSink(ctx, m.out)
 	}
 	out := m.out
@@ -541,11 +545,9 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	// because fanOutSources blocks until all source goroutines complete (which
 	// for Follow=true sessions, only happens when the context is cancelled).
 	if opts.Options.Follow && result.Events != nil {
-		ss.sourceWg.Add(1)
-		go func() {
-			defer ss.sourceWg.Done()
+		ss.sourceWg.Go(func() {
 			m.watchSourceEvents(ss, h, result.Events, logger)
-		}()
+		})
 	}
 
 	m.fanOutSources(ss, h, result.Sources, opts, logger)
@@ -758,48 +760,23 @@ func (m *Manager) streamWithReconnect(
 				Message:   fmt.Sprintf("Reconnecting (attempt %d/%d)", attempt, ReconnectMaxAttempts),
 				Timestamp: m.clock.Now(),
 			})
-
 			select {
 			case <-ctx.Done():
 				return
 			case <-m.clock.After(delay):
 			}
-
-			delay *= 2
-			if delay > ReconnectMaxDelay {
-				delay = ReconnectMaxDelay
-			}
+			delay = min(delay*reconnectBackoffMultiplier, ReconnectMaxDelay)
 		}
 
-		// Shallow-copy the PluginContext with the source-scoped context
-		// so the handler respects per-source cancellation.
-		pctxCopy := *ss.pluginCtx
-		pctxCopy.Context = ctx
-		pctxCopy.Logger = logger
-		reader, err := handler.Handler(&pctxCopy, req)
-		if err != nil {
-			if ctx.Err() != nil {
-				return // context cancelled, stop reconnecting
-			}
-			logger.Errorw(ctx, "failed to open log stream", "error", err, "attempt", attempt)
-			continue
-		}
+		reader := m.openSourceReader(ctx, ss, handler, source, req, logger, attempt)
 		if reader == nil {
-			logger.Errorw(ctx, "handler returned nil reader without error", "source", source.ID, "attempt", attempt)
+			if ctx.Err() != nil {
+				return
+			}
 			continue
 		}
 
-		if attempt > 0 {
-			m.emitEvent(ss.session.ID, LogStreamEvent{
-				Type:      StreamEventReconnected,
-				SourceID:  source.ID,
-				Message:   "Reconnected",
-				Timestamp: m.clock.Now(),
-			})
-		}
-
-		err = m.readStream(ctx, ss, source, reader)
-		reader.Close()
+		err := m.consumeSourceReader(ctx, ss, source, reader, logger)
 
 		if ctx.Err() != nil {
 			return
@@ -818,6 +795,58 @@ func (m *Manager) streamWithReconnect(
 		Message:   fmt.Sprintf("Failed to reconnect after %d attempts", ReconnectMaxAttempts),
 		Timestamp: m.clock.Now(),
 	})
+}
+
+// openSourceReader acquires a reader using the source cancellation context and
+// announces successful reconnections. Failed acquisitions are logged and return nil.
+func (m *Manager) openSourceReader(
+	ctx context.Context,
+	ss *sessionState,
+	handler Handler,
+	source LogSource,
+	req LogStreamRequest,
+	logger logging.Logger,
+	attempt int,
+) io.ReadCloser {
+	pctxCopy := *ss.pluginCtx
+	pctxCopy.Context = ctx
+	pctxCopy.Logger = logger
+	reader, err := handler.Handler(&pctxCopy, req)
+	if err != nil {
+		if ctx.Err() == nil {
+			logger.Errorw(ctx, "failed to open log stream", "error", err, "attempt", attempt)
+		}
+		return nil
+	}
+	if reader == nil {
+		logger.Errorw(ctx, "handler returned nil reader without error", "source", source.ID, "attempt", attempt)
+		return nil
+	}
+	if attempt > 0 {
+		m.emitEvent(ss.session.ID, LogStreamEvent{
+			Type:      StreamEventReconnected,
+			SourceID:  source.ID,
+			Message:   "Reconnected",
+			Timestamp: m.clock.Now(),
+		})
+	}
+	return reader
+}
+
+// consumeSourceReader owns the acquired reader until scanning and closure finish.
+// Closure failures are diagnostic; only scanning errors affect retry decisions.
+func (m *Manager) consumeSourceReader(
+	ctx context.Context,
+	ss *sessionState,
+	source LogSource,
+	reader io.ReadCloser,
+	logger logging.Logger,
+) error {
+	err := m.readStream(ctx, ss, source, reader)
+	if closeErr := reader.Close(); closeErr != nil {
+		logger.Warnw(ctx, "failed to close log stream", "error", closeErr, "source", source.ID)
+	}
+	return err
 }
 
 func (m *Manager) readStream(
@@ -1028,16 +1057,8 @@ func (m *Manager) closeAll() {
 // ---------------------------------------------------------------------------
 
 func (m *Manager) updateEnabledSources(ss *sessionState, enabledStr string) {
-	enabledSet := make(map[string]bool)
 	allEnabled := enabledStr == ""
-	if !allEnabled {
-		for _, id := range strings.Split(enabledStr, ",") {
-			id = strings.TrimSpace(id)
-			if id != "" {
-				enabledSet[id] = true
-			}
-		}
-	}
+	enabledSet := enabledSourceIDs(enabledStr)
 
 	var removedEvents []LogStreamEvent
 	ss.sourceMu.Lock()
@@ -1058,11 +1079,11 @@ func (m *Manager) updateEnabledSources(ss *sessionState, enabledStr string) {
 	snap := ss.snapshot()
 	var toRestart []LogSource
 	for _, src := range snap.ActiveSources {
-		shouldBeEnabled := allEnabled || enabledSet[src.ID]
-		if shouldBeEnabled {
-			if _, hasCtx := ss.sourceCtxs[src.ID]; !hasCtx {
-				toRestart = append(toRestart, src)
-			}
+		if !allEnabled && !enabledSet[src.ID] {
+			continue
+		}
+		if _, hasCtx := ss.sourceCtxs[src.ID]; !hasCtx {
+			toRestart = append(toRestart, src)
 		}
 	}
 	ss.sourceMu.Unlock()
@@ -1099,4 +1120,17 @@ func (m *Manager) updateEnabledSources(ss *sessionState, enabledStr string) {
 			Timestamp: m.clock.Now(),
 		})
 	}
+}
+
+// enabledSourceIDs parses explicit source selections. An empty selection is
+// interpreted separately by updateEnabledSources as enabling every source.
+func enabledSourceIDs(selection string) map[string]bool {
+	enabled := make(map[string]bool)
+	for id := range strings.SplitSeq(selection, ",") {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			enabled[id] = true
+		}
+	}
+	return enabled
 }

@@ -33,9 +33,9 @@ func logsPluginContext(ctx context.Context) *types.PluginContext {
 	if pc == nil {
 		return &types.PluginContext{Context: ctx}
 	}
-	copy := *pc
-	copy.Context = ctx
-	return &copy
+	bound := *pc
+	bound.Context = ctx
+	return &bound
 }
 
 // GetSupportedResources returns the provider's registered log handlers.
@@ -102,8 +102,8 @@ func (s *PluginServer) CreateResourceSession(
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	pctx := logsPluginContext(ctx)
-	if err := validateRoute(pctx, opts); err != nil {
-		return nil, resourceplugin.ResourceRPCError(err)
+	if routeErr := validateRoute(pctx, opts); routeErr != nil {
+		return nil, resourceplugin.ResourceRPCError(routeErr)
 	}
 	provider, ok := s.Impl.(ResourceSessionProvider)
 	if !ok {
@@ -113,8 +113,8 @@ func (s *PluginServer) CreateResourceSession(
 	if err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
-	if err := validateResourceSessionResult(session); err != nil {
-		return nil, resourceplugin.ResourceRPCError(err)
+	if resultErr := validateResourceSessionResult(session); resultErr != nil {
+		return nil, resourceplugin.ResourceRPCError(resultErr)
 	}
 	response := &logspb.ResourceLogSessionResponse{
 		ResourceWireVersion: ResourceSessionWireVersion,

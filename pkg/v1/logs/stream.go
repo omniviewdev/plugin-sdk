@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 

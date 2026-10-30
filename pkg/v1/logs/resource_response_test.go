@@ -2,6 +2,7 @@ package logs
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 
 type responseLogServer struct {
 	logspb.UnimplementedLogPluginServer
+
 	response *logspb.ResourceLogSessionResponse
 }
 
@@ -36,11 +38,19 @@ func (c malformedLogResponseCodec) Marshal(message any) ([]byte, error) {
 	if _, ok := message.(*logspb.ResourceLogSessionResponse); ok {
 		return c.data, nil
 	}
-	return proto.Marshal(message.(proto.Message))
+	value, ok := message.(proto.Message)
+	if !ok {
+		return nil, fmt.Errorf("unexpected protobuf message type %T", message)
+	}
+	return proto.Marshal(value)
 }
 
 func (c malformedLogResponseCodec) Unmarshal(data []byte, message any) error {
-	return proto.Unmarshal(data, message.(proto.Message))
+	value, ok := message.(proto.Message)
+	if !ok {
+		return fmt.Errorf("unexpected protobuf message type %T", message)
+	}
+	return proto.Unmarshal(data, value)
 }
 
 func TestResourceLogsMalformedResponseBeforeDecode(t *testing.T) {
@@ -48,7 +58,11 @@ func TestResourceLogsMalformedResponseBeforeDecode(t *testing.T) {
 		listener := bufconn.Listen(1 << 20)
 		server := grpc.NewServer(grpc.ForceServerCodec(malformedLogResponseCodec{data}))
 		logspb.RegisterLogPluginServer(server, responseLogServer{})
-		go server.Serve(listener)
+		go func() {
+			if err := server.Serve(listener); err != nil {
+				t.Errorf("serve logs: %v", err)
+			}
+		}()
 		connection, err := grpc.NewClient(
 			"passthrough:///invalid-logs-response",
 			grpc.WithTransportCredentials(insecure.NewCredentials()),

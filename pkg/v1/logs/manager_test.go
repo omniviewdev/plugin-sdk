@@ -146,7 +146,7 @@ func TestRapidCreateCloseNoLeak(t *testing.T) {
 
 	before := runtime.NumGoroutine()
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		session := h.CreateSession("container-1")
 		h.CloseSession(session.ID)
 	}
@@ -472,7 +472,7 @@ func TestCloseEmptyManager(t *testing.T) {
 
 // EC-008: ChannelSink respects context cancellation (doesn't block on full channel).
 func TestChannelSinkContextCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	out := make(chan logs.StreamOutput, 1) // tiny buffer
 	sink := logs.NewChannelSink(ctx, out)
 
@@ -562,7 +562,7 @@ func TestStreamCreatesChannelSink(t *testing.T) {
 	})
 	t.Cleanup(mgr.Close)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	in := make(chan logs.StreamInput, 10)
@@ -587,28 +587,20 @@ func TestStreamCreatesChannelSink(t *testing.T) {
 
 	src.Lines <- "hello via stream"
 
-	select {
-	case msg := <-out:
-		if msg.Line == nil {
-			// Could be an event — drain until we get a line
-			for i := 0; i < 10; i++ {
-				select {
-				case msg = <-out:
-					if msg.Line != nil {
-						if msg.Line.Content != "hello via stream" {
-							t.Errorf("content = %q, want %q", msg.Line.Content, "hello via stream")
-						}
-						return
-					}
-				case <-time.After(2 * time.Second):
-					t.Fatal("timed out waiting for line on output channel")
-				}
+	// Source lifecycle events may precede the first line on the shared output.
+	for range 11 {
+		select {
+		case msg := <-out:
+			if msg.Line == nil {
+				continue
 			}
-		} else if msg.Line.Content != "hello via stream" {
-			t.Errorf("content = %q, want %q", msg.Line.Content, "hello via stream")
+			if msg.Line.Content != "hello via stream" {
+				t.Errorf("content = %q, want %q", msg.Line.Content, "hello via stream")
+			}
+			return
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for line on output channel")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for output on stream channel")
 	}
 }
 
@@ -631,7 +623,7 @@ func TestStreamHandleCommands(t *testing.T) {
 	})
 	t.Cleanup(mgr.Close)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	in := make(chan logs.StreamInput, 10)
@@ -695,7 +687,7 @@ func TestStreamCommandUnknownSession(t *testing.T) {
 	mgr := logs.NewManager(logs.ManagerConfig{Sink: output})
 	t.Cleanup(mgr.Close)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	in := make(chan logs.StreamInput, 10)
@@ -727,7 +719,7 @@ func TestStreamContextCancelTriggersCloseAll(t *testing.T) {
 		Sink: output,
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	in := make(chan logs.StreamInput, 10)
 	_, err := mgr.Stream(ctx, in)
 	if err != nil {
@@ -859,7 +851,7 @@ func TestWatchSourceEventsAddSource(t *testing.T) {
 func TestWatchSourceEventsRemoveSource(t *testing.T) {
 	src := logtest.NewTestLogSource()
 
-	handler := logs.LogHandlerFunc(func(pctx *types.PluginContext, req logs.LogStreamRequest) (io.ReadCloser, error) {
+	handler := logs.LogHandlerFunc(func(pctx *types.PluginContext, _ logs.LogStreamRequest) (io.ReadCloser, error) {
 		return src.ReaderFunc(pctx)
 	})
 
@@ -937,7 +929,7 @@ func TestWatchSourceEventsRemoveSource(t *testing.T) {
 func TestWatchSourceEventsChannelClose(t *testing.T) {
 	src := logtest.NewTestLogSource()
 
-	handler := logs.LogHandlerFunc(func(pctx *types.PluginContext, req logs.LogStreamRequest) (io.ReadCloser, error) {
+	handler := logs.LogHandlerFunc(func(pctx *types.PluginContext, _ logs.LogStreamRequest) (io.ReadCloser, error) {
 		return src.ReaderFunc(pctx)
 	})
 
@@ -988,7 +980,7 @@ func TestWatchSourceEventsChannelClose(t *testing.T) {
 func TestUpdateEnabledSourcesDisableOne(t *testing.T) {
 	src := logtest.NewTestLogSource()
 
-	handler := logs.LogHandlerFunc(func(pctx *types.PluginContext, req logs.LogStreamRequest) (io.ReadCloser, error) {
+	handler := logs.LogHandlerFunc(func(pctx *types.PluginContext, _ logs.LogStreamRequest) (io.ReadCloser, error) {
 		return src.ReaderFunc(pctx)
 	})
 
@@ -1242,7 +1234,7 @@ func TestReadStreamPausedSkipsLines(t *testing.T) {
 	})
 	t.Cleanup(mgr.Close)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	in := make(chan logs.StreamInput, 10)
@@ -1331,7 +1323,7 @@ func TestListSessionsWithActiveSessions(t *testing.T) {
 
 	// Create 3 sessions
 	ids := make([]string, 3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{
 			ResourceKey: "pod",
 			ResourceID:  fmt.Sprintf("pod-%d", i),
@@ -1514,16 +1506,16 @@ func TestConcurrentSessionOperations(t *testing.T) {
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
 
-	const N = 20
+	const sessionCount = 20
 
 	type createResult struct {
 		sessionID string
 		err       error
 	}
-	results := make(chan createResult, N)
+	results := make(chan createResult, sessionCount)
 
 	// Concurrent creates
-	for i := 0; i < N; i++ {
+	for i := range sessionCount {
 		go func(i int) {
 			session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{
 				ResourceKey: "pod",
@@ -1539,8 +1531,8 @@ func TestConcurrentSessionOperations(t *testing.T) {
 	}
 
 	// Wait for all creates
-	ids := make([]string, 0, N)
-	for i := 0; i < N; i++ {
+	ids := make([]string, 0, sessionCount)
+	for range sessionCount {
 		r := <-results
 		if r.err != nil {
 			t.Error(r.err)
@@ -1552,7 +1544,7 @@ func TestConcurrentSessionOperations(t *testing.T) {
 	// Concurrent reads
 	m := len(ids)
 	errs := make(chan error, m*2)
-	for i := 0; i < m; i++ {
+	for i := range m {
 		id := ids[i]
 		go func(id string) {
 			_, err := mgr.GetSession(pctx, id)
@@ -1564,7 +1556,7 @@ func TestConcurrentSessionOperations(t *testing.T) {
 		}()
 	}
 
-	for i := 0; i < m*2; i++ {
+	for range m * 2 {
 		if err := <-errs; err != nil {
 			t.Error(err)
 		}
@@ -1684,7 +1676,7 @@ func TestHandleCommandsClosedChannelNoSpin(t *testing.T) {
 		Sink: output,
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	in := make(chan logs.StreamInput, 1)
@@ -1899,7 +1891,7 @@ func TestGoroutineCountConverges(t *testing.T) {
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
 	baseline := runtime.NumGoroutine()
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{
 			ResourceKey: "pod",
 			ResourceID:  fmt.Sprintf("pod-%d", i),
@@ -2037,7 +2029,7 @@ func TestWatchSourceEventsExitsOnSessionCancel(t *testing.T) {
 // FAIL-001: Handler returns nil reader without error (defensive nil check).
 func TestHandlerReturnsNilReader(t *testing.T) {
 	handler := logs.LogHandlerFunc(func(_ *types.PluginContext, _ logs.LogStreamRequest) (io.ReadCloser, error) {
-		return nil, nil // Broken handler: nil reader, nil error
+		return nil, nil //nolint:nilnil // Exercise defensive handling of a broken provider returning no reader and no error.
 	})
 
 	output := logtest.NewRecordingOutput()
@@ -2350,9 +2342,9 @@ func TestConcurrentCloseSessionNoDeadlock(t *testing.T) {
 
 	pctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
 
-	const N = 10
-	ids := make([]string, N)
-	for i := 0; i < N; i++ {
+	const sessionCount = 10
+	ids := make([]string, sessionCount)
+	for i := range sessionCount {
 		session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{
 			ResourceKey: "pod",
 			ResourceID:  fmt.Sprintf("pod-%d", i),
@@ -2390,7 +2382,7 @@ func TestConcurrentCloseSessionNoDeadlock(t *testing.T) {
 func TestUpdateEnabledSourcesReEnable(t *testing.T) {
 	src := logtest.NewTestLogSource()
 
-	handler := logs.LogHandlerFunc(func(pctx *types.PluginContext, req logs.LogStreamRequest) (io.ReadCloser, error) {
+	handler := logs.LogHandlerFunc(func(pctx *types.PluginContext, _ logs.LogStreamRequest) (io.ReadCloser, error) {
 		return src.ReaderFunc(pctx)
 	})
 
@@ -2545,7 +2537,7 @@ func BenchmarkCreateCloseSession(b *testing.B) {
 	pctx := types.NewPluginContext(context.Background(), "bench", nil, nil, nil)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{
 			ResourceKey: "pod",
 			ResourceID:  "bench-pod",
@@ -2554,7 +2546,9 @@ func BenchmarkCreateCloseSession(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		_ = mgr.CloseSession(pctx, session.ID)
+		if err := mgr.CloseSession(pctx, session.ID); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -2562,7 +2556,7 @@ func BenchmarkCreateCloseSession(b *testing.B) {
 func BenchmarkHandlerLookup(b *testing.B) {
 	// Build a registry with many handlers to demonstrate O(1) vs O(N).
 	handlers := make(map[string]logs.Handler)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		key := fmt.Sprintf("plugin-%d/resource-%d", i, i)
 		handlers[key] = logs.Handler{Plugin: fmt.Sprintf("plugin-%d", i), Resource: fmt.Sprintf("resource-%d", i)}
 	}
@@ -2574,7 +2568,7 @@ func BenchmarkHandlerLookup(b *testing.B) {
 	defer mgr.Close()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = mgr.GetSupportedResources(nil)
 	}
 }
@@ -2605,10 +2599,14 @@ func BenchmarkSnapshotSession(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	defer mgr.CloseSession(pctx, session.ID)
+	defer func() {
+		if closeErr := mgr.CloseSession(pctx, session.ID); closeErr != nil {
+			b.Error(closeErr)
+		}
+	}()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _ = mgr.GetSession(pctx, session.ID)
 	}
 }

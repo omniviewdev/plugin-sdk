@@ -9,8 +9,8 @@ import (
 func TestReadinessCounterBeyondInt32(t *testing.T) {
 	const sourceCount = int64(1<<31) + 1
 	ss := &sessionState{
-		session: LogSession{ID: "large-session", Status: LogSessionStatusInitializing},
-		totalSources: sourceCount,
+		session:          LogSession{ID: "large-session", Status: LogSessionStatusInitializing},
+		totalSources:     sourceCount,
 		initialSourceIDs: map[string]struct{}{"last-source": {}},
 	}
 	ss.readySources.Store(sourceCount - 1)

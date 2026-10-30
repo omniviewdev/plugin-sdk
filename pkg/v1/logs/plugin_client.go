@@ -33,8 +33,8 @@ func logsClientContext(pc *types.PluginContext) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	copy := *pc
-	return types.WithPluginContext(ctx, &copy)
+	bound := *pc
+	return types.WithPluginContext(ctx, &bound)
 }
 
 // GetSupportedResources lists remote handlers, returning nil when discovery fails.
@@ -193,62 +193,68 @@ func (c *PluginClient) Stream(
 
 	out := make(chan StreamOutput)
 
-	// sender
-	go func() {
-		defer func() {
-			if err := stream.CloseSend(); err != nil {
-				c.log.Error(ctx, "failed to close send log stream", logging.Error(err))
-			}
-		}()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case i, ok := <-in:
-				if !ok {
-					return
-				}
-				if err := stream.Send(i.ToProto()); err != nil {
-					c.log.Error(ctx, "failed to send log stream input", logging.Error(err))
-					return
-				}
-			}
-		}
-	}()
-
-	// receiver
-	go func() {
-		defer close(out)
-		for {
-			resp, err := stream.Recv()
-			if errors.Is(err, io.EOF) {
-				return
-			}
-			if err != nil {
-				c.log.Error(ctx, "failed to receive log stream output", logging.Error(err))
-				return
-			}
-
-			output := StreamOutput{
-				SessionID: resp.GetSessionId(),
-			}
-
-			switch payload := resp.GetPayload().(type) {
-			case *logspb.LogStreamOutput_Line:
-				line := LogLineFromProto(payload.Line)
-				output.Line = &line
-			case *logspb.LogStreamOutput_Event:
-				event := LogStreamEventFromProto(payload.Event)
-				output.Event = &event
-			}
-
-			select {
-			case out <- output:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	go c.sendStreamInput(ctx, stream, in)
+	go c.receiveStreamOutput(ctx, stream, out)
 
 	return out, nil
+}
+
+func (c *PluginClient) sendStreamInput(
+	ctx context.Context,
+	stream logspb.LogPlugin_StreamClient,
+	in <-chan StreamInput,
+) {
+	defer func() {
+		if err := stream.CloseSend(); err != nil {
+			c.log.Error(ctx, "failed to close send log stream", logging.Error(err))
+		}
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case input, ok := <-in:
+			if !ok {
+				return
+			}
+			if err := stream.Send(input.ToProto()); err != nil {
+				c.log.Error(ctx, "failed to send log stream input", logging.Error(err))
+				return
+			}
+		}
+	}
+}
+
+func (c *PluginClient) receiveStreamOutput(
+	ctx context.Context,
+	stream logspb.LogPlugin_StreamClient,
+	out chan<- StreamOutput,
+) {
+	defer close(out)
+	for {
+		resp, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return
+		}
+		if err != nil {
+			c.log.Error(ctx, "failed to receive log stream output", logging.Error(err))
+			return
+		}
+
+		output := StreamOutput{SessionID: resp.GetSessionId()}
+		switch payload := resp.GetPayload().(type) {
+		case *logspb.LogStreamOutput_Line:
+			line := LogLineFromProto(payload.Line)
+			output.Line = &line
+		case *logspb.LogStreamOutput_Event:
+			event := LogStreamEventFromProto(payload.Event)
+			output.Event = &event
+		}
+
+		select {
+		case out <- output:
+		case <-ctx.Done():
+			return
+		}
+	}
 }

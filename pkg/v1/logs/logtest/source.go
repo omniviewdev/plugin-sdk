@@ -8,10 +8,11 @@ import (
 	"time"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	logs "github.com/omniviewdev/plugin-sdk/pkg/v1/logs"
 )
+
+const testSourceBufferSize = 100
 
 // TestLogSource is a programmable log source for testing.
 // Feed lines via the Lines channel and inject events via the Events channel.
@@ -32,8 +33,8 @@ type TestLogSource struct {
 // NewTestLogSource creates a TestLogSource with buffered channels.
 func NewTestLogSource() *TestLogSource {
 	return &TestLogSource{
-		Lines:  make(chan string, 100),
-		Events: make(chan logs.LogStreamEvent, 100),
+		Lines:  make(chan string, testSourceBufferSize),
+		Events: make(chan logs.LogStreamEvent, testSourceBufferSize),
 	}
 }
 
@@ -108,7 +109,7 @@ func (r *channelReader) Read(p []byte) (int, error) {
 		if !strings.HasSuffix(line, "\n") {
 			line += "\n"
 		}
-		n := copy(p, []byte(line))
+		n := copy(p, line)
 		if n < len(line) {
 			r.buf = []byte(line[n:])
 		}
@@ -161,7 +162,6 @@ func Line(content string, opts ...LineOption) string {
 
 type lineConfig struct {
 	timestamp time.Time
-	level     logs.LogLevel
 }
 
 // LineOption configures a test log line.

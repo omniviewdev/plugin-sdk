@@ -43,8 +43,8 @@ func newHandlerRegistry(
 		// Extract resource key from "plugin/resource" format.
 		// When multiple plugins register the same resource suffix,
 		// choose the lexicographically smallest fullKey for determinism.
-		if parts := strings.SplitN(fullKey, "/", 2); len(parts) == 2 {
-			existing, ok := r.index[parts[1]]
+		if _, resourceKey, found := strings.Cut(fullKey, "/"); found {
+			existing, ok := r.index[resourceKey]
 			if ok {
 				// Always log collisions regardless of which key wins.
 				winner, loser := fullKey, existing
@@ -52,20 +52,18 @@ func newHandlerRegistry(
 					winner, loser = existing, fullKey
 				}
 				r.log.Warnw(context.Background(), "resource handler key collision",
-					"resource", parts[1],
+					"resource", resourceKey,
 					"winner", winner,
 					"shadowed", loser,
 				)
 			}
 			if !ok || fullKey < existing {
-				r.index[parts[1]] = fullKey
+				r.index[resourceKey] = fullKey
 			}
 		}
 	}
 
-	for key, resolver := range resolvers {
-		r.resolvers[key] = resolver
-	}
+	maps.Copy(r.resolvers, resolvers)
 
 	return r
 }

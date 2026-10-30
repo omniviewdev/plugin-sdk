@@ -104,7 +104,8 @@ func (o CreateSessionOptions) ToProto() (*logspb.CreateLogSessionRequest, error)
 		if e != nil {
 			return nil, e
 		}
-		size += protowire.SizeTag(5) + protowire.SizeBytes(n)
+		const resourceDataField protowire.Number = 5
+		size += protowire.SizeTag(resourceDataField) + protowire.SizeBytes(n)
 	}
 	if size > resourcev2.MaxMessageBytes {
 		return nil, resourceError("RESOURCE_LIMIT", "Logs frame exceeds wire limit.")
@@ -122,20 +123,8 @@ func (o CreateSessionOptions) ToProto() (*logspb.CreateLogSessionRequest, error)
 // Optional reference, route, and body presence survives conversion.
 func CreateSessionOptionsFromProto(p *logspb.CreateLogSessionRequest) (CreateSessionOptions, error) {
 	var o CreateSessionOptions
-	if p == nil {
-		return o, resourceError("INVALID_REQUEST", "Request must not be nil.")
-	}
-	if proto.Size(p) > resourcev2.MaxMessageBytes {
-		return o, resourceError("RESOURCE_LIMIT", "Logs frame exceeds wire limit.")
-	}
-	if len(p.ProtoReflect().GetUnknown()) != 0 {
-		return o, resourceError("UNSUPPORTED", "Unknown or retired logs resource field.")
-	}
-	intent := p.ResourceKey != "" || p.ResourceId != "" || p.ResourceData != nil || p.Reference != nil ||
-		p.Route != nil ||
-		p.ResourceWireVersion != 0
-	if intent && p.ResourceWireVersion != ResourceSessionWireVersion {
-		return o, resourceError("UNSUPPORTED", "Unsupported logs resource wire version.")
+	if err := validateSessionRequest(p); err != nil {
+		return o, err
 	}
 	o.ResourceKey, o.ResourceID, o.Options = p.ResourceKey, p.ResourceId, LogSessionOptionsFromProto(p.Options)
 	if err := o.Validate(); err != nil {
@@ -171,6 +160,24 @@ func CreateSessionOptionsFromProto(p *logspb.CreateLogSessionRequest) (CreateSes
 		o.ResourceData = &v
 	}
 	return o, o.Validate()
+}
+
+func validateSessionRequest(p *logspb.CreateLogSessionRequest) error {
+	if p == nil {
+		return resourceError("INVALID_REQUEST", "Request must not be nil.")
+	}
+	if proto.Size(p) > resourcev2.MaxMessageBytes {
+		return resourceError("RESOURCE_LIMIT", "Logs frame exceeds wire limit.")
+	}
+	if len(p.ProtoReflect().GetUnknown()) != 0 {
+		return resourceError("UNSUPPORTED", "Unknown or retired logs resource field.")
+	}
+	intent := p.ResourceKey != "" || p.ResourceId != "" || p.ResourceData != nil ||
+		p.Reference != nil || p.Route != nil || p.ResourceWireVersion != 0
+	if intent && p.ResourceWireVersion != ResourceSessionWireVersion {
+		return resourceError("UNSUPPORTED", "Unsupported logs resource wire version.")
+	}
+	return nil
 }
 
 func validateResourceSessionResult(s *LogSession) error {

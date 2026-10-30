@@ -95,7 +95,7 @@ func TestRecordingOutputWaitForLines(t *testing.T) {
 	output := logtest.NewRecordingOutput()
 
 	go func() {
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			time.Sleep(20 * time.Millisecond)
 			output.RecordLine(logs.LogLine{Content: "line"})
 		}

@@ -2,6 +2,7 @@ package logs
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"net"
@@ -33,7 +34,11 @@ func logsConnection(t *testing.T, register func(*grpc.Server)) *grpc.ClientConn 
 	)
 	register(server)
 	listener := bufconn.Listen(1 << 20)
-	go server.Serve(listener)
+	go func() {
+		if err := server.Serve(listener); err != nil {
+			t.Errorf("serve logs: %v", err)
+		}
+	}()
 	connection, err := grpc.NewClient(
 		"passthrough:///logs",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -71,95 +76,101 @@ func exactLogBody() *resourcev2.Value {
 func TestResourceLogsActualGRPCNativeCallbacks(t *testing.T) {
 	for _, resolverMode := range []bool{false, true} {
 		t.Run(map[bool]string{false: "builder", true: "resolver"}[resolverMode], func(t *testing.T) {
-			body := exactLogBody()
-			reference := &resourcev2.ResourceReference{
-				Address: resourcev2.ResourceAddress{
-					Provider:  "provider",
-					Authority: "host-issued",
-					Type:      "opaque::pod",
-					Scope:     []resourcev2.ScopeEntry{},
-					ID:        "opaque/id",
-				},
+			testResourceLogsNativeCallbacks(t, resolverMode)
+		})
+	}
+}
+
+// testResourceLogsNativeCallbacks keeps setup and teardown inside each transport case.
+func testResourceLogsNativeCallbacks(t *testing.T, resolverMode bool) {
+	t.Helper()
+	body := exactLogBody()
+	reference := &resourcev2.ResourceReference{
+		Address: resourcev2.ResourceAddress{
+			Provider:  "provider",
+			Authority: "host-issued",
+			Type:      "opaque::pod",
+			Scope:     []resourcev2.ScopeEntry{},
+			ID:        "opaque/id",
+		},
+	}
+	route := &resourcev2.AccessRoute{Connection: "explicit"}
+	seen := make(chan *resourcev2.Value, 2)
+	handler := Handler{
+		Resource: "opaque::pod",
+		Handler: func(ctx *types.PluginContext, request LogStreamRequest) (io.ReadCloser, error) {
+			assertNativeLogContext(t, ctx)
+			if !reflect.DeepEqual(request.Reference, reference) || !reflect.DeepEqual(request.Route, route) {
+				t.Error("native handler lost actual resource bindings")
 			}
-			route := &resourcev2.AccessRoute{Connection: "explicit"}
-			seen := make(chan *resourcev2.Value, 2)
-			handler := Handler{
-				Resource: "opaque::pod",
-				Handler: func(ctx *types.PluginContext, request LogStreamRequest) (io.ReadCloser, error) {
-					if ctx == nil || ctx.Context == nil || ctx.Connection == nil || ctx.Connection.ID != "explicit" ||
-						ctx.Connection.Data["configured"] != true {
-						t.Error("native handler lost actual RPC context or connection")
-					}
-					if !reflect.DeepEqual(request.Reference, reference) || !reflect.DeepEqual(request.Route, route) {
-						t.Error("native handler lost actual resource bindings")
-					}
-					seen <- request.ResourceData
-					return io.NopCloser(strings.NewReader("native line\n")), nil
-				},
-			}
-			handler.SourceBuilder = func(id string, value *resourcev2.Value, options LogSessionOptions) []LogSource {
-				if !reflect.DeepEqual(options.Reference, reference) || !reflect.DeepEqual(options.Route, route) {
-					t.Error("native builder lost actual resource bindings")
+			seen <- request.ResourceData
+			return io.NopCloser(strings.NewReader("native line\n")), nil
+		},
+	}
+	handler.SourceBuilder = func(id string, value *resourcev2.Value, options LogSessionOptions) []LogSource {
+		if !reflect.DeepEqual(options.Reference, reference) || !reflect.DeepEqual(options.Route, route) {
+			t.Error("native builder lost actual resource bindings")
+		}
+		seen <- value
+		return []LogSource{{ID: id}}
+	}
+	config := ManagerConfig{Handlers: map[string]Handler{"logs/opaque::pod": handler}, Sink: nativeLogSink{}}
+	if resolverMode {
+		config.Handlers = map[string]Handler{"logs/source": {Resource: "source", Handler: handler.Handler}}
+		config.Resolvers = map[string]SourceResolver{
+			"opaque::pod": func(_ *types.PluginContext, value *resourcev2.Value, options SourceResolverOptions) (*SourceResolverResult, error) {
+				if !reflect.DeepEqual(options.Reference, reference) ||
+					!reflect.DeepEqual(options.Route, route) {
+					t.Error("native resolver lost actual resource bindings")
 				}
 				seen <- value
-				return []LogSource{{ID: id}}
-			}
-			config := ManagerConfig{Handlers: map[string]Handler{"logs/opaque::pod": handler}, Sink: nativeLogSink{}}
-			if resolverMode {
-				config.Handlers = map[string]Handler{"logs/source": {Resource: "source", Handler: handler.Handler}}
-				config.Resolvers = map[string]SourceResolver{
-					"opaque::pod": func(_ *types.PluginContext, value *resourcev2.Value, options SourceResolverOptions) (*SourceResolverResult, error) {
-						if !reflect.DeepEqual(options.Reference, reference) ||
-							!reflect.DeepEqual(options.Route, route) {
-							t.Error("native resolver lost actual resource bindings")
-						}
-						seen <- value
-						return &SourceResolverResult{Sources: []LogSource{{ID: "source"}}}, nil
-					},
-				}
-			}
-			manager := NewManager(config)
-			controller, revision := logsSourceController(t)
-			manager.BindConnectionContextProvider(controller)
-			t.Cleanup(manager.Close)
-			connection := logsConnection(
-				t,
-				func(s *grpc.Server) { RegisterLogPluginServer(s, &PluginServer{Impl: manager}) },
-			)
-			client := &PluginClient{client: logspb.NewLogPluginClient(connection)}
-			ctx := types.NewPluginContext(
-				resourcev2.WithCatalogRevision(context.Background(), revision),
-				"logs",
-				nil,
-				nil,
-				nil,
-			)
-			ctx.Connection = &types.Connection{ID: "explicit"}
-			session, err := client.CreateSession(
-				ctx,
-				CreateSessionOptions{
-					ResourceKey:  "opaque::pod",
-					ResourceID:   "opaque/id",
-					ResourceData: body,
-					Reference:    reference,
-					Route:        route,
-				},
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer manager.CloseSession(ctx, session.ID)
-			for range 2 {
-				select {
-				case got := <-seen:
-					if !reflect.DeepEqual(got, body) || !math.Signbit(got.Map["nested"].List[0].Double) {
-						t.Fatal("native callback changed canonical body")
-					}
-				case <-time.After(5 * time.Second):
-					t.Fatal("native callback missing")
-				}
-			}
-		})
+				return &SourceResolverResult{Sources: []LogSource{{ID: "source"}}}, nil
+			},
+		}
+	}
+	manager := NewManager(config)
+	controller, revision := logsSourceController(t)
+	manager.BindConnectionContextProvider(controller)
+	t.Cleanup(manager.Close)
+	connection := logsConnection(
+		t,
+		func(s *grpc.Server) { RegisterLogPluginServer(s, &PluginServer{Impl: manager}) },
+	)
+	client := &PluginClient{client: logspb.NewLogPluginClient(connection)}
+	ctx := types.NewPluginContext(
+		resourcev2.WithCatalogRevision(context.Background(), revision),
+		"logs",
+		nil,
+		nil,
+		nil,
+	)
+	ctx.Connection = &types.Connection{ID: "explicit"}
+	session, err := client.CreateSession(
+		ctx,
+		CreateSessionOptions{
+			ResourceKey:  "opaque::pod",
+			ResourceID:   "opaque/id",
+			ResourceData: body,
+			Reference:    reference,
+			Route:        route,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if closeErr := manager.CloseSession(ctx, session.ID); closeErr != nil {
+			t.Errorf("close session: %v", closeErr)
+		}
+	}()
+	assertCanonicalLogCallbacks(t, seen, body)
+}
+
+func assertNativeLogContext(t *testing.T, ctx *types.PluginContext) {
+	t.Helper()
+	if ctx == nil || ctx.Context == nil || ctx.Connection == nil || ctx.Connection.ID != "explicit" ||
+		ctx.Connection.Data["configured"] != true {
+		t.Error("native handler lost actual RPC context or connection")
 	}
 }
 
@@ -186,11 +197,11 @@ func logsSourceController(t *testing.T) (*resourcev2.Controller[string], string)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = controller.Close() })
-	if _, err := controller.LoadConnections(context.Background()); err != nil {
-		t.Fatal(err)
+	if _, loadErr := controller.LoadConnections(context.Background()); loadErr != nil {
+		t.Fatal(loadErr)
 	}
-	if _, err := controller.StartConnection(context.Background(), "explicit"); err != nil {
-		t.Fatal(err)
+	if _, startErr := controller.StartConnection(context.Background(), "explicit"); startErr != nil {
+		t.Fatal(startErr)
 	}
 	catalog, err := controller.Catalog(
 		context.Background(),
@@ -262,7 +273,11 @@ func TestResourceLogsCatalogAdmissionBeforeNative(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer manager.CloseSession(pc, session.ID)
+	defer func() {
+		if closeErr := manager.CloseSession(pc, session.ID); closeErr != nil {
+			t.Errorf("close session: %v", closeErr)
+		}
+	}()
 	select {
 	case <-native:
 	case <-time.After(5 * time.Second):
@@ -325,6 +340,7 @@ func TestResourceLogsPostFenceClosesCreatedSession(t *testing.T) {
 
 type oldLogServer struct {
 	logspb.UnimplementedLogPluginServer
+
 	calls atomic.Int32
 }
 
@@ -354,7 +370,11 @@ type rawLogsCodec struct{ data []byte }
 func (c rawLogsCodec) Name() string                { return "proto" }
 func (c rawLogsCodec) Marshal(any) ([]byte, error) { return c.data, nil }
 func (c rawLogsCodec) Unmarshal(data []byte, message any) error {
-	return proto.Unmarshal(data, message.(proto.Message))
+	value, ok := message.(proto.Message)
+	if !ok {
+		return fmt.Errorf("unexpected protobuf message type %T", message)
+	}
+	return proto.Unmarshal(data, value)
 }
 
 func TestResourceLogsMalformedDefaultProtoBeforeNative(t *testing.T) {
@@ -432,5 +452,20 @@ func TestLogsRPCContextLifetime(t *testing.T) {
 	if outgoing.Err() != context.Canceled || native.Context.Err() != context.Canceled ||
 		bare.Context.Err() != context.Canceled {
 		t.Fatal("logs contexts lost RPC cancellation")
+	}
+}
+
+// assertCanonicalLogCallbacks waits for both native acquisition stages before teardown.
+func assertCanonicalLogCallbacks(t *testing.T, seen <-chan *resourcev2.Value, body *resourcev2.Value) {
+	t.Helper()
+	for range 2 {
+		select {
+		case got := <-seen:
+			if !reflect.DeepEqual(got, body) || !math.Signbit(got.Map["nested"].List[0].Double) {
+				t.Fatal("native callback changed canonical body")
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("native callback missing")
+		}
 	}
 }

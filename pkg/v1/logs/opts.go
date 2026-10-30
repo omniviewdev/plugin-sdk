@@ -4,7 +4,6 @@ import (
 	"io"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	commonpb "github.com/omniviewdev/plugin-sdk/proto/v1/common"
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"

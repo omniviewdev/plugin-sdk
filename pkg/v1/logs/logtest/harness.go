@@ -7,10 +7,8 @@ import (
 	"testing"
 	"time"
 
-	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
-
 	logging "github.com/omniviewdev/plugin-sdk/log"
-
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	logs "github.com/omniviewdev/plugin-sdk/pkg/v1/logs"
 )

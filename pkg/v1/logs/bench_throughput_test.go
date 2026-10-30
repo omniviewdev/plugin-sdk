@@ -32,11 +32,6 @@ func (s *countingSink) OnEvent(_ string, _ logs.LogStreamEvent) {
 	s.eventCount.Add(1)
 }
 
-func (s *countingSink) reset() {
-	s.lineCount.Store(0)
-	s.eventCount.Store(0)
-}
-
 // pipeSource writes N lines at maximum speed to an io.Pipe.
 // Unlike channelReader, this has zero channel overhead — it pushes bytes
 // directly through a synchronous pipe, which is what real log streams do.
@@ -49,9 +44,7 @@ func newPipeSource(lineCount int, lineLen int) *pipeSource {
 	// Build a realistic log line: RFC3339 timestamp + content
 	ts := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC).Format(time.RFC3339Nano)
 	contentLen := lineLen - len(ts) - 2 // -2 for space and newline
-	if contentLen < 10 {
-		contentLen = 10
-	}
+	contentLen = max(contentLen, 10)
 	content := strings.Repeat("x", contentLen)
 	line := ts + " " + content + "\n"
 	return &pipeSource{lineCount: lineCount, lineTemplate: line}
@@ -63,7 +56,7 @@ func (p *pipeSource) handler() logs.LogHandlerFunc {
 		pr, pw := io.Pipe()
 		go func() {
 			lineBytes := []byte(p.lineTemplate)
-			for i := 0; i < p.lineCount; i++ {
+			for range p.lineCount {
 				if _, err := pw.Write(lineBytes); err != nil {
 					pw.CloseWithError(err)
 					return
@@ -79,9 +72,7 @@ func (p *pipeSource) handler() logs.LogHandlerFunc {
 func infinitePipeHandler(lineLen int) logs.LogHandlerFunc {
 	ts := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC).Format(time.RFC3339Nano)
 	contentLen := lineLen - len(ts) - 2
-	if contentLen < 10 {
-		contentLen = 10
-	}
+	contentLen = max(contentLen, 10)
 	content := strings.Repeat("x", contentLen)
 	line := []byte(ts + " " + content + "\n")
 
@@ -170,9 +161,7 @@ func BenchmarkMultiSourceFanOut(b *testing.B) {
 		b.Run(fmt.Sprintf("sources=%d", numSources), func(b *testing.B) {
 			sink := &countingSink{}
 			linesPerSource := b.N / numSources
-			if linesPerSource < 1 {
-				linesPerSource = 1
-			}
+			linesPerSource = max(linesPerSource, 1)
 
 			sourceIDs := make([]string, numSources)
 			for i := range sourceIDs {
@@ -235,9 +224,7 @@ func BenchmarkMultiSession(b *testing.B) {
 		b.Run(fmt.Sprintf("sessions=%d", numSessions), func(b *testing.B) {
 			sink := &countingSink{}
 			linesPerSession := b.N / numSessions
-			if linesPerSession < 1 {
-				linesPerSession = 1
-			}
+			linesPerSession = max(linesPerSession, 1)
 
 			src := newPipeSource(linesPerSession, 200)
 			mgr := logs.NewManager(logs.ManagerConfig{
@@ -260,7 +247,7 @@ func BenchmarkMultiSession(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 
-			for i := 0; i < numSessions; i++ {
+			for i := range numSessions {
 				_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{
 					ResourceKey: "pod",
 					ResourceID:  fmt.Sprintf("pod-%d", i),
@@ -311,9 +298,7 @@ func BenchmarkStressCombined(b *testing.B) {
 			sink := &countingSink{}
 			totalStreams := sc.sessions * sc.sourcesPerSession
 			linesPerStream := b.N / totalStreams
-			if linesPerStream < 1 {
-				linesPerStream = 1
-			}
+			linesPerStream = max(linesPerStream, 1)
 
 			sourceIDs := make([]string, sc.sourcesPerSession)
 			for i := range sourceIDs {
@@ -339,7 +324,7 @@ func BenchmarkStressCombined(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 
-			for i := 0; i < sc.sessions; i++ {
+			for i := range sc.sessions {
 				_, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{
 					ResourceKey: "pod",
 					ResourceID:  fmt.Sprintf("pod-%d", i),
@@ -410,7 +395,7 @@ func BenchmarkSustainedThroughputGC(b *testing.B) {
 	runtime.ReadMemStats(&gcBefore)
 
 	sessionIDs := make([]string, numSessions)
-	for i := 0; i < numSessions; i++ {
+	for i := range numSessions {
 		session, err := mgr.CreateResourceSession(pctx, logs.CreateSessionOptions{
 			ResourceKey: "pod",
 			ResourceID:  fmt.Sprintf("pod-%d", i),
@@ -478,7 +463,7 @@ func BenchmarkExtractTimestamp(b *testing.B) {
 			lineBytes := []byte(line)
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_, _ = logs.ExtractTimestampForBench(lineBytes)
 			}
 		})
@@ -495,7 +480,7 @@ func BenchmarkExtractTimestamp(b *testing.B) {
 func BenchmarkChannelSinkThroughput(b *testing.B) {
 	for _, bufSize := range []int{256, 1024, 4096} {
 		b.Run(fmt.Sprintf("bufSize=%d", bufSize), func(b *testing.B) {
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(b.Context())
 			defer cancel()
 
 			out := make(chan logs.StreamOutput, bufSize)
@@ -521,7 +506,7 @@ func BenchmarkChannelSinkThroughput(b *testing.B) {
 			b.ResetTimer()
 			b.ReportAllocs()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				sink.OnLine(line)
 			}
 
@@ -549,7 +534,7 @@ func BenchmarkScannerBufferAlloc(b *testing.B) {
 			var gcBefore, gcAfter runtime.MemStats
 
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for i := range b.N {
 				runtime.GC()
 				runtime.ReadMemStats(&gcBefore)
 

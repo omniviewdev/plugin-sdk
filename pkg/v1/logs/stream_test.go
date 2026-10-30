@@ -10,8 +10,8 @@ import (
 // LV-001: LogLevel.ToProto() round-trips all 7 values.
 func TestLogLevelToProtoRoundTrip(t *testing.T) {
 	levels := []struct {
-		go_   LogLevel
-		proto logspb.LogLevel
+		native LogLevel
+		proto  logspb.LogLevel
 	}{
 		{LogLevelUnspecified, logspb.LogLevel_LOG_LEVEL_UNSPECIFIED},
 		{LogLevelTrace, logspb.LogLevel_LOG_LEVEL_TRACE},
@@ -23,13 +23,13 @@ func TestLogLevelToProtoRoundTrip(t *testing.T) {
 	}
 
 	for _, tc := range levels {
-		got := tc.go_.ToProto()
+		got := tc.native.ToProto()
 		if got != tc.proto {
-			t.Errorf("LogLevel(%d).ToProto() = %v, want %v", tc.go_, got, tc.proto)
+			t.Errorf("LogLevel(%d).ToProto() = %v, want %v", tc.native, got, tc.proto)
 		}
 		back := LogLevelFromProto(got)
-		if back != tc.go_ {
-			t.Errorf("LogLevelFromProto(%v) = %d, want %d", got, back, tc.go_)
+		if back != tc.native {
+			t.Errorf("LogLevelFromProto(%v) = %d, want %d", got, back, tc.native)
 		}
 	}
 }
@@ -149,7 +149,7 @@ func BenchmarkLogLineToProto(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = line.ToProto()
 	}
 }
@@ -167,7 +167,7 @@ func BenchmarkLogLineFromProto(b *testing.B) {
 	p := line.ToProto()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_ = LogLineFromProto(p)
 	}
 }

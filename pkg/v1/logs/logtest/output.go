@@ -119,11 +119,9 @@ func (r *RecordingOutput) WaitForStatus(status logs.LogSessionStatus, timeout ti
 	deadline := time.After(timeout)
 	for {
 		r.mu.Lock()
-		for _, s := range r.statuses {
-			if s == status {
-				r.mu.Unlock()
-				return true
-			}
+		if slices.Contains(r.statuses, status) {
+			r.mu.Unlock()
+			return true
 		}
 		ch := r.getNotifyChanLocked()
 		r.mu.Unlock()

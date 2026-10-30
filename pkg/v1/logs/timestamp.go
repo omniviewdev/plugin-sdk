@@ -5,6 +5,8 @@ import (
 	"unsafe"
 )
 
+const timestampOffsetWidth = len("+00:00")
+
 // extractTimestamp tries to extract a leading timestamp from a log line.
 // Returns the parsed time and the remaining content as a string.
 //
@@ -33,7 +35,7 @@ func extractTimestamp(line []byte) (time.Time, string) {
 
 	// Byte-level structural check: NNNN-NN-NNTNN:NN:NN
 	// Verifying separators at fixed positions is much cheaper than time.Parse.
-	if !(line[4] == '-' && line[7] == '-' && line[10] == 'T' && line[13] == ':' && line[16] == ':') {
+	if line[4] != '-' || line[7] != '-' || line[10] != 'T' || line[13] != ':' || line[16] != ':' {
 		return time.Time{}, string(line)
 	}
 
@@ -115,8 +117,8 @@ func findTimestampEnd(line []byte) int {
 
 	if line[i] == '+' || line[i] == '-' {
 		// Expect at least "+HH:MM" (6 chars)
-		if i+6 <= n {
-			return i + 6
+		if i+timestampOffsetWidth <= n {
+			return i + timestampOffsetWidth
 		}
 		return -1
 	}

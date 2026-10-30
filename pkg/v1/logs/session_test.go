@@ -9,9 +9,9 @@ import (
 // SS-001: LogSessionStatus.ToProto() round-trips CONNECTING, INITIALIZING.
 func TestLogSessionStatusNewValues(t *testing.T) {
 	tests := []struct {
-		name  string
-		go_   LogSessionStatus
-		proto logspb.LogSessionStatus
+		name   string
+		native LogSessionStatus
+		proto  logspb.LogSessionStatus
 	}{
 		{"CONNECTING", LogSessionStatusConnecting, logspb.LogSessionStatus_LOG_SESSION_STATUS_CONNECTING},
 		{"INITIALIZING", LogSessionStatusInitializing, logspb.LogSessionStatus_LOG_SESSION_STATUS_INITIALIZING},
@@ -19,13 +19,13 @@ func TestLogSessionStatusNewValues(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tc.go_.ToProto()
+			got := tc.native.ToProto()
 			if got != tc.proto {
 				t.Errorf("ToProto() = %v, want %v", got, tc.proto)
 			}
 			back := LogSessionStatusFromProto(got)
-			if back != tc.go_ {
-				t.Errorf("FromProto(%v) = %d, want %d", got, back, tc.go_)
+			if back != tc.native {
+				t.Errorf("FromProto(%v) = %d, want %d", got, back, tc.native)
 			}
 		})
 	}
@@ -42,9 +42,9 @@ func TestLogSessionStatusFromProtoUnknown(t *testing.T) {
 // SS-003: All existing status values still convert correctly (regression).
 func TestLogSessionStatusExistingValuesRegression(t *testing.T) {
 	tests := []struct {
-		name  string
-		go_   LogSessionStatus
-		proto logspb.LogSessionStatus
+		name   string
+		native LogSessionStatus
+		proto  logspb.LogSessionStatus
 	}{
 		{"ACTIVE", LogSessionStatusActive, logspb.LogSessionStatus_LOG_SESSION_STATUS_ACTIVE},
 		{"PAUSED", LogSessionStatusPaused, logspb.LogSessionStatus_LOG_SESSION_STATUS_PAUSED},
@@ -54,13 +54,13 @@ func TestLogSessionStatusExistingValuesRegression(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tc.go_.ToProto()
+			got := tc.native.ToProto()
 			if got != tc.proto {
 				t.Errorf("ToProto() = %v, want %v", got, tc.proto)
 			}
 			back := LogSessionStatusFromProto(got)
-			if back != tc.go_ {
-				t.Errorf("FromProto(%v) = %d, want %d", got, back, tc.go_)
+			if back != tc.native {
+				t.Errorf("FromProto(%v) = %d, want %d", got, back, tc.native)
 			}
 		})
 	}
