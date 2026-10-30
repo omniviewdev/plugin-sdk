@@ -28,47 +28,47 @@ func nativeValue(raw json.RawMessage) resource.Value {
 }
 
 func convertNativeValue(x any) resource.Value {
-		switch x := x.(type) {
-		case nil:
-			return resource.Value{Kind: "null"}
-		case bool:
-			return resource.Value{Kind: "bool", Bool: x}
-		case string:
-			return resource.Value{Kind: "string", String: x}
-		case json.Number:
-			if _, err := strconv.ParseInt(string(x), 10, 64); err == nil {
-				return resource.Value{Kind: "int64", Int: string(x)}
-			}
-			if _, err := strconv.ParseUint(string(x), 10, 64); err == nil {
-				return resource.Value{Kind: "uint64", Uint: string(x)}
-			}
-			panic("fixture requires exact native integer")
-		case []any:
-			out := resource.Value{Kind: "list", List: make([]resource.Value, 0, len(x))}
-			for _, item := range x {
-				out.List = append(out.List, convertNativeValue(item))
-			}
-			return out
-		case map[string]any:
-			return nativeMapValue(x)
-		default:
-			panic("unsupported fixture value")
+	switch x := x.(type) {
+	case nil:
+		return resource.Value{Kind: "null"}
+	case bool:
+		return resource.Value{Kind: "bool", Bool: x}
+	case string:
+		return resource.Value{Kind: "string", String: x}
+	case json.Number:
+		if _, err := strconv.ParseInt(string(x), 10, 64); err == nil {
+			return resource.Value{Kind: "int64", Int: string(x)}
 		}
+		if _, err := strconv.ParseUint(string(x), 10, 64); err == nil {
+			return resource.Value{Kind: "uint64", Uint: string(x)}
+		}
+		panic("fixture requires exact native integer")
+	case []any:
+		out := resource.Value{Kind: "list", List: make([]resource.Value, 0, len(x))}
+		for _, item := range x {
+			out.List = append(out.List, convertNativeValue(item))
+		}
+		return out
+	case map[string]any:
+		return nativeMapValue(x)
+	default:
+		panic("unsupported fixture value")
+	}
 }
 
 func nativeMapValue(x map[string]any) resource.Value {
-			out := resource.Value{Kind: "map", Map: make(map[string]resource.Value, len(x))}
-			for k, item := range x {
-				out.Map[k] = convertNativeValue(item)
-				if k == "createdAt" {
-					timestamp, ok := item.(string)
-					if !ok {
-						panic("fixture createdAt must be a native timestamp string")
-					}
-					out.Map[k] = resource.Value{Kind: "timestamp", Timestamp: timestamp}
-				}
+	out := resource.Value{Kind: "map", Map: make(map[string]resource.Value, len(x))}
+	for k, item := range x {
+		out.Map[k] = convertNativeValue(item)
+		if k == "createdAt" {
+			timestamp, ok := item.(string)
+			if !ok {
+				panic("fixture createdAt must be a native timestamp string")
 			}
-			return out
+			out.Map[k] = resource.Value{Kind: "timestamp", Timestamp: timestamp}
+		}
+	}
+	return out
 }
 
 func scopeEntries(scope map[string]string) []resource.ScopeEntry {

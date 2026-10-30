@@ -263,11 +263,11 @@ func (c *Corpus) addIdentityOracleRecords() {
 }
 
 func nativeBestEffortCoverage() Coverage {
-		return Coverage{
-			Enumeration: "exhausted",
-			Consistency: consistencyBestEffort,
-			Limitations: []string{"exhaustion is relative to selected access; no atomic multi-page snapshot"},
-		}
+	return Coverage{
+		Enumeration: "exhausted",
+		Consistency: consistencyBestEffort,
+		Limitations: []string{"exhaustion is relative to selected access; no atomic multi-page snapshot"},
+	}
 }
 
 func nativeCloudScenarios() []Scenario {

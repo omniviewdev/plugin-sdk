@@ -21,6 +21,7 @@ const (
 )
 
 // PortForwardProvider manages forwarding sessions and reports supported resource targets.
+//
 //nolint:iface // Both exported contracts retain provider source compatibility and identical method membership.
 type PortForwardProvider interface {
 	GetSupportedPortForwardTargets(*types.PluginContext) ([]string, error)
@@ -48,6 +49,7 @@ type ResourcePortForwardProvider interface {
 
 // Provider embeds the session-management contract shared by local managers and
 // remote clients. Resource forwarding is an optional [ResourcePortForwardProvider].
+//
 //nolint:iface // Keep this exported contract distinct without removing any PortForwardProvider methods.
 type Provider interface {
 	PortForwardProvider

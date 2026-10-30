@@ -345,7 +345,10 @@ func TestControllerApplyConnectionsRetiresChangedAndRemovedClients(t *testing.T)
 	if err != nil || len(connections) != 1 || connections[0].ID != "other" {
 		t.Fatalf("bad inventory: %v %v", connections, err)
 	}
-	if _, updateErr := c.UpdateConnection(context.Background(), types.Connection{ID: "other", Name: "Updated"}); updateErr != nil {
+	if _, updateErr := c.UpdateConnection(
+		context.Background(),
+		types.Connection{ID: "other", Name: "Updated"},
+	); updateErr != nil {
 		t.Fatal(updateErr)
 	}
 	connection, err := c.GetConnection(context.Background(), "other")

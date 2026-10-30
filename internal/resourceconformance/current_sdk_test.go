@@ -485,65 +485,65 @@ func checkNativeProfileOperations(
 	hasGet, hasEnum, hasQuery bool,
 ) {
 	t.Helper()
-			ref := nativeRecord(c.Record(s.Pages[0].Records[0]), s).Reference
-			getter, ok := provider.(resource.Getter)
-			require.True(t, ok)
-			got, getErr := getter.Get(
-				ctx,
-				resource.GetRequest{
-					Route:          resource.AccessRoute{Connection: s.Name},
-					Reference:      ref,
-					Representation: "native",
-				},
-			)
-			if hasGet {
-				require.NoError(t, getErr)
-				require.Equal(t, nativeRecord(c.Record(s.Pages[0].Records[0]), s), got)
-			} else {
-				requireNativeError(t, getErr, "UNSUPPORTED")
-			}
-			enumerator, ok := provider.(resource.Enumerator)
-			require.True(t, ok)
-			_, enumErr := enumerator.Enumerate(ctx, resource.EnumerateRequest{Target: target(s, c)})
-			if hasEnum {
-				require.NoError(t, enumErr)
-			} else {
-				requireNativeError(t, enumErr, "UNSUPPORTED")
-			}
-			input := resource.Value{Kind: "int64", Int: "9007199254740993"}
-			querier, ok := provider.(resource.NativeQuerier)
-			require.True(t, ok)
-			page, queryErr := querier.NativeQuery(
-				ctx,
-				resource.NativeQueryRequest{Target: target(s, c), Language: "fixture.compute.v1", Query: input},
-			)
-			if !hasQuery {
-				requireNativeError(t, queryErr, "UNSUPPORTED")
-				return
-			}
-			require.NoError(t, queryErr)
-			computed := page.Records[0].Body
-			require.Equal(t, resource.Value{Kind: "int64", Int: "9007199254740994"}, computed.Map["computed"])
-			require.NotEqual(t, input, computed)
-			require.Equal(
-				t,
-				resource.Value{Kind: "timestamp", Timestamp: "1969-12-31T23:59:59.999999999Z"},
-				computed.Map["beforeEpoch"],
-			)
-			require.Equal(
-				t,
-				[]resource.Value{
-					{Kind: "uint64", Uint: "18446744073709551615"},
-					{Kind: "null"},
-					{Kind: "bool", Bool: true},
-				},
-				computed.Map["nested"].List,
-			)
-			raw, err := json.Marshal(computed)
-			require.NoError(t, err)
-			var decoded resource.Value
-			require.NoError(t, json.Unmarshal(raw, &decoded))
-			require.Equal(t, computed, decoded)
+	ref := nativeRecord(c.Record(s.Pages[0].Records[0]), s).Reference
+	getter, ok := provider.(resource.Getter)
+	require.True(t, ok)
+	got, getErr := getter.Get(
+		ctx,
+		resource.GetRequest{
+			Route:          resource.AccessRoute{Connection: s.Name},
+			Reference:      ref,
+			Representation: "native",
+		},
+	)
+	if hasGet {
+		require.NoError(t, getErr)
+		require.Equal(t, nativeRecord(c.Record(s.Pages[0].Records[0]), s), got)
+	} else {
+		requireNativeError(t, getErr, "UNSUPPORTED")
+	}
+	enumerator, ok := provider.(resource.Enumerator)
+	require.True(t, ok)
+	_, enumErr := enumerator.Enumerate(ctx, resource.EnumerateRequest{Target: target(s, c)})
+	if hasEnum {
+		require.NoError(t, enumErr)
+	} else {
+		requireNativeError(t, enumErr, "UNSUPPORTED")
+	}
+	input := resource.Value{Kind: "int64", Int: "9007199254740993"}
+	querier, ok := provider.(resource.NativeQuerier)
+	require.True(t, ok)
+	page, queryErr := querier.NativeQuery(
+		ctx,
+		resource.NativeQueryRequest{Target: target(s, c), Language: "fixture.compute.v1", Query: input},
+	)
+	if !hasQuery {
+		requireNativeError(t, queryErr, "UNSUPPORTED")
+		return
+	}
+	require.NoError(t, queryErr)
+	computed := page.Records[0].Body
+	require.Equal(t, resource.Value{Kind: "int64", Int: "9007199254740994"}, computed.Map["computed"])
+	require.NotEqual(t, input, computed)
+	require.Equal(
+		t,
+		resource.Value{Kind: "timestamp", Timestamp: "1969-12-31T23:59:59.999999999Z"},
+		computed.Map["beforeEpoch"],
+	)
+	require.Equal(
+		t,
+		[]resource.Value{
+			{Kind: "uint64", Uint: "18446744073709551615"},
+			{Kind: "null"},
+			{Kind: "bool", Bool: true},
+		},
+		computed.Map["nested"].List,
+	)
+	raw, err := json.Marshal(computed)
+	require.NoError(t, err)
+	var decoded resource.Value
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	require.Equal(t, computed, decoded)
 }
 
 func checkNativeProfileShape(t *testing.T, profile string) (bool, bool, bool) {

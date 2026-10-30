@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	resetRequired = "RESET_REQUIRED"
-	resourceLimit = "RESOURCE_LIMIT"
+	resetRequired       = "RESET_REQUIRED"
+	resourceLimit       = "RESOURCE_LIMIT"
 	tooManyObservations = "Too many route catalog observations."
 )
 

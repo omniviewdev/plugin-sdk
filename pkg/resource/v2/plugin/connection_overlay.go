@@ -19,7 +19,9 @@ func (c *Client) ApplyConnectionOverlay(ctx context.Context, overlay resourcev2.
 	if err := resourcev2.ValidateConnectionOverlay(overlay); err != nil {
 		return err
 	}
-	data, err := json.Marshal(overlay) //nolint:musttag // Nested types.Connection retains its established JSON field names.
+	data, err := json.Marshal(
+		overlay,
+	) //nolint:musttag // Nested types.Connection retains its established JSON field names.
 	if err != nil {
 		return invalid("invalid connection overlay JSON")
 	}

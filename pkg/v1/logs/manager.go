@@ -36,9 +36,9 @@ const (
 	// ReconnectInitialDelay is the first retry's backoff.
 	ReconnectInitialDelay = 1 * time.Second
 	// ReconnectMaxDelay caps exponential retry backoff.
-	ReconnectMaxDelay   = 30 * time.Second
-	sessionCloseTimeout = 10 * time.Second
-	streamOutputBuffer  = 256
+	ReconnectMaxDelay          = 30 * time.Second
+	sessionCloseTimeout        = 10 * time.Second
+	streamOutputBuffer         = 256
 	reconnectBackoffMultiplier = 2
 )
 
