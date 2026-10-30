@@ -106,11 +106,8 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
 	controller := &Controller[T]{
 		cfg:               cfg,
-		ctx:               ctx,
-		cancel:            cancel,
 		connections:       make(map[string]types.Connection),
 		nativeConnections: make(map[string]types.Connection),
 		overrides:         make(map[string]types.Connection),
@@ -119,6 +116,9 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 		clients:           make(map[string]*clientSlot[T]),
 		failedStarts:      make(map[string]bool),
 	}
+	// Close owns cancellation after construction; the controller outlives this call.
+	//nolint:gosec // G118: Close cancels the owned controller lifetime.
+	controller.ctx, controller.cancel = context.WithCancel(context.Background())
 	controller.catalogNonce = nonce
 	controller.updates = newUpdateManager(controller)
 	return controller, nil

@@ -51,7 +51,9 @@ type ResourceReference struct {
 type ScopeMatch string
 
 const (
-	ScopeAny   ScopeMatch = "any"
+	// ScopeAny selects every value of one declared query dimension.
+	ScopeAny ScopeMatch = "any"
+	// ScopeOneOf selects exactly Values; an empty selection matches nothing.
 	ScopeOneOf ScopeMatch = "oneOf"
 )
 
@@ -148,15 +150,22 @@ type Dimension struct {
 type Operation string
 
 const (
-	OperationEnumerate   Operation = "enumerate"
-	OperationGet         Operation = "get"
+	// OperationEnumerate advertises scoped native enumeration, not final host query membership.
+	OperationEnumerate Operation = "enumerate"
+	// OperationGet advertises acquisition of one exact canonical reference.
+	OperationGet Operation = "get"
+	// OperationNativeQuery advertises provider-native query execution.
 	OperationNativeQuery Operation = "nativeQuery"
 	// OperationUpdate describes advisory watch delivery, not mutation.
-	OperationUpdate         Operation = "update"
-	OperationCreate         Operation = "create"
+	OperationUpdate Operation = "update"
+	// OperationCreate admits only the create mutation verb.
+	OperationCreate Operation = "create"
+	// OperationMutationUpdate admits only the update mutation verb, never advisory delivery.
 	OperationMutationUpdate Operation = "mutationUpdate"
-	OperationDelete         Operation = "delete"
-	OperationAction         Operation = "action"
+	// OperationDelete admits only the delete mutation verb.
+	OperationDelete Operation = "delete"
+	// OperationAction advertises action dispatch; action descriptors define available actions.
+	OperationAction Operation = "action"
 )
 
 // Capability advertises one operation over an explicit query scope. Supporting
@@ -201,7 +210,8 @@ type NativeAuthorityHint struct {
 const (
 	// ContinuityConnectionLocal makes no identity continuity claim across connections.
 	ContinuityConnectionLocal = "connectionLocal"
-	ContinuityStableNative    = "stableNative"
+	// ContinuityStableNative claims native identity continuity; the host still assigns authority.
+	ContinuityStableNative = "stableNative"
 )
 
 // Catalog describes support observed through the requested route. Revision is
@@ -418,5 +428,5 @@ func SessionFromContext(ctx context.Context) (Session, bool) {
 
 // TimestampValue constructs an exact timestamp without floating-point seconds.
 func TimestampValue(t time.Time) Value {
-	return Value{Kind: "timestamp", Timestamp: t.UTC().Format(time.RFC3339Nano)}
+	return Value{Kind: valueKindTimestamp, Timestamp: t.UTC().Format(time.RFC3339Nano)}
 }

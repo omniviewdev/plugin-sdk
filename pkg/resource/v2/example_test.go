@@ -105,7 +105,7 @@ func ExampleLifecycle() {
 			LoadConnections: func(context.Context) ([]types.Connection, error) {
 				return []types.Connection{{ID: "profile", Name: "Example"}}, nil
 			},
-			CreateClient: func(ctx context.Context, profile types.Connection) (*exampleClient, error) {
+			CreateClient: func(ctx context.Context, _ types.Connection) (*exampleClient, error) {
 				// Real constructors use ctx and profile for native acquisition.
 				return &exampleClient{}, ctx.Err()
 			},
@@ -120,11 +120,11 @@ func ExampleLifecycle() {
 	}
 	defer provider.Close()
 	ctx := context.Background()
-	if _, err := provider.LoadConnections(ctx); err != nil {
-		panic(err)
+	if _, loadErr := provider.LoadConnections(ctx); loadErr != nil {
+		panic(loadErr)
 	}
-	if _, err := provider.StartConnection(ctx, "profile"); err != nil {
-		panic(err)
+	if _, startErr := provider.StartConnection(ctx, "profile"); startErr != nil {
+		panic(startErr)
 	}
 	err = provider.WithConnection(
 		ctx,

@@ -1,25 +1,41 @@
 package resourcev2
 
-import "context"
+import (
+	"context"
+	"slices"
+)
 
 // Feature reports availability of an ancillary transport trait, not support for
 // a finite operation. Finite support always comes from the qualified catalog.
 type Feature string
 
 const (
-	FeatureConnections         Feature = "connections"
+	// FeatureConnections enables explicit connection lifecycle operations.
+	FeatureConnections Feature = "connections"
+	// FeatureConnectionReadiness enables nonblocking registered-state inspection.
 	FeatureConnectionReadiness Feature = "connectionReadiness"
-	FeatureConnectionBrowser   Feature = "connectionBrowser"
-	FeatureConnectionOverlay   Feature = "connectionOverlay"
-	FeatureScopeValues         Feature = "scopeValues"
-	FeaturePresentation        Feature = "presentation"
-	FeatureEditorSchemas       Feature = "editorSchemas"
-	FeatureSchemaDocuments     Feature = "schemaDocuments"
-	FeatureRelationships       Feature = "relationships"
-	FeatureHealth              Feature = "health"
-	FeatureActionCatalog       Feature = "actionCatalog"
-	FeatureStreamingActions    Feature = "streamingActions"
-	FeatureBestEffortUpdates   Feature = "bestEffortUpdates"
+	// FeatureConnectionBrowser enables native configured-profile discovery.
+	FeatureConnectionBrowser Feature = "connectionBrowser"
+	// FeatureConnectionOverlay enables replacement of the desired in-memory profile overlay.
+	FeatureConnectionOverlay Feature = "connectionOverlay"
+	// FeatureScopeValues enables discovery of values for declared scope dimensions.
+	FeatureScopeValues Feature = "scopeValues"
+	// FeaturePresentation enables resource presentation metadata.
+	FeaturePresentation Feature = "presentation"
+	// FeatureEditorSchemas enables editor schema bindings.
+	FeatureEditorSchemas Feature = "editorSchemas"
+	// FeatureSchemaDocuments enables acquisition of shared schema documents.
+	FeatureSchemaDocuments Feature = "schemaDocuments"
+	// FeatureRelationships enables scoped relationship resolution.
+	FeatureRelationships Feature = "relationships"
+	// FeatureHealth enables explicit native health acquisition, not lifecycle readiness.
+	FeatureHealth Feature = "health"
+	// FeatureActionCatalog enables discovery of available action descriptors.
+	FeatureActionCatalog Feature = "actionCatalog"
+	// FeatureStreamingActions enables ready-gated action event streams.
+	FeatureStreamingActions Feature = "streamingActions"
+	// FeatureBestEffortUpdates enables advisory updates without replay guarantees.
+	FeatureBestEffortUpdates Feature = "bestEffortUpdates"
 )
 
 // FeatureSet lists ancillary traits available on this provider or transport.
@@ -32,12 +48,7 @@ type FeatureSet struct {
 // Has tests only the advertised trait list. It does not authorize an operation
 // or replace scope-qualified catalog admission.
 func (f FeatureSet) Has(trait Feature) bool {
-	for _, candidate := range f.Traits {
-		if candidate == trait {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(f.Traits, trait)
 }
 
 // FeatureNegotiator is implemented by the transport client and configurable
@@ -50,7 +61,7 @@ type FeatureNegotiator interface {
 // ValidateFeatures rejects duplicate or unknown trait names without changing f.
 // Unknown traits return UNSUPPORTED; malformed duplicates return INVALID_REQUEST.
 func ValidateFeatures(f FeatureSet) error {
-	seen := map[Feature]bool{}
+	seen := make(map[Feature]bool, len(f.Traits))
 	for _, feature := range f.Traits {
 		if seen[feature] {
 			return NewError("INVALID_REQUEST", "duplicate ancillary feature")

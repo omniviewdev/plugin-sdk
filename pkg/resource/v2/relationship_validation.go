@@ -20,24 +20,44 @@ func ValidateRelationshipResolutionRequest(req RelationshipResolutionRequest) er
 			return invalid("relationship target scope must be array")
 		}
 		indexes[i] = indexRelationshipScope(target.Scope)
-		for j, prior := range req.Targets[:i] {
-			if prior.Provider != target.Provider || prior.Type != target.Type || prior.Route != target.Route {
-				continue
-			}
-			if len(indexes[j]) != len(indexes[i]) {
-				return invalid("inconsistent relationship target scope dimensions")
-			}
-			for dimension := range indexes[j] {
-				if _, ok := indexes[i][dimension]; !ok {
-					return invalid("inconsistent relationship target scope dimensions")
-				}
-			}
-			if relationshipScopesConflict(indexes[j], indexes[i]) {
-				return invalid("overlapping relationship target bindings")
-			}
+		if err := validatePriorRelationshipBindings(req.Targets[:i], indexes[:i], target, indexes[i]); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func validatePriorRelationshipBindings(
+	priorTargets []ReadTarget,
+	priorIndexes []relationshipScopeIndex,
+	target ReadTarget,
+	index relationshipScopeIndex,
+) error {
+	for j := range priorTargets {
+		prior := &priorTargets[j]
+		if prior.Provider != target.Provider || prior.Type != target.Type || prior.Route != target.Route {
+			continue
+		}
+		if !sameRelationshipDimensions(priorIndexes[j], index) {
+			return invalid("inconsistent relationship target scope dimensions")
+		}
+		if relationshipScopesConflict(priorIndexes[j], index) {
+			return invalid("overlapping relationship target bindings")
+		}
+	}
+	return nil
+}
+
+func sameRelationshipDimensions(a, b relationshipScopeIndex) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for dimension := range a {
+		if _, found := b[dimension]; !found {
+			return false
+		}
+	}
+	return true
 }
 
 // Private admission indexes avoid quadratic membership scans across large oneOf
@@ -74,38 +94,34 @@ func relationshipScopesConflict(a, b relationshipScopeIndex) bool {
 		if !found {
 			return false
 		}
-		if left.any && right.any {
-			continue
-		}
-		if left.any || right.any {
-			equal = false
-			finite := left
-			if left.any {
-				finite = right
-			}
-			if len(finite.values) == 0 {
-				overlap = false
-			}
-			continue
-		}
-		common := 0
-		small, large := left.values, right.values
-		if len(small) > len(large) {
-			small, large = large, small
-		}
-		for value := range small {
-			if _, ok := large[value]; ok {
-				common++
-			}
-		}
-		if common == 0 {
-			overlap = false
-		}
-		if common != len(left.values) || common != len(right.values) {
-			equal = false
-		}
+		dimensionEqual, dimensionOverlap := relationshipConstraintOverlap(left, right)
+		equal = equal && dimensionEqual
+		overlap = overlap && dimensionOverlap
 	}
 	return equal || overlap
+}
+
+func relationshipConstraintOverlap(left, right relationshipConstraintIndex) (bool, bool) {
+	if left.any && right.any {
+		return true, true
+	}
+	if left.any {
+		return false, len(right.values) != 0
+	}
+	if right.any {
+		return false, len(left.values) != 0
+	}
+	common := 0
+	small, large := left.values, right.values
+	if len(small) > len(large) {
+		small, large = large, small
+	}
+	for value := range small {
+		if _, found := large[value]; found {
+			common++
+		}
+	}
+	return common == len(left.values) && common == len(right.values), common != 0
 }
 
 // MatchRelationshipTarget selects exactly one host binding for an observed link.
@@ -140,18 +156,8 @@ func matchRelationshipTarget(
 	if err := validateRoute(route); err != nil {
 		return ReadTarget{}, err
 	}
-	seen := make(map[string]bool, len(scope))
-	for _, entry := range scope {
-		if err := text(entry.Dimension, true); err != nil {
-			return ReadTarget{}, err
-		}
-		if err := text(entry.Value, false); err != nil {
-			return ReadTarget{}, err
-		}
-		if seen[entry.Dimension] {
-			return ReadTarget{}, invalid("duplicate identity dimension")
-		}
-		seen[entry.Dimension] = true
+	if err := validateRelationshipIdentityScope(scope); err != nil {
+		return ReadTarget{}, err
 	}
 	var match ReadTarget
 	count := 0
@@ -175,6 +181,23 @@ func matchRelationshipTarget(
 	return match, nil
 }
 
+func validateRelationshipIdentityScope(scope []ScopeEntry) error {
+	seen := make(map[string]bool, len(scope))
+	for _, entry := range scope {
+		if err := text(entry.Dimension, true); err != nil {
+			return err
+		}
+		if err := text(entry.Value, false); err != nil {
+			return err
+		}
+		if seen[entry.Dimension] {
+			return invalid("duplicate identity dimension")
+		}
+		seen[entry.Dimension] = true
+	}
+	return nil
+}
+
 // ValidateRelationshipResolutionResult rejects the whole result if any observed
 // link escapes its explicit target binding. It never filters links.
 func ValidateRelationshipResolutionResult(req RelationshipResolutionRequest, results []ResolvedRelationship) error {
@@ -184,11 +207,13 @@ func ValidateRelationshipResolutionResult(req RelationshipResolutionRequest, res
 	if err := admission(results); err != nil {
 		return err
 	}
-	for _, result := range results {
-		if err := validateResolvedRelationship(result); err != nil {
+	for i := range results {
+		result := &results[i]
+		if err := validateResolvedRelationship(*result); err != nil {
 			return err
 		}
-		for _, target := range result.Targets {
+		for j := range result.Targets {
+			target := &result.Targets[j]
 			address := target.Reference.Address
 			if address.Type != result.Descriptor.TargetType {
 				return NewError("UNSUPPORTED", "Relationship target does not match descriptor target type.")

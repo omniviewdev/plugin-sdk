@@ -26,7 +26,7 @@ func TestCatalogRevisionRetiredSlotCannotResurrect(t *testing.T) {
 			return []types.Connection{{ID: route.Connection, Data: map[string]any{"source": "A"}}}, nil
 		},
 		CreateClient: func(_ context.Context, connection types.Connection) (*string, error) {
-			value := connection.Data["source"].(string)
+			value := ownershipValue[string](t, connection.Data["source"])
 			return &value, nil
 		},
 		DestroyClient: func(context.Context, *string) error { return nil },
@@ -173,7 +173,7 @@ func TestDisplayEditPreservesCatalogGenerationAndCurrentSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.UpdateConnection(
+	if _, err = c.UpdateConnection(
 		ctx,
 		types.Connection{ID: route.Connection, Name: "new", Data: map[string]any{"source": "A"}},
 	); err != nil {
@@ -270,80 +270,97 @@ func TestWatchCatalogFenceDropsChangedGenerationEvent(t *testing.T) {
 
 func TestOverlayPrivateCredentialsStaySourceOwned(t *testing.T) {
 	for _, change := range []string{"display", "endpoint", "clear"} {
-		t.Run(change, func(t *testing.T) {
-			ctx := context.Background()
-			native := types.Connection{ID: "explicit", Name: "old", Data: map[string]any{"endpoint": "A"}}
-			native.SetSensitiveData(map[string]any{"token": "source-secret"})
-			cfg := controllerConfig()
-			var starts atomic.Int32
-			cfg.Lifecycle = &Lifecycle[string]{
-				LoadConnections: func(context.Context) ([]types.Connection, error) { return []types.Connection{native}, nil },
-				CreateClient: func(context.Context, types.Connection) (*string, error) {
-					starts.Add(1)
-					value := "client"
-					return &value, nil
-				},
-				DestroyClient: func(context.Context, *string) error { return nil },
-			}
-			c := newTestController(t, cfg)
-			if _, err := c.LoadConnections(ctx); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := c.StartConnection(ctx, native.ID); err != nil {
-				t.Fatal(err)
-			}
-			before, err := c.Catalog(ctx, CatalogRequest{Route: AccessRoute{Connection: native.ID}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			override := types.Connection{ID: native.ID, Name: "renamed", Data: map[string]any{"endpoint": "A"}}
-			if change == "endpoint" {
-				override.Data["endpoint"] = "B"
-			}
-			if change == "clear" {
-				override.SetSensitiveData(map[string]any{})
-			}
-			if err := c.ApplyConnectionOverlay(
-				ctx,
-				ConnectionOverlay{Upserts: []types.Connection{override}},
-			); err != nil {
-				t.Fatal(err)
-			}
-			effective, err := c.GetConnection(ctx, native.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if change == "display" {
-				if effective.GetSensitiveData()["token"] != "source-secret" {
-					t.Fatal("display overlay dropped native credentials")
-				}
-				after, err := c.Catalog(ctx, CatalogRequest{Route: AccessRoute{Connection: native.ID}})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if before.Revision != after.Revision || starts.Load() != 1 {
-					t.Fatal("display overlay replaced native client")
-				}
-				desired := c.overrides[native.ID]
-				if desired.GetSensitiveData() != nil {
-					t.Fatal("private credentials leaked into desired overlay")
-				}
-			} else {
-				if len(effective.GetSensitiveData()) != 0 {
-					t.Fatal("endpoint change or explicit clear retained old credentials")
-				}
-				status, err := c.CheckConnection(ctx, native.ID)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if status.Status != types.ConnectionStatusDisconnected {
-					t.Fatal("source edit retained old native client")
-				}
-			}
-			if native.GetSensitiveData()["token"] != "source-secret" {
-				t.Fatal("overlay mutated source credentials")
-			}
-		})
+		t.Run(change, func(t *testing.T) { testOverlayPrivateCredentials(t, change) })
+	}
+}
+
+func testOverlayPrivateCredentials(t *testing.T, change string) {
+	t.Helper()
+	ctx := context.Background()
+	native := types.Connection{ID: "explicit", Name: "old", Data: map[string]any{"endpoint": "A"}}
+	native.SetSensitiveData(map[string]any{"token": "source-secret"})
+	cfg := controllerConfig()
+	var starts atomic.Int32
+	cfg.Lifecycle = &Lifecycle[string]{
+		LoadConnections: func(context.Context) ([]types.Connection, error) { return []types.Connection{native}, nil },
+		CreateClient: func(context.Context, types.Connection) (*string, error) {
+			starts.Add(1)
+			value := "client"
+			return &value, nil
+		},
+		DestroyClient: func(context.Context, *string) error { return nil },
+	}
+	c := newTestController(t, cfg)
+	if _, err := c.LoadConnections(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.StartConnection(ctx, native.ID); err != nil {
+		t.Fatal(err)
+	}
+	before, err := c.Catalog(ctx, CatalogRequest{Route: AccessRoute{Connection: native.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	override := types.Connection{ID: native.ID, Name: "renamed", Data: map[string]any{"endpoint": "A"}}
+	if change == "endpoint" {
+		override.Data["endpoint"] = "B"
+	}
+	if change == "clear" {
+		override.SetSensitiveData(map[string]any{})
+	}
+	if err = c.ApplyConnectionOverlay(ctx, ConnectionOverlay{Upserts: []types.Connection{override}}); err != nil {
+		t.Fatal(err)
+	}
+	effective, err := c.GetConnection(ctx, native.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if change == "display" {
+		assertDisplayOverlayCredentials(ctx, t, c, effective, before, &starts)
+	} else {
+		assertSourceOverlayRetired(ctx, t, c, effective)
+	}
+	if native.GetSensitiveData()["token"] != "source-secret" {
+		t.Fatal("overlay mutated source credentials")
+	}
+}
+
+func assertDisplayOverlayCredentials(
+	ctx context.Context,
+	t *testing.T,
+	c *Controller[string],
+	effective types.Connection,
+	before Catalog,
+	starts *atomic.Int32,
+) {
+	t.Helper()
+	if effective.GetSensitiveData()["token"] != "source-secret" {
+		t.Fatal("display overlay dropped native credentials")
+	}
+	after, err := c.Catalog(ctx, CatalogRequest{Route: AccessRoute{Connection: effective.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Revision != after.Revision || starts.Load() != 1 {
+		t.Fatal("display overlay replaced native client")
+	}
+	desired := c.overrides[effective.ID]
+	if desired.GetSensitiveData() != nil {
+		t.Fatal("private credentials leaked into desired overlay")
+	}
+}
+
+func assertSourceOverlayRetired(ctx context.Context, t *testing.T, c *Controller[string], effective types.Connection) {
+	t.Helper()
+	if len(effective.GetSensitiveData()) != 0 {
+		t.Fatal("endpoint change or explicit clear retained old credentials")
+	}
+	status, err := c.CheckConnection(ctx, effective.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Status != types.ConnectionStatusDisconnected {
+		t.Fatal("source edit retained old native client")
 	}
 }
 
@@ -439,7 +456,7 @@ func TestWatchReuseRejectsChangedCatalogWithinSameBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstCtx := WithCatalogRevision(ctx, first.Revision)
-	if err := c.EnsureResourceWatch(firstCtx, target); err != nil {
+	if err = c.EnsureResourceWatch(firstCtx, target); err != nil {
 		t.Fatal(err)
 	}
 	<-started
@@ -466,14 +483,14 @@ func TestWatchReuseRejectsChangedCatalogWithinSameBinding(t *testing.T) {
 		t.Fatal("stale watch reuse unexpectedly started another source")
 	default:
 	}
-	if err := c.StopResourceWatch(secondCtx, target.Route, target.Type); err != nil {
+	if err = c.StopResourceWatch(secondCtx, target.Route, target.Type); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.EnsureResourceWatch(secondCtx, target); err != nil {
+	if err = c.EnsureResourceWatch(secondCtx, target); err != nil {
 		t.Fatal(err)
 	}
 	<-started
-	if err := c.StopResourceWatch(secondCtx, target.Route, target.Type); err != nil {
+	if err = c.StopResourceWatch(secondCtx, target.Route, target.Type); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -501,10 +518,10 @@ func TestControllerSelectsQualifiedPinAndWatchRetainsObservation(t *testing.T) {
 		Reference:      ResourceReference{Address: controllerAddress()},
 		Representation: "document",
 	}
-	if _, err := c.Get(ctx, request); err != nil {
+	if _, err = c.Get(ctx, request); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.EnsureResourceWatch(ctx, target); err != nil {
+	if err = c.EnsureResourceWatch(ctx, target); err != nil {
 		t.Fatal(err)
 	}
 	c.updates.mu.Lock()
@@ -513,7 +530,7 @@ func TestControllerSelectsQualifiedPinAndWatchRetainsObservation(t *testing.T) {
 	if retained != catalog.Revision {
 		t.Fatal("watch did not retain selected qualified observation")
 	}
-	if err := c.StopResourceWatch(ctx, target.Route, target.Type); err != nil {
+	if err = c.StopResourceWatch(ctx, target.Route, target.Type); err != nil {
 		t.Fatal(err)
 	}
 	wrong := WithCatalogRevisionForRoute(

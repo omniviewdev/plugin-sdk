@@ -39,7 +39,7 @@ func (c *Controller[T]) Get(ctx context.Context, request GetRequest) (record Rec
 	// Unknown selection-only dimensions must not turn an exact Get into an
 	// implicit unscoped watch or acquisition. An explicit query can start it.
 	if exact {
-		if err := c.ensureOnFirstQuery(
+		if err = c.ensureOnFirstQuery(
 			ctx,
 			ReadTarget{
 				Route:          request.Route,
@@ -75,28 +75,10 @@ func (c *Controller[T]) Enumerate(ctx context.Context, request EnumerateRequest)
 	if err = ValidateEnumerateRequest(request); err != nil {
 		return page, err
 	}
-	ctx, client, done, err := c.lease(ctx, request.Target.Route)
-	if err != nil {
-		return page, err
-	}
-	defer done()
-	t := request.Target
-	var descriptor ResourceType
-	r, descriptor, err = c.resolve(ctx, t.Route, t.Provider, t.Type, t.Representation, t.Scope, nil, OperationEnumerate)
-	if err != nil {
-		return page, err
-	}
-	if err := c.ensureOnFirstQuery(ctx, t); err != nil {
-		return page, err
-	}
-	page, err = r.Enumerate(ctx, client, request)
-	if err == nil {
-		err = c.fenceCatalog(ctx, t.Route)
-	}
-	if err == nil {
-		err = checkPage(page, descriptor, t, request.PageSize)
-	}
-	return page, err
+	return c.dispatchPage(ctx, request.Target, request.PageSize, OperationEnumerate, &r,
+		func(ctx context.Context, client *T, registration *Registration[T]) (SourcePage, error) {
+			return registration.Enumerate(ctx, client, request)
+		})
 }
 
 // NativeQuery invokes one admitted provider-native query and validates its bounded
@@ -111,35 +93,43 @@ func (c *Controller[T]) NativeQuery(ctx context.Context, request NativeQueryRequ
 	if err = ValidateNativeQueryRequest(request); err != nil {
 		return page, err
 	}
-	ctx, client, done, err := c.lease(ctx, request.Target.Route)
+	return c.dispatchPage(ctx, request.Target, request.PageSize, OperationNativeQuery, &r,
+		func(ctx context.Context, client *T, registration *Registration[T]) (SourcePage, error) {
+			return registration.NativeQuery(ctx, client, request)
+		})
+}
+
+// dispatchPage keeps admission, first-query startup, and postdispatch fences
+// identical for both finite page operations. The caller's guard classifies errors.
+func (c *Controller[T]) dispatchPage(
+	ctx context.Context,
+	target ReadTarget,
+	size uint32,
+	operation Operation,
+	registration **Registration[T],
+	invoke func(context.Context, *T, *Registration[T]) (SourcePage, error),
+) (SourcePage, error) {
+	ctx, client, done, err := c.lease(ctx, target.Route)
 	if err != nil {
-		return page, err
+		return SourcePage{}, err
 	}
 	defer done()
-	t := request.Target
-	var descriptor ResourceType
-	r, descriptor, err = c.resolve(
-		ctx,
-		t.Route,
-		t.Provider,
-		t.Type,
-		t.Representation,
-		t.Scope,
-		nil,
-		OperationNativeQuery,
+	selected, descriptor, err := c.resolve(
+		ctx, target.Route, target.Provider, target.Type, target.Representation, target.Scope, nil, operation,
 	)
+	*registration = selected
 	if err != nil {
-		return page, err
+		return SourcePage{}, err
 	}
-	if err := c.ensureOnFirstQuery(ctx, t); err != nil {
-		return page, err
+	if err = c.ensureOnFirstQuery(ctx, target); err != nil {
+		return SourcePage{}, err
 	}
-	page, err = r.NativeQuery(ctx, client, request)
+	page, err := invoke(ctx, client, selected)
 	if err == nil {
-		err = c.fenceCatalog(ctx, t.Route)
+		err = c.fenceCatalog(ctx, target.Route)
 	}
 	if err == nil {
-		err = checkPage(page, descriptor, t, request.PageSize)
+		err = checkPage(page, descriptor, target, size)
 	}
 	return page, err
 }

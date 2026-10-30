@@ -133,8 +133,8 @@ func TestPublicDomainJSONMixedCatalogAuthorityHints(t *testing.T) {
 		t.Fatal(err)
 	}
 	var decoded Catalog
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(data, &decoded); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	if decoded.Types[0].NativeAuthorityHint == nil || decoded.Types[0].NativeAuthorityHint.ID != "cluster" ||
 		decoded.Types[1].NativeAuthorityHint != nil {
@@ -220,8 +220,8 @@ func TestCanonicalJSONEmitsSelectedEmptyArrays(t *testing.T) {
 		t.Fatalf("nil identity scope: %s", data)
 	}
 	var decoded ResourceAddress
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(data, &decoded); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	var scope QueryScope
 	data, err = json.Marshal(scope)
@@ -231,8 +231,8 @@ func TestCanonicalJSONEmitsSelectedEmptyArrays(t *testing.T) {
 	if string(data) != "[]" {
 		t.Fatalf("nil query scope: %s", data)
 	}
-	if err := json.Unmarshal(data, &scope); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(data, &scope); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	var values []string
 	constraint := ScopeConstraint{Dimension: "x", Match: ScopeOneOf, Values: &values}
@@ -243,8 +243,8 @@ func TestCanonicalJSONEmitsSelectedEmptyArrays(t *testing.T) {
 	if !strings.Contains(string(data), `"values":[]`) {
 		t.Fatalf("nil selected oneOf: %s", data)
 	}
-	if err := json.Unmarshal(data, &constraint); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(data, &constraint); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	data, err = json.Marshal(ScopeConstraint{Dimension: "x", Match: ScopeAny})
 	if err != nil {
@@ -258,7 +258,7 @@ func TestCanonicalJSONEmitsSelectedEmptyArrays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(data, &catalog); err != nil {
-		t.Fatalf("empty catalog did not roundtrip: %s %v", data, err)
+	if decodeErr := json.Unmarshal(data, &catalog); decodeErr != nil {
+		t.Fatalf("empty catalog did not roundtrip: %s %v", data, decodeErr)
 	}
 }

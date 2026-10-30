@@ -150,6 +150,8 @@ type BestEffortUpdateProvider interface {
 
 // AllWatchStates maps lifecycle values to UI names. Treat this shared table as
 // read-only; its order and size do not describe any source's current state.
+//
+//nolint:gochecknoglobals // Preserve the exported binding-facing value table and its existing slice API.
 var AllWatchStates = []struct {
 	Value  WatchState
 	TSName string
@@ -169,6 +171,8 @@ var AllWatchStates = []struct {
 
 // AllSyncPolicies maps startup policies to UI names. Treat this shared table as
 // read-only; policy selection does not advertise a catalog capability.
+//
+//nolint:gochecknoglobals // Preserve the exported binding-facing value table and its existing slice API.
 var AllSyncPolicies = []struct {
 	Value  SyncPolicy
 	TSName string

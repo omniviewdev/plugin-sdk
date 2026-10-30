@@ -71,12 +71,18 @@ type ResourceLink struct {
 type SchemaType string
 
 const (
-	SchemaString  SchemaType = "string"
+	// SchemaString describes textual action input without coercion.
+	SchemaString SchemaType = "string"
+	// SchemaInteger describes integral action input.
 	SchemaInteger SchemaType = "integer"
-	SchemaNumber  SchemaType = "number"
+	// SchemaNumber describes numeric action input, including nonintegral values.
+	SchemaNumber SchemaType = "number"
+	// SchemaBoolean describes true-or-false action input.
 	SchemaBoolean SchemaType = "boolean"
-	SchemaObject  SchemaType = "object"
-	SchemaArray   SchemaType = "array"
+	// SchemaObject describes named nested properties.
+	SchemaObject SchemaType = "object"
+	// SchemaArray describes a list-valued property.
+	SchemaArray SchemaType = "array"
 )
 
 // SchemaProperty describes only the retained action-schema constraints. Default
@@ -147,7 +153,8 @@ type ActionScope string
 const (
 	// ActionScopeInstance associates an action with an exact resource reference.
 	ActionScopeInstance ActionScope = "instance"
-	ActionScopeType     ActionScope = "type"
+	// ActionScopeType associates an action with a resource type rather than an instance.
+	ActionScopeType ActionScope = "type"
 )
 
 // ActionDescriptor advertises one named action's presentation and input/output
@@ -184,20 +191,28 @@ type ActionEvent struct {
 type HealthStatus string
 
 const (
-	HealthHealthy   HealthStatus = "healthy"
-	HealthDegraded  HealthStatus = "degraded"
+	// HealthHealthy reports normal observed resource health.
+	HealthHealthy HealthStatus = "healthy"
+	// HealthDegraded reports impaired but not wholly failed resource health.
+	HealthDegraded HealthStatus = "degraded"
+	// HealthUnhealthy reports failed resource health.
 	HealthUnhealthy HealthStatus = "unhealthy"
-	HealthPending   HealthStatus = "pending"
-	HealthUnknown   HealthStatus = "unknown"
+	// HealthPending reports health assessment or establishment still in progress.
+	HealthPending HealthStatus = "pending"
+	// HealthUnknown explicitly reports insufficient evidence to assess health.
+	HealthUnknown HealthStatus = "unknown"
 )
 
 // EventSeverity classifies diagnostic events, not operation errors or watch state.
 type EventSeverity string
 
 const (
-	SeverityNormal  EventSeverity = "normal"
+	// SeverityNormal marks informational resource events.
+	SeverityNormal EventSeverity = "normal"
+	// SeverityWarning marks resource events requiring attention.
 	SeverityWarning EventSeverity = "warning"
-	SeverityError   EventSeverity = "error"
+	// SeverityError marks resource events reporting a failure.
+	SeverityError EventSeverity = "error"
 )
 
 // HealthCondition retains a provider-defined condition type and status without
@@ -241,13 +256,20 @@ type ResourceEvent struct {
 type RelationshipType string
 
 const (
-	RelOwns     RelationshipType = "owns"
-	RelRunsOn   RelationshipType = "runs_on"
-	RelUses     RelationshipType = "uses"
-	RelExposes  RelationshipType = "exposes"
-	RelManages  RelationshipType = "manages"
+	// RelOwns links an owner to an owned resource.
+	RelOwns RelationshipType = "owns"
+	// RelRunsOn links a workload to its execution resource.
+	RelRunsOn RelationshipType = "runs_on"
+	// RelUses links a consumer to a dependency.
+	RelUses RelationshipType = "uses"
+	// RelExposes links an exposing resource to the resource it makes accessible.
+	RelExposes RelationshipType = "exposes"
+	// RelManages links a manager to a managed resource.
+	RelManages RelationshipType = "manages"
+	// RelMemberOf links a member to its containing group.
 	RelMemberOf RelationshipType = "member_of"
-	RelSelects  RelationshipType = "selects"
+	// RelSelects links a selector to a matching resource.
+	RelSelects RelationshipType = "selects"
 )
 
 // EdgeDirection orients a descriptor relative to the source resource.

@@ -3,6 +3,7 @@ package resourcev2
 import (
 	"context"
 	"reflect"
+	"slices"
 )
 
 func (c *Controller[T]) registrations(ctx context.Context, route AccessRoute, typ string) ([]Registration[T], error) {
@@ -57,39 +58,35 @@ func intersectScope(a, b QueryScope) (QueryScope, bool) {
 	}
 	out := make(QueryScope, 0, len(a))
 	for _, ac := range a {
-		var bc *ScopeConstraint
-		for i := range b {
-			if b[i].Dimension == ac.Dimension {
-				bc = &b[i]
-				break
-			}
-		}
-		if bc == nil {
+		constraint, ok := intersectConstraint(ac, scopeConstraint(b, ac.Dimension))
+		if !ok {
 			return nil, false
 		}
-		if ac.Match == ScopeAny {
-			out = append(out, *bc)
-			continue
-		}
-		if bc.Match == ScopeAny {
-			out = append(out, ac)
-			continue
-		}
-		if ac.Values == nil || bc.Values == nil {
-			return nil, false
-		}
-		values := make([]string, 0)
-		for _, av := range *ac.Values {
-			for _, bv := range *bc.Values {
-				if av == bv {
-					values = append(values, av)
-					break
-				}
-			}
-		}
-		out = append(out, ScopeConstraint{Dimension: ac.Dimension, Match: ScopeOneOf, Values: &values})
+		out = append(out, constraint)
 	}
 	return out, true
+}
+
+func intersectConstraint(a ScopeConstraint, b *ScopeConstraint) (ScopeConstraint, bool) {
+	if b == nil {
+		return ScopeConstraint{}, false
+	}
+	if a.Match == ScopeAny {
+		return *b, true
+	}
+	if b.Match == ScopeAny {
+		return a, true
+	}
+	if a.Values == nil || b.Values == nil {
+		return ScopeConstraint{}, false
+	}
+	values := make([]string, 0)
+	for _, value := range *a.Values {
+		if slices.Contains(*b.Values, value) {
+			values = append(values, value)
+		}
+	}
+	return ScopeConstraint{Dimension: a.Dimension, Match: ScopeOneOf, Values: &values}, true
 }
 
 func scopeContains(outer, inner QueryScope) bool {
@@ -100,33 +97,32 @@ func scopeContains(outer, inner QueryScope) bool {
 		return false
 	}
 	for _, wanted := range inner {
-		found := false
-		for _, allowed := range outer {
-			if allowed.Dimension != wanted.Dimension {
-				continue
-			}
-			found = true
-			if allowed.Match == ScopeAny {
-				break
-			}
-			if wanted.Match != ScopeOneOf || wanted.Values == nil || allowed.Values == nil {
-				return false
-			}
-			for _, value := range *wanted.Values {
-				ok := false
-				for _, permit := range *allowed.Values {
-					if value == permit {
-						ok = true
-						break
-					}
-				}
-				if !ok {
-					return false
-				}
-			}
-			break
+		allowed := scopeConstraint(outer, wanted.Dimension)
+		if allowed == nil || !constraintContains(*allowed, wanted) {
+			return false
 		}
-		if !found {
+	}
+	return true
+}
+
+func scopeConstraint(scope QueryScope, dimension string) *ScopeConstraint {
+	for i := range scope {
+		if scope[i].Dimension == dimension {
+			return &scope[i]
+		}
+	}
+	return nil
+}
+
+func constraintContains(allowed, wanted ScopeConstraint) bool {
+	if allowed.Match == ScopeAny {
+		return true
+	}
+	if wanted.Match != ScopeOneOf || wanted.Values == nil || allowed.Values == nil {
+		return false
+	}
+	for _, value := range *wanted.Values {
+		if !slices.Contains(*allowed.Values, value) {
 			return false
 		}
 	}
@@ -161,41 +157,9 @@ func (c *Controller[T]) Catalog(ctx context.Context, request CatalogRequest) (ca
 	catalog.Types = append([]ResourceType(nil), catalog.Types...)
 	for i := range catalog.Types {
 		typ := &catalog.Types[i]
-		registrations, resolveErr := c.registrations(ctx, request.Route, typ.Type)
-		if resolveErr != nil {
-			return Catalog{}, resolveErr
+		if err = c.catalogCapabilities(ctx, request.Route, typ); err != nil {
+			return Catalog{}, err
 		}
-		caps := make([]Capability, 0, len(typ.Capabilities))
-		for _, capability := range typ.Capabilities {
-			for _, r := range registrations {
-				if !handles(r, capability.Operation) {
-					continue
-				}
-				if r.Scope != nil {
-					if err := ValidateScope(r.Scope, typ.QueryDimensions); err != nil {
-						return Catalog{}, err
-					}
-				}
-				if scope, ok := intersectScope(capability.Scope, r.Scope); ok {
-					candidate := Capability{
-						Operation: capability.Operation,
-						Scope:     scope,
-						Guarantee: capability.Guarantee,
-					}
-					duplicate := false
-					for _, previous := range caps {
-						if reflect.DeepEqual(previous, candidate) {
-							duplicate = true
-							break
-						}
-					}
-					if !duplicate {
-						caps = append(caps, candidate)
-					}
-				}
-			}
-		}
-		typ.Capabilities = caps
 	}
 	nonce := c.catalogNonce
 	if slot, ok := ctx.Value(catalogSlotKey{}).(*clientSlot[T]); ok {
@@ -212,6 +176,51 @@ func (c *Controller[T]) Catalog(ctx context.Context, request CatalogRequest) (ca
 	}
 	catalog.Revision = boundCatalogRevision(nonce, catalog.Revision)
 	return catalog, nil
+}
+
+// catalogCapabilities intersects declared support with installed registration
+// scopes without changing the provider-owned capability slice.
+func (c *Controller[T]) catalogCapabilities(ctx context.Context, route AccessRoute, typ *ResourceType) error {
+	registrations, err := c.registrations(ctx, route, typ.Type)
+	if err != nil {
+		return err
+	}
+	caps := make([]Capability, 0, len(typ.Capabilities))
+	for _, capability := range typ.Capabilities {
+		for _, registration := range registrations {
+			candidate, ok, candidateErr := registeredCapability(capability, registration, typ.QueryDimensions)
+			if candidateErr != nil {
+				return candidateErr
+			}
+			if !ok {
+				continue
+			}
+			if !slices.ContainsFunc(caps, func(previous Capability) bool {
+				return reflect.DeepEqual(previous, candidate)
+			}) {
+				caps = append(caps, candidate)
+			}
+		}
+	}
+	typ.Capabilities = caps
+	return nil
+}
+
+func registeredCapability[T any](
+	capability Capability,
+	registration Registration[T],
+	dimensions []Dimension,
+) (Capability, bool, error) {
+	if !handles(registration, capability.Operation) {
+		return Capability{}, false, nil
+	}
+	if registration.Scope != nil {
+		if err := ValidateScope(registration.Scope, dimensions); err != nil {
+			return Capability{}, false, err
+		}
+	}
+	scope, ok := intersectScope(capability.Scope, registration.Scope)
+	return Capability{Operation: capability.Operation, Scope: scope, Guarantee: capability.Guarantee}, ok, nil
 }
 
 // ScopeForAddress projects validated identity onto declared query dimensions.
@@ -258,26 +267,12 @@ func queryScopeForIdentity(address ResourceAddress, dimensions []Dimension) (Que
 // Selection-only filtering and its coverage claim belong to the native source.
 func identityWithinQueryScope(address ResourceAddress, scope QueryScope) bool {
 	for _, entry := range address.Scope {
-		for _, constraint := range scope {
-			if entry.Dimension != constraint.Dimension {
-				continue
-			}
-			if constraint.Match == ScopeAny {
-				break
-			}
-			found := false
-			if constraint.Values != nil {
-				for _, value := range *constraint.Values {
-					if entry.Value == value {
-						found = true
-						break
-					}
-				}
-			}
-			if !found {
-				return false
-			}
-			break
+		constraint := scopeConstraint(scope, entry.Dimension)
+		if constraint == nil || constraint.Match == ScopeAny {
+			continue
+		}
+		if constraint.Values == nil || !slices.Contains(*constraint.Values, entry.Value) {
+			return false
 		}
 	}
 	return true
@@ -335,17 +330,8 @@ func admitTarget(catalog Catalog, target operationTarget) (ResourceType, QuerySc
 	} else if err := ValidateScope(scope, descriptor.QueryDimensions); err != nil {
 		return ResourceType{}, nil, err
 	}
-	if target.representation != "" {
-		found := false
-		for _, rep := range descriptor.Representations {
-			if rep.ID == target.representation {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return ResourceType{}, nil, NewError("UNSUPPORTED", "Representation is not declared by the route catalog.")
-		}
+	if target.representation != "" && !declaresRepresentation(descriptor, target.representation) {
+		return ResourceType{}, nil, NewError("UNSUPPORTED", "Representation is not declared by the route catalog.")
 	}
 	for _, capability := range descriptor.Capabilities {
 		if capability.Operation == target.operation && scopeContains(capability.Scope, scope) {
@@ -353,6 +339,15 @@ func admitTarget(catalog Catalog, target operationTarget) (ResourceType, QuerySc
 		}
 	}
 	return ResourceType{}, nil, NewError("UNSUPPORTED", "Operation is not declared for this type and scope.")
+}
+
+func declaresRepresentation(descriptor *ResourceType, id string) bool {
+	for i := range descriptor.Representations {
+		if descriptor.Representations[i].ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // mutationOperation keeps mutation update distinct from advisory watch delivery.
@@ -374,72 +369,72 @@ func describeOperation(request any) (operationTarget, error) {
 	case GetRequest:
 		a := request.Reference.Address
 		return operationTarget{
-				route:          request.Route,
-				provider:       a.Provider,
-				typ:            a.Type,
-				representation: request.Representation,
-				address:        &a,
-				operation:      OperationGet,
-			}, ValidateGetRequest(
-				request,
-			)
+			route:          request.Route,
+			provider:       a.Provider,
+			typ:            a.Type,
+			representation: request.Representation,
+			address:        &a,
+			operation:      OperationGet,
+		}, ValidateGetRequest(
+			request,
+		)
 	case EnumerateRequest:
 		t := request.Target
 		return operationTarget{
-				route:          t.Route,
-				provider:       t.Provider,
-				typ:            t.Type,
-				representation: t.Representation,
-				scope:          t.Scope,
-				operation:      OperationEnumerate,
-			}, ValidateEnumerateRequest(
-				request,
-			)
+			route:          t.Route,
+			provider:       t.Provider,
+			typ:            t.Type,
+			representation: t.Representation,
+			scope:          t.Scope,
+			operation:      OperationEnumerate,
+		}, ValidateEnumerateRequest(
+			request,
+		)
 	case NativeQueryRequest:
 		t := request.Target
 		return operationTarget{
-				route:          t.Route,
-				provider:       t.Provider,
-				typ:            t.Type,
-				representation: t.Representation,
-				scope:          t.Scope,
-				operation:      OperationNativeQuery,
-			}, ValidateNativeQueryRequest(
-				request,
-			)
+			route:          t.Route,
+			provider:       t.Provider,
+			typ:            t.Type,
+			representation: t.Representation,
+			scope:          t.Scope,
+			operation:      OperationNativeQuery,
+		}, ValidateNativeQueryRequest(
+			request,
+		)
 	case MutationRequest:
 		a := request.Reference.Address
 		return operationTarget{
-				route:     request.Route,
-				provider:  a.Provider,
-				typ:       a.Type,
-				address:   &a,
-				operation: mutationOperation(request.Operation),
-			}, ValidateMutationRequest(
-				request,
-			)
+			route:     request.Route,
+			provider:  a.Provider,
+			typ:       a.Type,
+			address:   &a,
+			operation: mutationOperation(request.Operation),
+		}, ValidateMutationRequest(
+			request,
+		)
 	case ActionRequest:
 		a := request.Reference.Address
 		return operationTarget{
-				route:     request.Route,
-				provider:  a.Provider,
-				typ:       a.Type,
-				address:   &a,
-				operation: OperationAction,
-			}, ValidateActionRequest(
-				request,
-			)
+			route:     request.Route,
+			provider:  a.Provider,
+			typ:       a.Type,
+			address:   &a,
+			operation: OperationAction,
+		}, ValidateActionRequest(
+			request,
+		)
 	case ReadTarget:
 		return operationTarget{
-				route:          request.Route,
-				provider:       request.Provider,
-				typ:            request.Type,
-				representation: request.Representation,
-				scope:          request.Scope,
-				operation:      OperationUpdate,
-			}, ValidateEnumerateRequest(
-				EnumerateRequest{Target: request},
-			)
+			route:          request.Route,
+			provider:       request.Provider,
+			typ:            request.Type,
+			representation: request.Representation,
+			scope:          request.Scope,
+			operation:      OperationUpdate,
+		}, ValidateEnumerateRequest(
+			EnumerateRequest{Target: request},
+		)
 	default:
 		return operationTarget{}, NewError("UNSUPPORTED", "Unsupported finite resource operation.")
 	}
@@ -478,6 +473,9 @@ func AdmitOperation(ctx context.Context, provider Provider, request any) (descri
 		_, supported = provider.(Mutator)
 	case OperationAction:
 		_, supported = provider.(Actioner)
+	case OperationUpdate:
+		// Advisory targets use AdmitBestEffortTarget, not finite admission.
+		supported = false
 	}
 	if !supported {
 		return descriptor, NewError("UNSUPPORTED", "Operation handler is not implemented.")
@@ -522,13 +520,13 @@ func admitProviderTarget(ctx context.Context, provider Provider, target operatio
 	if err != nil {
 		return ResourceType{}, err
 	}
-	if err := ctx.Err(); err != nil {
+	if err = ctx.Err(); err != nil {
 		return ResourceType{}, &ResourceOperationError{Code: ErrorCode(err), Err: err}
 	}
-	if err := ValidateCatalog(catalog); err != nil {
+	if err = ValidateCatalog(catalog); err != nil {
 		return ResourceType{}, err
 	}
-	if err := CheckCatalogRevisionForRoute(ctx, catalog, target.route); err != nil {
+	if err = CheckCatalogRevisionForRoute(ctx, catalog, target.route); err != nil {
 		return ResourceType{}, err
 	}
 	descriptor, _, err := admitTarget(catalog, target)
@@ -606,7 +604,7 @@ func (c *Controller[T]) resolve(
 	if err != nil {
 		return nil, ResourceType{}, err
 	}
-	if err := CheckCatalogRevisionForRoute(ctx, catalog, route); err != nil {
+	if err = CheckCatalogRevisionForRoute(ctx, catalog, route); err != nil {
 		return nil, ResourceType{}, err
 	}
 	descriptor, scope, err := admitTarget(
@@ -650,14 +648,7 @@ func sameAddress(a, b ResourceAddress) bool {
 		return false
 	}
 	for _, ae := range a.Scope {
-		found := false
-		for _, be := range b.Scope {
-			if ae == be {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(b.Scope, ae) {
 			return false
 		}
 	}
@@ -696,8 +687,8 @@ func checkRecord(
 	if representation != "" && record.Representation.ID != representation {
 		return NewError("INTERNAL", "Provider response changed requested representation.")
 	}
-	for _, rep := range descriptor.Representations {
-		if reflect.DeepEqual(rep, record.Representation) {
+	for i := range descriptor.Representations {
+		if reflect.DeepEqual(descriptor.Representations[i], record.Representation) {
 			return nil
 		}
 	}
@@ -711,9 +702,10 @@ func checkPage(page SourcePage, descriptor ResourceType, target ReadTarget, size
 	if size != 0 && len(page.Records) > int(size) {
 		return NewError("INTERNAL", "Provider response exceeded requested source page size.")
 	}
-	for i, record := range page.Records {
+	for i := range page.Records {
+		record := &page.Records[i]
 		if err := checkRecord(
-			record,
+			*record,
 			descriptor,
 			target.Provider,
 			target.Authority,

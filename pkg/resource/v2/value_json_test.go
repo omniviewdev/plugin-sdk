@@ -165,15 +165,27 @@ func TestNativeReciprocalKeepsTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(input, got) || !math.Signbit(got.(map[string]any)["d"].(float64)) {
+	gotMap, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("native map changed type: %T", got)
+	}
+	gotDouble, ok := gotMap["d"].(float64)
+	if !ok {
+		t.Fatalf("native double changed type: %T", gotMap["d"])
+	}
+	if !reflect.DeepEqual(input, got) || !math.Signbit(gotDouble) {
 		t.Fatalf("native types changed: %#v", got)
 	}
-	got.(map[string]any)["list"].([]any)[2] = "changed"
+	gotList, ok := gotMap["list"].([]any)
+	if !ok {
+		t.Fatalf("native list changed type: %T", gotMap["list"])
+	}
+	gotList[2] = "changed"
 	if v.Map["list"].List[2].String != "x" {
 		t.Fatal("native output shares mutable containers")
 	}
-	if _, err := ValueFromNative(map[any]any{1: "x"}); ErrorCode(err) != "UNSUPPORTED" {
-		t.Fatalf("unsupported native type: %v", err)
+	if _, conversionErr := ValueFromNative(map[any]any{1: "x"}); ErrorCode(conversionErr) != "UNSUPPORTED" {
+		t.Fatalf("unsupported native type: %v", conversionErr)
 	}
 }
 
@@ -209,18 +221,18 @@ func TestTaggedJSONRawStructuralBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got Value
-	if err := got.UnmarshalJSON(encoded); err != nil {
-		t.Fatal(err)
+	if decodeErr := got.UnmarshalJSON(encoded); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	for range 12 {
 		v = Value{Kind: "list", List: []Value{v}}
 	}
-	if _, err := v.MarshalJSON(); ErrorCode(err) != "RESOURCE_LIMIT" {
-		t.Fatalf("raw wrapper depth not bounded before output: %v", err)
+	if _, marshalErr := v.MarshalJSON(); ErrorCode(marshalErr) != "RESOURCE_LIMIT" {
+		t.Fatalf("raw wrapper depth not bounded before output: %v", marshalErr)
 	}
 	raw := strings.Repeat(`{"kind":"list","value":[`, 32) + `{"kind":"null"}` + strings.Repeat(`]}`, 32)
-	if err := got.UnmarshalJSON([]byte(raw)); ErrorCode(err) != "RESOURCE_LIMIT" {
-		t.Fatalf("raw input depth: %v", err)
+	if decodeErr := got.UnmarshalJSON([]byte(raw)); ErrorCode(decodeErr) != "RESOURCE_LIMIT" {
+		t.Fatalf("raw input depth: %v", decodeErr)
 	}
 	// Every null element contributes an object and its kind scalar; the list
 	// wrapper contributes three raw nodes. No scaled node allowance is permitted.
@@ -233,12 +245,12 @@ func TestTaggedJSONRawStructuralBounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := got.UnmarshalJSON(encoded); err != nil {
-		t.Fatal(err)
+	if decodeErr := got.UnmarshalJSON(encoded); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	v.List = append(v.List, Value{Kind: "null"})
-	if _, err := v.MarshalJSON(); ErrorCode(err) != "RESOURCE_LIMIT" {
-		t.Fatalf("raw output nodes: %v", err)
+	if _, marshalErr := v.MarshalJSON(); ErrorCode(marshalErr) != "RESOURCE_LIMIT" {
+		t.Fatalf("raw output nodes: %v", marshalErr)
 	}
 }
 
@@ -263,8 +275,9 @@ func TestExactEncodedBodyBoundary(t *testing.T) {
 	if size != MaxDocumentBytes {
 		t.Fatalf("boundary size %d", size)
 	}
-	if err := ValidateValue(Value{Kind: "string", String: text}); ErrorCode(err) != "RESOURCE_LIMIT" {
-		t.Fatalf("over-boundary protobuf value: %v", err)
+	validationErr := ValidateValue(Value{Kind: "string", String: text})
+	if ErrorCode(validationErr) != "RESOURCE_LIMIT" {
+		t.Fatalf("over-boundary protobuf value: %v", validationErr)
 	}
 	jsonValue := Value{Kind: "string", String: text[:MaxDocumentBytes-28]}
 	data, err := jsonValue.MarshalJSON()

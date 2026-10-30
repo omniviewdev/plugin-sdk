@@ -53,10 +53,14 @@ func adapterRoundTrip[D any, P proto.Message](t *testing.T, value D, to func(D) 
 		t.Fatal(err)
 	}
 	decoded := p.ProtoReflect().New().Interface()
-	if err := proto.Unmarshal(data, decoded); err != nil {
-		t.Fatal(err)
+	if decodeErr := proto.Unmarshal(data, decoded); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
-	domain, err := from(decoded.(P))
+	typed, ok := decoded.(P)
+	if !ok {
+		t.Fatal("decoded protobuf has unexpected concrete type")
+	}
+	domain, err := from(typed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +362,10 @@ func TestProtoAdmissionRejectsInvalidValues(t *testing.T) {
 			t.Fatalf("invalid proto admitted: %T %v", p, err)
 		}
 	}
-	unknown := proto.Clone(null).(*resourcepb.Value)
+	unknown, ok := proto.Clone(null).(*resourcepb.Value)
+	if !ok {
+		t.Fatal("cloned protobuf has unexpected concrete type")
+	}
 	unknown.ProtoReflect().SetUnknown([]byte{120, 1})
 	if _, err := FromProtoValue(unknown); ErrorCode(err) != "UNSUPPORTED" {
 		t.Fatalf("unknown field class: %v", err)

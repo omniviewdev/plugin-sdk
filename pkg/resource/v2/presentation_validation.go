@@ -9,7 +9,8 @@ func ValidateResourceDefinition(v ResourceDefinition) error {
 		return err
 	}
 	seen := map[string]bool{}
-	for _, column := range v.ColumnDefs {
+	for i := range v.ColumnDefs {
+		column := &v.ColumnDefs[i]
 		if err := text(column.ID, true); err != nil {
 			return err
 		}
@@ -33,22 +34,8 @@ func validateResourceLink(v ResourceLink) error {
 	if err := text(v.IDAccessor, true); err != nil {
 		return err
 	}
-	if v.Type != "" {
-		if v.TypeAccessor != "" || len(v.TypeMap) != 0 {
-			return invalid("resource link has conflicting type selectors")
-		}
-	} else {
-		if v.TypeAccessor == "" || len(v.TypeMap) == 0 {
-			return invalid("resource link lacks explicit type mapping")
-		}
-		for native, canonical := range v.TypeMap {
-			if err := text(native, true); err != nil {
-				return err
-			}
-			if err := text(canonical, true); err != nil {
-				return err
-			}
-		}
+	if err := validateResourceLinkType(v); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
 	for _, extractor := range v.ScopeAccessors {
@@ -63,6 +50,28 @@ func validateResourceLink(v ResourceLink) error {
 	return nil
 }
 
+func validateResourceLinkType(v ResourceLink) error {
+	if v.Type != "" {
+		if v.TypeAccessor != "" || len(v.TypeMap) != 0 {
+			return invalid("resource link has conflicting type selectors")
+		}
+		return nil
+	}
+	if v.TypeAccessor == "" || len(v.TypeMap) == 0 {
+		return invalid("resource link lacks explicit type mapping")
+	}
+	for native, canonical := range v.TypeMap {
+		if err := text(native, true); err != nil {
+			return err
+		}
+		if err := text(canonical, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ValidateResourceGroups rejects duplicate groups and repeated resource types within each group.
 func ValidateResourceGroups(v []ResourceGroup) error {
 	if err := admission(v); err != nil {
 		return err
@@ -121,40 +130,36 @@ func ValidateActionDescriptors(v []ActionDescriptor) error {
 }
 
 func validateActionSchema(schema Schema) error {
-	var property func(SchemaProperty, int) error
-	property = func(p SchemaProperty, depth int) error {
-		if depth > MaxValueDepth {
-			return limited("action schema depth limit")
-		}
-		switch p.Type {
-		case SchemaString, SchemaInteger, SchemaNumber, SchemaBoolean, SchemaObject, SchemaArray:
-		default:
-			return invalid("unknown action schema type")
-		}
-		if p.Minimum != nil && (math.IsNaN(*p.Minimum) || math.IsInf(*p.Minimum, 0)) {
-			return invalid("nonfinite action schema minimum")
-		}
-		if p.Maximum != nil && (math.IsNaN(*p.Maximum) || math.IsInf(*p.Maximum, 0)) {
-			return invalid("nonfinite action schema maximum")
-		}
-		if p.Minimum != nil && p.Maximum != nil && *p.Minimum > *p.Maximum {
-			return invalid("action schema minimum exceeds maximum")
-		}
-		for name, child := range p.Properties {
-			if err := text(name, true); err != nil {
-				return err
-			}
-			if err := property(child, depth+1); err != nil {
-				return err
-			}
-		}
-		return nil
+	return validateActionProperties(schema.Properties, 0)
+}
+
+func validateActionProperty(p SchemaProperty, depth int) error {
+	if depth > MaxValueDepth {
+		return limited("action schema depth limit")
 	}
-	for name, p := range schema.Properties {
+	switch p.Type {
+	case SchemaString, SchemaInteger, SchemaNumber, SchemaBoolean, SchemaObject, SchemaArray:
+	default:
+		return invalid("unknown action schema type")
+	}
+	if p.Minimum != nil && (math.IsNaN(*p.Minimum) || math.IsInf(*p.Minimum, 0)) {
+		return invalid("nonfinite action schema minimum")
+	}
+	if p.Maximum != nil && (math.IsNaN(*p.Maximum) || math.IsInf(*p.Maximum, 0)) {
+		return invalid("nonfinite action schema maximum")
+	}
+	if p.Minimum != nil && p.Maximum != nil && *p.Minimum > *p.Maximum {
+		return invalid("action schema minimum exceeds maximum")
+	}
+	return validateActionProperties(p.Properties, depth+1)
+}
+
+func validateActionProperties(properties map[string]SchemaProperty, depth int) error {
+	for name, p := range properties {
 		if err := text(name, true); err != nil {
 			return err
 		}
-		if err := property(p, 0); err != nil {
+		if err := validateActionProperty(p, depth); err != nil {
 			return err
 		}
 	}

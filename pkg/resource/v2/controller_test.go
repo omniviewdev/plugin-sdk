@@ -90,14 +90,14 @@ func newTestController(t *testing.T, cfg Config[string]) *Controller[string] {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := controller.Close(); err != nil {
-			t.Error(err)
+		if closeErr := controller.Close(); closeErr != nil {
+			t.Error(closeErr)
 		}
 	})
 	return controller
 }
 
-func acceptedControllerContext(t *testing.T, ctx context.Context, provider Provider) context.Context {
+func acceptedControllerContext(ctx context.Context, t *testing.T, provider Provider) context.Context {
 	t.Helper()
 	catalog, err := provider.Catalog(ctx, CatalogRequest{Route: controllerTarget().Route})
 	if err != nil {
@@ -150,7 +150,7 @@ func TestControllerGetOnlyProvider(t *testing.T) {
 		t.Fatal("get-only catalog widened")
 	}
 	_, err = c.Get(
-		acceptedControllerContext(t, context.Background(), c),
+		acceptedControllerContext(context.Background(), t, c),
 		GetRequest{
 			Route:          AccessRoute{Connection: "explicit"},
 			Reference:      ResourceReference{Address: controllerAddress()},
@@ -161,7 +161,7 @@ func TestControllerGetOnlyProvider(t *testing.T) {
 		t.Fatalf("get failed: %v; calls %d", err, calls)
 	}
 	_, err = c.Enumerate(
-		acceptedControllerContext(t, context.Background(), c),
+		acceptedControllerContext(context.Background(), t, c),
 		EnumerateRequest{Target: controllerTarget()},
 	)
 	assertControllerCode(t, err, "UNSUPPORTED")
@@ -183,7 +183,7 @@ func TestControllerCreateOnlyRejectsOtherMutationsBeforeDispatch(t *testing.T) {
 		}},
 	}
 	c := newTestController(t, cfg)
-	ctx := acceptedControllerContext(t, context.Background(), c)
+	ctx := acceptedControllerContext(context.Background(), t, c)
 	catalog, err := c.Catalog(ctx, CatalogRequest{Route: controllerTarget().Route})
 	if err != nil || len(catalog.Types[0].Capabilities) != 1 ||
 		catalog.Types[0].Capabilities[0].Operation != OperationCreate {
@@ -196,7 +196,7 @@ func TestControllerCreateOnlyRejectsOtherMutationsBeforeDispatch(t *testing.T) {
 			Operation: verb,
 			Input:     Value{Kind: "null"},
 		}
-		_, err := AdmitOperation(ctx, c, request)
+		_, err = AdmitOperation(ctx, c, request)
 		assertControllerCode(t, err, "UNSUPPORTED")
 		_, err = c.Mutate(ctx, request)
 		assertControllerCode(t, err, "UNSUPPORTED")
@@ -278,7 +278,7 @@ func TestControllerNativeQueryOnlySourceCursor(t *testing.T) {
 	}
 	c := newTestController(t, cfg)
 	page, err := c.NativeQuery(
-		acceptedControllerContext(t, context.Background(), c),
+		acceptedControllerContext(context.Background(), t, c),
 		NativeQueryRequest{
 			Target:   controllerTarget(),
 			Language: "native",
@@ -301,7 +301,7 @@ func TestControllerNativeQueryOnlySourceCursor(t *testing.T) {
 		t.Fatal("native-only catalog widened")
 	}
 	_, err = c.Get(
-		acceptedControllerContext(t, context.Background(), c),
+		acceptedControllerContext(context.Background(), t, c),
 		GetRequest{
 			Route:          controllerTarget().Route,
 			Reference:      ResourceReference{Address: controllerAddress()},
@@ -322,7 +322,7 @@ func TestControllerReadOnlyNeverDispatchesWrites(t *testing.T) {
 	}
 	c := newTestController(t, cfg)
 	_, err := c.Mutate(
-		acceptedControllerContext(t, context.Background(), c),
+		acceptedControllerContext(context.Background(), t, c),
 		MutationRequest{
 			Route:     controllerTarget().Route,
 			Reference: ResourceReference{Address: controllerAddress()},
@@ -332,7 +332,7 @@ func TestControllerReadOnlyNeverDispatchesWrites(t *testing.T) {
 	)
 	assertControllerCode(t, err, "UNSUPPORTED")
 	_, err = c.Action(
-		acceptedControllerContext(t, context.Background(), c),
+		acceptedControllerContext(context.Background(), t, c),
 		ActionRequest{
 			Route:     controllerTarget().Route,
 			Reference: ResourceReference{Address: controllerAddress()},
@@ -342,7 +342,7 @@ func TestControllerReadOnlyNeverDispatchesWrites(t *testing.T) {
 	)
 	assertControllerCode(t, err, "UNSUPPORTED")
 	_, err = c.Get(
-		acceptedControllerContext(t, context.Background(), c),
+		acceptedControllerContext(context.Background(), t, c),
 		GetRequest{Reference: ResourceReference{Address: controllerAddress()}, Representation: "document"},
 	)
 	assertControllerCode(t, err, "INVALID_REQUEST")
@@ -364,7 +364,7 @@ func TestControllerCatalogMustDeclareHandlerOperation(t *testing.T) {
 	}
 	c := newTestController(t, cfg)
 	_, err := c.Get(
-		acceptedControllerContext(t, context.Background(), c),
+		acceptedControllerContext(context.Background(), t, c),
 		GetRequest{
 			Route:          controllerTarget().Route,
 			Reference:      ResourceReference{Address: controllerAddress()},
@@ -423,7 +423,7 @@ func TestControllerStopCancelsAndDestroysExactlyOnce(t *testing.T) {
 	getDone := make(chan error, 1)
 	go func() {
 		_, err := c.Get(
-			acceptedControllerContext(t, context.Background(), c),
+			acceptedControllerContext(context.Background(), t, c),
 			GetRequest{
 				Route:          controllerTarget().Route,
 				Reference:      ResourceReference{Address: controllerAddress()},
@@ -469,13 +469,11 @@ func TestControllerCloseCancelsAllClientsAndRequests(t *testing.T) {
 	<-entered
 	var callers sync.WaitGroup
 	for range 4 {
-		callers.Add(1)
-		go func() {
-			defer callers.Done()
+		callers.Go(func() {
 			if err := c.Close(); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	callers.Wait()
 	assertControllerCode(t, <-finished, "CANCELLED")
@@ -511,9 +509,9 @@ func TestControllerStartRequestDoesNotOwnClientLifetime(t *testing.T) {
 	cfg := controllerConfig()
 	var destroyed atomic.Int32
 	cfg.Lifecycle = controllerLifecycle(&destroyed)
-	var clientContext context.Context
+	clientContexts := make(chan context.Context, 1)
 	cfg.Lifecycle.CreateClient = func(ctx context.Context, _ types.Connection) (*string, error) {
-		clientContext = ctx
+		clientContexts <- ctx
 		client := "client"
 		return &client, nil
 	}
@@ -526,6 +524,7 @@ func TestControllerStartRequestDoesNotOwnClientLifetime(t *testing.T) {
 		t.Fatal(err)
 	}
 	cancel()
+	clientContext := <-clientContexts
 	if clientContext.Err() != nil {
 		t.Fatal("start request cancellation canceled active client")
 	}
@@ -558,15 +557,15 @@ func TestControllerClassifierPrecedenceAndPanic(t *testing.T) {
 		Reference:      ResourceReference{Address: controllerAddress()},
 		Representation: "document",
 	}
-	_, err := c.Get(acceptedControllerContext(t, context.Background(), c), request)
+	_, err := c.Get(acceptedControllerContext(context.Background(), t, c), request)
 	assertControllerCode(t, err, "NOT_FOUND")
 	cfg.Registrations[0].ErrorClassifier = controllerClassifier(func(error) error { panic("private data") })
 	panicController := newTestController(t, cfg)
-	_, err = panicController.Get(acceptedControllerContext(t, context.Background(), panicController), request)
+	_, err = panicController.Get(acceptedControllerContext(context.Background(), t, panicController), request)
 	assertControllerCode(t, err, "INTERNAL")
 	cfg.Registrations[0].Get = func(context.Context, *string, GetRequest) (Record, error) { panic("private data") }
 	handlerPanic := newTestController(t, cfg)
-	_, err = handlerPanic.Get(acceptedControllerContext(t, context.Background(), handlerPanic), request)
+	_, err = handlerPanic.Get(acceptedControllerContext(context.Background(), t, handlerPanic), request)
 	assertControllerCode(t, err, "INTERNAL")
 }
 
@@ -593,7 +592,7 @@ func TestControllerRejectsChangedResponseIdentityAndRevision(t *testing.T) {
 			}
 			c := newTestController(t, cfg)
 			_, err := c.Get(
-				acceptedControllerContext(t, context.Background(), c),
+				acceptedControllerContext(context.Background(), t, c),
 				GetRequest{
 					Route:          controllerTarget().Route,
 					Reference:      ResourceReference{Address: controllerAddress()},
@@ -621,7 +620,7 @@ func TestControllerDynamicExactTypeRegistration(t *testing.T) {
 	}
 	c := newTestController(t, cfg)
 	_, err := c.Get(
-		acceptedControllerContext(t, context.Background(), c),
+		acceptedControllerContext(context.Background(), t, c),
 		GetRequest{
 			Route:          controllerTarget().Route,
 			Reference:      ResourceReference{Address: controllerAddress()},
@@ -667,18 +666,18 @@ func TestControllerScopeAndRouteAdmission(t *testing.T) {
 		Reference:      ResourceReference{Address: address},
 		Representation: "document",
 	}
-	if _, err := c.Get(acceptedControllerContext(t, context.Background(), c), request); err != nil {
+	if _, err := c.Get(acceptedControllerContext(context.Background(), t, c), request); err != nil {
 		t.Fatal(err)
 	}
 	request.Reference.Address.Scope = []ScopeEntry{{Dimension: "region", Value: "west"}}
-	_, err := c.Get(acceptedControllerContext(t, context.Background(), c), request)
+	_, err := c.Get(acceptedControllerContext(context.Background(), t, c), request)
 	assertControllerCode(t, err, "UNSUPPORTED")
 	request.Reference.Address.Scope = nil
-	_, err = c.Get(acceptedControllerContext(t, context.Background(), c), request)
+	_, err = c.Get(acceptedControllerContext(context.Background(), t, c), request)
 	assertControllerCode(t, err, "INVALID_REQUEST")
 	request.Reference.Address = address
 	request.Route.Connection = "other"
-	_, err = c.Get(acceptedControllerContext(t, context.Background(), c), request)
+	_, err = c.Get(acceptedControllerContext(context.Background(), t, c), request)
 	assertControllerCode(t, err, "UNSUPPORTED")
 	if calls != 1 {
 		t.Fatalf("inadmissible request dispatched: %d", calls)
@@ -703,7 +702,7 @@ func TestControllerSourceAndRecordRevisionsStayIndependent(t *testing.T) {
 	}
 	c := newTestController(t, cfg)
 	page, err := c.Enumerate(
-		acceptedControllerContext(t, context.Background(), c),
+		acceptedControllerContext(context.Background(), t, c),
 		EnumerateRequest{Target: controllerTarget(), PageSize: 1},
 	)
 	if err != nil {
@@ -789,7 +788,7 @@ func TestControllerRejectsInvalidSourcePageMetadata(t *testing.T) {
 			}
 			c := newTestController(t, cfg)
 			_, err := c.Enumerate(
-				acceptedControllerContext(t, context.Background(), c),
+				acceptedControllerContext(context.Background(), t, c),
 				EnumerateRequest{Target: controllerTarget(), PageSize: 1},
 			)
 			if err == nil {
@@ -820,21 +819,21 @@ func TestStreamingActionAdmissionDoesNotRequireFiniteAction(t *testing.T) {
 		Input:     Value{Kind: "null"},
 	}
 	if _, err := AdmitStreamingAction(
-		acceptedControllerContext(t, context.Background(), provider),
+		acceptedControllerContext(context.Background(), t, provider),
 		provider,
 		request,
 	); err != nil {
 		t.Fatal(err)
 	}
-	_, err := AdmitOperation(acceptedControllerContext(t, context.Background(), provider), provider, request)
+	_, err := AdmitOperation(acceptedControllerContext(context.Background(), t, provider), provider, request)
 	assertControllerCode(t, err, "UNSUPPORTED")
 	base := provider.catalog
 	provider.catalog = func(ctx context.Context, request CatalogRequest) (Catalog, error) {
-		catalog, err := base(ctx, request)
+		catalog, catalogErr := base(ctx, request)
 		catalog.Types[0].Capabilities = []Capability{}
-		return catalog, err
+		return catalog, catalogErr
 	}
-	_, err = AdmitStreamingAction(acceptedControllerContext(t, context.Background(), provider), provider, request)
+	_, err = AdmitStreamingAction(acceptedControllerContext(context.Background(), t, provider), provider, request)
 	assertControllerCode(t, err, "UNSUPPORTED")
 }
 
@@ -974,25 +973,25 @@ func TestControllerOverlaySurvivesNativeRefreshAndResets(t *testing.T) {
 	}
 	_, err = c.GetConnection(context.Background(), "other")
 	assertControllerCode(t, err, "NOT_FOUND")
-	if _, err := c.GetConnection(context.Background(), "manual"); err != nil {
+	if _, err = c.GetConnection(context.Background(), "manual"); err != nil {
 		t.Fatal("native refresh erased manual profile")
 	}
-	if err := c.ApplyConnections(context.Background(), nil); err != nil {
+	if err = c.ApplyConnections(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.ApplyConnections(context.Background(), refreshed); err != nil {
+	if err = c.ApplyConnections(context.Background(), refreshed); err != nil {
 		t.Fatal(err)
 	}
 	_, err = c.GetConnection(context.Background(), "other")
 	assertControllerCode(t, err, "NOT_FOUND")
-	if err := c.ApplyConnectionOverlay(context.Background(), ConnectionOverlay{}); err != nil {
+	if err = c.ApplyConnectionOverlay(context.Background(), ConnectionOverlay{}); err != nil {
 		t.Fatal(err)
 	}
 	connection, err = c.GetConnection(context.Background(), "explicit")
 	if err != nil || connection.Name != "Fresh native" {
 		t.Fatal("empty overlay did not restore latest native facts")
 	}
-	if _, err := c.GetConnection(context.Background(), "other"); err != nil {
+	if _, err = c.GetConnection(context.Background(), "other"); err != nil {
 		t.Fatal("empty overlay did not restore disabled native route")
 	}
 	_, err = c.GetConnection(context.Background(), "manual")

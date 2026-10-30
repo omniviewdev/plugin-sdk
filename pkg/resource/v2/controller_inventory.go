@@ -3,6 +3,7 @@ package resourcev2
 import (
 	"context"
 	"errors"
+	"maps"
 	"sort"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -117,14 +118,15 @@ func (c *Controller[T]) ApplyConnections(ctx context.Context, connections []type
 		return err
 	}
 	loaded := make(map[string]types.Connection, len(connections))
-	for _, connection := range connections {
+	for i := range connections {
+		connection := &connections[i]
 		if connection.ID == "" {
 			return NewError("INVALID_REQUEST", "Connection requires an explicit ID.")
 		}
 		if _, exists := loaded[connection.ID]; exists {
 			return NewError("INVALID_REQUEST", "Connection inventory contains duplicate IDs.")
 		}
-		loaded[connection.ID] = cloneConnection(connection)
+		loaded[connection.ID] = cloneConnection(*connection)
 	}
 	c.configMu.Lock()
 	defer c.configMu.Unlock()
@@ -149,8 +151,9 @@ func (c *Controller[T]) ApplyConnectionOverlay(ctx context.Context, overlay Conn
 		return err
 	}
 	overrides := make(map[string]types.Connection, len(overlay.Upserts))
-	for _, connection := range overlay.Upserts {
-		overrides[connection.ID] = cloneConnection(connection)
+	for i := range overlay.Upserts {
+		connection := &overlay.Upserts[i]
+		overrides[connection.ID] = cloneConnection(*connection)
 	}
 	disabled := make(map[string]struct{}, len(overlay.DisabledIDs))
 	for _, id := range overlay.DisabledIDs {
@@ -173,14 +176,12 @@ func (c *Controller[T]) applyInventory(
 		return c.classify(nil, err)
 	}
 	effective := make(map[string]types.Connection, len(native)+len(overrides))
-	for id, connection := range native {
+	for id := range native {
 		if _, hidden := disabled[id]; !hidden {
-			effective[id] = connection
+			effective[id] = native[id]
 		}
 	}
-	for id, connection := range overrides {
-		effective[id] = connection
-	}
+	maps.Copy(effective, overrides)
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -188,60 +189,8 @@ func (c *Controller[T]) applyInventory(
 	}
 	// Host overlays omit private credentials. Merge only into the ephemeral
 	// effective inventory, never into the host-owned desired overlay.
-	for id, override := range overrides {
-		if override.GetSensitiveData() != nil {
-			continue
-		}
-		source, exists := native[id]
-		candidate := override
-		if exists {
-			candidate.SetSensitiveData(source.GetSensitiveData())
-			if SameConnectionClientConfig(candidate, source) {
-				effective[id] = candidate
-				continue
-			}
-		}
-		if source, exists = c.connections[id]; exists {
-			candidate.SetSensitiveData(source.GetSensitiveData())
-			if SameConnectionClientConfig(candidate, source) {
-				effective[id] = candidate
-			}
-		}
-	}
-	changed := make([]string, 0)
-	for id, previous := range c.connections {
-		current, exists := effective[id]
-		if !exists || !SameConnectionClientConfig(previous, current) {
-			c.changing[id] = true
-			changed = append(changed, id)
-		} else {
-			if current.LastRefresh.IsZero() {
-				current.LastRefresh = previous.LastRefresh
-			}
-			if current.ExpiryTime == 0 {
-				current.ExpiryTime = previous.ExpiryTime
-			}
-			if current.Client == nil {
-				current.Client = previous.Client
-			}
-			effective[id] = current
-		}
-	}
-	for id := range effective {
-		if _, exists := c.connections[id]; !exists {
-			c.changing[id] = true
-			changed = append(changed, id)
-		}
-	}
-	var retired []*clientSlot[T]
-	for _, id := range changed {
-		delete(c.failedStarts, id)
-		if slot := c.clients[id]; slot != nil {
-			slot.stopping = true
-			slot.cancel()
-			retired = append(retired, slot)
-		}
-	}
+	c.inheritOverlayCredentials(effective, native, overrides)
+	changed, retired := c.stageInventory(effective)
 	c.mu.Unlock()
 	var err error
 	for _, slot := range retired {
@@ -267,14 +216,88 @@ func (c *Controller[T]) applyInventory(
 	return c.classify(nil, err)
 }
 
+// inheritOverlayCredentials runs under mu and never changes desired overrides.
+// Only unchanged public configuration may inherit source-owned credentials.
+func (c *Controller[T]) inheritOverlayCredentials(effective, native, overrides map[string]types.Connection) {
+	for id := range overrides {
+		override := overrides[id]
+		if override.GetSensitiveData() != nil {
+			continue
+		}
+		if candidate, ok := inheritConnectionCredentials(override, native, id); ok {
+			effective[id] = candidate
+			continue
+		}
+		if candidate, ok := inheritConnectionCredentials(override, c.connections, id); ok {
+			effective[id] = candidate
+		}
+	}
+}
+
+func inheritConnectionCredentials(
+	override types.Connection,
+	source map[string]types.Connection,
+	id string,
+) (types.Connection, bool) {
+	connection, exists := source[id]
+	if !exists {
+		return override, false
+	}
+	override.SetSensitiveData(connection.GetSensitiveData())
+	return override, SameConnectionClientConfig(override, connection)
+}
+
+// stageInventory holds mu while blocking starts and retiring changed generations.
+// Draining those generations must happen after releasing mu.
+func (c *Controller[T]) stageInventory(effective map[string]types.Connection) ([]string, []*clientSlot[T]) {
+	changed := make([]string, 0)
+	for id := range c.connections {
+		previous := c.connections[id]
+		current, exists := effective[id]
+		if !exists || !SameConnectionClientConfig(previous, current) {
+			c.changing[id] = true
+			changed = append(changed, id)
+			continue
+		}
+		effective[id] = preserveConnectionRuntime(current, previous)
+	}
+	for id := range effective {
+		if _, exists := c.connections[id]; !exists {
+			c.changing[id] = true
+			changed = append(changed, id)
+		}
+	}
+	var retired []*clientSlot[T]
+	for _, id := range changed {
+		delete(c.failedStarts, id)
+		if slot := c.clients[id]; slot != nil {
+			slot.stopping = true
+			slot.cancel()
+			retired = append(retired, slot)
+		}
+	}
+	return changed, retired
+}
+
+func preserveConnectionRuntime(current, previous types.Connection) types.Connection {
+	if current.LastRefresh.IsZero() {
+		current.LastRefresh = previous.LastRefresh
+	}
+	if current.ExpiryTime == 0 {
+		current.ExpiryTime = previous.ExpiryTime
+	}
+	if current.Client == nil {
+		current.Client = previous.Client
+	}
+	return current
+}
+
 func copyConnectionOverlay(
 	upserts map[string]types.Connection,
 	disabledIDs map[string]struct{},
 ) (map[string]types.Connection, map[string]struct{}) {
 	overrides := make(map[string]types.Connection, len(upserts)+1)
-	for id, connection := range upserts {
-		overrides[id] = connection
-	}
+	maps.Copy(overrides, upserts)
 	disabled := make(map[string]struct{}, len(disabledIDs))
 	for id := range disabledIDs {
 		disabled[id] = struct{}{}

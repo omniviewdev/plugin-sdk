@@ -228,7 +228,7 @@ func (c *Controller[T]) startClient(s *clientSlot[T]) {
 func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status types.ConnectionStatus, err error) {
 	var r *Registration[T]
 	defer c.guard(&r, &err)
-	connection, err := c.connection(ctx, id)
+	_, err = c.connection(ctx, id)
 	if err != nil {
 		return status, err
 	}
@@ -241,28 +241,15 @@ func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status 
 		c.mu.Unlock()
 		return status, NewError("CANCELLED", "Connection configuration is changing.")
 	}
-	var exists bool
-	connection, exists = c.connections[id]
+	connection, exists := c.connections[id]
 	if !exists {
 		c.mu.Unlock()
 		return status, NewError("NOT_FOUND", "Connection was removed.")
 	}
-	s := c.clients[id]
-	created := s == nil
-	if created {
-		nonce, nonceErr := newCatalogNonce()
-		if nonceErr != nil {
-			c.mu.Unlock()
-			return status, nonceErr
-		}
-		clientCtx, cancel := context.WithCancel(c.ctx)
-		session, _ := SessionFromContext(ctx)
-		session.Connection = nil
-		clientCtx = WithSession(clientCtx, session)
-		s = &clientSlot[T]{connection: connection, ctx: clientCtx, cancel: cancel, ready: make(chan struct{})}
-		s.catalogNonce = nonce
-		c.clients[id] = s
-		delete(c.failedStarts, id)
+	s, created, slotErr := c.startSlotLocked(ctx, connection)
+	if slotErr != nil {
+		c.mu.Unlock()
+		return status, slotErr
 	}
 	c.mu.Unlock()
 	if created {
@@ -295,6 +282,30 @@ func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status 
 	}
 	connection = cloneConnection(connection)
 	return types.ConnectionStatus{Connection: &connection, Status: types.ConnectionStatusConnected}, nil
+}
+
+// startSlotLocked publishes one pending generation under mu. stopSlot owns its
+// cancellation and teardown; only the creator attaches startup request cancellation.
+func (c *Controller[T]) startSlotLocked(
+	ctx context.Context,
+	connection types.Connection,
+) (*clientSlot[T], bool, error) {
+	if s := c.clients[connection.ID]; s != nil {
+		return s, false, nil
+	}
+	nonce, err := newCatalogNonce()
+	if err != nil {
+		return nil, false, err
+	}
+	s := &clientSlot[T]{connection: connection, ready: make(chan struct{}), catalogNonce: nonce}
+	//nolint:gosec // G118: stopSlot cancels and drains the owned generation.
+	s.ctx, s.cancel = context.WithCancel(c.ctx)
+	session, _ := SessionFromContext(ctx)
+	session.Connection = nil
+	s.ctx = WithSession(s.ctx, session)
+	c.clients[connection.ID] = s
+	delete(c.failedStarts, connection.ID)
+	return s, true, nil
 }
 
 func lifecycleCall(fn func() error) (err error) {

@@ -27,10 +27,10 @@ func validateRelationshipDescriptor(v RelationshipDescriptor) error {
 	}
 	if err := ValidateAddress(
 		ResourceAddress{
-			Provider:  "validation",
-			Authority: "validation",
+			Provider:  adapterValidationToken,
+			Authority: adapterValidationToken,
 			Type:      v.TargetType,
-			ID:        "validation",
+			ID:        adapterValidationToken,
 			Scope:     v.TargetScope,
 		},
 	); err != nil {
@@ -74,8 +74,8 @@ func validateResolvedRelationship(v ResolvedRelationship) error {
 	if err := validateRelationshipDescriptor(v.Descriptor); err != nil {
 		return err
 	}
-	for _, t := range v.Targets {
-		if err := validateRelationshipTarget(t); err != nil {
+	for i := range v.Targets {
+		if err := validateRelationshipTarget(v.Targets[i]); err != nil {
 			return err
 		}
 	}
@@ -127,8 +127,14 @@ func validateResourceEvent(v ResourceEvent) error {
 	return nil
 }
 
+const maxTimestampNanos = 999999999
+
 func toTimestamp(t time.Time) *resourcepb.TimestampValue {
-	return &resourcepb.TimestampValue{Seconds: t.Unix(), Nanos: uint32(t.Nanosecond())}
+	nanos := t.Nanosecond()
+	if nanos < 0 || nanos > maxTimestampNanos {
+		panic("time.Time returned invalid nanoseconds")
+	}
+	return &resourcepb.TimestampValue{Seconds: t.Unix(), Nanos: uint32(nanos)}
 }
 
 func toOptionalTimestamp(t *time.Time) *resourcepb.TimestampValue {
@@ -143,7 +149,7 @@ func (d *adapterDecoder) timestamp(p *resourcepb.TimestampValue) time.Time {
 		d.fail("missing timestamp")
 		return time.Time{}
 	}
-	if p.Seconds < -62135596800 || p.Seconds > 253402300799 || p.Nanos > 999999999 {
+	if p.Seconds < -62135596800 || p.Seconds > 253402300799 || p.Nanos > maxTimestampNanos {
 		d.fail("timestamp out of range")
 		return time.Time{}
 	}
@@ -203,27 +209,31 @@ func (d *adapterDecoder) relationshipDescriptor(p *resourcepb.RelationshipDescri
 		v.ScopeExtractors[i] = d.scopeExtractor(p)
 	}
 	if len(p.ExtractorJson) > 0 {
-		raw, err := parseJSON(p.ExtractorJson)
-		if err != nil {
-			if d.err == nil {
-				d.err = err
-			}
-			return v
-		}
-		if _, ok := raw.(map[string]any); !ok {
-			d.fail("extractor must be object")
-			return v
-		}
-		decoder := json.NewDecoder(bytes.NewReader(p.ExtractorJson))
-		decoder.DisallowUnknownFields()
-		var extractor RelationshipExtractor
-		if err := decoder.Decode(&extractor); err != nil {
-			d.fail("invalid relationship extractor")
-			return v
-		}
-		v.Extractor = &extractor
+		v.Extractor = d.relationshipExtractor(p.ExtractorJson)
 	}
 	return v
+}
+
+func (d *adapterDecoder) relationshipExtractor(data []byte) *RelationshipExtractor {
+	raw, err := parseJSON(data)
+	if err != nil {
+		if d.err == nil {
+			d.err = err
+		}
+		return nil
+	}
+	if _, ok := raw.(map[string]any); !ok {
+		d.fail("extractor must be object")
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var extractor RelationshipExtractor
+	if err := decoder.Decode(&extractor); err != nil {
+		d.fail("invalid relationship extractor")
+		return nil
+	}
+	return &extractor
 }
 
 func toRelationshipTarget(v RelationshipTarget) *resourcepb.RelationshipTarget {
@@ -247,8 +257,8 @@ func toResolvedRelationship(v ResolvedRelationship) *resourcepb.ResolvedRelation
 		Descriptor_: toRelationshipDescriptor(v.Descriptor),
 		Targets:     make([]*resourcepb.RelationshipTarget, len(v.Targets)),
 	}
-	for i, x := range v.Targets {
-		p.Targets[i] = toRelationshipTarget(x)
+	for i := range v.Targets {
+		p.Targets[i] = toRelationshipTarget(v.Targets[i])
 	}
 	return p
 }

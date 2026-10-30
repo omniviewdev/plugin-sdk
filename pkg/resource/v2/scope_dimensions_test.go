@@ -70,7 +70,7 @@ func TestQueryOnlyDimensionsDoNotBecomeIdentityOrImplicitAcquisition(t *testing.
 		Reference:      record.Reference,
 		Representation: "document",
 	}
-	actual, err := controller.Get(acceptedControllerContext(t, context.Background(), controller), request)
+	actual, err := controller.Get(acceptedControllerContext(context.Background(), t, controller), request)
 	if err != nil || calls != 1 || !reflect.DeepEqual(actual.Reference, record.Reference) {
 		t.Fatalf("Get changed identity: %+v %v", actual, err)
 	}
@@ -108,7 +108,7 @@ func TestQueryOnlyRestrictedGetDoesNotGuessOpaqueID(t *testing.T) {
 			record := selectionRecord("repository-X")
 			record.Reference.Address.ID = "repository-X/opaque-looking-ID"
 			_, err := controller.Get(
-				acceptedControllerContext(t, context.Background(), controller),
+				acceptedControllerContext(context.Background(), t, controller),
 				GetRequest{
 					Route:          AccessRoute{Connection: "explicit"},
 					Reference:      record.Reference,
@@ -124,7 +124,7 @@ func TestQueryOnlyRestrictedGetDoesNotGuessOpaqueID(t *testing.T) {
 
 func TestQueryOnlyNativeSelectionAndCoverageRemainExplicit(t *testing.T) {
 	cfg := selectionConfig("")
-	native := func(requestTarget ReadTarget) (SourcePage, error) {
+	native := func(requestTarget ReadTarget) SourcePage {
 		if len(requestTarget.Scope) != 2 || requestTarget.Scope[1].Values == nil ||
 			len(*requestTarget.Scope[1].Values) != 1 {
 			t.Fatal("native query lost explicit repository")
@@ -142,16 +142,16 @@ func TestQueryOnlyNativeSelectionAndCoverageRemainExplicit(t *testing.T) {
 				Reason: "native repository acquisition is incomplete",
 			},
 			Consistency: "bestEffort",
-		}, nil
+		}
 	}
 	cfg.Registrations = []Registration[string]{
 		{
 			Type: "opaque/type",
 			Enumerate: func(_ context.Context, _ *string, request EnumerateRequest) (SourcePage, error) {
-				return native(request.Target)
+				return native(request.Target), nil
 			},
 			NativeQuery: func(_ context.Context, _ *string, request NativeQueryRequest) (SourcePage, error) {
-				return native(request.Target)
+				return native(request.Target), nil
 			},
 		},
 	}
@@ -164,7 +164,7 @@ func TestQueryOnlyNativeSelectionAndCoverageRemainExplicit(t *testing.T) {
 			var err error
 			if query {
 				page, err = controller.NativeQuery(
-					acceptedControllerContext(t, context.Background(), controller),
+					acceptedControllerContext(context.Background(), t, controller),
 					NativeQueryRequest{
 						Target:   target,
 						PageSize: 1,
@@ -174,7 +174,7 @@ func TestQueryOnlyNativeSelectionAndCoverageRemainExplicit(t *testing.T) {
 				)
 			} else {
 				page, err = controller.Enumerate(
-					acceptedControllerContext(t, context.Background(), controller),
+					acceptedControllerContext(context.Background(), t, controller),
 					EnumerateRequest{Target: target, PageSize: 1},
 				)
 			}
@@ -190,6 +190,9 @@ func TestQueryOnlyNativeSelectionAndCoverageRemainExplicit(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestNativeSelectionRejectsIdentityScopeEscape(t *testing.T) {
 	escaped := selectionRecord("repository-X")
 	escaped.Reference.Address.Scope[0].Value = "other-domain"
 	if err := checkRecord(

@@ -6,6 +6,8 @@ import (
 	"errors"
 )
 
+const errorCodeInternal = "INTERNAL"
+
 // ResourceOperationError preserves provider classification across the resource
 // transport. Title, Message, and Suggestions must contain public-safe text:
 // never include credentials, private configuration, or raw native diagnostics.
@@ -67,7 +69,7 @@ func ErrorCode(err error) string {
 	if errors.As(err, &classified) && classified != nil && IsErrorCode(classified.Code) {
 		return classified.Code
 	}
-	return "INTERNAL"
+	return errorCodeInternal
 }
 
 // ErrorClassifier can decline an error by returning nil.
@@ -78,7 +80,7 @@ type ErrorClassifier interface{ ClassifyError(error) error }
 func IsErrorCode(code string) bool {
 	switch code {
 	case "NOT_FOUND", "ALREADY_EXISTS", "PERMISSION_DENIED", "INVALID_INPUT",
-		"CONFLICT", "INTERNAL", "UNAVAILABLE", "TIMEOUT", "FILTER_UNKNOWN_FIELD",
+		"CONFLICT", errorCodeInternal, "UNAVAILABLE", "TIMEOUT", "FILTER_UNKNOWN_FIELD",
 		"FILTER_INVALID_OPERATOR", "FORBIDDEN", "UNAUTHORIZED", "CONNECTION_ERROR",
 		"CERTIFICATE_ERROR", "INVALID_REQUEST", "UNSUPPORTED", "CANCELLED",
 		"RESOURCE_LIMIT", "CONTINUATION_EXPIRED", "RESET_REQUIRED", "PARTIAL_RESULT",

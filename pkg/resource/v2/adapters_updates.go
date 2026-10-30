@@ -19,6 +19,15 @@ func validateWatchState(v WatchState) error {
 	}
 	return nil
 }
+
+func toWatchState(v WatchState) int32 {
+	if v < WatchStateIdle || v > WatchStateSkipped {
+		// Public encoders validate before reaching this private conversion.
+		panic("invalid watch state passed to encoder")
+	}
+	return int32(v)
+}
+
 func validateMetadata(v ResourceMetadata) error { return admission(v) }
 func validateWatchAdd(v WatchAddPayload) error {
 	if err := admission(v); err != nil {
@@ -37,9 +46,7 @@ func validateWatchAdd(v WatchAddPayload) error {
 }
 
 func validateWatchUpdate(v WatchUpdatePayload) error {
-	return validateWatchAdd(
-		WatchAddPayload{Route: v.Route, Record: v.Record, Metadata: v.Metadata, Guarantee: v.Guarantee},
-	)
+	return validateWatchAdd(WatchAddPayload(v))
 }
 
 func validateWatchDelete(v WatchDeletePayload) error {
@@ -244,7 +251,7 @@ func toWatchStateEvent(v WatchStateEvent) *resourcepb.WatchStateEvent {
 	return &resourcepb.WatchStateEvent{
 		Route:     toAccessRoute(v.Route),
 		Type:      v.Type,
-		State:     int32(v.State),
+		State:     toWatchState(v.State),
 		Count:     toCount(v.Count),
 		ErrorCode: updateErrorCode(v.Error),
 		Message:   v.Message,
@@ -289,7 +296,7 @@ func toWatchConnectionSummary(v WatchConnectionSummary) *resourcepb.WatchConnect
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		p.Resources = append(p.Resources, &resourcepb.ResourceWatchState{Type: k, State: int32(v.Resources[k])})
+		p.Resources = append(p.Resources, &resourcepb.ResourceWatchState{Type: k, State: toWatchState(v.Resources[k])})
 	}
 	keys = make([]string, 0, len(v.ResourceCounts))
 	for k := range v.ResourceCounts {

@@ -35,20 +35,28 @@ func SameConnectionClientConfig(a, b types.Connection) bool {
 // ownership boundary. Native, desired, effective, and client-slot inventories
 // may share their immutable internal values; callers and callbacks never do.
 func cloneConnection(connection types.Connection) types.Connection {
-	var copy metadataCopy
-	connection.Data = copy.value(reflect.ValueOf(connection.Data)).Interface().(map[string]any)
-	connection.Labels = copy.value(reflect.ValueOf(connection.Labels)).Interface().(map[string]any)
-	connection.SetSensitiveData(copy.value(reflect.ValueOf(connection.GetSensitiveData())).Interface().(map[string]any))
-	connection.Lifecycle = copy.value(reflect.ValueOf(connection.Lifecycle)).Interface().(types.ConnectionLifecycle)
+	var copier metadataCopy
+	connection.Data = copyMetadata(&copier, connection.Data)
+	connection.Labels = copyMetadata(&copier, connection.Labels)
+	connection.SetSensitiveData(copyMetadata(&copier, connection.GetSensitiveData()))
+	connection.Lifecycle = copyMetadata(&copier, connection.Lifecycle)
 	// Client is a legacy shared-utility runtime handle, not configuration. Keep
 	// opaque native handles intact, but own JSON containers stored in this field.
 	if value := reflect.ValueOf(connection.Client); value.IsValid() {
-		switch value.Kind() {
-		case reflect.Map, reflect.Slice, reflect.Array:
-			connection.Client = copy.value(value).Interface()
+		kind := value.Kind()
+		if kind == reflect.Map || kind == reflect.Slice || kind == reflect.Array {
+			connection.Client = copier.value(value).Interface()
 		}
 	}
 	return connection
+}
+
+func copyMetadata[T any](copier *metadataCopy, value T) T {
+	cloned, ok := reflect.TypeAssert[T](copier.value(reflect.ValueOf(value)))
+	if !ok {
+		panic("connection metadata copy changed its concrete type")
+	}
+	return cloned
 }
 
 type metadataCopyVisit struct {
@@ -86,43 +94,12 @@ func (c *metadataCopy) value(v reflect.Value) reflect.Value {
 		out.Set(c.value(v.Elem()))
 		return out
 	case reflect.Map:
-		if v.IsNil() {
-			return v
-		}
-		out, seen := c.remember(v, 0, func() reflect.Value { return reflect.MakeMapWithSize(v.Type(), v.Len()) })
-		if seen {
-			return out
-		}
-		it := v.MapRange()
-		for it.Next() {
-			out.SetMapIndex(it.Key(), c.value(it.Value()))
-		}
-		return out
+		return c.mapValue(v)
 	case reflect.Slice:
-		if v.IsNil() {
-			return v
-		}
-		out, seen := c.remember(
-			v,
-			v.Len(),
-			func() reflect.Value { return reflect.MakeSlice(v.Type(), v.Len(), v.Len()) },
-		)
-		if seen {
-			return out
-		}
-		if v.Type().Elem().Kind() == reflect.Uint8 {
-			reflect.Copy(out, v)
-			return out
-		}
-		for i := range v.Len() {
-			out.Index(i).Set(c.value(v.Index(i)))
-		}
-		return out
+		return c.sliceValue(v)
 	case reflect.Array:
 		out := reflect.New(v.Type()).Elem()
-		for i := range v.Len() {
-			out.Index(i).Set(c.value(v.Index(i)))
-		}
+		c.elements(out, v)
 		return out
 	case reflect.Pointer:
 		if v.IsNil() {
@@ -134,18 +111,63 @@ func (c *metadataCopy) value(v reflect.Value) reflect.Value {
 		}
 		return out
 	case reflect.Struct:
-		out := reflect.New(v.Type()).Elem()
-		out.Set(v)
-		for i := range v.NumField() {
-			field := v.Type().Field(i)
-			// Serialization visibility does not determine configuration ownership.
-			// Unexported implementation state remains opaque and shallow-copied.
-			if field.PkgPath == "" {
-				out.Field(i).Set(c.value(v.Field(i)))
-			}
-		}
-		return out
-	default:
+		return c.structValue(v)
+	case reflect.Invalid, reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128,
+		reflect.Chan, reflect.Func, reflect.String, reflect.UnsafePointer:
 		return v
 	}
+	return v
+}
+
+func (c *metadataCopy) mapValue(v reflect.Value) reflect.Value {
+	if v.IsNil() {
+		return v
+	}
+	out, seen := c.remember(v, 0, func() reflect.Value { return reflect.MakeMapWithSize(v.Type(), v.Len()) })
+	if !seen {
+		it := v.MapRange()
+		for it.Next() {
+			out.SetMapIndex(it.Key(), c.value(it.Value()))
+		}
+	}
+	return out
+}
+
+func (c *metadataCopy) sliceValue(v reflect.Value) reflect.Value {
+	if v.IsNil() {
+		return v
+	}
+	out, seen := c.remember(v, v.Len(), func() reflect.Value {
+		return reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+	})
+	if !seen {
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			reflect.Copy(out, v)
+		} else {
+			c.elements(out, v)
+		}
+	}
+	return out
+}
+
+func (c *metadataCopy) elements(out, v reflect.Value) {
+	for i := range v.Len() {
+		out.Index(i).Set(c.value(v.Index(i)))
+	}
+}
+
+func (c *metadataCopy) structValue(v reflect.Value) reflect.Value {
+	out := reflect.New(v.Type()).Elem()
+	out.Set(v)
+	for i := range v.NumField() {
+		// Serialization visibility does not determine configuration ownership.
+		// Unexported implementation state remains opaque and shallow-copied.
+		if v.Type().Field(i).PkgPath == "" {
+			out.Field(i).Set(c.value(v.Field(i)))
+		}
+	}
+	return out
 }

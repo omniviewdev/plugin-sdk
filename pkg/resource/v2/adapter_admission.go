@@ -20,68 +20,79 @@ func admitProto(p proto.Message) error {
 	if p == nil || !p.ProtoReflect().IsValid() {
 		return invalid("missing protobuf message")
 	}
-	nodes, fields, bytes := 0, 0, 0
-	var visit func(protoreflect.Message, int) error
-	visit = func(m protoreflect.Message, depth int) error {
-		if !m.IsValid() {
-			return invalid("missing protobuf message")
-		}
-		nodes++
-		if depth > maxDomainDepth*3+16 || nodes > maxDomainNodes*4 {
-			return limited("protobuf complexity limit")
-		}
-		if len(m.GetUnknown()) != 0 {
-			return NewError("UNSUPPORTED", "unknown resource protobuf field")
-		}
-		var err error
-		m.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
-			check := func(v protoreflect.Value) error {
-				switch fd.Kind() {
-				case protoreflect.MessageKind:
-					return visit(v.Message(), depth+1)
-				case protoreflect.StringKind:
-					s := v.String()
-					bytes += len(s)
-					if !utf8.ValidString(s) {
-						return invalid("invalid protobuf UTF-8")
-					}
-				case protoreflect.BytesKind:
-					bytes += len(v.Bytes())
-				}
-				if bytes > 32<<20 {
-					return limited("protobuf byte limit")
-				}
-				return nil
-			}
-			if fd.IsList() {
-				list := v.List()
-				fields += list.Len()
-				if fields > maxDomainFields {
-					err = limited("protobuf field limit")
-					return false
-				}
-				for i := range list.Len() {
-					if err = check(list.Get(i)); err != nil {
-						return false
-					}
-				}
-			} else {
-				fields++
-				if fields > maxDomainFields {
-					err = limited("protobuf field limit")
-					return false
-				}
-				err = check(v)
-			}
-			return err == nil
-		})
-		return err
-	}
-	if err := visit(p.ProtoReflect(), 0); err != nil {
+	budget := protoAdmissionBudget{}
+	if err := budget.visit(p.ProtoReflect(), 0); err != nil {
 		return err
 	}
 	if proto.Size(p) > MaxMessageBytes {
 		return limited("protobuf message byte limit")
+	}
+	return nil
+}
+
+type protoAdmissionBudget struct {
+	nodes, fields, bytes int
+}
+
+func (b *protoAdmissionBudget) visit(m protoreflect.Message, depth int) error {
+	if !m.IsValid() {
+		return invalid("missing protobuf message")
+	}
+	b.nodes++
+	const wrapperDepth = maxDomainDepth*3 + 16
+	const wrapperNodes = maxDomainNodes * 4
+	if depth > wrapperDepth || b.nodes > wrapperNodes {
+		return limited("protobuf complexity limit")
+	}
+	if len(m.GetUnknown()) != 0 {
+		return NewError("UNSUPPORTED", "unknown resource protobuf field")
+	}
+	var err error
+	m.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
+		err = b.field(fd, v, depth)
+		return err == nil
+	})
+	return err
+}
+
+func (b *protoAdmissionBudget) field(fd protoreflect.FieldDescriptor, v protoreflect.Value, depth int) error {
+	if !fd.IsList() {
+		b.fields++
+		if b.fields > maxDomainFields {
+			return limited("protobuf field limit")
+		}
+		return b.scalar(fd, v, depth)
+	}
+	list := v.List()
+	b.fields += list.Len()
+	if b.fields > maxDomainFields {
+		return limited("protobuf field limit")
+	}
+	for i := range list.Len() {
+		if err := b.scalar(fd, list.Get(i), depth); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *protoAdmissionBudget) scalar(fd protoreflect.FieldDescriptor, v protoreflect.Value, depth int) error {
+	kind := fd.Kind()
+	if kind == protoreflect.MessageKind {
+		return b.visit(v.Message(), depth+1)
+	}
+	if kind == protoreflect.StringKind {
+		s := v.String()
+		b.bytes += len(s)
+		if !utf8.ValidString(s) {
+			return invalid("invalid protobuf UTF-8")
+		}
+	}
+	if kind == protoreflect.BytesKind {
+		b.bytes += len(v.Bytes())
+	}
+	if b.bytes > MaxMessageBytes {
+		return limited("protobuf byte limit")
 	}
 	return nil
 }
@@ -119,98 +130,110 @@ func (d *adapterDecoder) valueAt(p *resourcepb.Value, depth int) Value {
 			d.fail("missing null marker")
 			break
 		}
-		v.Kind = "null"
+		v.Kind = valueKindNull
 	case *resourcepb.Value_BoolValue:
 		if x == nil {
 			d.fail("missing bool")
 			break
 		}
-		v = Value{Kind: "bool", Bool: x.BoolValue}
+		v = Value{Kind: valueKindBool, Bool: x.BoolValue}
 	case *resourcepb.Value_StringValue:
 		if x == nil {
 			d.fail("missing string")
 			break
 		}
-		v = Value{Kind: "string", String: x.StringValue}
+		v = Value{Kind: valueKindString, String: x.StringValue}
 	case *resourcepb.Value_Int64Value:
 		if x == nil {
 			d.fail("missing int64")
 			break
 		}
-		v = Value{Kind: "int64", Int: strconv.FormatInt(x.Int64Value, 10)}
+		v = Value{Kind: valueKindInt64, Int: strconv.FormatInt(x.Int64Value, 10)}
 	case *resourcepb.Value_Uint64Value:
 		if x == nil {
 			d.fail("missing uint64")
 			break
 		}
-		v = Value{Kind: "uint64", Uint: strconv.FormatUint(x.Uint64Value, 10)}
+		v = Value{Kind: valueKindUint64, Uint: strconv.FormatUint(x.Uint64Value, 10)}
 	case *resourcepb.Value_DoubleValue:
 		if x == nil {
 			d.fail("missing double")
 			break
 		}
-		v = Value{Kind: "double", Double: x.DoubleValue}
+		v = Value{Kind: valueKindDouble, Double: x.DoubleValue}
 	case *resourcepb.Value_TimestampValue:
-		if x == nil || x.TimestampValue == nil {
-			d.fail("missing timestamp")
-			break
-		}
-		t := x.TimestampValue
-		if t.Seconds < -62135596800 || t.Seconds > 253402300799 || t.Nanos > 999999999 {
-			d.fail("timestamp out of range")
-			break
-		}
-		v = TimestampValue(time.Unix(t.Seconds, int64(t.Nanos)))
+		v = d.timestampValue(x)
 	case *resourcepb.Value_ListValue:
-		if x == nil || x.ListValue == nil {
-			d.fail("missing list")
-			break
-		}
-		if len(x.ListValue.Values) > maxDomainNodes-d.nodes {
-			d.err = limited("value node limit")
-			break
-		}
-		v = Value{Kind: "list", List: make([]Value, len(x.ListValue.Values))}
-		for i, p := range x.ListValue.Values {
-			v.List[i] = d.valueAt(p, depth+1)
-			if d.err != nil {
-				break
-			}
-		}
+		v = d.listValue(x, depth)
 	case *resourcepb.Value_MapValue:
-		if x == nil || x.MapValue == nil {
-			d.fail("missing map")
-			break
-		}
-		entries := x.MapValue.Entries
-		if len(entries) > maxDomainNodes-d.nodes {
-			d.err = limited("value node limit")
-			break
-		}
-		keys := make(map[string]struct{}, len(entries))
-		for _, e := range entries {
-			if e == nil {
-				d.fail("missing map entry")
-				break
-			}
-			if _, ok := keys[e.Key]; ok {
-				d.fail("duplicate map key")
-				break
-			}
-			keys[e.Key] = struct{}{}
-		}
+		v = d.mapValue(x, depth)
+	default:
+		d.fail("unset value selection")
+	}
+	return v
+}
+
+func (d *adapterDecoder) timestampValue(x *resourcepb.Value_TimestampValue) Value {
+	if x == nil || x.TimestampValue == nil {
+		d.fail("missing timestamp")
+		return Value{}
+	}
+	t := x.TimestampValue
+	if t.Seconds < -62135596800 || t.Seconds > 253402300799 || t.Nanos > 999999999 {
+		d.fail("timestamp out of range")
+		return Value{}
+	}
+	return TimestampValue(time.Unix(t.Seconds, int64(t.Nanos)))
+}
+
+func (d *adapterDecoder) listValue(x *resourcepb.Value_ListValue, depth int) Value {
+	if x == nil || x.ListValue == nil {
+		d.fail("missing list")
+		return Value{}
+	}
+	values := x.ListValue.Values
+	if len(values) > maxDomainNodes-d.nodes {
+		d.err = limited("value node limit")
+		return Value{}
+	}
+	v := Value{Kind: valueKindList, List: make([]Value, len(values))}
+	for i, p := range values {
+		v.List[i] = d.valueAt(p, depth+1)
 		if d.err != nil {
 			break
 		}
-		v = Value{Kind: "map", Map: make(map[string]Value, len(entries))}
-		for _, e := range entries {
-			v.Map[e.Key] = d.valueAt(e.Value, depth+1)
-			if d.err != nil {
-				break
-			}
+	}
+	return v
+}
+
+func (d *adapterDecoder) mapValue(x *resourcepb.Value_MapValue, depth int) Value {
+	if x == nil || x.MapValue == nil {
+		d.fail("missing map")
+		return Value{}
+	}
+	entries := x.MapValue.Entries
+	if len(entries) > maxDomainNodes-d.nodes {
+		d.err = limited("value node limit")
+		return Value{}
+	}
+	keys := make(map[string]struct{}, len(entries))
+	for _, e := range entries {
+		if e == nil {
+			d.fail("missing map entry")
+			return Value{}
 		}
-	default:
-		d.fail("unset value selection")
+		if _, ok := keys[e.Key]; ok {
+			d.fail("duplicate map key")
+			return Value{}
+		}
+		keys[e.Key] = struct{}{}
+	}
+	v := Value{Kind: valueKindMap, Map: make(map[string]Value, len(entries))}
+	for _, e := range entries {
+		v.Map[e.Key] = d.valueAt(e.Value, depth+1)
+		if d.err != nil {
+			break
+		}
 	}
 	return v
 }

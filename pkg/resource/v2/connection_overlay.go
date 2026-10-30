@@ -42,7 +42,8 @@ func ValidateConnectionOverlay(overlay ConnectionOverlay) error {
 		return err
 	}
 	seen := map[string]bool{}
-	for _, connection := range overlay.Upserts {
+	for i := range overlay.Upserts {
+		connection := &overlay.Upserts[i]
 		if err := text(connection.ID, true); err != nil {
 			return err
 		}

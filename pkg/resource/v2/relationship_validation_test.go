@@ -160,13 +160,13 @@ func TestRelationshipRequestStrictJSON(t *testing.T) {
 	}
 	for _, data := range cases {
 		var got RelationshipResolutionRequest
-		if err := json.Unmarshal([]byte(data), &got); ErrorCode(err) != "INVALID_REQUEST" {
-			t.Fatalf("strict request admitted %s: %v", data, err)
+		if decodeErr := json.Unmarshal([]byte(data), &got); ErrorCode(decodeErr) != "INVALID_REQUEST" {
+			t.Fatalf("strict request admitted %s: %v", data, decodeErr)
 		}
 	}
 	var got RelationshipResolutionRequest
-	if err := json.Unmarshal(encoded, &got); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(encoded, &got); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	again, err := json.Marshal(got)
 	if err != nil || string(again) != base {
@@ -177,16 +177,16 @@ func TestRelationshipRequestStrictJSON(t *testing.T) {
 	if err != nil || !strings.Contains(string(encoded), `"targets":[]`) {
 		t.Fatalf("nil targets must emit array: %s, %v", encoded, err)
 	}
-	if err := json.Unmarshal(encoded, &got); err != nil {
-		t.Fatalf("canonical empty request rejected: %v", err)
+	if decodeErr := json.Unmarshal(encoded, &got); decodeErr != nil {
+		t.Fatalf("canonical empty request rejected: %v", decodeErr)
 	}
-	if err := json.Unmarshal(
+	if decodeErr := json.Unmarshal(
 		[]byte(strings.Replace(string(encoded), `"targets":[]`, `"targets":null`, 1)),
 		&got,
 	); ErrorCode(
-		err,
+		decodeErr,
 	) != "INVALID_REQUEST" {
-		t.Fatalf("null target array admitted: %v", err)
+		t.Fatalf("null target array admitted: %v", decodeErr)
 	}
 }
 

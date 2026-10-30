@@ -39,7 +39,10 @@ func TestDisplayRenamePreservesActiveNativeHTTPRequestAndPrivateCredentials(t *t
 		Lifecycle: &Lifecycle[ownershipEndpointClient]{
 			LoadConnections: func(context.Context) ([]types.Connection, error) { return []types.Connection{connection}, nil },
 			CreateClient: func(_ context.Context, configured types.Connection) (*ownershipEndpointClient, error) {
-				return &ownershipEndpointClient{endpoint: ownershipEndpoint(configured), http: endpoint.Client()}, nil
+				return &ownershipEndpointClient{
+					endpoint: ownershipEndpoint(t, configured),
+					http:     endpoint.Client(),
+				}, nil
 			},
 			DestroyClient: func(context.Context, *ownershipEndpointClient) error { return nil },
 		},
@@ -50,16 +53,16 @@ func TestDisplayRenamePreservesActiveNativeHTTPRequestAndPrivateCredentials(t *t
 	}
 	t.Cleanup(func() {
 		unblock()
-		if err := controller.Close(); err != nil {
-			t.Error(err)
+		if closeErr := controller.Close(); closeErr != nil {
+			t.Error(closeErr)
 		}
 	})
 	ctx := context.Background()
 	route := AccessRoute{Connection: connection.ID}
-	if _, err := controller.LoadConnections(ctx); err != nil {
+	if _, err = controller.LoadConnections(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := controller.StartConnection(ctx, connection.ID); err != nil {
+	if _, err = controller.StartConnection(ctx, connection.ID); err != nil {
 		t.Fatal(err)
 	}
 	accepted, err := controller.Catalog(ctx, CatalogRequest{Route: route})
@@ -77,39 +80,80 @@ func TestDisplayRenamePreservesActiveNativeHTTPRequestAndPrivateCredentials(t *t
 	go func() {
 		result <- controller.WithClient(acceptedCtx, route, func(native context.Context, client *ownershipEndpointClient) error {
 			observed <- leaseObservation{ctx: native, client: client}
-			request, err := http.NewRequestWithContext(native, http.MethodGet, client.endpoint, nil)
-			if err != nil {
-				return err
+			request, requestErr := http.NewRequestWithContext(native, http.MethodGet, client.endpoint, nil)
+			if requestErr != nil {
+				return requestErr
 			}
 			session, _ := SessionFromContext(native)
-			request.Header.Set("Authorization", "Bearer "+session.Connection.GetSensitiveData()["token"].(string))
-			response, err := client.http.Do(request)
-			if err != nil {
-				return err
+			token := ownershipValue[string](t, session.Connection.GetSensitiveData()["token"])
+			request.Header.Set("Authorization", "Bearer "+token)
+			response, responseErr := client.http.Do(request)
+			if responseErr != nil {
+				return responseErr
 			}
-			defer response.Body.Close()
-			data, err := io.ReadAll(response.Body)
-			if err == nil {
+			defer func() { _ = response.Body.Close() }()
+			data, readErr := io.ReadAll(response.Body)
+			if readErr == nil {
 				body <- string(data)
 			}
-			return err
+			return readErr
 		})
 	}()
 	active := <-observed
 	<-entered // The real native HTTP endpoint now holds an in-flight request.
 	override := ownershipConnection(endpoint.URL)
 	override.Name = "renamed"
-	if err := controller.ApplyConnectionOverlay(
+	if err = controller.ApplyConnectionOverlay(
 		ctx,
 		ConnectionOverlay{Upserts: []types.Connection{override}},
 	); err != nil {
 		t.Fatal(err)
 	}
-	current, err := controller.GetConnection(ctx, connection.ID)
+	assertDisplayRenameBindings(ctx, t, controller, endpoint.URL, accepted, active.client)
+	assertDisplayRenameHTTPRequest(active.ctx, t, canceled, unblock, result, body)
+}
+
+func assertDisplayRenameHTTPRequest(
+	ctx context.Context,
+	t *testing.T,
+	canceled <-chan struct{},
+	unblock func(),
+	result <-chan error,
+	body <-chan string,
+) {
+	t.Helper()
+	if ctx.Err() != nil {
+		t.Fatal("display rename canceled active native request context")
+	}
+	select {
+	case <-canceled:
+		t.Fatal("native HTTP request canceled during display rename")
+	default:
+	}
+	unblock()
+	if resultErr := <-result; resultErr != nil {
+		t.Fatal(resultErr)
+	}
+	if got := <-body; got != "native-A-response" {
+		t.Fatalf("native HTTP response = %q", got)
+	}
+}
+
+func assertDisplayRenameBindings(
+	ctx context.Context,
+	t *testing.T,
+	controller *Controller[ownershipEndpointClient],
+	endpoint string,
+	accepted Catalog,
+	active *ownershipEndpointClient,
+) {
+	t.Helper()
+	route := AccessRoute{Connection: "route"}
+	current, err := controller.GetConnection(ctx, route.Connection)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Name != "renamed" || ownershipEndpoint(current) != endpoint.URL ||
+	if current.Name != "renamed" || ownershipEndpoint(t, current) != endpoint ||
 		current.GetSensitiveData()["token"] != "source-secret" {
 		t.Fatal("display overlay changed native endpoint/credentials or retained old name")
 	}
@@ -131,15 +175,15 @@ func TestDisplayRenamePreservesActiveNativeHTTPRequestAndPrivateCredentials(t *t
 	if beforeEpoch != afterEpoch {
 		t.Fatal("display rename changed native binding epoch")
 	}
-	if err := controller.WithClient(
-		acceptedCtx,
-		route,
+	acceptedCtx := WithCatalogRevision(ctx, accepted.Revision)
+	if err = controller.WithClient(
+		acceptedCtx, route,
 		func(native context.Context, client *ownershipEndpointClient) error {
-			if client != active.client {
+			if client != active {
 				t.Error("display rename replaced active native client")
 			}
 			session, _ := SessionFromContext(native)
-			if session.Connection.Name != "renamed" || ownershipEndpoint(*session.Connection) != endpoint.URL {
+			if session.Connection.Name != "renamed" || ownershipEndpoint(t, *session.Connection) != endpoint {
 				t.Error("new native lease retained stale display metadata")
 			}
 			return nil
@@ -147,27 +191,12 @@ func TestDisplayRenamePreservesActiveNativeHTTPRequestAndPrivateCredentials(t *t
 	); err != nil {
 		t.Fatal(err)
 	}
-	if err := controller.WithConnection(ctx, route, func(_ context.Context, configured types.Connection) error {
+	if err = controller.WithConnection(ctx, route, func(_ context.Context, configured types.Connection) error {
 		if configured.Name != "renamed" || configured.GetSensitiveData()["token"] != "source-secret" {
 			t.Error("utility lease lost current display/native credentials")
 		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
-	}
-	if active.ctx.Err() != nil {
-		t.Fatal("display rename canceled active native request context")
-	}
-	select {
-	case <-canceled:
-		t.Fatal("native HTTP request canceled during display rename")
-	default:
-	}
-	unblock()
-	if err := <-result; err != nil {
-		t.Fatal(err)
-	}
-	if got := <-body; got != "native-A-response" {
-		t.Fatalf("native HTTP response = %q", got)
 	}
 }

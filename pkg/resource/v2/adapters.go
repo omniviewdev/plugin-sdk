@@ -19,32 +19,30 @@ func copyStrings(s []string) []string { out := make([]string, len(s)); copy(out,
 func toValue(v Value) *resourcepb.Value {
 	p := &resourcepb.Value{}
 	switch v.Kind {
-	case "null":
+	case valueKindNull:
 		p.Selection = &resourcepb.Value_NullValue{NullValue: &resourcepb.NullValue{}}
-	case "bool":
+	case valueKindBool:
 		p.Selection = &resourcepb.Value_BoolValue{BoolValue: v.Bool}
-	case "string":
+	case valueKindString:
 		p.Selection = &resourcepb.Value_StringValue{StringValue: v.String}
-	case "int64":
+	case valueKindInt64:
 		n, _ := strconv.ParseInt(v.Int, 10, 64)
 		p.Selection = &resourcepb.Value_Int64Value{Int64Value: n}
-	case "uint64":
+	case valueKindUint64:
 		n, _ := strconv.ParseUint(v.Uint, 10, 64)
 		p.Selection = &resourcepb.Value_Uint64Value{Uint64Value: n}
-	case "double":
+	case valueKindDouble:
 		p.Selection = &resourcepb.Value_DoubleValue{DoubleValue: v.Double}
-	case "timestamp":
+	case valueKindTimestamp:
 		t, _ := timestamp(v.Timestamp)
-		p.Selection = &resourcepb.Value_TimestampValue{
-			TimestampValue: &resourcepb.TimestampValue{Seconds: t.Unix(), Nanos: uint32(t.Nanosecond())},
-		}
-	case "list":
+		p.Selection = &resourcepb.Value_TimestampValue{TimestampValue: toTimestamp(t)}
+	case valueKindList:
 		list := &resourcepb.ListValue{Values: make([]*resourcepb.Value, len(v.List))}
-		for i, x := range v.List {
-			list.Values[i] = toValue(x)
+		for i := range v.List {
+			list.Values[i] = toValue(v.List[i])
 		}
 		p.Selection = &resourcepb.Value_ListValue{ListValue: list}
-	case "map":
+	case valueKindMap:
 		keys := make([]string, 0, len(v.Map))
 		for k := range v.Map {
 			keys = append(keys, k)
@@ -155,11 +153,11 @@ func toResourceType(v ResourceType) *resourcepb.ResourceType {
 	for i, x := range v.QueryDimensions {
 		p.QueryDimensions[i] = toDimension(x)
 	}
-	for i, x := range v.Representations {
-		p.Representations[i] = toRepresentation(x)
+	for i := range v.Representations {
+		p.Representations[i] = toRepresentation(v.Representations[i])
 	}
-	for i, x := range v.Capabilities {
-		p.Capabilities[i] = toCapability(x)
+	for i := range v.Capabilities {
+		p.Capabilities[i] = toCapability(v.Capabilities[i])
 	}
 	return p
 }
@@ -175,8 +173,8 @@ func toCatalog(v Catalog) *resourcepb.Catalog {
 		Types:    make([]*resourcepb.ResourceType, len(v.Types)),
 		Coverage: toCoverage(v.Coverage),
 	}
-	for i, x := range v.Types {
-		p.Types[i] = toResourceType(x)
+	for i := range v.Types {
+		p.Types[i] = toResourceType(v.Types[i])
 	}
 	return p
 }
@@ -241,8 +239,8 @@ func toSourcePage(v SourcePage) *resourcepb.SourcePage {
 		Consistency:    v.Consistency,
 		SourceRevision: copyToken(v.SourceRevision),
 	}
-	for i, x := range v.Records {
-		p.Records[i] = toRecord(x)
+	for i := range v.Records {
+		p.Records[i] = toRecord(v.Records[i])
 	}
 	return p
 }
@@ -618,11 +616,13 @@ func validateCapability(v Capability) error {
 	return ValidateScope(v.Scope)
 }
 
+const adapterValidationToken = "validation"
+
 func validateType(v ResourceType) error {
 	return ValidateCatalog(
 		Catalog{
-			Provider: "validation",
-			Revision: "validation",
+			Provider: adapterValidationToken,
+			Revision: adapterValidationToken,
 			Coverage: Coverage{Kind: "complete"},
 			Types:    []ResourceType{v},
 		},

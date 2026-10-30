@@ -20,26 +20,8 @@ func decodeDomainObject(data []byte, out any, required ...string) (map[string]an
 	if !ok {
 		return nil, invalid("domain DTO must be object")
 	}
-	fields := reflect.TypeOf(out).Elem()
-	for name, value := range object {
-		found := false
-		for i := range fields.NumField() {
-			field := fields.Field(i)
-			fieldName, _, _ := strings.Cut(field.Tag.Get("json"), ",")
-			if fieldName == "" {
-				fieldName = field.Name
-			}
-			if name == fieldName && fieldName != "-" {
-				if value == nil && field.Type != reflect.TypeFor[json.RawMessage]() {
-					return nil, invalid("null domain DTO field: " + name)
-				}
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, invalid("unknown domain DTO field: " + name)
-		}
+	if err := validateDomainFields(object, reflect.TypeOf(out).Elem()); err != nil {
+		return nil, err
 	}
 	for _, name := range required {
 		if _, present := object[name]; !present {
@@ -50,12 +32,39 @@ func decodeDomainObject(data []byte, out any, required ...string) (map[string]an
 	decoder.UseNumber()
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(out); err != nil {
-		if ErrorCode(err) != "INTERNAL" {
+		if ErrorCode(err) != errorCodeInternal {
 			return nil, err
 		}
 		return nil, invalid("invalid domain DTO JSON")
 	}
 	return object, nil
+}
+
+func validateDomainFields(object map[string]any, fields reflect.Type) error {
+	for name, value := range object {
+		fieldType, found := domainFieldType(fields, name)
+		if !found {
+			return invalid("unknown domain DTO field: " + name)
+		}
+		if value == nil && fieldType != reflect.TypeFor[json.RawMessage]() {
+			return invalid("null domain DTO field: " + name)
+		}
+	}
+	return nil
+}
+
+func domainFieldType(fields reflect.Type, name string) (reflect.Type, bool) {
+	for i := range fields.NumField() {
+		field := fields.Field(i)
+		fieldName, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		if fieldName == "" {
+			fieldName = field.Name
+		}
+		if name == fieldName && fieldName != "-" {
+			return field.Type, true
+		}
+	}
+	return nil, false
 }
 
 func rejectNullTokens(object map[string]any, names ...string) error {
@@ -157,11 +166,13 @@ func (v *ScopeConstraint) UnmarshalJSON(data []byte) error {
 	value := ScopeConstraint{Dimension: dimension, Match: ScopeMatch(match)}
 	switch value.Match {
 	case ScopeAny:
-		if len(object) != 2 {
+		const anyScopeFields = 2 // dimension and match
+		if len(object) != anyScopeFields {
 			return invalid("any scope must omit values and unknown fields")
 		}
 	case ScopeOneOf:
-		if len(object) != 3 {
+		const oneOfScopeFields = 3 // dimension, match, and values
+		if len(object) != oneOfScopeFields {
 			return invalid("oneOf scope requires values only")
 		}
 		rawValues, ok := object["values"].([]any)
@@ -200,7 +211,7 @@ func (v *QueryScope) UnmarshalJSON(data []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&out); err != nil {
-		if ErrorCode(err) != "INTERNAL" {
+		if ErrorCode(err) != errorCodeInternal {
 			return err
 		}
 		return invalid("query scope must be array")

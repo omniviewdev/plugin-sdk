@@ -1,6 +1,7 @@
 package resourcev2
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"math"
 	"net/url"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 // These finite ceilings apply independently of the host's predicate policy.
@@ -30,6 +33,33 @@ const (
 	MaxPageBodyBytes   = MaxMessageBytes
 )
 
+// Value tags are shared by domain validation and lossless JSON/protobuf codecs.
+const (
+	valueKindNull      = "null"
+	valueKindBool      = "bool"
+	valueKindString    = "string"
+	valueKindInt64     = "int64"
+	valueKindUint64    = "uint64"
+	valueKindDouble    = "double"
+	valueKindTimestamp = "timestamp"
+	valueKindList      = "list"
+	valueKindMap       = "map"
+
+	schemaStateAvailable   = "available"
+	schemaStateAbsent      = "absent"
+	schemaStateUnavailable = "unavailable"
+	coverageUnknown        = "unknown"
+	countUnknown           = "unknown"
+
+	reflectionDepthAllowance = 4
+	reflectionNodeAllowance  = 16
+	maxDecimalIntegerLength  = 20
+	timestampZoneLength      = 6
+	protobufTagBytes         = 1
+	protobufBoolBytes        = 2
+	protobufDoubleBytes      = 9
+)
+
 func invalid(detail string) error { return NewError("INVALID_REQUEST", detail) }
 func limited(detail string) error { return NewError("RESOURCE_LIMIT", detail) }
 func text(s string, required bool) error {
@@ -49,7 +79,9 @@ func token(s *string) error {
 // admission uses a private reflection-bookkeeping allowance for the many
 // inactive fields of handwritten Value structs. It does not raise raw wire or
 // semantic value limits; those are enforced independently at their boundaries.
-func admission(v any) error { return metadataAdmission(v, maxDomainDepth*4, maxDomainNodes*16, false) }
+func admission(v any) error {
+	return metadataAdmission(v, maxDomainDepth*reflectionDepthAllowance, maxDomainNodes*reflectionNodeAllowance, false)
+}
 
 // ValidateMetadata bounds JSON-visible metadata before callers marshal shared
 // connection or presentation DTOs. Hidden credentials and json:"-" fields do
@@ -57,107 +89,141 @@ func admission(v any) error { return metadataAdmission(v, maxDomainDepth*4, maxD
 func ValidateMetadata(v any) error { return metadataAdmission(v, maxDomainDepth, maxDomainNodes, true) }
 
 func metadataAdmission(v any, depthLimit, nodeLimit int, jsonOutput bool) error {
-	nodes, fields, bytes, values := 0, 0, 0, 0
-	var visit func(reflect.Value, int) error
-	visit = func(v reflect.Value, depth int) error {
-		if depth > depthLimit {
-			return limited("domain nesting limit")
-		}
-		nodes++
-		if nodes > nodeLimit {
-			return limited("domain node limit")
-		}
-		if v.Kind() == reflect.Struct && v.Type() == reflect.TypeFor[time.Time]() {
-			t := v.Interface().(time.Time)
-			return validateNativeTime(t)
-		}
-		if v.Kind() == reflect.Struct && v.Type() == reflect.TypeFor[Value]() {
-			values++
-			if values > maxDomainNodes {
-				return limited("aggregate value node limit")
-			}
-		}
-		switch v.Kind() {
-		case reflect.Interface, reflect.Pointer:
-			if !v.IsNil() {
-				return visit(v.Elem(), depth+1)
-			}
-		case reflect.String:
-			s := v.String()
-			if jsonOutput {
-				bytes += quotedJSONSize(s)
-			} else {
-				bytes += len(s)
-			}
-			if bytes > MaxMessageBytes {
-				return limited("domain byte limit")
-			}
-			return text(s, false)
-		case reflect.Float32, reflect.Float64:
-			if n := v.Float(); math.IsInf(n, 0) || math.IsNaN(n) {
-				return invalid("nonfinite metadata number")
-			}
-		case reflect.Struct:
-			for i := range v.NumField() {
-				field := v.Type().Field(i)
-				if field.PkgPath != "" || (field.Tag.Get("json") == "-" && v.Type() != reflect.TypeFor[Value]()) {
-					continue
-				}
-				if jsonOutput && strings.Contains(field.Tag.Get("json"), ",omitempty") && emptyJSONField(v.Field(i)) {
-					continue
-				}
-				if err := visit(v.Field(i), depth+1); err != nil {
-					return err
-				}
-			}
-		case reflect.Slice, reflect.Array:
-			fields += v.Len()
-			if fields > maxDomainFields {
-				return limited("domain field limit")
-			}
-			if v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
-				if jsonOutput && v.Type() == reflect.TypeFor[json.RawMessage]() {
-					if v.IsNil() {
-						bytes += 4
-					} else {
-						if err := ValidateJSON(v.Bytes()); err != nil {
-							return err
-						}
-						bytes += v.Len()
-					}
-				} else if jsonOutput {
-					bytes += 2 + ((v.Len()+2)/3)*4
-				} else {
-					bytes += v.Len()
-				}
-				if bytes > MaxMessageBytes {
-					return limited("domain byte limit")
-				}
-				return nil
-			}
-			for i := range v.Len() {
-				if err := visit(v.Index(i), depth+1); err != nil {
-					return err
-				}
-			}
-		case reflect.Map:
-			fields += v.Len()
-			if fields > maxDomainFields {
-				return limited("domain field limit")
-			}
-			it := v.MapRange()
-			for it.Next() {
-				if err := visit(it.Key(), depth+1); err != nil {
-					return err
-				}
-				if err := visit(it.Value(), depth+1); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
+	budget := metadataBudget{depthLimit: depthLimit, nodeLimit: nodeLimit, jsonOutput: jsonOutput}
+	return budget.visit(reflect.ValueOf(v), 0)
+}
+
+type metadataBudget struct {
+	nodes, fields, bytes, values int
+	depthLimit, nodeLimit        int
+	jsonOutput                   bool
+}
+
+func (b *metadataBudget) visit(v reflect.Value, depth int) error {
+	if depth > b.depthLimit {
+		return limited("domain nesting limit")
 	}
-	return visit(reflect.ValueOf(v), 0)
+	b.nodes++
+	if b.nodes > b.nodeLimit {
+		return limited("domain node limit")
+	}
+	switch v.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		if !v.IsNil() {
+			return b.visit(v.Elem(), depth+1)
+		}
+	case reflect.String:
+		s := v.String()
+		if b.jsonOutput {
+			b.bytes += quotedJSONSize(s)
+		} else {
+			b.bytes += len(s)
+		}
+		if b.bytes > MaxMessageBytes {
+			return limited("domain byte limit")
+		}
+		return text(s, false)
+	case reflect.Float32, reflect.Float64:
+		if n := v.Float(); math.IsInf(n, 0) || math.IsNaN(n) {
+			return invalid("nonfinite metadata number")
+		}
+	case reflect.Struct:
+		return b.structFields(v, depth)
+	case reflect.Slice, reflect.Array:
+		return b.sequence(v, depth)
+	case reflect.Map:
+		return b.mapEntries(v, depth)
+	case reflect.Invalid, reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.Func, reflect.UnsafePointer:
+	}
+	return nil
+}
+
+func (b *metadataBudget) structFields(v reflect.Value, depth int) error {
+	if v.Type() == reflect.TypeFor[time.Time]() {
+		t, ok := reflect.TypeAssert[time.Time](v)
+		if !ok {
+			return invalid("invalid native timestamp")
+		}
+		return validateNativeTime(t)
+	}
+	isValue := v.Type() == reflect.TypeFor[Value]()
+	if isValue {
+		b.values++
+		if b.values > maxDomainNodes {
+			return limited("aggregate value node limit")
+		}
+	}
+	for i := range v.NumField() {
+		field := v.Type().Field(i)
+		if field.PkgPath != "" || (field.Tag.Get("json") == "-" && !isValue) {
+			continue
+		}
+		if b.jsonOutput && strings.Contains(field.Tag.Get("json"), ",omitempty") && emptyJSONField(v.Field(i)) {
+			continue
+		}
+		if err := b.visit(v.Field(i), depth+1); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *metadataBudget) sequence(v reflect.Value, depth int) error {
+	b.fields += v.Len()
+	if b.fields > maxDomainFields {
+		return limited("domain field limit")
+	}
+	if v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
+		return b.byteSlice(v)
+	}
+	for i := range v.Len() {
+		if err := b.visit(v.Index(i), depth+1); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *metadataBudget) byteSlice(v reflect.Value) error {
+	switch {
+	case b.jsonOutput && v.Type() == reflect.TypeFor[json.RawMessage]():
+		if v.IsNil() {
+			b.bytes += len("null")
+		} else {
+			if err := ValidateJSON(v.Bytes()); err != nil {
+				return err
+			}
+			b.bytes += v.Len()
+		}
+	case b.jsonOutput:
+		b.bytes += jsonQuoteBytes + base64.StdEncoding.EncodedLen(v.Len())
+	default:
+		b.bytes += v.Len()
+	}
+	if b.bytes > MaxMessageBytes {
+		return limited("domain byte limit")
+	}
+	return nil
+}
+
+func (b *metadataBudget) mapEntries(v reflect.Value, depth int) error {
+	b.fields += v.Len()
+	if b.fields > maxDomainFields {
+		return limited("domain field limit")
+	}
+	it := v.MapRange()
+	for it.Next() {
+		if err := b.visit(it.Key(), depth+1); err != nil {
+			return err
+		}
+		if err := b.visit(it.Value(), depth+1); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func dimensions(ds []Dimension) (map[string]bool, error) {
@@ -208,14 +274,8 @@ func ValidateAddress(a ResourceAddress, declared ...[]Dimension) error {
 			return invalid("duplicate identity dimension")
 		}
 		seen[s.Dimension] = true
-		if allowed != nil {
-			empty, ok := allowed[s.Dimension]
-			if !ok {
-				return invalid("unknown identity dimension")
-			}
-			if s.Value == "" && !empty {
-				return invalid("empty identity dimension")
-			}
+		if err := validateIdentityDimension(s.Dimension, s.Value, allowed); err != nil {
+			return err
 		}
 	}
 	if allowed != nil && len(seen) != len(allowed) {
@@ -224,6 +284,22 @@ func ValidateAddress(a ResourceAddress, declared ...[]Dimension) error {
 	return nil
 }
 
+func validateIdentityDimension(name, value string, allowed map[string]bool) error {
+	if allowed == nil {
+		return nil
+	}
+	empty, ok := allowed[name]
+	if !ok {
+		return invalid("unknown identity dimension")
+	}
+	if value == "" && !empty {
+		return invalid("empty identity dimension")
+	}
+	return nil
+}
+
+// ValidateScope checks explicit any/oneOf selections without deduplicating values.
+// An optional declaration requires every declared query dimension; empty oneOf is valid.
 func ValidateScope(s QueryScope, declared ...[]Dimension) error {
 	if len(declared) > 1 {
 		return invalid("multiple query dimension declarations")
@@ -256,22 +332,8 @@ func ValidateScope(s QueryScope, declared ...[]Dimension) error {
 				return invalid("unknown query dimension")
 			}
 		}
-		switch c.Match {
-		case ScopeAny:
-			if c.Values != nil {
-				return invalid("any scope has values")
-			}
-		case ScopeOneOf:
-			if c.Values == nil {
-				return invalid("oneOf scope requires values")
-			}
-			for _, v := range *c.Values {
-				if v == "" && !empty {
-					return invalid("empty query dimension")
-				}
-			}
-		default:
-			return invalid("unknown scope match")
+		if err := validateScopeSelection(c, empty); err != nil {
+			return err
 		}
 	}
 	if allowed != nil && len(seen) != len(allowed) {
@@ -280,8 +342,29 @@ func ValidateScope(s QueryScope, declared ...[]Dimension) error {
 	return nil
 }
 
+func validateScopeSelection(c ScopeConstraint, allowEmpty bool) error {
+	switch c.Match {
+	case ScopeAny:
+		if c.Values != nil {
+			return invalid("any scope has values")
+		}
+	case ScopeOneOf:
+		if c.Values == nil {
+			return invalid("oneOf scope requires values")
+		}
+		for _, v := range *c.Values {
+			if v == "" && !allowEmpty {
+				return invalid("empty query dimension")
+			}
+		}
+	default:
+		return invalid("unknown scope match")
+	}
+	return nil
+}
+
 func canonicalInt(s string, unsigned bool) error {
-	if len(s) > 20 {
+	if len(s) > maxDecimalIntegerLength {
 		return invalid("integer out of range")
 	}
 	if s == "" || s == "-0" || s[0] == '+' || (len(s) > 1 && s[0] == '0') || (len(s) > 2 && s[:2] == "-0") {
@@ -331,104 +414,141 @@ func timestamp(s string) (time.Time, error) {
 			return time.Time{}, invalid("invalid timestamp digit")
 		}
 	}
-	if i := strings.IndexByte(s, '.'); i >= 0 {
-		j := i + 1
-		for j < len(s) && s[j] >= '0' && s[j] <= '9' {
-			j++
-		}
-		if j-i-1 < 1 || j-i-1 > 9 {
-			return time.Time{}, invalid("timestamp precision")
-		}
+	if err := validateTimestampPrecision(s); err != nil {
+		return time.Time{}, err
 	}
 	t, err := time.Parse(time.RFC3339Nano, s)
 	if err != nil || t.Year() < 1 || t.Year() > 9999 || t.UTC().Year() < 1 || t.UTC().Year() > 9999 {
 		return time.Time{}, invalid("timestamp out of range")
 	}
 	// The standard parser permits timezone hours 24 and minutes 60.
-	if s[len(s)-1] != 'Z' {
-		if len(s) < 6 {
-			return time.Time{}, invalid("invalid timestamp zone")
-		}
-		z := s[len(s)-6:]
-		if (z[0] != '+' && z[0] != '-') || z[3] != ':' || z[1:3] > "23" || z[4:6] > "59" {
-			return time.Time{}, invalid("invalid timestamp zone")
-		}
+	if err := validateTimestampZone(s); err != nil {
+		return time.Time{}, err
 	}
 	return t.UTC(), nil
 }
 
-func ValidateValue(v Value) error {
-	nodes, bytes := 0, 0
-	var walk func(Value, int) error
-	walk = func(v Value, depth int) error {
-		nodes++
-		if depth > maxDomainDepth || nodes > maxDomainNodes {
-			return limited("value complexity limit")
+func validateTimestampPrecision(s string) error {
+	const maxFractionDigits = 9
+	if i := strings.IndexByte(s, '.'); i >= 0 {
+		j := i + 1
+		for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+			j++
 		}
-		bytes += len(v.String)
-		if bytes > maxDocumentBytes {
-			return limited("value byte limit")
+		if j-i-1 < 1 || j-i-1 > maxFractionDigits {
+			return invalid("timestamp precision")
 		}
-		if !utf8.ValidString(v.String) {
-			return invalid("invalid UTF-8 value")
-		}
-		if (v.Kind != "bool" && v.Bool) || (v.Kind != "string" && v.String != "") ||
-			(v.Kind != "int64" && v.Int != "") ||
-			(v.Kind != "uint64" && v.Uint != "") ||
-			(v.Kind != "double" && (v.Double != 0 || math.Signbit(v.Double))) ||
-			(v.Kind != "timestamp" && v.Timestamp != "") ||
-			(v.Kind != "list" && v.List != nil) ||
-			(v.Kind != "map" && v.Map != nil) {
-			return invalid("inactive value payload")
-		}
-		switch v.Kind {
-		case "null", "bool", "string":
-		case "int64":
-			return canonicalInt(v.Int, false)
-		case "uint64":
-			return canonicalInt(v.Uint, true)
-		case "double":
-			if math.IsNaN(v.Double) || math.IsInf(v.Double, 0) {
-				return invalid("nonfinite double")
-			}
-		case "timestamp":
-			_, err := timestamp(v.Timestamp)
-			return err
-		case "list":
-			if len(v.List) > maxDomainNodes-nodes {
-				return limited("value node limit")
-			}
-			for _, x := range v.List {
-				if err := walk(x, depth+1); err != nil {
-					return err
-				}
-			}
-		case "map":
-			if len(v.Map) > maxDomainNodes-nodes {
-				return limited("value node limit")
-			}
-			for k, x := range v.Map {
-				bytes += len(k)
-				if bytes > maxDocumentBytes {
-					return limited("value byte limit")
-				}
-				if err := text(k, false); err != nil {
-					return err
-				}
-				if err := walk(x, depth+1); err != nil {
-					return err
-				}
-			}
-		default:
-			return invalid("unknown value kind")
-		}
+	}
+	return nil
+}
+
+func validateTimestampZone(s string) error {
+	if s[len(s)-1] == 'Z' {
 		return nil
 	}
-	if err := walk(v, 0); err != nil {
+	if len(s) < timestampZoneLength {
+		return invalid("invalid timestamp zone")
+	}
+	z := s[len(s)-timestampZoneLength:]
+	if (z[0] != '+' && z[0] != '-') || z[3] != ':' || z[1:3] > "23" || z[4:6] > "59" {
+		return invalid("invalid timestamp zone")
+	}
+	return nil
+}
+
+// ValidateValue checks the active tagged payload, exact scalar syntax, and tree budgets.
+// Inactive negative zero is a payload; list/map nil containers remain valid empty values.
+func ValidateValue(v Value) error {
+	budget := valueValidationBudget{}
+	if err := budget.walk(&v, 0); err != nil {
 		return err
 	}
 	if valueWireSize(v) > maxDocumentBytes {
 		return limited("encoded value byte limit")
+	}
+	return nil
+}
+
+type valueValidationBudget struct{ nodes, bytes int }
+
+func (b *valueValidationBudget) walk(v *Value, depth int) error {
+	b.nodes++
+	if depth > maxDomainDepth || b.nodes > maxDomainNodes {
+		return limited("value complexity limit")
+	}
+	b.bytes += len(v.String)
+	if b.bytes > maxDocumentBytes {
+		return limited("value byte limit")
+	}
+	if !utf8.ValidString(v.String) {
+		return invalid("invalid UTF-8 value")
+	}
+	if inactiveValuePayload(v) {
+		return invalid("inactive value payload")
+	}
+	switch v.Kind {
+	case valueKindNull, valueKindBool, valueKindString:
+		return nil
+	case valueKindInt64:
+		return canonicalInt(v.Int, false)
+	case valueKindUint64:
+		return canonicalInt(v.Uint, true)
+	case valueKindDouble:
+		if math.IsNaN(v.Double) || math.IsInf(v.Double, 0) {
+			return invalid("nonfinite double")
+		}
+	case valueKindTimestamp:
+		_, err := timestamp(v.Timestamp)
+		return err
+	case valueKindList:
+		return b.list(v.List, depth)
+	case valueKindMap:
+		return b.mapEntries(v.Map, depth)
+	default:
+		return invalid("unknown value kind")
+	}
+	return nil
+}
+
+func inactiveValuePayload(v *Value) bool {
+	return (v.Kind != valueKindBool && v.Bool) ||
+		(v.Kind != valueKindString && v.String != "") ||
+		(v.Kind != valueKindInt64 && v.Int != "") ||
+		(v.Kind != valueKindUint64 && v.Uint != "") ||
+		(v.Kind != valueKindDouble && (v.Double != 0 || math.Signbit(v.Double))) ||
+		(v.Kind != valueKindTimestamp && v.Timestamp != "") ||
+		(v.Kind != valueKindList && v.List != nil) ||
+		(v.Kind != valueKindMap && v.Map != nil)
+}
+
+func (b *valueValidationBudget) list(values []Value, depth int) error {
+	if len(values) > maxDomainNodes-b.nodes {
+		return limited("value node limit")
+	}
+	for i := range values {
+		if err := b.walk(&values[i], depth+1); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *valueValidationBudget) mapEntries(values map[string]Value, depth int) error {
+	if len(values) > maxDomainNodes-b.nodes {
+		return limited("value node limit")
+	}
+	for k := range values {
+		b.bytes += len(k)
+		if b.bytes > maxDocumentBytes {
+			return limited("value byte limit")
+		}
+		if err := text(k, false); err != nil {
+			return err
+		}
+		v := values[k]
+		if err := b.walk(&v, depth+1); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -469,7 +589,7 @@ func validateSchema(s SchemaBinding) error {
 		return err
 	}
 	if s.UnavailableReason != nil {
-		if s.State != "unavailable" {
+		if s.State != schemaStateUnavailable {
 			return invalid("schema unavailable reason requires unavailable state")
 		}
 		if err := ValidateSchemaUnavailableReason(*s.UnavailableReason); err != nil {
@@ -481,8 +601,15 @@ func validateSchema(s SchemaBinding) error {
 			return err
 		}
 	}
+	if err := validateSchemaState(s); err != nil {
+		return err
+	}
+	return validateSchemaClaims(s)
+}
+
+func validateSchemaState(s SchemaBinding) error {
 	switch s.State {
-	case "available":
+	case schemaStateAvailable:
 		if s.Revision == nil || s.Dialect == "" || (len(s.Document) > 0) == (s.DocumentRef != nil) {
 			return invalid("available schema requires exactly one document binding")
 		}
@@ -491,24 +618,28 @@ func validateSchema(s SchemaBinding) error {
 				return err
 			}
 		}
-	case "absent":
+	case schemaStateAbsent:
 		if s.Revision != nil || s.Dialect != "" || s.Root != "" || s.DocumentRef != nil || len(s.Document) != 0 {
 			return invalid("absent schema has document binding")
 		}
-	case "unavailable":
+	case schemaStateUnavailable:
 		if len(s.Document) != 0 {
 			return invalid("unavailable schema has inline document")
 		}
 	default:
 		return invalid("unknown schema state")
 	}
+	return nil
+}
+
+func validateSchemaClaims(s SchemaBinding) error {
 	switch s.Validation {
 	case "full":
-		if len(s.Unvalidated) != 0 || s.State != "available" {
+		if len(s.Unvalidated) != 0 || s.State != schemaStateAvailable {
 			return invalid("invalid full schema validation")
 		}
 	case "reduced":
-		if s.State != "available" || len(s.Unvalidated) == 0 {
+		if s.State != schemaStateAvailable || len(s.Unvalidated) == 0 {
 			return invalid("reduced validation lacks constraints")
 		}
 	case "none":
@@ -545,7 +676,7 @@ func validateCoverage(c Coverage) error {
 		if len(c.Paths) != 0 || c.Reason != "" {
 			return invalid("complete coverage has limitations")
 		}
-	case "partial", "unknown":
+	case "partial", coverageUnknown:
 		if c.Reason == "" {
 			return invalid("incomplete coverage lacks reason")
 		}
@@ -557,7 +688,7 @@ func validateCoverage(c Coverage) error {
 
 func validateCount(c Count) error {
 	switch c.Kind {
-	case "unknown":
+	case countUnknown:
 		if c.Value != nil {
 			return invalid("unknown count has value")
 		}
@@ -588,7 +719,8 @@ func ValidateCatalog(c Catalog) error {
 		return err
 	}
 	seen := map[string]bool{}
-	for _, t := range c.Types {
+	for i := range c.Types {
+		t := &c.Types[i]
 		if t.NativeAuthorityHint != nil {
 			if err := validateNativeAuthorityHint(*t.NativeAuthorityHint); err != nil {
 				return err
@@ -601,32 +733,40 @@ func ValidateCatalog(c Catalog) error {
 			return invalid("duplicate resource type")
 		}
 		seen[t.Type] = true
-		if _, err := dimensions(t.IdentityDimensions); err != nil {
+		if err := validateResourceType(t); err != nil {
 			return err
 		}
-		if _, err := dimensions(t.QueryDimensions); err != nil {
+	}
+	return nil
+}
+
+func validateResourceType(t *ResourceType) error {
+	if _, err := dimensions(t.IdentityDimensions); err != nil {
+		return err
+	}
+	if _, err := dimensions(t.QueryDimensions); err != nil {
+		return err
+	}
+	representations := make(map[string]bool, len(t.Representations))
+	for i := range t.Representations {
+		representation := &t.Representations[i]
+		if err := validateRepresentation(*representation); err != nil {
 			return err
 		}
-		representations := make(map[string]bool, len(t.Representations))
-		for _, representation := range t.Representations {
-			if err := validateRepresentation(representation); err != nil {
-				return err
-			}
-			if representations[representation.ID] {
-				return invalid("duplicate representation")
-			}
-			representations[representation.ID] = true
+		if representations[representation.ID] {
+			return invalid("duplicate representation")
 		}
-		if t.DefaultRepresentation != "" && !representations[t.DefaultRepresentation] {
-			return invalid("default representation is not declared")
+		representations[representation.ID] = true
+	}
+	if t.DefaultRepresentation != "" && !representations[t.DefaultRepresentation] {
+		return invalid("default representation is not declared")
+	}
+	for _, capability := range t.Capabilities {
+		if err := validateCapability(capability); err != nil {
+			return err
 		}
-		for _, capability := range t.Capabilities {
-			if err := validateCapability(capability); err != nil {
-				return err
-			}
-			if err := ValidateScope(capability.Scope, t.QueryDimensions); err != nil {
-				return err
-			}
+		if err := ValidateScope(capability.Scope, t.QueryDimensions); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -732,7 +872,7 @@ func ValidateRecord(r Record) error {
 	if err := validateReference(r.Reference); err != nil {
 		return err
 	}
-	if r.Body.Kind != "map" {
+	if r.Body.Kind != valueKindMap {
 		return invalid("resource body root must be map")
 	}
 	if err := ValidateValue(r.Body); err != nil {
@@ -757,12 +897,13 @@ func ValidateSourcePage(p SourcePage) error {
 		return err
 	}
 	bodyBytes, pageBytes := 0, 0
-	for _, r := range p.Records {
-		if err := ValidateRecord(r); err != nil {
+	for i := range p.Records {
+		r := &p.Records[i]
+		if err := ValidateRecord(*r); err != nil {
 			return err
 		}
 		bodyBytes += valueWireSize(r.Body)
-		pageBytes += messageFieldSize(recordWireSize(r))
+		pageBytes += messageFieldSize(recordWireSize(*r))
 		if bodyBytes > MaxPageBodyBytes || pageBytes > MaxMessageBytes {
 			return limited("page byte limit")
 		}
@@ -816,41 +957,48 @@ func varintSize(n uint64) int {
 	}
 	return size
 }
-func messageFieldSize(n int) int { return 1 + varintSize(uint64(n)) + n }
+
+func messageFieldSize(n int) int {
+	if n < 0 {
+		panic("negative protobuf message size")
+	}
+	return protobufTagBytes + varintSize(uint64(n)) + n
+}
+
 func valueWireSize(v Value) int {
 	switch v.Kind {
-	case "null", "bool":
-		return 2
-	case "string":
+	case valueKindNull, valueKindBool:
+		return protobufBoolBytes
+	case valueKindString:
 		return messageFieldSize(len(v.String))
-	case "int64":
+	case valueKindInt64:
 		n, _ := strconv.ParseInt(v.Int, 10, 64)
-		return 1 + varintSize(uint64(n<<1)^uint64(n>>63))
-	case "uint64":
+		return protobufTagBytes + protowire.SizeVarint(protowire.EncodeZigZag(n))
+	case valueKindUint64:
 		n, _ := strconv.ParseUint(v.Uint, 10, 64)
 		return 1 + varintSize(n)
-	case "double":
-		return 9
-	case "timestamp":
+	case valueKindDouble:
+		return protobufDoubleBytes
+	case valueKindTimestamp:
 		t, _ := timestamp(v.Timestamp)
 		size := 0
 		if n := t.Unix(); n != 0 {
-			size += 1 + varintSize(uint64(n<<1)^uint64(n>>63))
+			size += protobufTagBytes + protowire.SizeVarint(protowire.EncodeZigZag(n))
 		}
-		if n := t.Nanosecond(); n != 0 {
-			size += 1 + varintSize(uint64(n))
-		}
-		return messageFieldSize(size)
-	case "list":
-		size := 0
-		for _, x := range v.List {
-			size += messageFieldSize(valueWireSize(x))
+		if n := t.Nanosecond(); n > 0 {
+			size += protobufTagBytes + varintSize(uint64(n))
 		}
 		return messageFieldSize(size)
-	case "map":
+	case valueKindList:
 		size := 0
-		for k, x := range v.Map {
-			entry := messageFieldSize(valueWireSize(x))
+		for i := range v.List {
+			size += messageFieldSize(valueWireSize(v.List[i]))
+		}
+		return messageFieldSize(size)
+	case valueKindMap:
+		size := 0
+		for k := range v.Map {
+			entry := messageFieldSize(valueWireSize(v.Map[k]))
 			if k != "" {
 				entry += messageFieldSize(len(k))
 			}
@@ -1065,6 +1213,8 @@ func emptyJSONField(v reflect.Value) bool {
 		reflect.Interface,
 		reflect.Pointer:
 		return v.IsZero()
+	case reflect.Invalid, reflect.Complex64, reflect.Complex128,
+		reflect.Chan, reflect.Func, reflect.Struct, reflect.UnsafePointer:
 	}
 	return false
 }

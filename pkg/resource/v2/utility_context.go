@@ -34,10 +34,7 @@ func WithUtilityConnection(
 	if fn == nil {
 		return NewError("INVALID_REQUEST", "Utility callback is required.")
 	}
-	ctx := context.Background()
-	if pc != nil && pc.Context != nil {
-		ctx = pc.Context
-	}
+	ctx := utilityContext(pc)
 	if pc == nil || pc.Connection == nil {
 		if reference != nil {
 			return NewError("RESET_REQUIRED", "Canonical utility reference requires its admitted connection.")
@@ -59,28 +56,41 @@ func WithUtilityConnection(
 		return NewError("UNSUPPORTED", "Canonical utility catalog admission is unavailable.")
 	}
 	return provider.WithConnection(ctx, selected, func(bound context.Context, connection types.Connection) error {
-		check := func() error {
-			if reference == nil {
-				return nil
-			}
-			catalog, err := catalogProvider.Catalog(bound, CatalogRequest{Route: selected})
-			if err != nil {
-				return err
-			}
-			return CheckCatalogRevisionForRoute(bound, catalog, selected)
-		}
-		if err := check(); err != nil {
+		if err := checkUtilityCatalog(bound, catalogProvider, reference, selected); err != nil {
 			return err
 		}
-		copy := *pc
-		copy.Context = bound
-		copy.Connection = &connection
-		if err := fn(&copy); err != nil {
+		snapshot := *pc
+		snapshot.Context = bound
+		snapshot.Connection = &connection
+		if err := fn(&snapshot); err != nil {
 			return err
 		}
 		if err := bound.Err(); err != nil {
 			return err
 		}
-		return check()
+		return checkUtilityCatalog(bound, catalogProvider, reference, selected)
 	})
+}
+
+func utilityContext(pc *types.PluginContext) context.Context {
+	if pc != nil && pc.Context != nil {
+		return pc.Context
+	}
+	return context.Background()
+}
+
+func checkUtilityCatalog(
+	ctx context.Context,
+	provider Provider,
+	reference *ResourceReference,
+	route AccessRoute,
+) error {
+	if reference == nil {
+		return nil
+	}
+	catalog, err := provider.Catalog(ctx, CatalogRequest{Route: route})
+	if err != nil {
+		return err
+	}
+	return CheckCatalogRevisionForRoute(ctx, catalog, route)
 }
