@@ -4,7 +4,13 @@ package catalogadmission
 
 import (
 	"context"
+	"math"
 	"unicode/utf8"
+)
+
+const (
+	resetRequired = "RESET_REQUIRED"
+	resourceLimit = "RESOURCE_LIMIT"
 )
 
 // Limits are supplied by the domain boundary, not inferred from transport input.
@@ -14,13 +20,14 @@ type Limits struct {
 	Observations  int
 }
 
-// Violation contains only static, public-safe boundary diagnostics.
-type Violation struct {
+// ViolationError contains only static, public-safe boundary diagnostics.
+type ViolationError struct {
 	Code    string
 	Message string
 }
 
-func (v *Violation) Error() string { return v.Message }
+// Error returns the public-safe diagnostic without including observation data.
+func (v *ViolationError) Error() string { return v.Message }
 
 // Observation is an exact provider/connection catalog observation, not a grant.
 type Observation struct {
@@ -66,35 +73,39 @@ func Qualified(ctx context.Context, provider, connection string) (string, bool) 
 }
 
 // ValidateRevision checks observation syntax without discovering a catalog.
-func ValidateRevision(revision string, maxBytes int) *Violation {
+func ValidateRevision(revision string, maxBytes int) *ViolationError {
 	if revision == "" || len(revision) > maxBytes || !utf8.ValidString(revision) {
-		return &Violation{"RESET_REQUIRED", "An explicit valid accepted catalog revision is required."}
+		return &ViolationError{resetRequired, "An explicit valid accepted catalog revision is required."}
 	}
 	return nil
 }
 
 // EncodedSize validates every retained entry, uint16 frame widths, and the aggregate metadata budget.
 // An absent qualified set has no frame; the default pin is validated separately.
-func EncodedSize(ctx context.Context, defaultRevision string, limits Limits) (int, *Violation) {
+func EncodedSize(ctx context.Context, defaultRevision string, limits Limits) (int, *ViolationError) {
 	entries := Entries(ctx)
 	if len(entries) == 0 {
 		return 0, nil
 	}
-	if len(entries) > limits.Observations {
-		return 0, &Violation{"RESOURCE_LIMIT", "Too many route catalog observations."}
+	if len(entries) > limits.Observations || len(entries) > math.MaxUint16 {
+		return 0, &ViolationError{resourceLimit, "Too many route catalog observations."}
 	}
 	size := 3
 	for i, entry := range entries {
 		for _, previous := range entries[:i] {
 			if previous.Provider == entry.Provider && previous.Connection == entry.Connection {
-				return 0, &Violation{"RESET_REQUIRED", "Duplicate qualified catalog revision."}
+				return 0, &ViolationError{resetRequired, "Duplicate qualified catalog revision."}
 			}
+		}
+		if len(entry.Provider) > math.MaxUint16 || len(entry.Connection) > math.MaxUint16 ||
+			len(entry.Revision) > math.MaxUint16 {
+			return 0, &ViolationError{resourceLimit, "Catalog observation exceeds frame field bound."}
 		}
 		if entry.Provider == "" || entry.Connection == "" || len(entry.Provider) > limits.RevisionBytes ||
 			len(entry.Connection) > limits.RevisionBytes ||
 			!utf8.ValidString(entry.Provider) ||
 			!utf8.ValidString(entry.Connection) {
-			return 0, &Violation{"RESET_REQUIRED", "Invalid qualified catalog route."}
+			return 0, &ViolationError{resetRequired, "Invalid qualified catalog route."}
 		}
 		if err := ValidateRevision(entry.Revision, limits.RevisionBytes); err != nil {
 			return 0, err
@@ -102,7 +113,7 @@ func EncodedSize(ctx context.Context, defaultRevision string, limits Limits) (in
 		size += 6 + len(entry.Provider) + len(entry.Connection) + len(entry.Revision)
 	}
 	if size+len(defaultRevision)+256 > limits.MetadataBytes {
-		return 0, &Violation{"RESOURCE_LIMIT", "Catalog revision metadata exceeds bound."}
+		return 0, &ViolationError{resourceLimit, "Catalog revision metadata exceeds bound."}
 	}
 	return size, nil
 }
