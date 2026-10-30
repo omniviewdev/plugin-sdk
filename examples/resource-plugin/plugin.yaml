@@ -1,0 +1,8 @@
+id: notes
+name: Embedded Notes
+version: 0.1.0
+description: Read an immutable note embedded in the plugin binary.
+repository: https://github.com/omniviewdev/plugin-sdk
+capabilities:
+  - resource
+sdk_protocol_version: 1
