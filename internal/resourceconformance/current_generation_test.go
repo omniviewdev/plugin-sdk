@@ -1,6 +1,7 @@
 package resourceconformance
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,6 +27,7 @@ import (
 )
 
 // generationCommand is a test-only source refresh file, never a plugin RPC.
+// Control files become visible only after their complete contents are closed and renamed.
 // applied-N acknowledges ApplyConnections and a newly started native client.
 type generationCommand struct {
 	Sequence int    `json:"sequence"`
@@ -127,19 +130,11 @@ func readGeneration(
 	request resource.GetRequest,
 	n int64,
 ) (resource.Record, error) {
-	if err := os.WriteFile(
-		filepath.Join(control, fmt.Sprintf("entered-%d", n)),
-		[]byte(*endpoint),
-		0o600,
-	); err != nil {
+	if err := publishGeneration(control, fmt.Sprintf("entered-%d", n), strings.NewReader(*endpoint)); err != nil {
 		return resource.Record{}, err
 	}
 	stop := context.AfterFunc(ctx, func() {
-		_ = os.WriteFile(
-			filepath.Join(control, fmt.Sprintf("canceled-%d", n)),
-			[]byte("canceled"),
-			0o600,
-		)
+		_ = publishGeneration(control, fmt.Sprintf("canceled-%d", n), strings.NewReader("canceled"))
 	})
 	defer stop()
 	// Deliberately ignore cancellation: the controller must fence this result.
@@ -155,11 +150,7 @@ func readGeneration(
 	if closeErr != nil {
 		return resource.Record{}, closeErr
 	}
-	if err := os.WriteFile(
-		filepath.Join(control, fmt.Sprintf("returned-%d", n)),
-		body,
-		0o600,
-	); err != nil {
+	if err := publishGeneration(control, fmt.Sprintf("returned-%d", n), bytes.NewReader(body)); err != nil {
 		return resource.Record{}, err
 	}
 	return resource.Record{
@@ -197,14 +188,10 @@ func refreshGeneration(ctx context.Context, controller *resource.Controller[stri
 			_, err = controller.StartConnection(ctx, "generation")
 		}
 		if err != nil {
-			_ = os.WriteFile(filepath.Join(control, "control-error"), []byte(err.Error()), 0o600)
+			_ = publishGeneration(control, "control-error", strings.NewReader(err.Error()))
 			return
 		}
-		if err = os.WriteFile(
-			filepath.Join(control, fmt.Sprintf("applied-%d", last)),
-			[]byte(command.Endpoint),
-			0o600,
-		); err != nil {
+		if err = publishGeneration(control, fmt.Sprintf("applied-%d", last), strings.NewReader(command.Endpoint)); err != nil {
 			return
 		}
 	}
@@ -271,6 +258,48 @@ func startGenerationProcess(t *testing.T, endpoint string) (resource.Provider, s
 	return provider, control
 }
 
+// publishGeneration stages each command or receipt beside its final path so readers
+// see either the previous complete publication or the next complete publication.
+func publishGeneration(control, name string, body io.Reader) error {
+	file, err := os.CreateTemp(control, "."+name+"-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(file.Name()) }()
+	_, writeErr := io.Copy(file, body)
+	closeErr := file.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(file.Name(), filepath.Join(control, name))
+}
+
+func TestGenerationPublication(t *testing.T) {
+	control := t.TempDir()
+	reader, writer := io.Pipe()
+	t.Cleanup(func() {
+		_ = reader.Close()
+		_ = writer.Close()
+	})
+	published := make(chan error, 1)
+	go func() {
+		published <- publishGeneration(control, "receipt", reader)
+	}()
+	// The publisher has begun consuming data, but the receipt is not complete.
+	_, err := io.WriteString(writer, "first")
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(control, "receipt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = io.WriteString(writer, "-second")
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	require.NoError(t, <-published)
+	require.Equal(t, "first-second", generationReceipt(t, control, "receipt"))
+}
+
 func generationReceipt(t *testing.T, control, name string) string {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -291,9 +320,7 @@ func generationRefresh(t *testing.T, control string, sequence int, endpoint stri
 	t.Helper()
 	body, err := json.Marshal(generationCommand{Sequence: sequence, Endpoint: endpoint})
 	require.NoError(t, err)
-	temporary := filepath.Join(control, "command.tmp")
-	require.NoError(t, os.WriteFile(temporary, body, 0o600))
-	require.NoError(t, os.Rename(temporary, filepath.Join(control, "command.json")))
+	require.NoError(t, publishGeneration(control, "command.json", bytes.NewReader(body)))
 }
 
 func TestCurrentSDKGenerationFence(t *testing.T) {
