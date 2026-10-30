@@ -764,8 +764,23 @@ func validateResourceType(t *ResourceType) error {
 	if t.ModelRepresentation != "" && !representations[t.ModelRepresentation] {
 		return invalid("model representation is not declared")
 	}
-	languages := make(map[string]bool, len(t.NativeQueries))
-	for _, query := range t.NativeQueries {
+	if err := validateNativeQueryDescriptors(t.NativeQueries); err != nil {
+		return err
+	}
+	for _, capability := range t.Capabilities {
+		if err := validateCapability(capability); err != nil {
+			return err
+		}
+		if err := ValidateScope(capability.Scope, t.QueryDimensions); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateNativeQueryDescriptors(queries []NativeQueryDescriptor) error {
+	languages := make(map[string]bool, len(queries))
+	for _, query := range queries {
 		if err := text(query.Language, true); err != nil {
 			return err
 		}
@@ -777,14 +792,6 @@ func validateResourceType(t *ResourceType) error {
 		}
 		languages[query.Language] = true
 		if err := ValidateSchema(query.InputSchema); err != nil {
-			return err
-		}
-	}
-	for _, capability := range t.Capabilities {
-		if err := validateCapability(capability); err != nil {
-			return err
-		}
-		if err := ValidateScope(capability.Scope, t.QueryDimensions); err != nil {
 			return err
 		}
 	}

@@ -145,20 +145,8 @@ func validateActionProperty(p SchemaProperty, depth int) error {
 	default:
 		return invalid("unknown action schema type")
 	}
-	if p.Enum != nil && p.Type != SchemaString {
-		return invalid("action schema enum requires string type")
-	}
-	if p.Enum != nil {
-		if len(p.Enum) == 0 {
-			return invalid("action schema enum must not be empty")
-		}
-		seen := make(map[string]bool, len(p.Enum))
-		for _, item := range p.Enum {
-			if seen[item] {
-				return invalid("duplicate action schema enum value")
-			}
-			seen[item] = true
-		}
+	if err := validateActionEnum(p); err != nil {
+		return err
 	}
 	if (p.Minimum != nil || p.Maximum != nil) && p.Type != SchemaInteger && p.Type != SchemaNumber {
 		return invalid("action schema bounds require numeric type")
@@ -176,6 +164,26 @@ func validateActionProperty(p SchemaProperty, depth int) error {
 		return invalid("action schema minimum exceeds maximum")
 	}
 	return validateSchemaObject(p.Properties, p.Required, depth+1)
+}
+
+func validateActionEnum(p SchemaProperty) error {
+	if p.Enum == nil {
+		return nil
+	}
+	if p.Type != SchemaString {
+		return invalid("action schema enum requires string type")
+	}
+	if len(p.Enum) == 0 {
+		return invalid("action schema enum must not be empty")
+	}
+	seen := make(map[string]bool, len(p.Enum))
+	for _, item := range p.Enum {
+		if seen[item] {
+			return invalid("duplicate action schema enum value")
+		}
+		seen[item] = true
+	}
+	return nil
 }
 
 func validateActionProperties(properties map[string]SchemaProperty, depth int) error {

@@ -11,6 +11,7 @@ import (
 
 type schemaActionProvider struct {
 	streamProvider
+
 	descriptor resourcev2.ActionDescriptor
 	called     bool
 }

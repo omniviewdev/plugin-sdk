@@ -34,10 +34,22 @@ func (p *SchemaProperty) UnmarshalJSON(data []byte) error {
 	if err := decoder.Decode(&next); err != nil {
 		return err
 	}
+	if err := validateExactSchemaBounds(fields, SchemaProperty(next)); err != nil {
+		return err
+	}
+	if err := validateActionProperty(SchemaProperty(next), 0); err != nil {
+		return err
+	}
+	*p = SchemaProperty(next)
+	return nil
+}
+
+// validateExactSchemaBounds rejects JSON bounds rounded by float64 decoding.
+func validateExactSchemaBounds(fields map[string]json.RawMessage, p SchemaProperty) error {
 	for _, constraint := range []struct {
 		name  string
 		value *float64
-	}{{"minimum", next.Minimum}, {"maximum", next.Maximum}} {
+	}{{"minimum", p.Minimum}, {"maximum", p.Maximum}} {
 		if raw, present := fields[constraint.name]; present {
 			bound, ok := new(big.Rat).SetString(string(bytes.TrimSpace(raw)))
 			if !ok || constraint.value == nil {
@@ -49,10 +61,6 @@ func (p *SchemaProperty) UnmarshalJSON(data []byte) error {
 			}
 		}
 	}
-	if err := validateActionProperty(SchemaProperty(next), 0); err != nil {
-		return err
-	}
-	*p = SchemaProperty(next)
 	return nil
 }
 
@@ -65,6 +73,7 @@ func (p SchemaProperty) MarshalJSON() ([]byte, error) {
 	type plain SchemaProperty
 	return json.Marshal(struct {
 		plain
+
 		Minimum json.RawMessage `json:"minimum,omitempty"`
 		Maximum json.RawMessage `json:"maximum,omitempty"`
 	}{plain(p), exactSchemaBound(p.Minimum), exactSchemaBound(p.Maximum)})

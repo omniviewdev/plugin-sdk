@@ -55,11 +55,11 @@ func (p *PluginClient) ListTools(ctx *types.PluginContext) ([]Descriptor, error)
 		if d == nil {
 			return nil, fmt.Errorf("invalid tool descriptor")
 		}
-		if _, err := compileSchema(d.GetInputSchema(), true); err != nil {
+		if _, err := compileSchema(d.GetInputSchema()); err != nil {
 			return nil, fmt.Errorf("invalid tool input schema: %w", err)
 		}
 		if len(d.GetOutputSchema()) != 0 {
-			if _, err := compileSchema(d.GetOutputSchema(), true); err != nil {
+			if _, err := compileSchema(d.GetOutputSchema()); err != nil {
 				return nil, fmt.Errorf("invalid tool output schema: %w", err)
 			}
 		}
@@ -84,11 +84,11 @@ func (p *PluginClient) CallTool(ctx *types.PluginContext, input CallInput) (*Res
 	if selected == nil {
 		return nil, ErrToolNotFound
 	}
-	schema, err := compileSchema(selected.InputSchema, true)
+	schema, err := compileSchema(selected.InputSchema)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateJSON(schema, input.Arguments); err != nil {
+	if validationErr := validateJSON(schema, input.Arguments); validationErr != nil {
 		return nil, status.Error(codes.InvalidArgument, "Invalid tool arguments.")
 	}
 	if ctx != nil && ctx.Connection != nil && ctx.Connection.ID == "" {
@@ -97,7 +97,6 @@ func (p *PluginClient) CallTool(ctx *types.PluginContext, input CallInput) (*Res
 	grpcCtx, pctx := rpcContext(ctx)
 	request := &toolspb.CallToolRequest{Name: input.Name, Arguments: input.Arguments, ContractVersion: ContractVersion}
 	if input.Route != nil {
-		var err error
 		request.Route, err = resourcev2.ToProtoAccessRoute(*input.Route)
 		if err != nil {
 			return nil, err
@@ -111,18 +110,12 @@ func (p *PluginClient) CallTool(ctx *types.PluginContext, input CallInput) (*Res
 	if result.IsError {
 		return safeFailure(result), nil
 	}
+	var output *compiledSchema
 	if len(selected.OutputSchema) != 0 {
-		schema, err := compileSchema(selected.OutputSchema, true)
+		output, err = compileSchema(selected.OutputSchema)
 		if err != nil {
 			return nil, err
 		}
-		if err := validateJSON(schema, result.StructuredContent); err != nil {
-			return safeFailure(nil), nil
-		}
-	} else if len(result.StructuredContent) != 0 {
-		if _, err := decodeObject(result.StructuredContent); err != nil {
-			return safeFailure(nil), nil
-		}
 	}
-	return result, nil
+	return finishResult(result, output), nil
 }

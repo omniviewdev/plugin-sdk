@@ -50,7 +50,7 @@ func TestActionExpectedDescriptorJSONPresence(t *testing.T) {
 		t.Fatal(err)
 	}
 	var object map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &object); err != nil {
+	if err = json.Unmarshal(raw, &object); err != nil {
 		t.Fatal(err)
 	}
 	object["expectedDescriptor"] = json.RawMessage("null")

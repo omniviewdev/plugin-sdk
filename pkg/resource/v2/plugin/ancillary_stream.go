@@ -12,6 +12,8 @@ import (
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
+const actionEventOutput = "output"
+
 func streamContext(stream grpc.ServerStream, s *ancillaryServer) (context.Context, error) {
 	return incomingSession(stream.Context(), s.owner.settings)
 }
@@ -108,7 +110,7 @@ func streamActionHandler(srv any, stream grpc.ServerStream) error {
 
 	ready := false
 	send := func(v resourcev2.ActionEvent) error {
-		if v.Type == "output" && v.Data != nil {
+		if v.Type == actionEventOutput && v.Data != nil {
 			if err := resourcev2.ValidateResolvedActionOutput(descriptor, *v.Data); err != nil {
 				return err
 			}
@@ -225,28 +227,15 @@ func (c *Client) StreamAction(
 	}
 	ready := false
 	for {
-		p := &resourcepb.ActionStreamEvent{}
-		e := &envelope{message: p}
-		if err = s.RecvMsg(e); err != nil {
-			if errors.Is(err, io.EOF) {
+		v, receiveErr := receiveActionEvent(s, &ready, descriptor)
+		if receiveErr != nil {
+			if errors.Is(receiveErr, io.EOF) {
 				if !ready {
 					return invalid("action completed without native readiness")
 				}
 				return nil
 			}
-			return domainError(err)
-		}
-		if e.err != nil {
-			return e.err
-		}
-		v, decodeErr := decodeActionEvent(p, &ready)
-		if decodeErr != nil {
-			return decodeErr
-		}
-		if v.Type == "output" && v.Data != nil {
-			if err := resourcev2.ValidateResolvedActionOutput(descriptor, *v.Data); err != nil {
-				return err
-			}
+			return receiveErr
 		}
 		select {
 		case out <- v:
@@ -254,6 +243,36 @@ func (c *Client) StreamAction(
 			return domainError(ctx.Err())
 		}
 	}
+}
+
+// receiveActionEvent admits one envelope, readiness transition, and discovered
+// output constraint. EOF remains distinct for the stream's completion check.
+func receiveActionEvent(
+	stream grpc.ClientStream,
+	ready *bool,
+	descriptor *resourcev2.ActionDescriptor,
+) (resourcev2.ActionEvent, error) {
+	p := &resourcepb.ActionStreamEvent{}
+	e := &envelope{message: p}
+	if err := stream.RecvMsg(e); err != nil {
+		if errors.Is(err, io.EOF) {
+			return resourcev2.ActionEvent{}, err
+		}
+		return resourcev2.ActionEvent{}, domainError(err)
+	}
+	if e.err != nil {
+		return resourcev2.ActionEvent{}, e.err
+	}
+	v, err := decodeActionEvent(p, ready)
+	if err != nil {
+		return resourcev2.ActionEvent{}, err
+	}
+	if v.Type == actionEventOutput && v.Data != nil {
+		if err := resourcev2.ValidateResolvedActionOutput(descriptor, *v.Data); err != nil {
+			return resourcev2.ActionEvent{}, err
+		}
+	}
+	return v, nil
 }
 
 func (s *ancillaryServer) sendActionEvent(
@@ -284,7 +303,7 @@ func (s *ancillaryServer) sendActionEvent(
 	if v.Error != nil {
 		out.ErrorCode = resourcev2.ErrorCode(v.Error)
 	}
-	if (v.Type == "progress" || v.Type == "output") && v.Data == nil {
+	if (v.Type == "progress" || v.Type == actionEventOutput) && v.Data == nil {
 		return invalid("action data required")
 	}
 	if v.Data != nil {
@@ -368,7 +387,7 @@ func decodeActionEvent(p *resourcepb.ActionStreamEvent, ready *bool) (resourcev2
 	if p.Type == "" {
 		return resourcev2.ActionEvent{}, invalid("missing action event type")
 	}
-	if (p.Type == "progress" || p.Type == "output") && p.Data == nil {
+	if (p.Type == "progress" || p.Type == actionEventOutput) && p.Data == nil {
 		return resourcev2.ActionEvent{}, invalid("action data required")
 	}
 	v := resourcev2.ActionEvent{Type: p.Type}

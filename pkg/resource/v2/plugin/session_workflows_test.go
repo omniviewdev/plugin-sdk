@@ -53,7 +53,7 @@ func TestWorkflowObservationDoesNotAssumeRPCCount(t *testing.T) {
 		context.Background(),
 		resourcev2.Session{RequestID: "request", RequesterID: "requester"},
 	)
-	for i := 0; i < 64; i++ {
+	for range 64 {
 		p.observe(ctx, "catalog")
 	}
 	p.observe(

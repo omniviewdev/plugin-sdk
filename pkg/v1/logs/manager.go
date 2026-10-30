@@ -504,20 +504,7 @@ func (m *Manager) Close() {
 
 func (m *Manager) orchestrateSession(ss *sessionState) {
 	defer m.wg.Done()
-	defer func() {
-		ss.sourceWg.Wait()
-		if ss.ctx.Err() != nil && ss.status() != LogSessionStatusError {
-			ss.setStatus(LogSessionStatusClosed)
-		}
-		if ss.ctx.Err() == nil {
-			m.emitEvent(ss.session.ID, LogStreamEvent{
-				Type:      StreamEventStreamEnded,
-				Message:   "Log session ended.",
-				Timestamp: m.clock.Now(),
-			})
-		}
-		close(ss.done)
-	}()
+	defer m.finalizeSession(ss)
 
 	// Initialize the session-level concurrency semaphore once, before any
 	// source goroutines are launched (applies to fanOutSources, dynamic
@@ -625,6 +612,22 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	}
 
 	m.fanOutSources(ss, h, result.Sources, opts, logger)
+}
+
+// finalizeSession drains every native producer before publishing completion.
+func (m *Manager) finalizeSession(ss *sessionState) {
+	ss.sourceWg.Wait()
+	if ss.ctx.Err() != nil && ss.status() != LogSessionStatusError {
+		ss.setStatus(LogSessionStatusClosed)
+	}
+	if ss.ctx.Err() == nil {
+		m.emitEvent(ss.session.ID, LogStreamEvent{
+			Type:      StreamEventStreamEnded,
+			Message:   "Log session ended.",
+			Timestamp: m.clock.Now(),
+		})
+	}
+	close(ss.done)
 }
 
 func (m *Manager) streamFromHandler(

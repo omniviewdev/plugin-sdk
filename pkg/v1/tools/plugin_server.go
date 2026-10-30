@@ -62,8 +62,8 @@ func (s *PluginServer) ListTools(
 		ContractVersion: ContractVersion,
 		Tools:           make([]*toolspb.ToolDescriptor, 0, len(descriptors)),
 	}
-	for _, d := range descriptors {
-		out.Tools = append(out.Tools, descriptorToProto(d))
+	for i := range descriptors {
+		out.Tools = append(out.Tools, descriptorToProto(descriptors[i]))
 	}
 	return out, nil
 }

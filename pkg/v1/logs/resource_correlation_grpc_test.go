@@ -62,15 +62,15 @@ func TestCorrelatedResourceSessionClosesAfterActualGRPCLostReply(t *testing.T) {
 		t.Fatalf("expected lost accepted receipt, got: %v %v", session, err)
 	}
 	awaitLifetime(t, opened)
-	if err := client.CloseSession(pc, id); err != nil {
-		t.Fatal(err)
+	if closeErr := client.CloseSession(pc, id); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	awaitLifetime(t, reader.closed)
 	sessions, err := manager.ListSessions(pc)
 	if err != nil || len(sessions) != 0 {
 		t.Fatalf("lost-reply session survived cleanup: %v %v", sessions, err)
 	}
-	if _, err := controller.StopConnection(context.Background(), "explicit"); err != nil {
-		t.Fatal(err)
+	if _, stopErr := controller.StopConnection(context.Background(), "explicit"); stopErr != nil {
+		t.Fatal(stopErr)
 	}
 }

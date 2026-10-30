@@ -113,33 +113,42 @@ func (s *PluginServer) CreateResourceSession(
 	if err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
-	if resultErr := validateResourceSessionResult(session); resultErr != nil {
-		if session != nil && session.ID != "" {
-			if closeErr := s.Impl.CloseSession(pctx, session.ID); closeErr != nil {
-				if s.log != nil {
-					s.log.Errorw(ctx, "rejected log session cleanup failed", "error", closeErr)
-				}
-				return nil, resourceplugin.ResourceRPCError(resourceError("INTERNAL", "Log session cleanup failed."))
-			}
-		}
-		return nil, resourceplugin.ResourceRPCError(resultErr)
-	}
-	response := &logspb.ResourceLogSessionResponse{
-		ResourceWireVersion: ResourceSessionWireVersion,
-		Session:             session.ToProto(),
-	}
-	if proto.Size(response) > resourcev2.MaxMessageBytes {
-		if closeErr := s.Impl.CloseSession(pctx, session.ID); closeErr != nil {
-			if s.log != nil {
-				s.log.Errorw(ctx, "oversized log session cleanup failed", "error", closeErr)
-			}
-			return nil, resourceplugin.ResourceRPCError(resourceError("INTERNAL", "Log session cleanup failed."))
-		}
-		return nil, resourceplugin.ResourceRPCError(
-			resourceError("RESOURCE_LIMIT", "Logs response exceeds wire limit."),
-		)
+	response, err := s.resourceSessionResponse(pctx, session)
+	if err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	return response, nil
+}
+
+// resourceSessionResponse accepts only a valid, bounded receipt and closes any
+// session whose acceptance cannot be returned to the caller.
+func (s *PluginServer) resourceSessionResponse(
+	pctx *types.PluginContext,
+	session *LogSession,
+) (*logspb.ResourceLogSessionResponse, error) {
+	resultErr := validateResourceSessionResult(session)
+	cleanupMessage := "rejected log session cleanup failed"
+	var response *logspb.ResourceLogSessionResponse
+	if resultErr == nil {
+		response = &logspb.ResourceLogSessionResponse{
+			ResourceWireVersion: ResourceSessionWireVersion,
+			Session:             session.ToProto(),
+		}
+		if proto.Size(response) <= resourcev2.MaxMessageBytes {
+			return response, nil
+		}
+		resultErr = resourceError("RESOURCE_LIMIT", "Logs response exceeds wire limit.")
+		cleanupMessage = "oversized log session cleanup failed"
+	}
+	if session != nil && session.ID != "" {
+		if closeErr := s.Impl.CloseSession(pctx, session.ID); closeErr != nil {
+			if s.log != nil {
+				s.log.Errorw(pctx.Context, cleanupMessage, "error", closeErr)
+			}
+			return nil, resourceError("INTERNAL", "Log session cleanup failed.")
+		}
+	}
+	return nil, resultErr
 }
 
 // GetSession retrieves one session by ID through the provider.

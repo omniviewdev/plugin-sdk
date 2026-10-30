@@ -12,19 +12,21 @@ import (
 const (
 	maxSchemaExpansion uint64 = 10000
 	maxValidationWork  uint64 = 1000000
+	maxExactNumberLength = 4096
+	maxExactExponent = 4096
 )
 
 // admitNumber bounds exact arithmetic before the validator sees a number. The
-// validator assumes big.Rat.SetString succeeds, including for exponent notation.
+// validator assumes [big.Rat.SetString] succeeds, including for exponent notation.
 // Restrict both numeric length and exponent; never round through float64.
 func admitNumber(number json.Number) error {
 	text := string(number)
-	if len(text) > 4096 {
+	if len(text) > maxExactNumberLength {
 		return fmt.Errorf("JSON number exceeds exact arithmetic budget")
 	}
 	if index := strings.IndexAny(text, "eE"); index >= 0 {
 		exponent, err := strconv.ParseInt(text[index+1:], 10, 32)
-		if err != nil || exponent < -4096 || exponent > 4096 {
+		if err != nil || exponent < -maxExactExponent || exponent > maxExactExponent {
 			return fmt.Errorf("JSON exponent exceeds exact arithmetic budget")
 		}
 	}
@@ -73,25 +75,51 @@ type schemaNode struct {
 }
 
 // schemaWork conservatively expands every static schema edge, including unused
-// definitions. Memoized costs retain repeated-edge multiplicity. Cycles and
-// dynamic references cannot receive a finite bound and are not admitted.
+// definitions. Memoized costs retain repeated-edge multiplicity.
 func schemaWork(doc any) (uint64, error) {
-	nodes := map[string]*schemaNode{}
-	anchors := map[string]string{}
-	escape := func(s string) string { return strings.ReplaceAll(strings.ReplaceAll(s, "~", "~0"), "/", "~1") }
-	var collect func(any, string) error
-	collect = func(value any, path string) error {
+	g := schemaGraph{nodes: map[string]*schemaNode{}, anchors: map[string]string{}}
+	if err := g.collect(doc, ""); err != nil {
+		return 0, err
+	}
+	if err := g.resolveReferences(); err != nil {
+		return 0, err
+	}
+	expansion, err := g.expansion()
+	if err != nil {
+		return 0, err
+	}
+	work := expansion + jsonNodes(doc)
+	if work > maxSchemaExpansion {
+		return 0, fmt.Errorf("schema declaration exceeds work budget")
+	}
+	return work, nil
+}
+
+type schemaGraph struct {
+	nodes map[string]*schemaNode
+	anchors map[string]string
+}
+
+func (g *schemaGraph) collect(value any, path string) error {
 		current := &schemaNode{}
-		nodes[path] = current
+		g.nodes[path] = current
 		object, ok := value.(map[string]any)
 		if !ok {
 			return nil
 		}
-		add := func(child any, childPath string) error {
-			current.children = append(current.children, childPath)
-			return collect(child, childPath)
-		}
 		for key, value := range object {
+			if err := g.declaration(current, path, key, value); err != nil {
+				return err
+			}
+			if err := g.children(current, path, key, value); err != nil {
+				return err
+			}
+		}
+		return nil
+}
+
+// declaration enforces the bounded profile at schema nodes, not annotation data.
+func (g *schemaGraph) declaration(current *schemaNode, path, key string, value any) error {
 			switch key {
 			case "$dynamicRef", "$dynamicAnchor", "$recursiveRef", "$recursiveAnchor":
 				return fmt.Errorf("dynamic or recursive schema references are outside the bounded profile")
@@ -118,10 +146,10 @@ func schemaWork(doc any) (uint64, error) {
 				}
 			case "$anchor":
 				if anchor, ok := value.(string); ok {
-					if _, exists := anchors[anchor]; exists {
+					if _, exists := g.anchors[anchor]; exists {
 						return fmt.Errorf("duplicate schema anchor")
 					}
-					anchors[anchor] = path
+					g.anchors[anchor] = path
 				}
 			case "$ref":
 				ref, ok := value.(string)
@@ -129,6 +157,22 @@ func schemaWork(doc any) (uint64, error) {
 					return fmt.Errorf("only local schema references are supported")
 				}
 				current.ref = ref
+			case "items":
+				if _, legacy := value.([]any); legacy {
+					return fmt.Errorf("legacy tuple items are outside the 2020-12 profile; use prefixItems")
+				}
+			}
+			return nil
+}
+
+// children is the shared walker for all admitted schema-valued keywords.
+func (g *schemaGraph) children(current *schemaNode, path, key string, value any) error {
+		escape := func(s string) string { return strings.ReplaceAll(strings.ReplaceAll(s, "~", "~0"), "/", "~1") }
+		add := func(child any, childPath string) error {
+			current.children = append(current.children, childPath)
+			return g.collect(child, childPath)
+		}
+		switch key {
 			case "properties", "patternProperties", "$defs", "dependentSchemas":
 				if children, ok := value.(map[string]any); ok {
 					for name, child := range children {
@@ -145,14 +189,7 @@ func schemaWork(doc any) (uint64, error) {
 						}
 					}
 				}
-			case "items":
-				if _, legacy := value.([]any); legacy {
-					return fmt.Errorf("legacy tuple items are outside the 2020-12 profile; use prefixItems")
-				}
-				if err := add(value, path+"/"+key); err != nil {
-					return err
-				}
-			case "contains",
+			case "items", "contains",
 				"additionalProperties",
 				"propertyNames",
 				"unevaluatedProperties",
@@ -162,39 +199,37 @@ func schemaWork(doc any) (uint64, error) {
 				"then",
 				"else",
 				"contentSchema":
-				if err := add(value, path+"/"+key); err != nil {
-					return err
-				}
+				return add(value, path+"/"+key)
 			}
-		}
 		return nil
-	}
-	if err := collect(doc, ""); err != nil {
-		return 0, err
-	}
-	for _, node := range nodes {
+}
+
+func (g *schemaGraph) resolveReferences() error {
+	for _, node := range g.nodes {
 		if node.ref == "" {
 			continue
 		}
-		if !strings.HasPrefix(node.ref, "#") {
-			return 0, fmt.Errorf("only local schema references are supported")
-		}
 		target, err := url.PathUnescape(node.ref[1:])
 		if err != nil {
-			return 0, fmt.Errorf("invalid local schema reference")
+			return fmt.Errorf("invalid local schema reference")
 		}
 		if target != "" && !strings.HasPrefix(target, "/") {
 			var ok bool
-			target, ok = anchors[target]
+			target, ok = g.anchors[target]
 			if !ok {
-				return 0, fmt.Errorf("unknown schema anchor")
+				return fmt.Errorf("unknown schema anchor")
 			}
 		}
-		if _, ok := nodes[target]; !ok {
-			return 0, fmt.Errorf("reference does not target an admitted schema node")
+		if _, ok := g.nodes[target]; !ok {
+			return fmt.Errorf("reference does not target an admitted schema node")
 		}
 		node.children = append(node.children, target)
 	}
+	return nil
+}
+
+// expansion preserves repeated-edge multiplicity and rejects cyclic references.
+func (g *schemaGraph) expansion() (uint64, error) {
 	active := map[string]bool{}
 	costs := map[string]uint64{}
 	var cost func(string) (uint64, error)
@@ -207,7 +242,7 @@ func schemaWork(doc any) (uint64, error) {
 		}
 		active[path] = true
 		total := uint64(1)
-		for _, child := range nodes[path].children {
+		for _, child := range g.nodes[path].children {
 			count, err := cost(child)
 			if err != nil {
 				return 0, err
@@ -221,13 +256,5 @@ func schemaWork(doc any) (uint64, error) {
 		costs[path] = total
 		return total, nil
 	}
-	expansion, err := cost("")
-	if err != nil {
-		return 0, err
-	}
-	work := expansion + jsonNodes(doc)
-	if work > maxSchemaExpansion {
-		return 0, fmt.Errorf("schema declaration exceeds work budget")
-	}
-	return work, nil
+	return cost("")
 }

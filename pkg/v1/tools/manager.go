@@ -56,13 +56,13 @@ func NewManager(log logging.Logger, opts PluginOpts) (*Manager, error) {
 		if _, exists := m.tools[tool.Name]; exists {
 			return nil, fmt.Errorf("tool %q: duplicate name", tool.Name)
 		}
-		input, err := compileSchema(tool.InputSchema, true)
+		input, err := compileSchema(tool.InputSchema)
 		if err != nil {
 			return nil, fmt.Errorf("tool %q input schema: %w", tool.Name, err)
 		}
 		m.inputs[tool.Name] = input
 		if len(tool.OutputSchema) != 0 {
-			output, err := compileSchema(tool.OutputSchema, true)
+			output, err := compileSchema(tool.OutputSchema)
 			if err != nil {
 				return nil, fmt.Errorf("tool %q output schema: %w", tool.Name, err)
 			}
@@ -171,20 +171,32 @@ func (m *Manager) finish(tool Tool, handler Handler, ctx *types.PluginContext, a
 			code = ErrorUnavailable
 		case codes.PermissionDenied:
 			code = ErrorPermissionDenied
+		case codes.OK, codes.Canceled, codes.Unknown, codes.InvalidArgument,
+			codes.DeadlineExceeded, codes.NotFound, codes.AlreadyExists,
+			codes.ResourceExhausted, codes.FailedPrecondition, codes.Aborted,
+			codes.OutOfRange, codes.Unimplemented, codes.Internal, codes.DataLoss,
+			codes.Unauthenticated:
+			// These statuses do not change the safe execution-failure projection.
 		}
 		return safeFailure(&Result{ErrorCode: code}), nil
 	}
+	return finishResult(result, m.outputs[tool.Name]), nil
+}
+
+// finishResult projects tool execution and output failures into successful RPC
+// results. Invalid output never crosses the tool boundary.
+func finishResult(result *Result, output *compiledSchema) *Result {
 	if result == nil || result.IsError {
-		return safeFailure(result), nil
+		return safeFailure(result)
 	}
-	if output := m.outputs[tool.Name]; output != nil {
+	if output != nil {
 		if err := validateJSON(output, result.StructuredContent); err != nil {
-			return safeFailure(nil), nil
+			return safeFailure(nil)
 		}
 	} else if len(result.StructuredContent) != 0 {
 		if _, err := decodeObject(result.StructuredContent); err != nil {
-			return safeFailure(nil), nil
+			return safeFailure(nil)
 		}
 	}
-	return result, nil
+	return result
 }

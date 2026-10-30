@@ -21,7 +21,7 @@ func ValidateActionDescriptorRequest(request ActionRequest, descriptor ActionDes
 		return invalid("action scope does not match target")
 	}
 	if descriptor.Streaming != streaming {
-		return NewError("UNSUPPORTED", "Action execution lane is unsupported.")
+		return NewError(errorCodeUnsupported, "Action execution lane is unsupported.")
 	}
 	return ValidateActionInput(descriptor, request.Input)
 }
@@ -55,7 +55,7 @@ func ResolveActionDescriptor(
 	target := actionOperationTarget(request)
 	descriptors, err := catalog.GetActions(ctx, request.Route, target.typ)
 	if err != nil {
-		if ErrorCode(err) == "UNSUPPORTED" {
+		if ErrorCode(err) == errorCodeUnsupported {
 			return unavailableActionDescriptor(request)
 		}
 		return nil, err
@@ -67,7 +67,7 @@ func unavailableActionDescriptor(request ActionRequest) (*ActionDescriptor, erro
 	if request.ExpectedDescriptor != nil {
 		return nil, NewError("RESET_REQUIRED", "Expected action descriptor is unavailable.")
 	}
-	return nil, nil
+	return nil, nil //nolint:nilnil // Nil is valid absent optional discovery metadata, not a missing required result.
 }
 
 func selectActionDescriptor(
@@ -90,7 +90,7 @@ func selectActionDescriptor(
 	if request.ExpectedDescriptor != nil {
 		return nil, NewError("RESET_REQUIRED", "Expected action descriptor is unavailable.")
 	}
-	return nil, NewError("UNSUPPORTED", "Action is not advertised.")
+	return nil, NewError(errorCodeUnsupported, "Action is not advertised.")
 }
 
 // ValidateResolvedActionOutput validates only constraints actually discovered.
@@ -114,6 +114,12 @@ func (c *Controller[T]) GetActions(ctx context.Context, route AccessRoute, typ s
 	if err != nil {
 		return nil, err
 	}
+	return mergeScopedActionDescriptors(registrations)
+}
+
+// mergeScopedActionDescriptors preserves unknown versus explicitly empty discovery.
+// A conflicting ID cannot describe all scopes, so it is omitted from the catalog.
+func mergeScopedActionDescriptors[T any](registrations []Registration[T]) ([]ActionDescriptor, error) {
 	var out []ActionDescriptor
 	positions := make(map[string]int)
 	conflicts := make(map[string]bool)
@@ -153,7 +159,7 @@ func (c *Controller[T]) resolveActionDescriptor(
 	var registration *Registration[T]
 	defer c.guard(&registration, &err)
 	if streaming {
-		return descriptor, NewError("UNSUPPORTED", "Streaming action handler is not implemented.")
+		return descriptor, NewError(errorCodeUnsupported, "Streaming action handler is not implemented.")
 	}
 	target := actionOperationTarget(request)
 	registration, _, err = c.resolve(

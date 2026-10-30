@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -49,13 +50,12 @@ func TestSchemaDeclarationsRejectMalformedAndRemote(t *testing.T) {
 		`{"type":"object","properties":{"x":{"format":"unknown"}}}`,
 		`{"type":"object","properties":{"x":{"format":"date-time"}}}`,
 	} {
-		t.Run(raw, func(t *testing.T) { _, err := compileSchema([]byte(raw), true); require.Error(t, err) })
+		t.Run(raw, func(t *testing.T) { _, err := compileSchema([]byte(raw)); require.Error(t, err) })
 	}
 	schema, err := compileSchema(
 		[]byte(
 			`{"type":"object","$defs":{"n":{"type":"integer","minimum":9007199254740993,"maximum":9007199254740993}},"properties":{"n":{"$ref":"#/$defs/n"}},"required":["n"]}`,
 		),
-		true,
 	)
 	require.NoError(t, err)
 	require.NoError(t, validateJSON(schema, []byte(`{"n":9007199254740993}`)))
@@ -78,8 +78,8 @@ func TestValidationPrecedesHandlerAndFencesBadOutputs(t *testing.T) {
 	manager, err := NewManager(logging.NewNop(), PluginOpts{Tools: []Tool{tool}})
 	require.NoError(t, err)
 	for _, input := range []string{`{}`, `{"n":"1"}`, `{"n":1,"n":2}`, `{"n":1,"extra":{"x":1,"x":2}}`} {
-		_, err := manager.CallTool(nil, CallInput{Name: tool.Name, Arguments: []byte(input)})
-		require.Error(t, err)
+		_, callErr := manager.CallTool(nil, CallInput{Name: tool.Name, Arguments: []byte(input)})
+		require.Error(t, callErr)
 	}
 	require.Zero(t, calls)
 	result, err := manager.CallTool(nil, CallInput{Name: tool.Name, Arguments: []byte(`{"n":1}`)})
@@ -120,11 +120,11 @@ func TestUnsupportedContractRejectedBeforeSideEffects(t *testing.T) {
 	require.NoError(t, err)
 	client := newWireClient(t, manager)
 	for _, version := range []uint32{0, 1, 3} {
-		_, err := client.client.CallTool(
+		_, callErr := client.client.CallTool(
 			context.Background(),
 			&toolspb.CallToolRequest{ContractVersion: version, Name: tool.Name, Arguments: []byte(`{}`)},
 		)
-		require.Equal(t, codes.FailedPrecondition, status.Code(err))
+		require.Equal(t, codes.FailedPrecondition, status.Code(callErr))
 	}
 	require.Zero(t, calls)
 	_, err = client.client.ListTools(context.Background(), &toolspb.ListToolsRequest{ContractVersion: 1})
@@ -287,7 +287,7 @@ func TestExtremeExponentRejectedBeforeValidationOrHandler(t *testing.T) {
 		require.Zero(t, peer.calls)
 	}
 	require.Zero(t, calls)
-	schema, err := compileSchema(tool.InputSchema, true)
+	schema, err := compileSchema(tool.InputSchema)
 	require.NoError(t, err)
 	for _, number := range []string{"9007199254740993", "1e4096", "1e-4096", "-0"} {
 		require.NoError(t, validateJSON(schema, []byte(`{"n":`+number+`}`)))
@@ -337,14 +337,13 @@ func TestReferenceExpansionRejectedBeforeCompilerAndDispatch(t *testing.T) {
 		require.Zero(t, calls)
 	}
 	// Small static DAGs and anchor refs remain valid; their assertions still run.
-	small, err := compileSchema(doublingSchema(3), true)
+	small, err := compileSchema(doublingSchema(3))
 	require.NoError(t, err)
 	require.Error(t, validateJSON(small, []byte(`{}`)))
 	anchored, err := compileSchema(
 		[]byte(
 			`{"type":"object","$defs":{"n":{"$anchor":"number","type":"integer"}},"properties":{"n":{"$ref":"#number"}}}`,
 		),
-		true,
 	)
 	require.NoError(t, err)
 	require.NoError(t, validateJSON(anchored, []byte(`{"n":9007199254740993}`)))
@@ -356,7 +355,6 @@ func TestValidationWorkBudgetCombinesSchemaAndInstance(t *testing.T) {
 		[]byte(
 			`{"type":"object","properties":{"items":{"type":"array","uniqueItems":true,"items":{"type":"integer"}}}}`,
 		),
-		true,
 	)
 	require.NoError(t, err)
 	items := make([]int, 1000)
@@ -409,7 +407,7 @@ func TestLegacyApplicatorsCannotBypassSchemaBudget(t *testing.T) {
 		`{"type":"object","additionalItems":{"$recursiveRef":"#"}}`,
 		`{"type":"object","properties":{"list":{"items":[{"$recursiveRef":"#"}]}}}`,
 	} {
-		_, err := compileSchema([]byte(raw), true)
+		_, err := compileSchema([]byte(raw))
 		require.Error(t, err)
 		tool := validTool("legacy_rejected", ScopePlugin)
 		tool.InputSchema = []byte(raw)
@@ -419,7 +417,7 @@ func TestLegacyApplicatorsCannotBypassSchemaBudget(t *testing.T) {
 		require.Zero(t, peer.calls)
 	}
 	// Modern dependentSchemas remains a budgeted assertion, not a dropped alias.
-	modern, err := compileSchema([]byte(`{"type":"object","dependentSchemas":{"x":{"required":["y"]}}}`), true)
+	modern, err := compileSchema([]byte(`{"type":"object","dependentSchemas":{"x":{"required":["y"]}}}`))
 	require.NoError(t, err)
 	require.Error(t, validateJSON(modern, []byte(`{"x":1}`)))
 	require.NoError(t, validateJSON(modern, []byte(`{"x":1,"y":2}`)))
@@ -429,7 +427,7 @@ func TestSchemaCountsRejectOverflowBeforeDependencyCompilation(t *testing.T) {
 	for _, keyword := range []string{"minLength", "maxLength", "minItems", "maxItems", "minProperties", "maxProperties", "minContains", "maxContains"} {
 		for _, number := range []string{"18446744073709551616", "9223372036854775808", "1e100", "-1", "0.5"} {
 			raw := []byte(`{"type":"object","properties":{"value":{"` + keyword + `":` + number + `}}}`)
-			_, err := compileSchema(raw, true)
+			_, err := compileSchema(raw)
 			require.ErrorContains(t, err, "schema count")
 			tool := validTool("count_rejected", ScopePlugin)
 			tool.InputSchema = raw
@@ -442,12 +440,11 @@ func TestSchemaCountsRejectOverflowBeforeDependencyCompilation(t *testing.T) {
 			require.Zero(t, peer.calls)
 		}
 	}
-	maximum := fmt.Sprint(uint64(^uint(0) >> 1))
+	maximum := strconv.FormatUint(uint64(^uint(0) >> 1), 10)
 	require.NoError(t, admitCount(json.Number(maximum)))
 	require.NoError(t, admitCount(json.Number("1e1")))
 	schema, err := compileSchema(
 		[]byte(`{"type":"object","properties":{"value":{"type":"string","minLength":2,"maxLength":3}}}`),
-		true,
 	)
 	require.NoError(t, err)
 	require.Error(t, validateJSON(schema, []byte(`{"value":"a"}`)))
@@ -456,7 +453,6 @@ func TestSchemaCountsRejectOverflowBeforeDependencyCompilation(t *testing.T) {
 	// Keywords inside const data are data, not declaration counts/applicators.
 	_, err = compileSchema(
 		[]byte(`{"type":"object","const":{"dependencies":{},"minLength":18446744073709551616}}`),
-		true,
 	)
 	require.NoError(t, err)
 }

@@ -440,7 +440,7 @@ func AdmitOperation(ctx context.Context, provider Provider, request any) (descri
 	if err != nil {
 		return descriptor, err
 	}
-	if err := ctx.Err(); err != nil {
+	if err = ctx.Err(); err != nil {
 		return descriptor, &ResourceOperationError{Code: ErrorCode(err), Err: err}
 	}
 	supported := false

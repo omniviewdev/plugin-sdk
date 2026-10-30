@@ -6,7 +6,10 @@ import (
 	"errors"
 )
 
-const errorCodeInternal = "INTERNAL"
+const (
+	errorCodeInternal    = "INTERNAL"
+	errorCodeUnsupported = "UNSUPPORTED"
+)
 
 // ResourceOperationError preserves provider classification across the resource
 // transport. Title, Message, and Suggestions must contain public-safe text:
@@ -82,7 +85,7 @@ func IsErrorCode(code string) bool {
 	case "NOT_FOUND", "ALREADY_EXISTS", "PERMISSION_DENIED", "INVALID_INPUT",
 		"CONFLICT", errorCodeInternal, "UNAVAILABLE", "TIMEOUT", "FILTER_UNKNOWN_FIELD",
 		"FILTER_INVALID_OPERATOR", "FORBIDDEN", "UNAUTHORIZED", "CONNECTION_ERROR",
-		"CERTIFICATE_ERROR", "INVALID_REQUEST", "UNSUPPORTED", "CANCELLED",
+		"CERTIFICATE_ERROR", "INVALID_REQUEST", errorCodeUnsupported, "CANCELLED",
 		"RESOURCE_LIMIT", "CONTINUATION_EXPIRED", "RESET_REQUIRED", "PARTIAL_RESULT",
 		"PROVIDER_ERROR":
 		return true

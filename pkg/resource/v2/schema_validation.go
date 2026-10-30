@@ -3,6 +3,7 @@ package resourcev2
 import (
 	"math"
 	"math/big"
+	"slices"
 	"sort"
 )
 
@@ -35,7 +36,7 @@ func ValidateSchemaValue(s Schema, v Value) error {
 }
 
 func validateSchemaObjectValue(properties map[string]SchemaProperty, required []string, v Value) error {
-	if v.Kind != "map" {
+	if v.Kind != valueKindMap {
 		return invalid("action schema requires object")
 	}
 	for _, name := range required {
@@ -59,55 +60,59 @@ func validateSchemaObjectValue(properties map[string]SchemaProperty, required []
 }
 
 func validateSchemaPropertyValue(p SchemaProperty, v Value) error {
-	numeric := v.Kind == "int64" || v.Kind == "uint64" || v.Kind == "double"
 	switch p.Type {
 	case SchemaString:
-		if v.Kind != "string" {
+		if v.Kind != valueKindString {
 			return invalid("action schema requires string")
 		}
-		if len(p.Enum) > 0 {
-			found := false
-			for _, item := range p.Enum {
-				if item == v.String {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return invalid("action string is outside enum")
-			}
+		if len(p.Enum) > 0 && !slices.Contains(p.Enum, v.String) {
+			return invalid("action string is outside enum")
 		}
 	case SchemaBoolean:
-		if v.Kind != "bool" {
+		if v.Kind != valueKindBool {
 			return invalid("action schema requires boolean")
 		}
 	case SchemaObject:
 		return validateSchemaObjectValue(p.Properties, p.Required, v)
 	case SchemaArray:
-		if v.Kind != "list" {
+		if v.Kind != valueKindList {
 			return invalid("action schema requires array")
 		}
 	case SchemaInteger, SchemaNumber:
-		if !numeric || (p.Type == SchemaInteger && v.Kind == "double" && math.Trunc(v.Double) != v.Double) {
+		return validateSchemaNumericValue(p, v)
+	}
+	return nil
+}
+
+// validateSchemaNumericValue compares exact values against the binary float64
+// schema bounds without rounding integer values through float64.
+func validateSchemaNumericValue(p SchemaProperty, v Value) error {
+	switch v.Kind {
+	case valueKindInt64, valueKindUint64:
+	case valueKindDouble:
+		if p.Type == SchemaInteger && math.Trunc(v.Double) != v.Double {
 			return invalid("action schema requires numeric type")
 		}
-		if p.Minimum != nil || p.Maximum != nil {
-			n := new(big.Rat)
-			switch v.Kind {
-			case "int64":
-				n.SetString(v.Int)
-			case "uint64":
-				n.SetString(v.Uint)
-			case "double":
-				n.SetFloat64(v.Double)
-			}
-			if p.Minimum != nil && n.Cmp(new(big.Rat).SetFloat64(*p.Minimum)) < 0 {
-				return invalid("action number is below minimum")
-			}
-			if p.Maximum != nil && n.Cmp(new(big.Rat).SetFloat64(*p.Maximum)) > 0 {
-				return invalid("action number exceeds maximum")
-			}
-		}
+	default:
+		return invalid("action schema requires numeric type")
+	}
+	if p.Minimum == nil && p.Maximum == nil {
+		return nil
+	}
+	n := new(big.Rat)
+	switch v.Kind {
+	case valueKindInt64:
+		n.SetString(v.Int)
+	case valueKindUint64:
+		n.SetString(v.Uint)
+	case valueKindDouble:
+		n.SetFloat64(v.Double)
+	}
+	if p.Minimum != nil && n.Cmp(new(big.Rat).SetFloat64(*p.Minimum)) < 0 {
+		return invalid("action number is below minimum")
+	}
+	if p.Maximum != nil && n.Cmp(new(big.Rat).SetFloat64(*p.Maximum)) > 0 {
+		return invalid("action number exceeds maximum")
 	}
 	return nil
 }

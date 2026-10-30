@@ -1003,7 +1003,7 @@ func (c *Controller[T]) ensureOnFirstQuery(ctx context.Context, target ReadTarge
 		}
 		err := c.EnsureResourceWatch(ctx, target)
 		// A finite query does not imply that the catalog declared live support.
-		if ErrorCode(err) == "UNSUPPORTED" {
+		if ErrorCode(err) == errorCodeUnsupported {
 			return nil
 		}
 		return err

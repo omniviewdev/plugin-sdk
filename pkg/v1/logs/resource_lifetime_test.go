@@ -27,13 +27,13 @@ func TestAcceptedLogsCreationCancellationAndRetirementDrain(t *testing.T) {
 	canceled := make(chan struct{})
 	drain := make(chan struct{})
 	released := make(chan struct{})
-	var producerContext context.Context
+	producerContexts := make(chan context.Context, 1)
 	manager := NewManager(ManagerConfig{Sink: nativeLogSink{}, Handlers: map[string]Handler{
 		"logs/opaque::pod": {
 			Plugin:   "logs",
 			Resource: "opaque::pod",
 			Handler: func(pc *types.PluginContext, _ LogStreamRequest) (io.ReadCloser, error) {
-				producerContext = pc.Context
+				producerContexts <- pc.Context
 				close(entered)
 				<-pc.Context.Done()
 				close(canceled)
@@ -59,6 +59,7 @@ func TestAcceptedLogsCreationCancellationAndRetirementDrain(t *testing.T) {
 		t.Fatal(err)
 	}
 	awaitLifetime(t, entered)
+	producerContext := <-producerContexts
 	cancelCreation()
 	if producerContext.Err() != nil {
 		t.Fatal("creation cancellation closed accepted producer")
