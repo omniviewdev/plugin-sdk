@@ -17,7 +17,7 @@ import (
 //
 // Both files stay in Go's poller so that Close interrupts a pending Read on
 // either side. Code here must never call Fd() on them: Fd() switches the
-// descriptor to blocking mode, and Close of a blocking *os.File waits for a
+// descriptor to blocking mode, and Close of a blocking *[os.File] waits for a
 // pending Read to return. Such a Read on the TTY (a handler's stdin copy)
 // only returns on input, and one on the PTY only when every TTY holder
 // closes, so CloseSession would time out.

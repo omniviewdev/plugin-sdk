@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	// PluginID identifies the tools capability in the plugin registry.
 	PluginID = "tools"
 )
 
@@ -24,16 +25,19 @@ type Provider interface {
 	CallTool(*types.PluginContext, CallInput) (*Result, error)
 }
 
+// Plugin exposes a tools provider through the go-plugin gRPC transport.
 type Plugin struct {
 	plugin.Plugin
 	Impl Provider
 }
 
+// GRPCServer registers the tools provider with the plugin's gRPC server.
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
 	toolspb.RegisterToolsPluginServer(s, &PluginServer{Impl: p.Impl})
 	return nil
 }
 
+// GRPCClient creates a tools client for the plugin's gRPC connection.
 func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,

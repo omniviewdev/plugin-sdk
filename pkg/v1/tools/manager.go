@@ -1,3 +1,5 @@
+// Package tools defines plugin tools, validates their descriptors, and exposes
+// tool discovery and calls over the plugin gRPC transport.
 package tools
 
 import (

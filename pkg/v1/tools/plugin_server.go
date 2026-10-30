@@ -12,6 +12,7 @@ import (
 	toolspb "github.com/omniviewdev/plugin-sdk/proto/v1/tools"
 )
 
+// PluginServer serves a tools provider over gRPC.
 type PluginServer struct {
 	toolspb.UnimplementedToolsPluginServer
 	Impl Provider
@@ -35,6 +36,7 @@ func grpcCodeForToolsError(err error) codes.Code {
 	}
 }
 
+// ListTools returns the provider's tool descriptors for the caller's plugin context.
 func (s *PluginServer) ListTools(
 	ctx context.Context,
 	_ *emptypb.Empty,
@@ -50,6 +52,7 @@ func (s *PluginServer) ListTools(
 	return out, nil
 }
 
+// CallTool invokes the provider and maps provider errors to gRPC status codes.
 func (s *PluginServer) CallTool(
 	ctx context.Context,
 	in *toolspb.CallToolRequest,

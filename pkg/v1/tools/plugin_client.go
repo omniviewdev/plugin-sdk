@@ -10,6 +10,7 @@ import (
 	toolspb "github.com/omniviewdev/plugin-sdk/proto/v1/tools"
 )
 
+// PluginClient calls a remote tools provider over gRPC.
 type PluginClient struct {
 	client toolspb.ToolsPluginClient
 	log    logging.Logger
@@ -33,6 +34,7 @@ func rpcContext(ctx *types.PluginContext) (context.Context, *types.PluginContext
 	return grpcCtx, &cp
 }
 
+// ListTools retrieves the remote tool descriptors using the caller's context.
 func (p *PluginClient) ListTools(ctx *types.PluginContext) ([]Descriptor, error) {
 	grpcCtx, pctx := rpcContext(ctx)
 	resp, err := p.client.ListTools(types.WithPluginContext(grpcCtx, pctx), &emptypb.Empty{})
@@ -46,6 +48,7 @@ func (p *PluginClient) ListTools(ctx *types.PluginContext) ([]Descriptor, error)
 	return out, nil
 }
 
+// CallTool invokes a remote tool using the caller's cancellation and deadline.
 func (p *PluginClient) CallTool(ctx *types.PluginContext, input CallInput) (*Result, error) {
 	grpcCtx, pctx := rpcContext(ctx)
 	resp, err := p.client.CallTool(types.WithPluginContext(grpcCtx, pctx), &toolspb.CallToolRequest{
