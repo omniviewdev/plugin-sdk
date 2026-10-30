@@ -3,6 +3,7 @@
 package exec_test
 
 import (
+	"errors"
 	"os"
 	"syscall"
 	"testing"
@@ -76,6 +77,11 @@ func TestRealTerminal_CloseInterruptsMasterReadWhileTTYHeldElsewhere(t *testing.
 	if err != nil {
 		t.Fatalf("open terminal: %v", err)
 	}
+	t.Cleanup(func() {
+		if closeErr := terminal.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+			t.Errorf("terminal cleanup: %v", closeErr)
+		}
+	})
 
 	if err := terminal.Resize(40, 120); err != nil {
 		t.Fatalf("Resize: %v", err)
