@@ -58,8 +58,8 @@ type sessionState struct {
 	sourceSem chan struct{}
 
 	// Readiness — totalSources set BEFORE goroutines start (no race)
-	totalSources     int32               // immutable after set in orchestrateSession
-	readySources     atomic.Int32        // number of unique sources that sent their first line
+	totalSources     int64               // immutable after set in orchestrateSession
+	readySources     atomic.Int64        // number of unique sources that sent their first line
 	readied          atomic.Bool         // whether SESSION_READY has been emitted
 	readySet         sync.Map            // map[string]struct{} — tracks which source IDs have been counted
 	initialSourceIDs map[string]struct{} // snapshot of source IDs at session init; only these gate readiness
@@ -508,7 +508,7 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 
 	// Set sources and totalSources BEFORE starting goroutines (fixes bug #1, #2)
 	ss.setSources(result.Sources)
-	total := int32(len(result.Sources))
+	total := int64(len(result.Sources))
 	// For Follow sessions, only MaxConcurrentStreamsPerSession sources can
 	// stream concurrently. Cap totalSources so markSourceReady can reach
 	// it; otherwise the session hangs in INITIALIZING forever.
@@ -576,7 +576,7 @@ func (m *Manager) streamFromHandler(
 
 	// Set sources and totalSources BEFORE starting goroutines (fixes bug #1, #2)
 	ss.setSources(sources)
-	total := int32(len(sources))
+	total := int64(len(sources))
 	if opts.Options.Follow && total > MaxConcurrentStreamsPerSession {
 		total = MaxConcurrentStreamsPerSession
 	}

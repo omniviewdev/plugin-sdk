@@ -94,11 +94,11 @@ func WithPluginContext(ctx context.Context, pluginContext *PluginContext) contex
 // PluginContextFromContext returns a fresh shallow snapshot bound to ctx, or nil
 // when the private context entry is absent, invalid, or a typed-nil pointer.
 func PluginContextFromContext(ctx context.Context) *PluginContext {
-	v := ctx.Value(pluginCtxKey{})
-	if v == nil {
+	stored, ok := ctx.Value(pluginCtxKey{}).(*PluginContext)
+	if !ok || stored == nil {
 		return nil
 	}
-	pluginctx := *v.(*PluginContext)
+	pluginctx := *stored
 	pluginctx.Context = ctx
 	return &pluginctx
 }

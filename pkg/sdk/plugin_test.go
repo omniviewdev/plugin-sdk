@@ -33,3 +33,12 @@ func TestRegisterLifecycle_UseCurrentProtocolVersion(t *testing.T) {
 	require.True(t, ok, "lifecycle plugin should be *lifecycle.Plugin")
 	assert.Equal(t, int32(CurrentProtocolVersion), lc.Impl.SDKProtocolVersion)
 }
+
+func TestRegisterLifecycleRejectsProtocolOverflow(t *testing.T) {
+	p := &Plugin{
+		pluginMap: map[string]plugin.Plugin{},
+		meta:      config.PluginMeta{SDKProtocolVersion: 1 << 31},
+	}
+	require.PanicsWithValue(t, "SDK protocol version exceeds lifecycle wire range", p.registerLifecycle)
+	assert.NotContains(t, p.pluginMap, "lifecycle")
+}

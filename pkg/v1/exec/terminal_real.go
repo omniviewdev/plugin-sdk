@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -47,15 +48,13 @@ func NewRealTerminalFactory() TerminalFactory {
 		// transparent byte pipe — only the remote side (e.g. bash in a K8s pod)
 		// will echo input, preventing the double-echo bug.
 		if _, err = term.MakeRaw(int(slave.Fd())); err != nil {
-			slave.Close()
-			master.Close()
-			return nil, fmt.Errorf("failed to set tty to raw mode: %w", err)
+			cleanupErr := errors.Join(slave.Close(), master.Close())
+			return nil, errors.Join(fmt.Errorf("failed to set tty to raw mode: %w", err), cleanupErr)
 		}
 
 		if err = pty.Setsize(master, &pty.Winsize{Rows: InitialRows, Cols: InitialCols}); err != nil {
-			slave.Close()
-			master.Close()
-			return nil, fmt.Errorf("failed to set initial pty size: %w", err)
+			cleanupErr := errors.Join(slave.Close(), master.Close())
+			return nil, errors.Join(fmt.Errorf("failed to set initial pty size: %w", err), cleanupErr)
 		}
 
 		return &realTerminal{master: master, slave: slave}, nil

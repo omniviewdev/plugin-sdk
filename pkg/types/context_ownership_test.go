@@ -40,3 +40,12 @@ func TestPluginContextStoreAndReadDoNotMutateCaller(t *testing.T) {
 	}
 	wait.Wait()
 }
+
+func TestPluginContextFromContextRejectsInvalidEntries(t *testing.T) {
+	for _, value := range []any{"not a plugin context", (*PluginContext)(nil)} {
+		ctx := context.WithValue(t.Context(), pluginCtxKey{}, value)
+		if PluginContextFromContext(ctx) != nil {
+			t.Fatal("invalid context entry produced a plugin context")
+		}
+	}
+}

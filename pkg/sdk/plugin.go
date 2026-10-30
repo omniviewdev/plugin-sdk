@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"math"
 	"maps"
 	"slices"
 
@@ -237,7 +238,11 @@ func (p *Plugin) Serve() {
 			logging.Error(err))
 	}
 	if telemetryProvider != nil {
-		defer telemetryProvider.Shutdown(context.Background())
+		defer func() {
+			if shutdownErr := telemetryProvider.Shutdown(context.Background()); shutdownErr != nil {
+				p.Log.Warn(context.Background(), "telemetry shutdown failed", logging.Error(shutdownErr))
+			}
+		}()
 	}
 
 	p.registerLifecycle()
@@ -256,12 +261,16 @@ func (p *Plugin) Serve() {
 // It reads the current plugin map to build the capabilities list.
 func (p *Plugin) registerLifecycle() {
 	caps := slices.Sorted(maps.Keys(p.pluginMap))
+	version := p.effectiveProtocolVersion()
+	if version < math.MinInt32 || version > math.MaxInt32 {
+		panic("SDK protocol version exceeds lifecycle wire range")
+	}
 
 	p.pluginMap["lifecycle"] = &lifecycle.Plugin{
 		Impl: &lifecycle.Server{
 			PluginID:           p.meta.ID,
 			Version:            p.meta.Version,
-			SDKProtocolVersion: int32(p.effectiveProtocolVersion()),
+			SDKProtocolVersion: int32(version),
 			Capabilities:       caps,
 		},
 	}

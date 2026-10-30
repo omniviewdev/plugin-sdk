@@ -696,6 +696,10 @@ func (p *provider) GetIntSlice(id string) ([]int, error) {
 			case uint32:
 				vals = append(vals, int(item))
 			case uint64:
+				const maxInt = int(^uint(0) >> 1)
+				if item > uint64(maxInt) {
+					return nil, ErrSettingTypeMismatch
+				}
 				vals = append(vals, int(item))
 			default:
 				return nil, errors.New("expected []int, but item is not an int")

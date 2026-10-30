@@ -381,6 +381,23 @@ func TestGetBool_TypeMismatch(t *testing.T) {
 	require.ErrorIs(t, err, ErrSettingTypeMismatch)
 }
 
+func TestGetIntSliceRejectsUnsignedOverflow(t *testing.T) {
+	const maxInt = int(^uint(0) >> 1)
+	p := newTestProvider(t, Category{
+		ID: "numbers",
+		Settings: map[string]Setting{
+			"boundary": {ID: "boundary", Type: Integer, Default: []any{uint64(maxInt)}},
+			"overflow": {ID: "overflow", Type: Integer, Default: []any{uint64(maxInt) + 1}},
+		},
+	})
+	values, err := p.GetIntSlice("numbers.boundary")
+	require.NoError(t, err)
+	require.Equal(t, []int{maxInt}, values)
+	values, err = p.GetIntSlice("numbers.overflow")
+	require.ErrorIs(t, err, ErrSettingTypeMismatch)
+	require.Nil(t, values)
+}
+
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------

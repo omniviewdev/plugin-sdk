@@ -1,6 +1,7 @@
 package exectest
 
 import (
+	"errors"
 	"os"
 	"slices"
 	"sync"
@@ -38,9 +39,7 @@ func NewFakeTerminal() (*FakeTerminal, error) {
 	}
 	slaveR, slaveW, err := os.Pipe()
 	if err != nil {
-		masterR.Close()
-		masterW.Close()
-		return nil, err
+		return nil, errors.Join(err, masterR.Close(), masterW.Close())
 	}
 	return &FakeTerminal{
 		masterR: masterR,
@@ -72,11 +71,7 @@ func (t *FakeTerminal) Close() error {
 		return nil
 	}
 	t.closed = true
-	t.masterR.Close()
-	t.masterW.Close()
-	t.slaveR.Close()
-	t.slaveW.Close()
-	return nil
+	return errors.Join(t.masterR.Close(), t.masterW.Close(), t.slaveR.Close(), t.slaveW.Close())
 }
 
 // InjectOutput writes data to the master write end, simulating PTY output
