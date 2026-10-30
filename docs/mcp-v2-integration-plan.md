@@ -220,6 +220,7 @@ The user accepted the SDK direction. The table below remains the implementation 
 | D9 — Discovery readiness | Usable-only versus status-bearing unavailable routes; unsupported readiness for native work; `Listed` zero-connection behavior. |
 | D10 — CI trust and publication | Independent reviewed isolation baseline versus tag-derived trust; approved candidate path; later publication authorization. |
 | D11 — Confirmation windows | Visible workspace activation versus eligible panel ownership; truthful principal/target display. |
+| D12 — Legacy tool-peer admission | Negotiate the explicit-route/native-admission tool contract and reject unsupported peers; a new protobuf field alone does not establish support. |
 
 ### First-wave decisions
 
@@ -332,6 +333,7 @@ These are [review5706913275 notes][relay-review], not extra inline comments or p
 | N8 — CI change alters isolation trust | Obtain explicit approval; keep candidate verification distinct from publication. | W8 |
 | N9 — type-scoped action/request mismatch | Do not invent object identities to expose type-only actions. | W4, D8 |
 | N10 — CRD discovery is not an automatic watcher | Define refresh trigger before promising live tool-list changes. | W4, W5 |
+| N11 — legacy tool contract is not negotiated | Current proof uses aligned SDK peers. Add explicit admission/version negotiation before allowing older metadata-only tool plugins in production. This is a compatibility risk, not a reproduced exploit. | W2, W3, D12 |
 
 ## Roadmap disposition
 
@@ -353,7 +355,7 @@ The [P01 acceptance record][p01-acceptance] supersedes earlier numeric holds. Co
 
 ## Landing order and evidence
 
-1. **Review decisions:** resolve relevant D1–D11 choices and the SDK acceptance boundary. No publication action follows automatically.
+1. **Review decisions:** retain the accepted SDK direction and resolve affected D1–D12 implementation choices. No publication action follows automatically.
 2. **Safety wave:** W1/W2/W3 plus W6 startup/lifecycle hardening. Keep source writers package/file-owned; serialize shared files.
 3. **Integration wave:** W4 resource tools/results and W6 coherent refresh. W7 can proceed on independent UI files once view/event contracts are agreed.
 4. **Parity/cutover wave:** exercise all five replacements, then W5 deletes obsolete plugin tools. No silent feature loss or permanent compatibility shim.
@@ -434,7 +436,7 @@ Separate implementation and review agents covered the slices and corrections. Ce
 
 Disposable programs, private-classifier hooks, visual harness, browser tab, and preview service were removed. The isolated candidate worktree and ignored verification corpus remain available for continued integration.
 
-**Still open:** host-issued agent authorization, consent rechecks, process/catalog observation fences, catalog-derived resource tools and results, full schema/annotation/error contracts, discovery/lifecycle hardening, five-tool Kubernetes parity/cutover, asynchronous logs ownership, native multi-window acceptance, and coordinated release/cohort pins. The relay stays disabled by default. PR21, PR192, PR218, and PR220 are not merged by this wave.
+**Still open:** host-issued agent authorization, consent rechecks, process/catalog observation fences, catalog-derived resource tools and results, explicit tool-contract negotiation for older peers, full schema/annotation/error contracts, discovery/lifecycle hardening, five-tool Kubernetes parity/cutover, asynchronous logs ownership, native multi-window acceptance, and coordinated release/cohort pins. The relay stays disabled by default. PR21, PR192, PR218, and PR220 are not merged by this wave.
 
 The host push also reported existing default-branch dependency alerts, including one critical alert. Those are not a PR-specific scan or a remediation claim; they remain a separate security backlog.
 
