@@ -371,6 +371,30 @@ Passing SDK tests or old live-cluster receipts cannot establish the new MCP cont
 - Rendered the Markdown and Mermaid locally in Chromium and exercised source-checklist navigation. This verifies documentation rendering, not MCP runtime behavior.
 - No runtime code, generated code, managed replacement, lint policy, API acceptance, or release state changed. No new runtime/conformance pass is claimed by this document.
 
+## Implementation wave 1 — API-preserving fixes
+
+Two independent workers completed bounded fixes; separate reviewers checked each slice and the final integration. These changes do not accept D1–D11 or complete the broader work packages.
+
+| Partial work package | Fix | Behavioral commit |
+| --- | --- | --- |
+| W3 — action descriptor validation | Reject duplicate `required` names in parameter/output schemas, including nested objects. Preserve nil/empty lists and required names absent from `properties`. | SDK [`6a7cecd`](https://github.com/omniviewdev/plugin-sdk/commit/6a7cecd) |
+| W5 — Kubernetes error producers | Replace native API/network/certificate diagnostics in public fields with safe messages. Preserve classification, cause inspection, unknown-error fallback, and existing wire sanitization. | Kubernetes [`6d57348`](https://github.com/omniviewdev/omniview-plugin-kubernetes/commit/6d57348) |
+
+Executed centrally after source writers finished; every Go/Make command used `GOWORK=off GOFLAGS=`:
+
+| Check | Result |
+| --- | --- |
+| SDK focused `TestActionSchemaRequiredNames` | Passed; final regression covers 42 parameter/output, location, and required-list combinations. |
+| Kubernetes focused `TestClassifyResourceError` | Passed, including hostile diagnostics and cause preservation. |
+| SDK full normal and race suites | Both passed: 23 tested packages, 18 without tests. |
+| Kubernetes full normal and race suites | Both passed: 11 tested packages, five without tests. |
+| SDK `make fmt`, scoped `make fmt-check`, and active `make lint-report` | Passed; zero active findings. |
+| SDK informational `make lint-audit` | 1,237 findings: paralleltest 585, protogetter 518, testpackage 82, nonamedreturns 29, funcorder 23. No policy changed. |
+| SDK disposable consumer smoke | JSON round-trip rejected duplicate root/nested required lists in both schema roles and accepted unique undeclared names. |
+| Kubernetes disposable native HTTP smoke | Actual client-go GET consumed a hostile 403 response; classifier retained `FORBIDDEN` and native cause while public JSON excluded diagnostics. |
+
+Smoke source and the temporary private-classifier access hook were removed. No live cluster or MCP end-to-end pass is claimed. Full tool-schema validation, custom-tool errors, asynchronous logs, admission, discovery/generation integration, and the remaining catalog remain open. SDK acceptance, publication, and merge holds remain unchanged.
+
 ## Inspected revisions
 
 | Surface | Revision |

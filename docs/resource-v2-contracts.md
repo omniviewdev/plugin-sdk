@@ -128,6 +128,8 @@ Creation/admission and accepted session lifetime differ by utility; do not infer
 
 Action streams emit exactly one `ready` only after native establishment and before output/progress/completion. Return pre-establishment errors without ready. Framework handles producer return separately from channel closure; successful return without ready is `PROVIDER_ERROR`. Remote metric streams also complete open/ready admission before exposing output. A remote client's broad static Go method set does not prove support: use `FeatureNegotiator` before optional ancillary startup.
 
+Action parameter and output schemas require unique names in each `required` list, including nested object schemas. Nil or empty lists impose no required fields. A required name need not appear in `properties`; that JSON Schema behavior remains valid. Duplicate names fail descriptor validation with `INVALID_REQUEST` before publication.
+
 ## Results and errors
 
 - **Schema:** `available` requires revision, dialect, and exactly one inline document or document reference. `absent` has no document binding. `unavailable` is acquisition failure, not absence; it cannot include inline document. Optional unavailable reason is a reviewed machine code, never diagnostics. `full` validation requires available schema and no unvalidated constraints; `reduced` requires available schema plus explicit unvalidated constraints; `none` makes no constraint claims. Roots are local RFC6901 URI-fragment pointers; empty root selects the whole document. No implicit external IO or normalization occurs.
