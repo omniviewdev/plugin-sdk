@@ -2,6 +2,8 @@
 
 **Review status:** implementation candidate, not an approved public contract. This document describes current source behavior and caller obligations. It does not approve the admission, lifecycle, overlay, or transport policies identified in [code review](resource-v2-code-review.md) and [specification comparison](resource-v2-spec-review.md).
 
+For a plain-language comparison with the previous resource APIs, start with the [v1-to-v2 overview](sdk-v1-v2-overview.md). Concrete Kubernetes/Helm filenames below are integration landmarks, not required provider contracts; that overview also records remaining genericity limits.
+
 ## Navigation
 
 - [Responsibilities and source map](#responsibilities-and-source-map)

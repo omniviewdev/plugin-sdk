@@ -165,8 +165,10 @@ finite operations, lifecycle, ancillary traits and advisory updates are optional
 Catalog declarations qualify each operation independently, including create,
 mutation update and delete. Advisory `OperationUpdate` never authorizes writes.
 
-Start with the [architecture and API guide](docs/resource-v2-api.md), which owns
-the responsibility/export map, route admission, lifecycle/overlay rules,
+Start with the [v1-to-v2 overview](docs/sdk-v1-v2-overview.md) for the operating
+model, exposed APIs, migration differences, and provider-neutrality review.
+Then use the [architecture and API guide](docs/resource-v2-api.md) for the
+responsibility/export map, route admission, lifecycle/overlay rules,
 concurrency, utility lifetimes, result semantics, errors and candidate ceilings.
 The [Go package overview](pkg/resource/v2/doc.go) links those concepts to the
 [compiling public examples](pkg/resource/v2/example_test.go): catalog-only,
