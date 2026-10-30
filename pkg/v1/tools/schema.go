@@ -28,8 +28,8 @@ func decodeJSON(raw []byte) (any, error) {
 
 type boundedJSONDecoder struct {
 	decoder *json.Decoder
-	depth int
-	nodes int
+	depth   int
+	nodes   int
 }
 
 func (d *boundedJSONDecoder) value() (any, error) {

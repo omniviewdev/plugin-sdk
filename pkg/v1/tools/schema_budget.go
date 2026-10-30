@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	maxSchemaExpansion uint64 = 10000
-	maxValidationWork  uint64 = 1000000
-	maxExactNumberLength = 4096
-	maxExactExponent = 4096
+	maxSchemaExpansion   uint64 = 10000
+	maxValidationWork    uint64 = 1000000
+	maxExactNumberLength        = 4096
+	maxExactExponent            = 4096
 )
 
 // admitNumber bounds exact arithmetic before the validator sees a number. The
@@ -96,112 +96,112 @@ func schemaWork(doc any) (uint64, error) {
 }
 
 type schemaGraph struct {
-	nodes map[string]*schemaNode
+	nodes   map[string]*schemaNode
 	anchors map[string]string
 }
 
 func (g *schemaGraph) collect(value any, path string) error {
-		current := &schemaNode{}
-		g.nodes[path] = current
-		object, ok := value.(map[string]any)
-		if !ok {
-			return nil
-		}
-		for key, value := range object {
-			if err := g.declaration(current, path, key, value); err != nil {
-				return err
-			}
-			if err := g.children(current, path, key, value); err != nil {
-				return err
-			}
-		}
+	current := &schemaNode{}
+	g.nodes[path] = current
+	object, ok := value.(map[string]any)
+	if !ok {
 		return nil
+	}
+	for key, value := range object {
+		if err := g.declaration(current, path, key, value); err != nil {
+			return err
+		}
+		if err := g.children(current, path, key, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // declaration enforces the bounded profile at schema nodes, not annotation data.
 func (g *schemaGraph) declaration(current *schemaNode, path, key string, value any) error {
-			switch key {
-			case "$dynamicRef", "$dynamicAnchor", "$recursiveRef", "$recursiveAnchor":
-				return fmt.Errorf("dynamic or recursive schema references are outside the bounded profile")
-			case "dependencies", "definitions", "additionalItems":
-				return fmt.Errorf("legacy schema keyword is outside the 2020-12 profile: %s", key)
-			case "$schema":
-				if value != "https://json-schema.org/draft/2020-12/schema" {
-					return fmt.Errorf("unsupported schema dialect")
-				}
-			case "format":
-				return fmt.Errorf("format assertions are unsupported; use explicit constraints")
-			case "$id":
-				return fmt.Errorf("schema resource identifiers are unsupported")
-			case "minLength",
-				"maxLength",
-				"minItems",
-				"maxItems",
-				"minProperties",
-				"maxProperties",
-				"minContains",
-				"maxContains":
-				if err := admitCount(value); err != nil {
-					return err
-				}
-			case "$anchor":
-				if anchor, ok := value.(string); ok {
-					if _, exists := g.anchors[anchor]; exists {
-						return fmt.Errorf("duplicate schema anchor")
-					}
-					g.anchors[anchor] = path
-				}
-			case "$ref":
-				ref, ok := value.(string)
-				if !ok || !strings.HasPrefix(ref, "#") {
-					return fmt.Errorf("only local schema references are supported")
-				}
-				current.ref = ref
-			case "items":
-				if _, legacy := value.([]any); legacy {
-					return fmt.Errorf("legacy tuple items are outside the 2020-12 profile; use prefixItems")
-				}
+	switch key {
+	case "$dynamicRef", "$dynamicAnchor", "$recursiveRef", "$recursiveAnchor":
+		return fmt.Errorf("dynamic or recursive schema references are outside the bounded profile")
+	case "dependencies", "definitions", "additionalItems":
+		return fmt.Errorf("legacy schema keyword is outside the 2020-12 profile: %s", key)
+	case "$schema":
+		if value != "https://json-schema.org/draft/2020-12/schema" {
+			return fmt.Errorf("unsupported schema dialect")
+		}
+	case "format":
+		return fmt.Errorf("format assertions are unsupported; use explicit constraints")
+	case "$id":
+		return fmt.Errorf("schema resource identifiers are unsupported")
+	case "minLength",
+		"maxLength",
+		"minItems",
+		"maxItems",
+		"minProperties",
+		"maxProperties",
+		"minContains",
+		"maxContains":
+		if err := admitCount(value); err != nil {
+			return err
+		}
+	case "$anchor":
+		if anchor, ok := value.(string); ok {
+			if _, exists := g.anchors[anchor]; exists {
+				return fmt.Errorf("duplicate schema anchor")
 			}
-			return nil
+			g.anchors[anchor] = path
+		}
+	case "$ref":
+		ref, ok := value.(string)
+		if !ok || !strings.HasPrefix(ref, "#") {
+			return fmt.Errorf("only local schema references are supported")
+		}
+		current.ref = ref
+	case "items":
+		if _, legacy := value.([]any); legacy {
+			return fmt.Errorf("legacy tuple items are outside the 2020-12 profile; use prefixItems")
+		}
+	}
+	return nil
 }
 
 // children is the shared walker for all admitted schema-valued keywords.
 func (g *schemaGraph) children(current *schemaNode, path, key string, value any) error {
-		escape := func(s string) string { return strings.ReplaceAll(strings.ReplaceAll(s, "~", "~0"), "/", "~1") }
-		add := func(child any, childPath string) error {
-			current.children = append(current.children, childPath)
-			return g.collect(child, childPath)
-		}
-		switch key {
-			case "properties", "patternProperties", "$defs", "dependentSchemas":
-				if children, ok := value.(map[string]any); ok {
-					for name, child := range children {
-						if err := add(child, path+"/"+escape(key)+"/"+escape(name)); err != nil {
-							return err
-						}
-					}
+	escape := func(s string) string { return strings.ReplaceAll(strings.ReplaceAll(s, "~", "~0"), "/", "~1") }
+	add := func(child any, childPath string) error {
+		current.children = append(current.children, childPath)
+		return g.collect(child, childPath)
+	}
+	switch key {
+	case "properties", "patternProperties", "$defs", "dependentSchemas":
+		if children, ok := value.(map[string]any); ok {
+			for name, child := range children {
+				if err := add(child, path+"/"+escape(key)+"/"+escape(name)); err != nil {
+					return err
 				}
-			case "allOf", "anyOf", "oneOf", "prefixItems":
-				if children, ok := value.([]any); ok {
-					for index, child := range children {
-						if err := add(child, path+"/"+key+"/"+strconv.Itoa(index)); err != nil {
-							return err
-						}
-					}
-				}
-			case "items", "contains",
-				"additionalProperties",
-				"propertyNames",
-				"unevaluatedProperties",
-				"unevaluatedItems",
-				"not",
-				"if",
-				"then",
-				"else",
-				"contentSchema":
-				return add(value, path+"/"+key)
 			}
-		return nil
+		}
+	case "allOf", "anyOf", "oneOf", "prefixItems":
+		if children, ok := value.([]any); ok {
+			for index, child := range children {
+				if err := add(child, path+"/"+key+"/"+strconv.Itoa(index)); err != nil {
+					return err
+				}
+			}
+		}
+	case "items", "contains",
+		"additionalProperties",
+		"propertyNames",
+		"unevaluatedProperties",
+		"unevaluatedItems",
+		"not",
+		"if",
+		"then",
+		"else",
+		"contentSchema":
+		return add(value, path+"/"+key)
+	}
+	return nil
 }
 
 func (g *schemaGraph) resolveReferences() error {

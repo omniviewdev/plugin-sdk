@@ -440,7 +440,7 @@ func TestSchemaCountsRejectOverflowBeforeDependencyCompilation(t *testing.T) {
 			require.Zero(t, peer.calls)
 		}
 	}
-	maximum := strconv.FormatUint(uint64(^uint(0) >> 1), 10)
+	maximum := strconv.FormatUint(uint64(^uint(0)>>1), 10)
 	require.NoError(t, admitCount(json.Number(maximum)))
 	require.NoError(t, admitCount(json.Number("1e1")))
 	schema, err := compileSchema(
