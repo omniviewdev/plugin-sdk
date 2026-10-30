@@ -24,6 +24,9 @@ const (
 	LevelFatal
 )
 
+const errorLevelName = "error"
+
+// String returns the lowercase severity name, or "unknown" for an invalid level.
 func (l Level) String() string {
 	switch l {
 	case LevelTrace:
@@ -35,7 +38,7 @@ func (l Level) String() string {
 	case LevelWarn:
 		return "warn"
 	case LevelError:
-		return "error"
+		return errorLevelName
 	case LevelFatal:
 		return "fatal"
 	default:
@@ -55,7 +58,7 @@ func ParseLevel(s string) (Level, error) {
 		return LevelInfo, nil
 	case "warn", "warning":
 		return LevelWarn, nil
-	case "error":
+	case errorLevelName:
 		return LevelError, nil
 	case "fatal":
 		return LevelFatal, nil

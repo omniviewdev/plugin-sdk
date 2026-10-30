@@ -16,7 +16,8 @@ import (
 const (
 	// StateDirectoryEnvironment names the host-selected, absolute application state root.
 	StateDirectoryEnvironment = "OMNIVIEW_STATE_DIR"
-	WorkspaceFileEnvironment  = "OMNIVIEW_WORKSPACE_FILE"
+	// WorkspaceFileEnvironment names the manifest whose profile must own the selected state root.
+	WorkspaceFileEnvironment = "OMNIVIEW_WORKSPACE_FILE"
 )
 
 // ResolveRoot consumes the host's resolved root, never choosing a workspace on
@@ -47,26 +48,9 @@ func ResolveRoot() (string, error) {
 	if workspace == "" {
 		return root, nil
 	}
-	if !filepath.IsAbs(workspace) {
-		return "", fmt.Errorf("%s must be absolute", WorkspaceFileEnvironment)
-	}
-	workspace, err = profilecontract.CanonicalPath(workspace)
+	workspace, manifest, err := readWorkspaceIdentity(workspace)
 	if err != nil {
 		return "", err
-	}
-	data, err := os.ReadFile(workspace)
-	if err != nil {
-		return "", fmt.Errorf("read workspace manifest: %w", err)
-	}
-	// Read only identity fields; the host owns validation of the full manifest.
-	var manifest profilecontract.WorkspaceIdentity
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return "", fmt.Errorf("parse workspace manifest: %w", err)
-	}
-	id, err := uuid.Parse(manifest.WorkspaceID)
-	if err != nil || id == uuid.Nil || id.String() != manifest.WorkspaceID || manifest.SchemaVersion != 1 ||
-		manifest.Profile.Kind != "development" {
-		return "", fmt.Errorf("workspace requires v1 development identity and canonical nonzero UUID")
 	}
 	customRoot, custom, err := resolveCustomRoot(workspace, home, manifest)
 	if err != nil {
@@ -78,8 +62,41 @@ func ResolveRoot() (string, error) {
 		}
 		return root, nil
 	}
+	return validateDefaultWorkspaceRoot(root, home, manifest.WorkspaceID)
+}
+
+func readWorkspaceIdentity(workspace string) (string, profilecontract.WorkspaceIdentity, error) {
+	var manifest profilecontract.WorkspaceIdentity
+	if !filepath.IsAbs(workspace) {
+		return "", manifest, fmt.Errorf("%s must be absolute", WorkspaceFileEnvironment)
+	}
+	workspace, err := profilecontract.CanonicalPath(workspace)
+	if err != nil {
+		return "", manifest, err
+	}
+	// The host explicitly selects this absolute manifest; no fixed directory owns all workspace manifests.
+	//nolint:gosec // G703: this canonical absolute manifest is host-selected and intentionally outside the state root.
+	data, err := os.ReadFile(
+		workspace,
+	)
+	if err != nil {
+		return "", manifest, fmt.Errorf("read workspace manifest: %w", err)
+	}
+	// Read only identity fields; the host owns validation of the full manifest.
+	if err = json.Unmarshal(data, &manifest); err != nil {
+		return "", manifest, fmt.Errorf("parse workspace manifest: %w", err)
+	}
+	id, err := uuid.Parse(manifest.WorkspaceID)
+	if err != nil || id == uuid.Nil || id.String() != manifest.WorkspaceID || manifest.SchemaVersion != 1 ||
+		manifest.Profile.Kind != "development" {
+		return "", manifest, fmt.Errorf("workspace requires v1 development identity and canonical nonzero UUID")
+	}
+	return workspace, manifest, nil
+}
+
+func validateDefaultWorkspaceRoot(root, home, workspaceID string) (string, error) {
 	expected, err := profilecontract.CanonicalPath(
-		filepath.Join(home, ".omniview-dev", "profiles", manifest.WorkspaceID, "state"),
+		filepath.Join(home, ".omniview-dev", "profiles", workspaceID, "state"),
 	)
 	if err != nil {
 		return "", err
@@ -91,7 +108,7 @@ func ResolveRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	expectedProfile := filepath.Join(profiles, manifest.WorkspaceID)
+	expectedProfile := filepath.Join(profiles, workspaceID)
 	profile, err := profilecontract.CanonicalPath(expectedProfile)
 	if err != nil {
 		return "", err
@@ -122,14 +139,16 @@ func ValidateComponent(name string) error {
 		return fmt.Errorf("invalid state path component %q", name)
 	}
 	for _, c := range name {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c == '.') {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') &&
+			c != '-' && c != '_' && c != '.' {
 			return fmt.Errorf("invalid state path component %q", name)
 		}
 	}
 	if strings.HasSuffix(name, ".") {
 		return fmt.Errorf("invalid trailing dot in state path component")
 	}
-	base := strings.ToUpper(strings.SplitN(name, ".", 2)[0])
+	base, _, _ := strings.Cut(name, ".")
+	base = strings.ToUpper(base)
 	if base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" ||
 		len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' &&
 			base[3] <= '9' {
@@ -163,7 +182,8 @@ func OpenDirectory(root *os.Root, name string, create bool) (*os.Root, error) {
 		return nil, err
 	}
 	if create {
-		if err := root.Mkdir(name, 0o700); err != nil && !os.IsExist(err) {
+		const privateDirectoryMode = 0o700
+		if err := root.Mkdir(name, privateDirectoryMode); err != nil && !os.IsExist(err) {
 			return nil, err
 		}
 	}

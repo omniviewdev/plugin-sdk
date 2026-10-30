@@ -51,64 +51,86 @@ func protectedCustomPaths(workspace, home string, manifest profilecontract.Works
 		}
 		paths = append(paths, filepath.Join(workspace, repo.Directory))
 	}
-	// Only an actual registered workspaces layout makes the collection and its
-	// external source directories protected; an ordinary temp grandparent is not.
-	if filepath.Base(filepath.Dir(workspace)) == "workspaces" {
-		collection := filepath.Dir(filepath.Dir(workspace))
-		var registry struct {
-			SchemaVersion int `json:"schemaVersion"`
-			Repositories  []struct {
-				ID        string `json:"id"`
-				CommonDir string `json:"commonDir"`
-				Worktree  string `json:"worktree"`
-			} `json:"repositories"`
-		}
-		err := profilecontract.ReadJSON(filepath.Join(collection, ".omniview-dev", "repositories.json"), &registry)
-		if err != nil && !os.IsNotExist(err) {
-			return nil, err
-		}
-		if err == nil {
-			if registry.SchemaVersion != 1 || len(registry.Repositories) == 0 {
-				return nil, fmt.Errorf("invalid registered source boundary metadata")
-			}
-			paths = append(paths, collection)
-			for _, source := range registry.Repositories {
-				if source.ID == "" || source.ID == "." || source.ID == ".." ||
-					strings.ContainsAny(source.ID, "/\\\x00\r\n") ||
-					!filepath.IsAbs(source.CommonDir) ||
-					source.Worktree != "" && !filepath.IsAbs(source.Worktree) {
-					return nil, fmt.Errorf("invalid registered source paths")
-				}
-				paths = append(paths, source.CommonDir)
-				if source.Worktree != "" {
-					paths = append(paths, source.Worktree)
-				}
-			}
-		}
-	}
-	var journal profilecontract.OwnershipJournal[profilecontract.ManifestIdentity]
-	err := profilecontract.ReadJSON(filepath.Join(workspace, ".local", "ownership.json"), &journal)
-	if err != nil && !os.IsNotExist(err) {
+	registered, err := registeredSourcePaths(workspace)
+	if err != nil {
 		return nil, err
 	}
-	if err == nil {
-		oldRoot, err := journal.ValidateBoundary(workspace, manifest.WorkspaceID, journal.Manifest)
-		if err != nil {
-			return nil, err
-		}
-		if oldRoot != "" {
-			paths = append(paths, oldRoot)
-		}
-		for _, resource := range journal.Resources {
-			paths = append(paths, resource.CommonDir)
-		}
+	paths = append(paths, registered...)
+	journal, err := journalSourcePaths(workspace, manifest)
+	if err != nil {
+		return nil, err
 	}
+	paths = append(paths, journal...)
 	for i, path := range paths {
-		canonical, err := profilecontract.CanonicalPath(path)
-		if err != nil {
-			return nil, err
+		canonical, canonicalErr := profilecontract.CanonicalPath(path)
+		if canonicalErr != nil {
+			return nil, canonicalErr
 		}
 		paths[i] = canonical
+	}
+	return paths, nil
+}
+
+func registeredSourcePaths(workspace string) ([]string, error) {
+	// Only an actual registered workspaces layout protects the collection and
+	// its external sources; an ordinary temporary grandparent is not protected.
+	if filepath.Base(filepath.Dir(workspace)) != "workspaces" {
+		return []string{}, nil
+	}
+	collection := filepath.Dir(filepath.Dir(workspace))
+	var registry struct {
+		SchemaVersion int `json:"schemaVersion"`
+		Repositories  []struct {
+			ID        string `json:"id"`
+			CommonDir string `json:"commonDir"`
+			Worktree  string `json:"worktree"`
+		} `json:"repositories"`
+	}
+	err := profilecontract.ReadJSON(filepath.Join(collection, ".omniview-dev", "repositories.json"), &registry)
+	if os.IsNotExist(err) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if registry.SchemaVersion != 1 || len(registry.Repositories) == 0 {
+		return nil, fmt.Errorf("invalid registered source boundary metadata")
+	}
+	paths := []string{collection}
+	for _, source := range registry.Repositories {
+		if source.ID == "" || source.ID == "." || source.ID == ".." ||
+			strings.ContainsAny(source.ID, "/\\\x00\r\n") ||
+			!filepath.IsAbs(source.CommonDir) ||
+			source.Worktree != "" && !filepath.IsAbs(source.Worktree) {
+			return nil, fmt.Errorf("invalid registered source paths")
+		}
+		paths = append(paths, source.CommonDir)
+		if source.Worktree != "" {
+			paths = append(paths, source.Worktree)
+		}
+	}
+	return paths, nil
+}
+
+func journalSourcePaths(workspace string, manifest profilecontract.WorkspaceIdentity) ([]string, error) {
+	var journal profilecontract.OwnershipJournal[profilecontract.ManifestIdentity]
+	err := profilecontract.ReadJSON(filepath.Join(workspace, ".local", "ownership.json"), &journal)
+	if os.IsNotExist(err) {
+		return []string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	oldRoot, err := journal.ValidateBoundary(workspace, manifest.WorkspaceID, journal.Manifest)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	if oldRoot != "" {
+		paths = append(paths, oldRoot)
+	}
+	for _, resource := range journal.Resources {
+		paths = append(paths, resource.CommonDir)
 	}
 	return paths, nil
 }
@@ -123,8 +145,8 @@ func resolveCustomRoot(manifestPath, home string, manifest profilecontract.Works
 	if err != nil {
 		return "", false, err
 	}
-	if err := profilecontract.ValidateRecord(binding); err != nil {
-		return "", false, err
+	if recordErr := profilecontract.ValidateRecord(binding); recordErr != nil {
+		return "", false, recordErr
 	}
 	if binding.WorkspaceID != manifest.WorkspaceID {
 		return "", false, fmt.Errorf("custom profile belongs to another workspace")

@@ -38,11 +38,13 @@ func streamingMethodFilter() otelgrpc.Filter {
 func RegisterServerOpts(opts []grpc.ServerOption, log logging.Logger) []grpc.ServerOption {
 	unaryinterceptors, streaminterceptors := NewServerInterceptors(log)
 
-	opts = append(opts, grpc.StatsHandler(otelgrpc.NewServerHandler(
-		otelgrpc.WithFilter(streamingMethodFilter()),
-	)))
-	opts = append(opts, grpc.ChainUnaryInterceptor(unaryinterceptors...))
-	opts = append(opts, grpc.ChainStreamInterceptor(streaminterceptors...))
+	opts = append(opts,
+		grpc.StatsHandler(otelgrpc.NewServerHandler(
+			otelgrpc.WithFilter(streamingMethodFilter()),
+		)),
+		grpc.ChainUnaryInterceptor(unaryinterceptors...),
+		grpc.ChainStreamInterceptor(streaminterceptors...),
+	)
 
 	return opts
 }

@@ -1,6 +1,7 @@
 package profilecontract
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -56,8 +57,8 @@ func TestReadJSONDoesNotExposeInvalidMetadata(t *testing.T) {
 	// A JSON type error can include the input's field name. Diagnostics must
 	// expose neither that arbitrary key nor the underlying decoder details.
 	before := []byte(`{"private-customer-token":{"schemaVersion":"secret"}}`)
-	if err := os.WriteFile(path, before, 0o600); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(path, before, 0o600); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	var value map[string]Record
 	err = ReadJSON(path, &value)
@@ -68,7 +69,7 @@ func TestReadJSONDoesNotExposeInvalidMetadata(t *testing.T) {
 		t.Fatalf("expected a private invalid-metadata diagnostic: %v", err)
 	}
 	after, readErr := os.ReadFile(path)
-	if readErr != nil || string(after) != string(before) {
+	if readErr != nil || !bytes.Equal(after, before) {
 		t.Fatalf("reader changed invalid metadata: %v", readErr)
 	}
 }
@@ -90,7 +91,7 @@ func TestOwnershipJournalRetainsV1SerializedIdentity(t *testing.T) {
 		t.Fatalf("v1 ownership journal was not decoded: %+v", journal)
 	}
 	encoded, err := json.Marshal(journal)
-	if err != nil || string(encoded) != string(data) {
+	if err != nil || !bytes.Equal(encoded, data) {
 		t.Fatalf("v1 wire representation changed: %s %v", encoded, err)
 	}
 }
@@ -101,12 +102,12 @@ func TestCanonicalPathResolvesExistingPrefixWithoutCreatingMissingSuffix(t *test
 		t.Fatal(err)
 	}
 	target := filepath.Join(base, "target")
-	if err := os.Mkdir(target, 0o700); err != nil {
-		t.Fatal(err)
+	if mkdirErr := os.Mkdir(target, 0o700); mkdirErr != nil {
+		t.Fatal(mkdirErr)
 	}
 	alias := filepath.Join(base, "alias")
-	if err := os.Symlink(target, alias); err != nil {
-		t.Skipf("symlink unavailable: %v", err)
+	if linkErr := os.Symlink(target, alias); linkErr != nil {
+		t.Skipf("symlink unavailable: %v", linkErr)
 	}
 	got, err := CanonicalPath(filepath.Join(alias, "missing", "state"))
 	want := filepath.Join(target, "missing", "state")

@@ -62,10 +62,10 @@ func useServerPluginContext(ctx context.Context) (context.Context, error) {
 func UnaryPluginContext() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		_ *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (interface{}, error) {
+	) (any, error) {
 		ctx, err := useServerPluginContext(ctx)
 		if err != nil {
 			logging.Default().Error(ctx, "failed to extract plugin context", logging.Error(err))
@@ -78,7 +78,7 @@ func UnaryPluginContext() grpc.UnaryServerInterceptor {
 // from gRPC metadata and attaches it to the context.
 func StreamPluginContext() grpc.StreamServerInterceptor {
 	return func(
-		srv interface{},
+		srv any,
 		ss grpc.ServerStream,
 		_ *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,
@@ -95,6 +95,7 @@ func StreamPluginContext() grpc.StreamServerInterceptor {
 // wrappedServerStream wraps a grpc.ServerStream to override the context.
 type wrappedServerStream struct {
 	grpc.ServerStream
+
 	ctx context.Context
 }
 

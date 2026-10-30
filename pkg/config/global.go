@@ -9,7 +9,7 @@ type globalConfigKey struct{}
 
 // GlobalConfig holds the global configuration for the IDE.
 type GlobalConfig struct {
-	config map[string]interface{}
+	config map[string]any
 }
 
 // GlobalConfigFromContext returns the global configuration from the context.
@@ -28,12 +28,12 @@ func GlobalConfigFromContext(ctx context.Context) *GlobalConfig {
 }
 
 // NewGlobalConfig creates a new global configuration.
-func NewGlobalConfig(config map[string]interface{}) *GlobalConfig {
+func NewGlobalConfig(config map[string]any) *GlobalConfig {
 	return &GlobalConfig{config: config}
 }
 
 // Get returns the value for the given key on the config.
-func (c *GlobalConfig) Get(key string) interface{} {
+func (c *GlobalConfig) Get(key string) any {
 	return c.config[key]
 }
 

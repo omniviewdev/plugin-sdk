@@ -11,6 +11,7 @@ import (
 	"github.com/omniviewdev/plugin-sdk/settings"
 )
 
+//nolint:gochecknoinits // Importing types must install request-context enrichment before any logger uses it.
 func init() {
 	logging.RegisterContextEnricher(pluginContextEnricher)
 }
@@ -38,9 +39,9 @@ func pluginContextEnricher(ctx context.Context) []logging.Field {
 
 const (
 	// DefaultTimeout bounds requests that do not specify a timeout.
-	DefaultTimeout         = 10 * time.Second
+	DefaultTimeout = 10 * time.Second
 	// DefaultMaxRetries limits retries for default request options.
-	DefaultMaxRetries      = 3
+	DefaultMaxRetries = 3
 	// DefaultBackoffInterval sets the delay between default retries.
 	DefaultBackoffInterval = 1 * time.Second
 )
@@ -86,9 +87,9 @@ func WithPluginContext(ctx context.Context, pluginContext *PluginContext) contex
 	if pluginContext == nil {
 		return ctx
 	}
-	copy := *pluginContext
-	copy.Context = nil
-	return context.WithValue(ctx, pluginCtxKey{}, &copy)
+	snapshot := *pluginContext
+	snapshot.Context = nil
+	return context.WithValue(ctx, pluginCtxKey{}, &snapshot)
 }
 
 // PluginContextFromContext returns a fresh shallow snapshot bound to ctx, or nil

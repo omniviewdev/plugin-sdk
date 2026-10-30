@@ -8,19 +8,19 @@ type Capability string
 
 const (
 	// CapabilityResource enables resource discovery and operations.
-	CapabilityResource  Capability = "resource"
+	CapabilityResource Capability = "resource"
 	// CapabilityExec enables remote command execution.
-	CapabilityExec      Capability = "exec"
+	CapabilityExec Capability = "exec"
 	// CapabilityNetworker enables network forwarding.
 	CapabilityNetworker Capability = "networker"
 	// CapabilityLog enables log streaming.
-	CapabilityLog       Capability = "log"
+	CapabilityLog Capability = "log"
 	// CapabilityMetric enables metric queries.
-	CapabilityMetric    Capability = "metric"
+	CapabilityMetric Capability = "metric"
 	// CapabilitySettings enables plugin settings.
-	CapabilitySettings  Capability = "settings"
+	CapabilitySettings Capability = "settings"
 	// CapabilityUI enables frontend components without requiring a backend process.
-	CapabilityUI        Capability = "ui"
+	CapabilityUI Capability = "ui"
 )
 
 // IsBackend returns true if this capability requires a backend plugin process.
@@ -29,6 +29,8 @@ func (c Capability) IsBackend() bool {
 	case CapabilityResource, CapabilityExec, CapabilityNetworker,
 		CapabilityLog, CapabilityMetric, CapabilitySettings:
 		return true
+	case CapabilityUI:
+		return false
 	default:
 		return false
 	}

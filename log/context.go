@@ -12,7 +12,7 @@ func enrichFromContext(ctx context.Context) []Field {
 	var fields []Field
 
 	// Registered enricher (PluginContext fields injected via types.init()).
-	if h, ok := contextEnricher.Load().(*enricherHolder); ok && h != nil && h.fn != nil {
+	if h := contextEnricher.Load(); h != nil && h.fn != nil {
 		fields = append(fields, h.fn(ctx)...)
 	}
 
@@ -74,6 +74,9 @@ func extractTraceIDs(ctx context.Context) (string, string) {
 	return "", ""
 }
 
+// traceparentPartCount covers version, trace ID, span ID, and trace flags.
+const traceparentPartCount = 4
+
 // traceFromMD extracts trace and span IDs from gRPC metadata headers.
 // Supported formats in precedence order:
 //
@@ -83,7 +86,7 @@ func extractTraceIDs(ctx context.Context) (string, string) {
 func traceFromMD(md grpcmetadata.MD) (string, string) {
 	if tp := firstMD(md, "traceparent"); tp != "" {
 		parts := strings.Split(tp, "-")
-		if len(parts) == 4 {
+		if len(parts) == traceparentPartCount {
 			tid, tidErr := trace.TraceIDFromHex(parts[1])
 			sid, sidErr := trace.SpanIDFromHex(parts[2])
 			if tidErr == nil && sidErr == nil && tid.IsValid() && sid.IsValid() {

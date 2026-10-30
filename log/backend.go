@@ -63,7 +63,8 @@ func (b *HCLBackend) Write(_ context.Context, record Record) error {
 	logger := b.logger
 	b.mu.RUnlock()
 
-	args := make([]any, 0, len(record.Fields)*2+2)
+	const timestampFieldCount = 1
+	args := make([]any, 0, (len(record.Fields)+timestampFieldCount)*keyValueWidth)
 	args = append(args, "timestamp", record.Timestamp.Format(time.RFC3339Nano))
 	for _, field := range record.Fields {
 		args = append(args, field.Key, field.Value)

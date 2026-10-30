@@ -21,26 +21,26 @@ const (
 
 // PluginMeta is the plugin description file located at the root of a plugin.
 type PluginMeta struct {
-	ID                 string             `json:"id"                    yaml:"id"`
-	Version            string             `json:"version"               yaml:"version"`
-	Name               string             `json:"name"                  yaml:"name"`
-	Icon               string             `json:"icon"                  yaml:"icon"`
-	IconURL            string             `json:"icon_url"              yaml:"icon_url,omitempty"`
-	Description        string             `json:"description"           yaml:"description"`
-	Repository         string             `json:"repository"            yaml:"repository"`
-	Website            string             `json:"website"               yaml:"website"`
-	Category           string             `json:"category"              yaml:"category,omitempty"`
-	License            string             `json:"license"               yaml:"license,omitempty"`
-	Markdown           string             `json:"-"                     yaml:"-"`
-	Author             *PluginAuthor      `json:"author,omitempty"      yaml:"author,omitempty"`
-	Maintainers        []PluginMaintainer `json:"maintainers"           yaml:"maintainers"`
-	Tags               []string           `json:"tags"                  yaml:"tags"`
-	Dependencies       []string           `json:"dependencies"          yaml:"dependencies"`
-	Capabilities       []string           `json:"capabilities"          yaml:"capabilities"`
-	Theme              PluginTheme        `json:"theme"                 yaml:"theme"`
-	Components         PluginComponents   `json:"components"            yaml:"components"`
-	SchemaVersion      int                `json:"schema_version"        yaml:"schema_version,omitempty"`
-	SDKProtocolVersion int                `json:"sdk_protocol_version"  yaml:"sdk_protocol_version,omitempty"`
+	ID                 string             `json:"id"                   yaml:"id"`
+	Version            string             `json:"version"              yaml:"version"`
+	Name               string             `json:"name"                 yaml:"name"`
+	Icon               string             `json:"icon"                 yaml:"icon"`
+	IconURL            string             `json:"icon_url"             yaml:"icon_url,omitempty"`
+	Description        string             `json:"description"          yaml:"description"`
+	Repository         string             `json:"repository"           yaml:"repository"`
+	Website            string             `json:"website"              yaml:"website"`
+	Category           string             `json:"category"             yaml:"category,omitempty"`
+	License            string             `json:"license"              yaml:"license,omitempty"`
+	Markdown           string             `json:"-"                    yaml:"-"`
+	Author             *PluginAuthor      `json:"author,omitempty"     yaml:"author,omitempty"`
+	Maintainers        []PluginMaintainer `json:"maintainers"          yaml:"maintainers"`
+	Tags               []string           `json:"tags"                 yaml:"tags"`
+	Dependencies       []string           `json:"dependencies"         yaml:"dependencies"`
+	Capabilities       []string           `json:"capabilities"         yaml:"capabilities"`
+	Theme              PluginTheme        `json:"theme"                yaml:"theme"`
+	Components         PluginComponents   `json:"components"           yaml:"components"`
+	SchemaVersion      int                `json:"schema_version"       yaml:"schema_version,omitempty"`
+	SDKProtocolVersion int                `json:"sdk_protocol_version" yaml:"sdk_protocol_version,omitempty"`
 	// StateIsolation is inspectable before launch; only a trusted builder's
 	// attestation may authorize isolated startup, never self-asserted YAML.
 	StateIsolation *StateIsolationProvenance `json:"state_isolation,omitempty" yaml:"state_isolation,omitempty"`
@@ -48,12 +48,7 @@ type PluginMeta struct {
 
 // HasUICapabilities checks if the plugin has UI capabilities.
 func (m *PluginMeta) HasUICapabilities() bool {
-	for _, capability := range m.Capabilities {
-		if capability == "ui" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m.Capabilities, "ui")
 }
 
 // HasBackendCapabilities checks if the plugin has any backend capabilities.
@@ -103,7 +98,7 @@ type PluginComponentArea string
 
 const (
 	// PluginComponentAreaEditor places a component in the resource editor.
-	PluginComponentAreaEditor  PluginComponentArea = "EDITOR"
+	PluginComponentAreaEditor PluginComponentArea = "EDITOR"
 	// PluginComponentAreaSidebar places a component in the resource sidebar.
 	PluginComponentAreaSidebar PluginComponentArea = "SIDEBAR"
 )
@@ -117,13 +112,14 @@ type PluginResourceComponent struct {
 	ExtensionPoint string              `json:"extension" yaml:"extension"`
 }
 
-func (c *PluginMeta) Load(reader io.Reader) error {
-	return yaml.NewDecoder(reader).Decode(c)
+// Load decodes one YAML manifest from reader into m, retaining decoder handling of omitted fields.
+func (m *PluginMeta) Load(reader io.Reader) error {
+	return yaml.NewDecoder(reader).Decode(m)
 }
 
 // LoadMarkdown loads a plugin Markdown file from a given path (if it exists)
 // into the plugin config.
-func (c *PluginMeta) LoadMarkdown(path string) error {
+func (m *PluginMeta) LoadMarkdown(path string) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -134,7 +130,7 @@ func (c *PluginMeta) LoadMarkdown(path string) error {
 	if err != nil {
 		return err
 	}
-	c.Markdown = string(markdown)
+	m.Markdown = string(markdown)
 	return nil
 }
 
@@ -142,14 +138,14 @@ func (c *PluginMeta) LoadMarkdown(path string) error {
 // The magic cookie value uses only the plugin ID (not version) so that
 // version bumps don't force binary rebuilds just for the handshake.
 // Version negotiation is handled by the PluginLifecycle.GetInfo() RPC.
-func (c *PluginMeta) GenerateHandshakeConfig() plugin.HandshakeConfig {
-	if c.ID == "" {
+func (m *PluginMeta) GenerateHandshakeConfig() plugin.HandshakeConfig {
+	if m.ID == "" {
 		panic("plugin ID must be set")
 	}
 
 	return plugin.HandshakeConfig{
 		ProtocolVersion:  1,
 		MagicCookieKey:   "OMNIVIEW",
-		MagicCookieValue: c.ID,
+		MagicCookieValue: m.ID,
 	}
 }

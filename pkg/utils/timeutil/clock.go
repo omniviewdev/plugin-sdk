@@ -14,7 +14,7 @@ type Clock interface {
 type RealClock struct{}
 
 // Now returns the current wall-clock time, including the standard library's monotonic reading.
-func (RealClock) Now() time.Time                         { return time.Now() }
+func (RealClock) Now() time.Time { return time.Now() }
 
 // After returns a channel that receives once after d; nonpositive durations fire immediately.
 func (RealClock) After(d time.Duration) <-chan time.Time { return time.After(d) }

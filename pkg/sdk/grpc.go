@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -85,9 +86,7 @@ func UseClientPluginContext(ctx context.Context) (context.Context, error) {
 
 	current, _ := grpcMetadata.FromOutgoingContext(ctx)
 	outgoing := current.Copy()
-	for key, values := range grpcMetadata.Pairs(pairs...) {
-		outgoing[key] = values
-	}
+	maps.Copy(outgoing, grpcMetadata.Pairs(pairs...))
 	return grpcMetadata.NewOutgoingContext(ctx, outgoing), nil
 }
 
@@ -143,11 +142,13 @@ func withClientOpts(opts []grpc.DialOption, log logging.Logger) []grpc.DialOptio
 	if opts == nil {
 		opts = make([]grpc.DialOption, 0)
 	}
-	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler(
-		otelgrpc.WithFilter(streamingMethodFilter()),
-	)))
-	opts = append(opts, grpc.WithChainUnaryInterceptor(ClientPluginContextInterceptor(log)))
-	opts = append(opts, grpc.WithChainStreamInterceptor(StreamClientPluginContextInterceptor(log)))
+	opts = append(opts,
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler(
+			otelgrpc.WithFilter(streamingMethodFilter()),
+		)),
+		grpc.WithChainUnaryInterceptor(ClientPluginContextInterceptor(log)),
+		grpc.WithChainStreamInterceptor(StreamClientPluginContextInterceptor(log)),
+	)
 	return opts
 }
 

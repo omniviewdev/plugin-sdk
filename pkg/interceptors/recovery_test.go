@@ -22,7 +22,7 @@ func TestUnaryPanicRecovery_PanicIsRecovered(t *testing.T) {
 	interceptor := UnaryPanicRecovery(logging.NewNop())
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/PanicMethod"}
 
-	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
+	handler := func(_ context.Context, _ any) (any, error) {
 		panic("something went wrong")
 	}
 
@@ -43,7 +43,7 @@ func TestUnaryPanicRecovery_SuccessPassthrough(t *testing.T) {
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/OK"}
 
 	expected := "hello"
-	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
+	handler := func(_ context.Context, _ any) (any, error) {
 		return expected, nil
 	}
 
@@ -58,7 +58,7 @@ func TestUnaryPanicRecovery_ErrorPassthrough(t *testing.T) {
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Fail"}
 
 	handlerErr := status.Error(codes.NotFound, "not found")
-	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
+	handler := func(_ context.Context, _ any) (any, error) {
 		return nil, handlerErr
 	}
 
@@ -80,7 +80,7 @@ func TestStreamPanicRecovery_PanicIsRecovered(t *testing.T) {
 	interceptor := StreamPanicRecovery(logging.NewNop())
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamPanic"}
 
-	handler := func(_ interface{}, _ grpc.ServerStream) error {
+	handler := func(_ any, _ grpc.ServerStream) error {
 		panic("stream boom")
 	}
 
@@ -98,7 +98,7 @@ func TestStreamPanicRecovery_SuccessPassthrough(t *testing.T) {
 	interceptor := StreamPanicRecovery(logging.NewNop())
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamOK"}
 
-	handler := func(_ interface{}, _ grpc.ServerStream) error {
+	handler := func(_ any, _ grpc.ServerStream) error {
 		return nil
 	}
 
@@ -111,7 +111,7 @@ func TestStreamPanicRecovery_ErrorPassthrough(t *testing.T) {
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamFail"}
 
 	handlerErr := errors.New("stream handler error")
-	handler := func(_ interface{}, _ grpc.ServerStream) error {
+	handler := func(_ any, _ grpc.ServerStream) error {
 		return handlerErr
 	}
 

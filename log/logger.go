@@ -79,7 +79,8 @@ type ContextEnricher func(context.Context) []Field
 // enricherHolder allows an atomic pointer to publish a context enricher.
 type enricherHolder struct{ fn ContextEnricher }
 
-var contextEnricher atomic.Value // stores *enricherHolder
+//nolint:gochecknoglobals // The public registration API shares one race-safe enricher across all loggers.
+var contextEnricher atomic.Pointer[enricherHolder]
 
 // RegisterContextEnricher sets the global context enricher used by all loggers.
 // Typically called from an init() in the package that owns PluginContext.
@@ -90,14 +91,22 @@ func RegisterContextEnricher(fn ContextEnricher) {
 // loggerHolder allows an atomic pointer to publish any Logger implementation.
 type loggerHolder struct{ l Logger }
 
-var defaultLogger atomic.Value
+//nolint:gochecknoglobals // Default and SetDefault intentionally expose one process-wide logger.
+var defaultLogger atomic.Pointer[loggerHolder]
 
-func init() {
-	defaultLogger.Store(&loggerHolder{l: NewNop()})
+// Default returns the process-wide logger, initially a logger that discards records.
+func Default() Logger {
+	if h := defaultLogger.Load(); h != nil {
+		return h.l
+	}
+	h := &loggerHolder{l: NewNop()}
+	if defaultLogger.CompareAndSwap(nil, h) {
+		return h.l
+	}
+	return defaultLogger.Load().l
 }
 
-func Default() Logger { return defaultLogger.Load().(*loggerHolder).l }
-
+// SetDefault atomically replaces the process-wide logger; nil resets it to NewNop.
 func SetDefault(l Logger) {
 	if l == nil {
 		l = NewNop()
@@ -138,9 +147,10 @@ func (l *logger) Log(ctx context.Context, level Level, msg string, fields ...Fie
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	all := make([]Field, 0, len(l.fields)+len(fields)+8)
+	enriched := enrichFromContext(ctx)
+	all := make([]Field, 0, len(l.fields)+len(fields)+len(enriched))
 	all = append(all, l.fields...)
-	all = append(all, enrichFromContext(ctx)...)
+	all = append(all, enriched...)
 	all = append(all, fields...)
 	rec := Record{Timestamp: l.now(), Level: level, Logger: l.name, Message: msg, Fields: all}
 	_ = l.be.Write(ctx, rec)
@@ -196,12 +206,15 @@ func (l *logger) Fatalw(ctx context.Context, msg string, kv ...any) {
 
 func (l *logger) Sync(ctx context.Context) error { return l.be.Sync(ctx) }
 
+// keyValueWidth is the number of arguments in each structured key/value pair.
+const keyValueWidth = 2
+
 func kvFields(kv ...any) []Field {
 	if len(kv) == 0 {
 		return nil
 	}
-	out := make([]Field, 0, (len(kv)+1)/2)
-	for i := 0; i < len(kv); i += 2 {
+	out := make([]Field, 0, (len(kv)+1)/keyValueWidth)
+	for i := 0; i < len(kv); i += keyValueWidth {
 		if i+1 >= len(kv) {
 			out = append(out, Any("arg", kv[i]))
 			break

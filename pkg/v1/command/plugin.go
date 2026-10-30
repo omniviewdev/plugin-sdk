@@ -17,19 +17,16 @@ const (
 	PluginID = "command"
 )
 
-type ProviderImpl interface {
-	Call(ctx *types.PluginContext, target string, payload []byte) ([]byte, error)
-}
-
-// Provider is the interface satisfied by the plugin server and client
-// to provide the general functionality.
+// Provider dispatches opaque command payloads by target. Implementations must
+// coordinate concurrent calls and must not retain or mutate payloads without copying.
 type Provider interface {
-	ProviderImpl
+	Call(ctx *types.PluginContext, target string, payload []byte) ([]byte, error)
 }
 
 // Plugin registers command RPCs or creates a client for a go-plugin connection.
 type Plugin struct {
 	plugin.Plugin
+
 	Impl Provider
 }
 
@@ -44,7 +41,7 @@ func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
-) (interface{}, error) {
+) (any, error) {
 	return &PluginClient{client: commandpb.NewCommandClient(c)}, nil
 }
 

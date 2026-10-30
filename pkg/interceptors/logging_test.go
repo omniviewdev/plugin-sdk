@@ -22,7 +22,7 @@ func TestUnaryLogging_SuccessPassthrough(t *testing.T) {
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/LogOK"}
 
 	expected := "result"
-	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
+	handler := func(_ context.Context, _ any) (any, error) {
 		return expected, nil
 	}
 
@@ -37,7 +37,7 @@ func TestUnaryLogging_ErrorPassthrough(t *testing.T) {
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/LogFail"}
 
 	handlerErr := status.Error(codes.InvalidArgument, "bad arg")
-	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
+	handler := func(_ context.Context, _ any) (any, error) {
 		return nil, handlerErr
 	}
 
@@ -56,9 +56,9 @@ func TestUnaryLogging_HandlerIsCalled(t *testing.T) {
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Called"}
 
 	called := false
-	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
+	handler := func(_ context.Context, _ any) (any, error) {
 		called = true
-		return nil, nil
+		return "ok", nil
 	}
 
 	_, _ = interceptor(context.Background(), "req", info, handler)
@@ -73,7 +73,7 @@ func TestStreamLogging_SuccessPassthrough(t *testing.T) {
 	interceptor := StreamLogging(logging.NewNop())
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamLogOK"}
 
-	handler := func(_ interface{}, _ grpc.ServerStream) error {
+	handler := func(_ any, _ grpc.ServerStream) error {
 		return nil
 	}
 
@@ -86,7 +86,7 @@ func TestStreamLogging_ErrorPassthrough(t *testing.T) {
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamLogFail"}
 
 	handlerErr := status.Error(codes.Unavailable, "unavailable")
-	handler := func(_ interface{}, _ grpc.ServerStream) error {
+	handler := func(_ any, _ grpc.ServerStream) error {
 		return handlerErr
 	}
 
@@ -101,7 +101,7 @@ func TestStreamLogging_HandlerIsCalled(t *testing.T) {
 	info := &grpc.StreamServerInfo{FullMethod: "/test.Service/StreamCalled"}
 
 	called := false
-	handler := func(_ interface{}, _ grpc.ServerStream) error {
+	handler := func(_ any, _ grpc.ServerStream) error {
 		called = true
 		return nil
 	}

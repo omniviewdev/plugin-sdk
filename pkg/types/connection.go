@@ -19,7 +19,7 @@ type ConnectionAutoConnectTrigger string
 
 const (
 	// ConnectionAutoConnectTriggerPluginStart requests automatic connection when the plugin starts.
-	ConnectionAutoConnectTriggerPluginStart          ConnectionAutoConnectTrigger = "PLUGIN_START"
+	ConnectionAutoConnectTriggerPluginStart ConnectionAutoConnectTrigger = "PLUGIN_START"
 	// ConnectionAutoConnectTriggerConnectionDiscovered requests connection when a profile is discovered.
 	ConnectionAutoConnectTriggerConnectionDiscovered ConnectionAutoConnectTrigger = "CONNECTION_DISCOVERED"
 )
@@ -29,7 +29,7 @@ type ConnectionAutoConnectRetry string
 
 const (
 	// ConnectionAutoConnectRetryNone disables automatic retries after failure.
-	ConnectionAutoConnectRetryNone     ConnectionAutoConnectRetry = "NONE"
+	ConnectionAutoConnectRetryNone ConnectionAutoConnectRetry = "NONE"
 	// ConnectionAutoConnectRetryOnChange permits retry after connection configuration changes.
 	ConnectionAutoConnectRetryOnChange ConnectionAutoConnectRetry = "ON_CHANGE"
 )
@@ -291,29 +291,29 @@ type ConnectionStatusCode string
 
 const (
 	// ConnectionStatusUnknown indicates that no connection state is known.
-	ConnectionStatusUnknown               ConnectionStatusCode = "UNKNOWN"
+	ConnectionStatusUnknown ConnectionStatusCode = "UNKNOWN"
 	// ConnectionStatusConnected indicates a registered active connection, not a network-health guarantee.
-	ConnectionStatusConnected             ConnectionStatusCode = "CONNECTED"
+	ConnectionStatusConnected ConnectionStatusCode = "CONNECTED"
 	// ConnectionStatusDisconnected indicates that the connection is not active.
-	ConnectionStatusDisconnected          ConnectionStatusCode = "DISCONNECTED"
+	ConnectionStatusDisconnected ConnectionStatusCode = "DISCONNECTED"
 	// ConnectionStatusPending indicates that connection startup is in progress.
-	ConnectionStatusPending               ConnectionStatusCode = "PENDING"
+	ConnectionStatusPending ConnectionStatusCode = "PENDING"
 	// ConnectionStatusFailed indicates that connection startup failed.
-	ConnectionStatusFailed                ConnectionStatusCode = "FAILED"
+	ConnectionStatusFailed ConnectionStatusCode = "FAILED"
 	// ConnectionStatusError indicates an unclassified connection error.
-	ConnectionStatusError                 ConnectionStatusCode = "ERROR"
+	ConnectionStatusError ConnectionStatusCode = "ERROR"
 	// ConnectionStatusUnauthorized indicates missing or invalid authentication.
-	ConnectionStatusUnauthorized          ConnectionStatusCode = "UNAUTHORIZED"
+	ConnectionStatusUnauthorized ConnectionStatusCode = "UNAUTHORIZED"
 	// ConnectionStatusForbidden indicates that access was denied.
-	ConnectionStatusForbidden             ConnectionStatusCode = "FORBIDDEN"
+	ConnectionStatusForbidden ConnectionStatusCode = "FORBIDDEN"
 	// ConnectionStatusBadRequest indicates invalid connection-check input.
-	ConnectionStatusBadRequest            ConnectionStatusCode = "BAD_REQUEST"
+	ConnectionStatusBadRequest ConnectionStatusCode = "BAD_REQUEST"
 	// ConnectionStatusNotFound indicates that the requested connection or target was not found.
-	ConnectionStatusNotFound              ConnectionStatusCode = "NOT_FOUND"
+	ConnectionStatusNotFound ConnectionStatusCode = "NOT_FOUND"
 	// ConnectionStatusTimeout indicates that the connection check exceeded its deadline.
-	ConnectionStatusTimeout               ConnectionStatusCode = "TIMEOUT"
+	ConnectionStatusTimeout ConnectionStatusCode = "TIMEOUT"
 	// ConnectionStatusUnavailable indicates that the connection target is unavailable.
-	ConnectionStatusUnavailable           ConnectionStatusCode = "UNAVAILABLE"
+	ConnectionStatusUnavailable ConnectionStatusCode = "UNAVAILABLE"
 	// ConnectionStatusRequestEntityTooLarge indicates that the request exceeded the target limit.
 	ConnectionStatusRequestEntityTooLarge ConnectionStatusCode = "REQUEST_ENTITY_TOO_LARGE"
 )

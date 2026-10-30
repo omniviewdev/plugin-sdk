@@ -52,7 +52,8 @@ func GetStore(capability, pluginID string) (*os.File, error) {
 	if err := state.RejectSymlink(store, capability); err != nil {
 		return nil, err
 	}
-	return store.OpenFile(capability, os.O_CREATE|os.O_RDWR, 0o600)
+	const privateStoreMode = 0o600
+	return store.OpenFile(capability, os.O_CREATE|os.O_RDWR, privateStoreMode)
 }
 
 // RemoveStore removes only the selected plugin's capability store.

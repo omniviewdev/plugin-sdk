@@ -47,7 +47,8 @@ func TestConnectionDataRoundTrip(t *testing.T) {
 	assert.Equal(t, "conn-1", pc.Connection.ID)
 	require.NotNil(t, pc.Connection.Data)
 	assert.Equal(t, "bar", pc.Connection.Data["foo"])
-	assert.Equal(t, float64(42), pc.Connection.Data["count"])
+	require.IsType(t, float64(0), pc.Connection.Data["count"])
+	assert.InDelta(t, float64(42), pc.Connection.Data["count"], 0)
 }
 
 func TestConnectionDataWithKubeconfig(t *testing.T) {
@@ -137,9 +138,9 @@ func TestUnaryPluginContext_ValidMetadata(t *testing.T) {
 		mdKeyProtocolVersion, "2",
 	)
 
-	var captured context.Context
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		captured = ctx
+	var captured *types.PluginContext
+	handler := func(handlerCtx context.Context, _ any) (any, error) {
+		captured = types.PluginContextFromContext(handlerCtx)
 		return "ok", nil
 	}
 
@@ -148,10 +149,9 @@ func TestUnaryPluginContext_ValidMetadata(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ok", resp)
 
-	extracted := types.PluginContextFromContext(captured)
-	require.NotNil(t, extracted)
-	assert.Equal(t, "req-123", extracted.RequestID)
-	assert.Equal(t, "user-456", extracted.RequesterID)
+	require.NotNil(t, captured)
+	assert.Equal(t, "req-123", captured.RequestID)
+	assert.Equal(t, "user-456", captured.RequesterID)
 }
 
 func TestUnaryPluginContext_NoMetadata(t *testing.T) {
@@ -159,7 +159,7 @@ func TestUnaryPluginContext_NoMetadata(t *testing.T) {
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/NoMD"}
 
 	called := false
-	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
+	handler := func(_ context.Context, _ any) (any, error) {
 		called = true
 		return "ok", nil
 	}
@@ -190,21 +190,20 @@ func TestStreamPluginContext_ValidMetadata(t *testing.T) {
 	)
 	ss := &mockServerStream{ctx: ctx}
 
-	var capturedCtx context.Context
-	handler := func(_ interface{}, stream grpc.ServerStream) error {
-		capturedCtx = stream.Context()
+	var captured *types.PluginContext
+	handler := func(_ any, stream grpc.ServerStream) error {
+		captured = types.PluginContextFromContext(stream.Context())
 		return nil
 	}
 
 	err := interceptor(nil, ss, info, handler)
 
 	require.NoError(t, err)
-	extracted := types.PluginContextFromContext(capturedCtx)
-	require.NotNil(t, extracted)
-	assert.Equal(t, "stream-req-1", extracted.RequestID)
-	assert.Equal(t, "stream-user-1", extracted.RequesterID)
-	require.NotNil(t, extracted.Connection)
-	assert.Equal(t, "/path/to/kubeconfig", extracted.Connection.Data["kubeconfig"])
+	require.NotNil(t, captured)
+	assert.Equal(t, "stream-req-1", captured.RequestID)
+	assert.Equal(t, "stream-user-1", captured.RequesterID)
+	require.NotNil(t, captured.Connection)
+	assert.Equal(t, "/path/to/kubeconfig", captured.Connection.Data["kubeconfig"])
 }
 
 func TestStreamPluginContext_NoMetadata(t *testing.T) {
@@ -214,7 +213,7 @@ func TestStreamPluginContext_NoMetadata(t *testing.T) {
 	ss := &mockServerStream{ctx: context.Background()}
 
 	called := false
-	handler := func(_ interface{}, _ grpc.ServerStream) error {
+	handler := func(_ any, _ grpc.ServerStream) error {
 		called = true
 		return nil
 	}
@@ -234,7 +233,7 @@ func TestStreamPluginContext_WrappedStreamOverridesContext(t *testing.T) {
 	)
 	ss := &mockServerStream{ctx: ctx}
 
-	handler := func(_ interface{}, stream grpc.ServerStream) error {
+	handler := func(_ any, stream grpc.ServerStream) error {
 		extracted := types.PluginContextFromContext(stream.Context())
 		require.NotNil(t, extracted)
 		assert.Equal(t, "wrapped-req", extracted.RequestID)

@@ -12,7 +12,7 @@ const (
 	// StateIsolationCapability identifies the SDK's per-profile state-root isolation contract.
 	StateIsolationCapability = "state-root-v1"
 	// StateIsolationSDKModule identifies the module whose revision the trusted builder attests.
-	StateIsolationSDKModule  = "github.com/omniviewdev/plugin-sdk"
+	StateIsolationSDKModule = "github.com/omniviewdev/plugin-sdk"
 )
 
 // StateIsolationProvenance is a trusted builder's attestation, not a declaration
@@ -22,14 +22,14 @@ const (
 // No lifecycle RPC/protocol change is required to inspect this metadata.
 type StateIsolationProvenance struct {
 	SchemaVersion int    `json:"schema_version" yaml:"schema_version"`
-	Capability    string `json:"capability" yaml:"capability"`
-	SDKModule     string `json:"sdk_module" yaml:"sdk_module"`
-	SDKRevision   string `json:"sdk_revision" yaml:"sdk_revision"`
+	Capability    string `json:"capability"     yaml:"capability"`
+	SDKModule     string `json:"sdk_module"     yaml:"sdk_module"`
+	SDKRevision   string `json:"sdk_revision"   yaml:"sdk_revision"`
 	// SDKSourceSHA256 identifies the trusted builder's exact selected working-tree
 	// snapshot, permitting live feature edits above the reviewed capability base.
 	// Empty is reserved for immutable, clean, commit-only trusted builds.
 	SDKSourceSHA256 string `json:"sdk_source_sha256,omitempty" yaml:"sdk_source_sha256,omitempty"`
-	BinarySHA256    string `json:"binary_sha256" yaml:"binary_sha256"`
+	BinarySHA256    string `json:"binary_sha256"               yaml:"binary_sha256"`
 }
 
 // BuildStateIsolationProvenance is called only by a trusted build pipeline after
@@ -98,7 +98,7 @@ func validSourceSHA256(digest string) bool {
 
 func validLowerHex(value string) bool {
 	for _, c := range value {
-		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}
 	}

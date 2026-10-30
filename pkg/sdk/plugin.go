@@ -2,8 +2,8 @@ package sdk
 
 import (
 	"context"
-	"math"
 	"maps"
+	"math"
 	"slices"
 
 	"github.com/hashicorp/go-plugin"
@@ -65,8 +65,8 @@ func NewPlugin(opts PluginOpts) *Plugin {
 		panic(err)
 	}
 	defer path.Close()
-	if err := state.RejectSymlink(path, "plugin.yaml"); err != nil {
-		panic(err)
+	if pathErr := state.RejectSymlink(path, "plugin.yaml"); pathErr != nil {
+		panic(pathErr)
 	}
 	file, err := path.Open("plugin.yaml")
 	if err != nil {
@@ -85,8 +85,8 @@ func NewPlugin(opts PluginOpts) *Plugin {
 
 	// convert the plugin settings to a map
 	settings := make(map[string]pkgsettings.Setting)
-	for _, setting := range opts.Settings {
-		settings[setting.ID] = setting
+	for i := range opts.Settings {
+		settings[opts.Settings[i].ID] = opts.Settings[i]
 	}
 
 	level := logging.NewLevelController(logging.LevelInfo)

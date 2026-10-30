@@ -14,6 +14,7 @@ import (
 // On the client side it returns a Client that wraps the gRPC stub.
 type Plugin struct {
 	plugin.Plugin
+
 	// Impl is the concrete server implementation (set on plugin side).
 	Impl *Server
 }
@@ -29,6 +30,6 @@ func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
-) (interface{}, error) {
+) (any, error) {
 	return NewClient(lifecyclepb.NewPluginLifecycleClient(c)), nil
 }

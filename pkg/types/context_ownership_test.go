@@ -7,8 +7,7 @@ import (
 )
 
 func TestPluginContextStoreAndReadDoNotMutateCaller(t *testing.T) {
-	original, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	original := t.Context()
 	caller := &PluginContext{Context: original, RequestID: "request", RequesterID: "diagnostic"}
 	stored := WithPluginContext(context.Background(), caller)
 	if caller.Context != original {
@@ -27,16 +26,14 @@ func TestPluginContextStoreAndReadDoNotMutateCaller(t *testing.T) {
 	}
 	var wait sync.WaitGroup
 	for range 32 {
-		wait.Add(1)
-		go func() {
-			defer wait.Done()
+		wait.Go(func() {
 			ctx, done := context.WithCancel(stored)
 			defer done()
 			got := PluginContextFromContext(ctx)
 			if got.Context != ctx || got.RequestID != "request" {
 				t.Error("concurrent request context mismatch")
 			}
-		}()
+		})
 	}
 	wait.Wait()
 }

@@ -60,7 +60,7 @@ func configFromEnv() Config {
 func InitFromEnv() (*Provider, error) {
 	cfg := configFromEnv()
 	if !cfg.Enabled {
-		return nil, nil
+		return nil, nil //nolint:nilnil // Disabled telemetry intentionally creates no provider and is not an error.
 	}
 
 	res, err := resource.Merge(

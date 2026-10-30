@@ -8,7 +8,9 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-func ConvertInterfaceToAny(v interface{}) (*anypb.Any, error) {
+// ConvertInterfaceToAny encodes v as JSON inside a protobuf BytesValue envelope.
+// Unsupported JSON values retain the legacy empty-body behavior; this is not a resource-value codec.
+func ConvertInterfaceToAny(v any) (*anypb.Any, error) {
 	anyValue := &anypb.Any{}
 	bytes, _ := json.Marshal(v)
 	bytesValue := &wrapperspb.BytesValue{
@@ -18,8 +20,10 @@ func ConvertInterfaceToAny(v interface{}) (*anypb.Any, error) {
 	return anyValue, err
 }
 
-func ConvertAnyToInterface(anyValue *anypb.Any) (interface{}, error) {
-	var value interface{}
+// ConvertAnyToInterface decodes a JSON BytesValue envelope into ordinary Go JSON values.
+// Malformed envelopes or JSON return an error; JSON null produces a nil value without error.
+func ConvertAnyToInterface(anyValue *anypb.Any) (any, error) {
+	var value any
 	bytesValue := &wrapperspb.BytesValue{}
 	err := anypb.UnmarshalTo(anyValue, bytesValue, proto.UnmarshalOptions{})
 	if err != nil {

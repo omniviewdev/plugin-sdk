@@ -17,10 +17,10 @@ func UnaryLogging(log logging.Logger) grpc.UnaryServerInterceptor {
 	}
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (interface{}, error) {
+	) (any, error) {
 		start := time.Now()
 		resp, err := handler(ctx, req)
 		duration := time.Since(start)
@@ -48,7 +48,7 @@ func StreamLogging(log logging.Logger) grpc.StreamServerInterceptor {
 		log = logging.Default()
 	}
 	return func(
-		srv interface{},
+		srv any,
 		ss grpc.ServerStream,
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,

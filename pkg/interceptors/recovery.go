@@ -19,10 +19,10 @@ func UnaryPanicRecovery(log logging.Logger) grpc.UnaryServerInterceptor {
 	}
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (resp interface{}, err error) {
+	) (resp any, err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				stack := debug.Stack()
@@ -45,7 +45,7 @@ func StreamPanicRecovery(log logging.Logger) grpc.StreamServerInterceptor {
 		log = logging.Default()
 	}
 	return func(
-		srv interface{},
+		srv any,
 		ss grpc.ServerStream,
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,

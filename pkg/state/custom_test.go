@@ -122,15 +122,16 @@ func TestCustomRootRejectsRedirectedMetadataAndState(t *testing.T) {
 	for _, kind := range []string{"binding", "owner", "claims", "dangling-binding", "state-alias", "container-alias"} {
 		t.Run(kind, func(t *testing.T) {
 			fixture := customRootFixture(t)
-			if kind == "state-alias" {
+			switch kind {
+			case "state-alias":
 				require.NoError(t, os.Symlink(filepath.Dir(fixture.state), fixture.state))
-			} else if kind == "container-alias" {
+			case "container-alias":
 				alias := filepath.Join(filepath.Dir(fixture.state), "alias")
 				require.NoError(t, os.Symlink(filepath.Dir(fixture.state), alias))
 				fixture.record["stateRoot"] = filepath.Join(alias, "state")
 				fixture.writeRecords(t)
 				t.Setenv(StateDirectoryEnvironment, filepath.Join(alias, "state"))
-			} else {
+			default:
 				path := fixture.binding
 				if kind == "owner" {
 					path = fixture.owner
@@ -174,13 +175,14 @@ func TestCustomRootRejectsProtectedAndOverlappingClaims(t *testing.T) {
 				fixture.record["stateRoot"] = filepath.Join(fixture.workspace, "custom", "state")
 			}
 			fixture.writeRecords(t)
-			if kind == "duplicate" {
+			switch kind {
+			case "duplicate":
 				writeCustomJSON(
 					t,
 					fixture.claims,
 					map[string]any{"schemaVersion": 1, "claims": []any{fixture.record, fixture.record}},
 				)
-			} else if kind == "nested" {
+			case "nested":
 				nested := map[string]any{
 					"schemaVersion": 1,
 					"workspaceID":   "09e2b911-76a7-4418-8d5f-30f31b50fe32",
@@ -191,7 +193,7 @@ func TestCustomRootRejectsProtectedAndOverlappingClaims(t *testing.T) {
 					fixture.claims,
 					map[string]any{"schemaVersion": 1, "claims": []any{fixture.record, nested}},
 				)
-			} else if kind == "foreign-malformed" {
+			case "foreign-malformed":
 				writeCustomJSON(
 					t,
 					fixture.claims,
@@ -204,7 +206,9 @@ func TestCustomRootRejectsProtectedAndOverlappingClaims(t *testing.T) {
 					},
 				)
 			}
-			t.Setenv(StateDirectoryEnvironment, fixture.record["stateRoot"].(string))
+			stateRoot, ok := fixture.record["stateRoot"].(string)
+			require.True(t, ok)
+			t.Setenv(StateDirectoryEnvironment, stateRoot)
 			_, err := ResolveRoot()
 			require.Error(t, err)
 		})
@@ -320,7 +324,8 @@ func TestCustomRootRejectsUnprovenInterruptedRename(t *testing.T) {
 	for _, kind := range []string{"outside-collection", "wrong-phase", "wrong-target", "wrong-UUID", "wrong-manifest-UUID", "wrong-target-slug", "unsupported-manifest-schema", "nondevelopment-manifest", "relative-old-root", "unclean-old-root", "old-source-overlap"} {
 		t.Run(kind, func(t *testing.T) {
 			fixture, journal := interruptedRenameFixture(t)
-			manifest := journal["manifest"].(map[string]any)
+			manifest, ok := journal["manifest"].(map[string]any)
+			require.True(t, ok)
 			switch kind {
 			case "outside-collection":
 				journal["root"] = filepath.Join(t.TempDir(), "old")
@@ -341,9 +346,13 @@ func TestCustomRootRejectsUnprovenInterruptedRename(t *testing.T) {
 			case "relative-old-root":
 				journal["root"] = "old"
 			case "unclean-old-root":
-				journal["root"] = journal["root"].(string) + string(filepath.Separator) + "."
+				oldRoot, ok := journal["root"].(string)
+				require.True(t, ok)
+				journal["root"] = oldRoot + string(filepath.Separator) + "."
 			case "old-source-overlap":
-				fixture.state = filepath.Join(journal["root"].(string), "state")
+				oldRoot, ok := journal["root"].(string)
+				require.True(t, ok)
+				fixture.state = filepath.Join(oldRoot, "state")
 				fixture.owner = filepath.Join(filepath.Dir(fixture.state), ".omniview-profile.json")
 				fixture.record["stateRoot"] = fixture.state
 				fixture.writeRecords(t)

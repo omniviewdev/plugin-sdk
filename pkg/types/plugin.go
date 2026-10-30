@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 
 	"gopkg.in/yaml.v3"
 
@@ -105,18 +106,13 @@ type Plugin struct {
 	LastError    string              `json:"lastError,omitempty"`
 
 	// Runtime fields — not serialized.
-	RPCClient    interface{} `json:"-"`
-	PluginClient interface{} `json:"-"`
+	RPCClient    any `json:"-"`
+	PluginClient any `json:"-"`
 }
 
 // HasCapability reports whether the legacy capability list contains capability.
 func (p *Plugin) HasCapability(capability PluginType) bool {
-	for _, c := range p.Capabilities {
-		if c == capability {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.Capabilities, capability)
 }
 
 // SetEnabled marks the plugin enabled without starting its process.
@@ -124,7 +120,8 @@ func (p *Plugin) SetEnabled() {
 	p.Enabled = true
 }
 
-func (p *Plugin) GetRPCClient() interface{} {
+// GetRPCClient returns the host-owned RPC client without transferring ownership.
+func (p *Plugin) GetRPCClient() any {
 	return p.RPCClient
 }
 
@@ -151,13 +148,14 @@ func (p *Plugin) ToInfo() PluginInfo {
 	}
 	phase := p.Phase
 	if phase == "" {
-		if p.Running {
+		switch {
+		case p.Running:
 			phase = "Running"
-		} else if p.Loading {
+		case p.Loading:
 			phase = "Starting"
-		} else if p.LoadError != "" {
+		case p.LoadError != "":
 			phase = "Failed"
-		} else {
+		default:
 			phase = "Installed"
 		}
 	}

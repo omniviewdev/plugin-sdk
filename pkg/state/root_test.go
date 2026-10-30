@@ -53,8 +53,8 @@ func TestWorkspaceRootFailsClosed(t *testing.T) {
 	want := filepath.Join(home, ".omniview-dev", "profiles", testWorkspaceID, "state")
 	for _, selected := range []string{"", "relative", filepath.Join(home, ".omniview"), filepath.Join(home, ".omniview-nightly"), t.TempDir()} {
 		t.Setenv(StateDirectoryEnvironment, selected)
-		_, err := ResolveRoot()
-		require.Error(t, err, selected)
+		_, resolveErr := ResolveRoot()
+		require.Error(t, resolveErr, selected)
 	}
 	t.Setenv(StateDirectoryEnvironment, want)
 	root, err := ResolveRoot()

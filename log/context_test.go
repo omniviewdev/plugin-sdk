@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -21,9 +22,10 @@ func TestExtractTraceIDs_PrefersOTelSpanContext(t *testing.T) {
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 	defer func() {
-		_ = tp.Shutdown(context.Background())
+		shutdownErr := tp.Shutdown(context.Background())
 		otel.SetTracerProvider(origTP)
 		otel.SetTextMapPropagator(origProp)
+		require.NoError(t, shutdownErr)
 	}()
 
 	ctx, span := tp.Tracer("test").Start(context.Background(), "test-op")
@@ -45,7 +47,9 @@ func TestExtractTraceIDs_FallsBackToMetadata(t *testing.T) {
 
 func TestExtractTraceIDs_OTelSpanOverridesMetadata(t *testing.T) {
 	tp := sdktrace.NewTracerProvider()
-	defer tp.Shutdown(context.Background())
+	defer func() {
+		assert.NoError(t, tp.Shutdown(context.Background()))
+	}()
 
 	ctx, span := tp.Tracer("test").Start(context.Background(), "test-op")
 	defer span.End()
