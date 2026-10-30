@@ -1,6 +1,6 @@
 # MCP integration with resource v2
 
-**Status: landing plan, not implementation or API acceptance.**
+**Status: SDK direction accepted; MCP alignment implementation in progress.**
 
 The MCP relay should consume the same host resource services as the UI. Plugins should not implement a second resource engine for agents. Custom SDK tools remain an extension lane for non-resource work.
 
@@ -9,7 +9,7 @@ This catalog follows [Alex Mononen’s PR21 comment][alex], [SDK issue25][sdk-is
 **Coverage:** 33 issue sections/feature rows, 16 inline review findings, and three additional review notes. These are **52 source items**, not 52 independent defects. Overlapping reports share work packages below.
 
 > [!IMPORTANT]
-> Resource SDK API acceptance remains pending. This plan does not authorize merging, marking the SDK ready, freezing its API, tagging, releasing, or changing managed module replacements.
+> The user accepted the SDK direction and authorized MCP alignment implementation. This removes the direction-review hold, not the remaining implementation and integration gates. No merge, ready transition, API freeze, tag, release, or managed replacement change is authorized.
 
 ## Read this plan
 
@@ -205,7 +205,7 @@ Ownership below names repository roles, not assigned people. Source writers must
 
 ## Contract decisions
 
-These are **UNACCEPTED integration proposals**, not silent changes to the SDK contract.
+The user accepted the SDK direction. The table below remains the implementation decision ledger, not a claim that every detailed MCP contract or feature is already implemented. Selected first-wave rules are recorded immediately below it.
 
 | Decision | Resolve before exposing the affected behavior |
 | --- | --- |
@@ -220,6 +220,17 @@ These are **UNACCEPTED integration proposals**, not silent changes to the SDK co
 | D9 — Discovery readiness | Usable-only versus status-bearing unavailable routes; unsupported readiness for native work; `Listed` zero-connection behavior. |
 | D10 — CI trust and publication | Independent reviewed isolation baseline versus tag-derived trust; approved candidate path; later publication authorization. |
 | D11 — Confirmation windows | Visible workspace activation versus eligible panel ownership; truthful principal/target display. |
+
+### First-wave decisions
+
+- **Resource versus custom work:** resource operations use host resource services; custom plugin tools remain for non-resource work. This wave does not implement the resource-tool generator.
+- **Explicit custom route:** connection-scoped calls carry an optional canonical `AccessRoute` field in the body, required and nonempty for that scope. A body route can select a connection without metadata; conflicting metadata is rejected. Metadata never supplies authoritative configuration.
+- **Connection-free plugin scope:** plugin-scoped calls accept neither a body route nor selected connection metadata. No default route is inferred.
+- **Native ownership:** connection-scoped handlers use the existing bound connection-context provider and registry. Missing admission support fails closed; no tools-owned client registry or fabricated resource catalog is introduced. Native-client reuse remains the adapter's responsibility through its existing typed controller.
+- **Lifecycle:** handler execution and accepted unary results remain fenced by the leased generation. A callback lease ends on return; this does not redefine asynchronous log/session ownership.
+- **Wire cutover:** migrate SDK transport and host custom-tool callers together. Do not reconstruct missing body routes from metadata as a compatibility fallback.
+- **Candidate composition:** port the MCP feature onto an isolated resource-v2 host branch, preserving the metric hook and current resource services. Keep the separately reviewed CI isolation baseline; do not import the release-tag trust replacement.
+- **Scope:** authorization/catalog generation, annotation/schema expansion, result envelopes, UI recovery, and remaining lifecycle items stay explicitly open until their implementation waves. A working candidate composition is not MCP production acceptance.
 
 Do not automatically retry writes after retirement, timeout, or post-dispatch rejection. A rejected result is not proof that a native side effect rolled back.
 
@@ -394,6 +405,38 @@ Executed centrally after source writers finished; every Go/Make command used `GO
 | Kubernetes disposable native HTTP smoke | Actual client-go GET consumed a hostile 403 response; classifier retained `FORBIDDEN` and native cause while public JSON excluded diagnostics. |
 
 Smoke source and the temporary private-classifier access hook were removed. No live cluster or MCP end-to-end pass is claimed. Full tool-schema validation, custom-tool errors, asynchronous logs, admission, discovery/generation integration, and the remaining catalog remain open. SDK acceptance, publication, and merge holds remain unchanged.
+
+## Implementation wave 2 — explicit routes and candidate composition
+
+The user accepted the SDK direction and authorized implementation. That direction-review hold is removed; production MCP acceptance and publication remain separate.
+
+| Work | Delivered |
+| --- | --- |
+| SDK custom-tool admission | [`7bd59d1`](https://github.com/omniviewdev/plugin-sdk/commit/7bd59d1) adds canonical body-route presence, both-scope validation, configured-profile binding, shared native leases, and cancellation/retirement result fences. Metadata-only connection calls no longer satisfy admission. |
+| Metadata-free RPC lifetime | Server dispatch preserves the incoming RPC context even without request-ID metadata. Real raw-gRPC cancellation/deadline regressions verify lease drain and late-result rejection. |
+| Conformance publication | [`5f45aac`](https://github.com/omniviewdev/plugin-sdk/commit/5f45aac) publishes fixture commands/receipts atomically; a pipe regression proves partial writes are not observable. Native generation assertions remain intact. |
+| Formatting | [`e48f95b`](https://github.com/omniviewdev/plugin-sdk/commit/e48f95b) contains formatter-only changes. |
+| Host candidate | [Draft PR220](https://github.com/omniviewdev/omniview/pull/220), stacked on PR192, ports the original MCP feature onto resource v2. [`45f34533`](https://github.com/omniviewdev/omniview/commit/45f34533) preserves native services, the metric hook, and independent CI review while migrating custom-tool routes and exact argument handling. |
+| Frontend integration | Regenerated bindings/events and aligned narrowed connection scopes, YAML tag types, sidebar fallback icons, and canonical editor schema types. No runtime export compatibility shim was added. |
+
+Separate implementation and review agents covered the slices and corrections. Central checks used `GOWORK=off GOFLAGS=` and a private host modfile selecting the actual SDK source. The SDK requirement committed in the host remains the original V2 baseline; it is not a published version of this new API. The existing `SDK_SOURCE` preparation path supplies the verified candidate without modifying managed worktrees or committing absolute replacements.
+
+| Executed evidence | Result |
+| --- | --- |
+| SDK full normal/race suites | Both passed: 23 tested packages, 18 without tests. |
+| SDK formatting and active lint | Passed; zero active findings. Informational audit: 1,246 findings across the same five deferred rules; no policy changed. |
+| Host full normal suite | Passed: 44 tested packages, 12 without tests. |
+| Host integration race suites | Resource, tools, relay, and settings-store packages passed. This is not a full-host race claim. |
+| Bindings/runtime/types | Warning-free Wails generation, runtime build, and host TypeScript check passed. |
+| Frontend suites | Host: 78 files / 1,124 tests. Runtime: 22 files / 288 tests using a fresh actual Go/gRPC error corpus. |
+| Real MCP/native smoke | MCP HTTP → actual host controller → SDK gRPC → registered native client → local HTTP. Both scopes computed `9007199254740993 + 1` exactly. Stopped dispatch caused no second native read; client creation/destruction occurred once. Missing bearer returned 401. |
+| Actual settings surface | Chromium rendered the real page/providers with explicitly synthetic service data and exercised Reveal/Hide without horizontal overflow. Native Wails window/event transport was not exercised. |
+
+Disposable programs, private-classifier hooks, visual harness, browser tab, and preview service were removed. The isolated candidate worktree and ignored verification corpus remain available for continued integration.
+
+**Still open:** host-issued agent authorization, consent rechecks, process/catalog observation fences, catalog-derived resource tools and results, full schema/annotation/error contracts, discovery/lifecycle hardening, five-tool Kubernetes parity/cutover, asynchronous logs ownership, native multi-window acceptance, and coordinated release/cohort pins. The relay stays disabled by default. PR21, PR192, PR218, and PR220 are not merged by this wave.
+
+The host push also reported existing default-branch dependency alerts, including one critical alert. Those are not a PR-specific scan or a remediation claim; they remain a separate security backlog.
 
 ## Inspected revisions
 

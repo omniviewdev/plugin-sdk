@@ -32,6 +32,18 @@ The utility `RegisterPlugin` helpers above return errors; check them. `RegisterR
 
 Package names such as `pkg/v1/exec` remain current utility paths. They do not mean that those calls use the removed resource-v1 contract.
 
+Connection-scoped custom tools require `tools.CallInput.Route` with an explicit,
+nonempty resource-v2 `AccessRoute.Connection`. The body route may select a
+connection without metadata; selected connection metadata, when present, must
+match. The SDK binds tools to the resource provider's sole native registry and
+replaces caller profile data with the configured connection under a generation
+lease. Unknown, unstarted, or retired connections fail closed; cancellation or
+retirement prevents a late handler result from being accepted. Opaque tools do
+not require or fabricate resource catalog pins. Plugin-scoped tools accept
+neither a route nor selected connection metadata and need no registry.
+
+Callers that previously supplied only connection metadata must migrate with the host: the SDK does not infer a missing body route. The handler still receives its admitted `PluginContext`; it does not construct a protobuf request or create a second client registry.
+
 ## Register a resource provider
 
 From [`main.go`](../examples/resource-plugin/main.go), after constructing the example's provider:
@@ -63,7 +75,7 @@ You do not register a new go-plugin service for each resource type or mutation v
 
 ## Share connection ownership
 
-When the resource provider supplies `ConnectionContextProvider`, SDK registration binds compatible utilities to that provider's connection registry. Do not create a second native-client registry just for logs, exec, or metrics.
+When the resource provider supplies `ConnectionContextProvider`, SDK registration binds compatible utilities to that provider's connection registry. Do not create a second native-client registry just for logs, exec, metrics, or custom tools.
 
 Reference-bearing utility work requires its accepted catalog observation. Body-only or opaque utility work does not need a fabricated reference or catalog pin. An explicit route still requires the selected configured connection. Accepted sessions have utility-specific lifetimes; [manage connections](connections.md) before adding these integrations.
 

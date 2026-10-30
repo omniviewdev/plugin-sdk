@@ -1,6 +1,6 @@
 # Proposed plugin-sdk versus resource specification
 
-Status: **proposal for user review, not SDK acceptance**. SDK source/test receipts do not satisfy this review gate. SDK PR21 remains draft and must not merge before review.
+Status: **SDK direction accepted by the user; MCP alignment implementation authorized**. The earlier direction-review hold is superseded. New MCP-facing contracts still require explicit decisions and verification; this acceptance does not authorize merging, tagging, releasing, or freezing the API. SDK PR21 remains draft while integration work proceeds.
 
 ## Conclusion
 

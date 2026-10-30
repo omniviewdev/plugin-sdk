@@ -3,7 +3,7 @@
 Use the Go SDK to expose resources, terminals, logs, metrics, forwarding, and tools from your backend.
 
 > [!IMPORTANT]
-> Resource v2 is an API candidate. Use this checkout for development; API acceptance and coordinated publication are still pending.
+> The SDK direction is accepted. Resource-v2/MCP alignment is still in progress; coordinated publication and final API freeze are not authorized.
 
 ## Start here
 
