@@ -368,73 +368,67 @@ func describeOperation(request any) (operationTarget, error) {
 	switch request := request.(type) {
 	case GetRequest:
 		a := request.Reference.Address
+		validationErr := ValidateGetRequest(request)
 		return operationTarget{
-				route:          request.Route,
-				provider:       a.Provider,
-				typ:            a.Type,
-				representation: request.Representation,
-				address:        &a,
-				operation:      OperationGet,
-			}, ValidateGetRequest(
-				request,
-			)
+			route:          request.Route,
+			provider:       a.Provider,
+			typ:            a.Type,
+			representation: request.Representation,
+			address:        &a,
+			operation:      OperationGet,
+		}, validationErr
 	case EnumerateRequest:
 		t := request.Target
+		validationErr := ValidateEnumerateRequest(request)
 		return operationTarget{
-				route:          t.Route,
-				provider:       t.Provider,
-				typ:            t.Type,
-				representation: t.Representation,
-				scope:          t.Scope,
-				operation:      OperationEnumerate,
-			}, ValidateEnumerateRequest(
-				request,
-			)
+			route:          t.Route,
+			provider:       t.Provider,
+			typ:            t.Type,
+			representation: t.Representation,
+			scope:          t.Scope,
+			operation:      OperationEnumerate,
+		}, validationErr
 	case NativeQueryRequest:
 		t := request.Target
+		validationErr := ValidateNativeQueryRequest(request)
 		return operationTarget{
-				route:          t.Route,
-				provider:       t.Provider,
-				typ:            t.Type,
-				representation: t.Representation,
-				scope:          t.Scope,
-				operation:      OperationNativeQuery,
-			}, ValidateNativeQueryRequest(
-				request,
-			)
+			route:          t.Route,
+			provider:       t.Provider,
+			typ:            t.Type,
+			representation: t.Representation,
+			scope:          t.Scope,
+			operation:      OperationNativeQuery,
+		}, validationErr
 	case MutationRequest:
 		a := request.Reference.Address
+		validationErr := ValidateMutationRequest(request)
 		return operationTarget{
-				route:     request.Route,
-				provider:  a.Provider,
-				typ:       a.Type,
-				address:   &a,
-				operation: mutationOperation(request.Operation),
-			}, ValidateMutationRequest(
-				request,
-			)
+			route:     request.Route,
+			provider:  a.Provider,
+			typ:       a.Type,
+			address:   &a,
+			operation: mutationOperation(request.Operation),
+		}, validationErr
 	case ActionRequest:
 		a := request.Reference.Address
+		validationErr := ValidateActionRequest(request)
 		return operationTarget{
-				route:     request.Route,
-				provider:  a.Provider,
-				typ:       a.Type,
-				address:   &a,
-				operation: OperationAction,
-			}, ValidateActionRequest(
-				request,
-			)
+			route:     request.Route,
+			provider:  a.Provider,
+			typ:       a.Type,
+			address:   &a,
+			operation: OperationAction,
+		}, validationErr
 	case ReadTarget:
+		validationErr := ValidateEnumerateRequest(EnumerateRequest{Target: request})
 		return operationTarget{
-				route:          request.Route,
-				provider:       request.Provider,
-				typ:            request.Type,
-				representation: request.Representation,
-				scope:          request.Scope,
-				operation:      OperationUpdate,
-			}, ValidateEnumerateRequest(
-				EnumerateRequest{Target: request},
-			)
+			route:          request.Route,
+			provider:       request.Provider,
+			typ:            request.Type,
+			representation: request.Representation,
+			scope:          request.Scope,
+			operation:      OperationUpdate,
+		}, validationErr
 	default:
 		return operationTarget{}, NewError("UNSUPPORTED", "Unsupported finite resource operation.")
 	}

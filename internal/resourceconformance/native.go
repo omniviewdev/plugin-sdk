@@ -51,7 +51,7 @@ const (
 // characters. Native numeric JSON remains unparsed; no float64 conversion.
 func NativeCorpus() Corpus {
 	c := Corpus{Records: slices.Concat(nativeCloudRecords(), nativeContainerRecords(), nativeHypervisorRecords())}
-	c.addIdentityOracleRecords()
+	addIdentityOracleRecords(&c)
 	c.Scenarios = slices.Concat(
 		nativeCloudScenarios(),
 		nativeContainerScenarios(),
@@ -234,7 +234,7 @@ func nativeHypervisorRecords() []Record {
 	}
 }
 
-func (c *Corpus) addIdentityOracleRecords() {
+func addIdentityOracleRecords(c *Corpus) {
 	c.Records = append(c.Records, []Record{
 		{
 			Name:      recordCloudWest,

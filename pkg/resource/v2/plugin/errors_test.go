@@ -28,6 +28,11 @@ func testErrorClass(err error) string {
 		return "TIMEOUT"
 	case codes.ResourceExhausted:
 		return "RESOURCE_LIMIT"
+	case codes.OK, codes.Unknown, codes.InvalidArgument, codes.NotFound,
+		codes.AlreadyExists, codes.PermissionDenied, codes.FailedPrecondition,
+		codes.Aborted, codes.OutOfRange, codes.Unimplemented, codes.Internal,
+		codes.Unavailable, codes.DataLoss, codes.Unauthenticated:
+		return resourcev2.ErrorCode(err)
 	}
 	return resourcev2.ErrorCode(err)
 }
