@@ -60,22 +60,30 @@ Mutation discovery now declares `create`, `mutationUpdate`, and `delete` indepen
 
 ## Evidence and limits
 
-- Independent domain comparison found C01 identity/value alignment; flagged public policy/capability choices.
-- Independent provider comparison flagged generation/pin/framing and overlay APIs as implementation-added contracts, not automatically approved specification text.
+Independent scoped reviews covered the reproduced defects, mutation contracts, responsibility extractions, export reduction, and documentation. They are not exhaustive security audits or public-API approval.
 
-The review-follow-up working tree passed SDK normal and race suites (21 tested packages each), compiling examples, and focused vet (artifact 1550); host normal tests (42 packages) and resource/invocation race tests (five packages, artifact 1554); and Kubernetes normal/race tests (11 packages each, artifact 1537). These are implementation checks, not public-contract approval.
+| Layer | Executed checks |
+| --- | --- |
+| SDK | Full normal and race suites: 21 tested packages each; compiling examples and focused vet passed (artifact 1550). After the final test-only adapter cleanup, full normal tests and five resource/metric/networker race packages passed (artifact 1579). |
+| Host | Full normal tests: 42 packages; resource/invocation race tests: five packages (artifact 1554). |
+| Kubernetes | Full normal and race suites: 11 tested packages each (artifact 1537). |
+| Frontends | Host: 76 files/1,118 tests. Kubernetes: 52 files/417 tests, including the final dashboard cutover. Runtime: 22 files/288 tests, consuming the actual Go → gRPC → host error corpus. |
 
-Earlier candidate receipts below predate the reproduced R1–R8 findings and their fixes. They are historical evidence, not proof that the current native/UI acceptance has been rerun:
+The final clean managed launch attested SDK `3a27b89`, host `d14e8be7`, Kubernetes `50902e8`, and UI `11a55a53` (artifact 1649). Build, dependencies, served source, and authentication were ready. HMR connected, but source reload remains unverified because graph watching was disabled. Later evidence-only documentation revisions do not change this exercised SDK code.
 
-- SDK08421dc: full normal/race21 test packages each; receipt artifact975. This is source/test settlement only.
-- Host Go source `09bf38f9`: all 42 normal-test packages and 11 expanded resource/invocation/utility race-test packages passed (artifact 1251). The host frontend passed 76 files/1,118 tests; the runtime passed 22 files/288 tests, including the real Go-produced C02 error corpus.
-- Kubernetes `35e2650`: native Go source `27ceda1` passed all 11 normal-test and 11 race-test packages (artifact 1336). The final frontend passed 52 files/416 tests and the existing eight-test route suite. Obsolete wording assertions were removed, not repinned.
-- The final clean managed launch attested host `0ec42cfe`, Kubernetes `35e2650`, SDK `a8416f8`, and UI `11a55a53` (artifact 1425). Build, dependencies, served source, and authentication were ready. Source reload remains unverified because this run disabled graph watching.
-- The owned kind cluster exercised native Get/enumeration, explicit cursor paging, schemas/YAML, computed red/green diffs, a four-node relationship graph, canonical linked-resource contributions, dynamic-resource fallback, scoped current-resource search, live logs, exec input/output and exit, and real TCP forwarding/Stop. Scoped search ranks one acquired page; it is not a host query engine.
-- Exact wire/body revisions agreed on a successful contextual write. A stale-incarnation attempt returned `CONFLICT`/409, preserved the draft, and left the recreated native object untouched. Malformed YAML failed locally with no native write. One earlier uninstrumented `INVALID_REQUEST` remains unexplained; no speculative error-taxonomy change was made.
-- Exec output was observed in the real terminal buffer; headless WebGL pixel rendering is not claimed. Browser-helper worker interception was isolated using an equivalent native local-only egress policy; no application workaround was added. Temporary mutation diagnostics were removed. The owned application and kind sandbox were stopped after acceptance; private evidence was retained.
-- Coordinated publication pins and this user SDK-spec review remain completion/merge gates. Native integration receipts do not approve the added public admission/framing/lifecycle contracts.
-- No production historical resource store/query/follower/timeline is claimed.
+Fresh owned-kind/native-UI checks observed:
+
+- All six dashboard workload cards opened canonical source-page tables on the final build. Smoke found the missed legacy-ID callers; the fix uses the existing encoded destination builder, not compatibility aliases.
+- Native resource enumeration and a four-node Pod relationship graph worked after the controller/provider/host extractions.
+- Monaco computed and rendered the YAML diff from `first` to `review-verified`. Native submission preserved ConfigMap UID `b9275c94-4901-418e-93bc-88cccf97474e` and advanced revision `653` to `3424`; an independent native API read confirmed the value.
+- An accepted CoreDNS TCP forward served real metrics after the initiating RPC completed. UI Stop released its listener. Generation-retirement/cancellation races have deterministic SDK regressions; this native check does not claim an additional retirement race reproduction.
+- UI Drain cordoned the owned node and evicted the probe Pod; native audit recorded status `201`. After explicitly refreshing the selected node snapshot, UI Uncordon restored scheduling and the probe rollout recovered. The eviction audit was metadata-level, so it does not prove request-body grace fields; the native-option regression covers unset grace and UID preconditions.
+
+Earlier stale-incarnation rejection, malformed-YAML rejection, live-log, exec-buffer, and paging receipts remain historical evidence in the PR discussions; they are not claimed as rerun during this follow-up. One earlier uninstrumented `INVALID_REQUEST` remains unexplained. No speculative taxonomy change or terminal WebGL pixel-rendering claim was added.
+
+The isolated application, browser, egress proxy, and owned kind cluster were stopped after acceptance. Private evidence and review workspaces remain. Source-built SDK/plugin edits were explicitly allowed for this run; profile isolation is not a sandbox, and only private synthetic credentials/configuration were supplied.
+
+User SDK-spec review, coordinated publication pins, and the explicit asynchronous log-generation ownership decision remain gates. Native receipts do not approve those contracts. No production historical store, ingestion, query engine, follower, or timeline is claimed.
 
 ## Review requested
 
