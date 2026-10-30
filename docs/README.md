@@ -57,6 +57,7 @@ Most authors should start with the guides above. Use these when working on host 
 - [Advanced resource contracts](resource-v2-contracts.md): admission, mutable ownership, utility lifetimes, and transport bounds.
 - [Provider-neutral conformance](provider-neutral-conformance.md): executable boundary coverage and its limits.
 - [Specification and acceptance review](resource-v2-spec-review.md): unresolved decisions and verification receipts.
+- [MCP integration landing plan](mcp-v2-integration-plan.md): source-linked SDK, host, and Kubernetes work catalog; not an accepted API.
 - [Implementation review](resource-v2-code-review.md): historical findings and organization rationale.
 
 These review records are not the plugin-writing tutorial. Known constraints are called out at the relevant guide or reference section.
