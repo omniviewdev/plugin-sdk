@@ -85,6 +85,61 @@ The isolated application, browser, egress proxy, and owned kind cluster were sto
 
 User SDK-spec review, coordinated publication pins, and the explicit asynchronous log-generation ownership decision remain gates. Native receipts do not approve those contracts. No production historical store, ingestion, query engine, follower, or timeline is claimed.
 
+## Lint cleanup verification — 2026-10-30
+
+Verified SDK source: `c0b3e25` in the cleanup worktree. Documentation-only updates after this source do not change the exercised code. The established baseline was 2,496 active findings, including 777 documentation findings. Completed cleanup waves reported 73, then five, then zero active findings. Configuration, thresholds, handwritten-code coverage, managed module selection, and generated protobuf Go were not weakened or rewritten.
+
+Formatting is isolated in commits `55dd5f6`, `d202273`, and `c0b3e25`; declaration documentation, focused correctness fixes, and package-owned structural cleanup have separate reviewable commits. Nine implementation owners used nonoverlapping package/file boundaries. Separate reviewers inspected every slice and subsequent fixes. Final integration review found no evidence-backed integration defect within its static scope; it was not an exhaustive security audit.
+
+All Go and Make commands below ran with `GOWORK=off GOFLAGS=`.
+
+| Executed check | Result |
+| --- | --- |
+| `make fmt` and `make fmt-check` | Passed; final formatting check emitted no diff. |
+| `make lint-report` | Passed, zero active findings. |
+| `make lint-audit` | Completed, 1,224 informational findings from only the five deferred rules. |
+| `go test ./... -count=1` | Passed: 22 tested packages, 16 without tests. |
+| `go test -race ./... -count=1` | Passed: 22 tested packages, 16 without tests. |
+| Focused behavioral regressions across ten packages | Passed: framing width boundaries, protocol overflow, invalid context entries, unsigned setting overflow, descriptor cleanup, readiness counters, invalid RPC dispatch types, and wrapped stream completion. |
+| Disposable-child conformance command below | Passed: real child startup/exit, native profiles, gRPC finite reads, authority preservation, isolation, cancellation, and generation fences. |
+| Standalone `go run ./.tools/cleanup-smoke` | Passed: actual local HTTP acquisition through Controller, exact signed/unsigned values and negative zero, stopped-dispatch rejection, one native read and one client destruction. Throwaway source removed afterward. |
+
+The focused child-process command was:
+
+```sh
+GOWORK=off GOFLAGS= go test ./internal/resourceconformance \
+  -run 'TestCurrentSDK(NativeBoundary|IndependentProfiles|HostIssuedAuthority|GenerationFence|ChildIsolation)$' \
+  -count=1 -v
+```
+
+Reports and their regenerated summary remain ignored under `.tools/`. The informational audit contains `paralleltest` 574, `protogetter` 518, `testpackage` 80, `nonamedreturns` 29, and `funcorder` 23 findings. These rules were not mechanically enforced.
+
+### Narrow suppressions retained by cleanup
+
+Each new directive names its linter and explains the local contract. No file-wide or package-wide blanket suppression was added.
+
+| Rule | Owning boundary and reason |
+| --- | --- |
+| `gosec` G115 | Catalog framing casts follow shared pre-allocation and adjacent unsigned-16-bit bounds; signed protobuf varints require two's-complement reinterpretation; metric enum casts preserve the existing documented `int32` ABI. |
+| `gosec` G118 | Controller cancellation transfers to `Close`; generation cancellation transfers to `stopSlot`. Constructor return is not the end of either lifetime. |
+| `gosec` G703 | The host-selected workspace manifest is canonical and absolute but intentionally need not live beneath SDK state storage. |
+| `gochecknoglobals` | Process-wide logger/enricher registration and existing exported binding-value slices retain their established APIs. |
+| `gochecknoinits` | Strict gRPC codec registration and request-context log enrichment must precede client/server or logger use. |
+| `nilnil` | Optional health/watch/session absence, disabled telemetry, an unset settings stub, and deliberately broken or unreachable test providers retain distinct nil-result semantics. |
+| `recvcheck` | Settings cloning, exec JSON mutation, and network value/pointer interface membership retain their existing receiver contracts. |
+| `musttag` | Connection update/overlay serialization retains the established nested `types.Connection` JSON contract. |
+| `iface` | Both exported network provider interfaces retain their exact method membership and source compatibility. |
+| `errcheck` | Deferred producer joins still wait after cancellation; the already-selected terminal stream error owns the return value. |
+| `fatcontext` | Catalog tests deliberately accumulate independently qualified observations, including aggregate-limit rejection. |
+| `usetesting` | Disposable child sockets use short temporary roots to stay within Unix-domain path limits; cleanup still removes them. |
+| `revive`, `staticcheck` | Required gRPC argument order and existing exported fixture/spelling contracts remain unchanged. |
+
+Pre-existing binding-table, zero-setting, and closed-channel test-guard directives remain local; they are not new policy exclusions. Boundary changes and the explicit unused command-interface export reduction are recorded in [cleanup contract decisions](resource-v2-api.md#cleanup-contract-decisions).
+
+The first central normal run exposed two incorrect test assignments; those were fixed before the final normal/race passes. Independent review also caught a benchmark compile error, a legitimate stopped-server teardown race, and missing pre-allocation framing validation; each finding was corrected and re-reviewed. Formatter nonconvergence in a multi-value return was fixed in source without changing formatter policy.
+
+This receipt covers SDK-local checks, not a new managed-app, browser, Kubernetes cluster, or downstream build run. User API/specification review, coordinated publication pins, and asynchronous log-generation ownership remain pending. PR21 stays draft; issue12 stays open. No merge, release, tag, API freeze, or plugin-sdk completion is claimed.
+
 ## Review requested
 
 Before calling plugin-sdk done: confirm which added contracts should remain public, whether admission should be consolidated, and which transport/lifecycle details should stay internal. The existing implementation is a reviewable proposal—not a settled API merely because tests passed.

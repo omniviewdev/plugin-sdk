@@ -13,6 +13,7 @@
 - [Utility and stream lifetime](#utility-and-stream-lifetime)
 - [Results and errors](#results-and-errors)
 - [Safety ceilings and exclusions](#safety-ceilings-and-exclusions)
+- [Cleanup contract decisions](#cleanup-contract-decisions)
 
 ## Responsibilities and source map
 
@@ -141,3 +142,17 @@ Candidate policy `omniview.resource-wire-policy.v1` bounds frames at 32 MiB, bod
 These are candidate safety ceilings, not latency promises, planner budgets, or approved product policy. Hosts may lower effective limits. The separate predicate/projection policy remains 64 KiB. `ValueWireSize` and `RecordWireSize` support bounded source construction without allocating transport messages.
 
 History ingestion/storage, search, timeline, universal planning, schema normalization (P07), and strong P05 source continuity are excluded. Advisory updates never claim replay, gap-free delivery, or atomic snapshot/live handoff. Domain documentation does not turn excluded engines into implicit requirements or completion claims.
+
+## Cleanup contract decisions
+
+The lint cleanup preserves the candidate resource API and its pending acceptance status. It does not consolidate admission contexts, change asynchronous log-generation ownership, or approve transport ceilings. The following boundary changes are explicit:
+
+- SDK lifecycle registration rejects a positive protocol version above `math.MaxInt32` by panicking before registration, rather than truncating its wire value. Nonpositive configured versions still select the current protocol default.
+- Settings `GetIntSlice` returns `ErrSettingTypeMismatch` when a `uint64` element exceeds the platform's maximum `int`; it no longer wraps that element into a negative value.
+- Internal catalog observation sizing rejects counts and individual fields that cannot fit the framing format's unsigned 16-bit lengths, even if a caller supplies wider custom limits. Rejection occurs before frame allocation. The normal resource-domain limits are unchanged.
+- Fake-terminal cleanup and failed real-terminal construction attempt every owned descriptor close and return joined failures. An accepted real terminal still closes both descriptors and returns the first failure. `FindFreeTCPPort` reports failure to close its temporary listener instead of claiming that the selected port was released.
+- Stream completion recognizes wrapped `io.EOF`. Invalid internal RPC dispatch types return classified errors rather than unchecked assertion panics; this does not relax wire or domain admission.
+
+The unused `command.ProviderImpl` export was removed after reference and managed-consumer checks; its method now belongs directly to `command.Provider`. This is an explicit export reduction in the API candidate, not an approved compatibility guarantee. Both network provider interfaces remain exported with their existing method sets.
+
+Metric enum adapters retain their existing integer-to-`int32` conversion: unknown values within the wire range survive, and wider integers truncate. Cleanup does not claim that metadata validation rejects unknown enum values. Successful absence remains distinct from an empty health result or watch summary; disabled telemetry still returns `(nil, nil)`.
