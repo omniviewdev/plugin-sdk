@@ -15,6 +15,7 @@ const (
 )
 
 // ApplyConnectionOverlay replaces host intent; an empty overlay restores native discovery.
+//
 //nolint:musttag // Nested types.Connection retains its established JSON field names.
 func (c *Client) ApplyConnectionOverlay(ctx context.Context, overlay resourcev2.ConnectionOverlay) error {
 	if err := resourcev2.ValidateConnectionOverlay(overlay); err != nil {
