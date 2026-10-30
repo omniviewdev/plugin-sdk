@@ -1,10 +1,19 @@
 # Resource v2 implementation review
 
-## Verdict
+## Current status and historical verdict
 
-**Do not merge yet.** Eight behavioral defects were reproduced during this review. The mutation capability contract also needs reconciliation with the accepted foundation. Fix those defects, settle the public API boundary, and then perform focused, behavior-preserving organization changes before freezing the new major.
+The user accepted the SDK direction and authorized MCP alignment. The current
+author-facing contracts are documented in [the API reference](resource-v2-api.md),
+[custom tools guide](tools.md), and [capability profile](capabilities.md).
+Acceptance is not merge, release, tag, publication, API-freeze, or SDK-completion
+approval.
 
-This review does not approve the implementation-added admission, lifecycle, overlay, or transport policy contracts. The linked `resource-v2-spec-review.md` remains a proposal. Passing native checks do not replace API review.
+The findings below are a historical review of the explicitly identified cohort,
+not a statement that every reproduced defect remains in current source. The
+original verdict was to hold merge, reconcile mutation capabilities, fix the
+eight reproduced defects, and review admission/lifecycle/transport choices.
+Keep the dated evidence and original recommendations distinct from the current
+contracts recorded in [the specification review](resource-v2-spec-review.md#implemented-candidate-contract-choices).
 
 ## Scope and evidence
 
@@ -268,4 +277,4 @@ Existing suites passed despite these uncovered behaviors. No fixes were applied 
 - [Kubernetes review](https://github.com/omniviewdev/omniview-plugin-kubernetes/pull/43#pullrequestreview-5706086314): two targeted inline comments plus organization guidance.
 - [Host review](https://github.com/omniviewdev/omniview/pull/192#pullrequestreview-5706086527): focused organization and integration guidance, without speculative bug annotations.
 
-Reviews were posted as comments, not approval or formal change-request events. The recommendation remains to hold merge. Temporary reproduction programs were removed after their observations were recorded.
+These reviews were posted as comments, not approval or formal change-request events. The historical recommendation was to hold merge. Temporary reproduction programs were removed after their observations were recorded. Subsequent SDK direction acceptance does not itself authorize merge or release.

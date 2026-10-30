@@ -4,7 +4,7 @@
 
 [Documentation home](README.md) · [Quickstart](quickstart.md) · [Resource tasks](resources.md) · [Connections](connections.md) · [Migration](sdk-v1-v2-overview.md)
 
-Use this page to find interfaces, request fields, capabilities, values, and errors. Use [advanced contracts](resource-v2-contracts.md) for admission edge cases, ownership, limits, and pending decisions.
+Use this page to find the implemented candidate interfaces, request fields, capabilities, values, and errors. SDK direction acceptance does not authorize merge, release, tag, or API freeze. Use [advanced contracts](resource-v2-contracts.md) for admission edge cases, ownership, limits, and historical design rationale.
 
 ## Responsibilities and source map
 
@@ -75,7 +75,7 @@ Support requires both a positive, matching scoped catalog capability and an impl
 | `OperationAction` (`action`) | `Actioner` or `StreamingActioner` | `Registration.Action` for finite actions | `ActionRequest` → `Value` or action events |
 | `OperationUpdate` (`update`) | `BestEffortUpdateProvider` | `Registration.Watch` | `ReadTarget` → advisory events |
 
-Create, mutation update, and delete are independent. `OperationUpdate` never admits a write. Actions also need action descriptors.
+Create, mutation update, and delete are independent. `OperationUpdate` never admits a write. Discovered actions also need action descriptors; action discovery remains optional for native callers.
 
 ### Controller registration lookup
 
@@ -91,6 +91,7 @@ Create, mutation update, and delete are independent. `OperationUpdate` never adm
 | `Registration.Connection` | Restrict to one explicit route; empty permits any explicitly supplied route |
 | `Registration.Scope` | Optional additional scope restriction; nil does not bypass catalog admission |
 | `Registration.SyncPolicy` | Advisory startup policy; not finite-operation support |
+| `Registration.Actions` | Optional finite-action descriptors; when supplied, undeclared action names are rejected |
 
 Overlapping registrations for the same operation fail at dispatch. Keep registration scopes and lifecycle configuration immutable after construction.
 
@@ -129,6 +130,12 @@ Pins are observations, not permissions. Do not replace a stale accepted pin with
 
 Cross-route relationships need independently accepted target observations. Qualified observations override defaults; duplicates fail closed. See [full pin rules](resource-v2-contracts.md#route-qualified-admission).
 
+The controller retains its configured native-generation lease through admitted
+work and rejects late results after cancellation or retirement. An advertised
+catalog/descriptor observation is not replaced with a fresh one to make a stale
+request succeed. These fences are not rollback guarantees: a native side effect
+may have begun before cancellation or retirement is observed.
+
 ### Scope lookup
 
 | Shape | Meaning |
@@ -153,9 +160,48 @@ All types below live in [domain.go](../pkg/resource/v2/domain.go). Request conta
 | `EnumerateRequest` | `Target`, `PageSize`, optional source `Cursor` |
 | `NativeQueryRequest` | `Target`, `Language`, typed `Query`, `PageSize`, optional `Cursor` |
 | `MutationRequest` | `Route`, `Reference`, `Operation`, typed `Input`, optional native `ExpectedRevision` |
-| `ActionRequest` | `Route`, `Reference`, action name `Action`, typed `Input` |
+| `ActionRequest` | `Route`, exactly one of `Reference` or `TypeTarget`, action name `Action`, typed `Input` |
 
 `ExpectedRevision` is an optimistic-write observation, not a catalog pin. Canonical reads require an explicit representation. A host may resolve omitted UI selection only through the catalog's explicit `DefaultRepresentation`.
+
+### Native query discovery and model representations
+
+`ResourceType.NativeQueries` lists `NativeQueryDescriptor` values with a `Language`, optional author-facing `Description`, and an object-root `InputSchema`. This metadata describes the provider's existing native-query operation; it does not add a query engine or imply enumeration support. Keep the independent `OperationNativeQuery` capability and callback. When descriptors are present, admission rejects undeclared languages and validates the query against the declared schema. An omitted descriptor list preserves an opaque provider-native query contract.
+
+```go
+descriptor.NativeQueries = []resourcev2.NativeQueryDescriptor{{
+    Language: "labels.v1",
+    Description: "Select objects using the provider's label expression syntax.",
+    InputSchema: resourcev2.Schema{
+        Properties: map[string]resourcev2.SchemaProperty{
+            "selector": {Type: resourcev2.SchemaString},
+        },
+        Required: []string{"selector"},
+    },
+}}
+```
+
+`ResourceType.ModelRepresentation` optionally names a declared representation for model consumers. It does not change `DefaultRepresentation`, which continues to serve existing UI selection. Both fields must reference declared IDs. A type-level hint avoids adding purpose labels to every representation or hard-coding provider-specific projections in the host. Neither hint grants capability or changes record coverage.
+
+### Action targets and schemas
+
+Instance actions use `ActionRequest.Reference`. Type actions leave `Reference` zero-valued and supply `TypeTarget: &resourcev2.TypeActionTarget{Provider: provider, Authority: authority, Type: typ, Scope: scope}`. The route remains explicit in both cases. Do not fabricate an object ID for a type action. Admission validates the type target's complete query scope against catalog dimensions and independently advertised action capability.
+
+Controller authors describe actions with `Registration.Actions`; direct providers optionally implement `ActionCatalog.GetActions`. When supplied, descriptors constrain the target, lane, input, and output. `Streaming: false` admits only the unary lane; `Streaming: true` requires the separate streaming interface and lane. Do not advertise streaming when only a unary callback exists. A nil registration descriptor list or absent optional discovery preserves native action dispatch without claiming schema validation; an explicitly empty descriptor list advertises no actions. MCP consumers omit actions without discovery metadata.
+
+`ActionRequest.ExpectedDescriptor` optionally retains the immutable advertised descriptor through transport. Model-generated calls supply it so changed action metadata cannot inherit earlier consent. Before native execution the selected descriptor must match; a changed or missing declaration returns `RESET_REQUIRED` and requires rediscovery, never an automatic write retry. Invalid present descriptors return `INVALID_REQUEST`. Nil means no advertised expectation, not permission or a schema claim.
+
+Action discovery preserves nil (unknown metadata) versus a nonnil empty list (explicitly no advertised actions) across transport. Controller registration, discovery, and resolution own independent copies of nested ancillary schemas, so later caller mutations cannot change an accepted descriptor observation.
+
+Disjoint scoped registrations may reuse an action ID with identical descriptors; route/type discovery emits it once. If descriptors for that ID differ, unscoped discovery omits that ID rather than advertising a wider schema. Request admission still resolves the exact scoped controller registration and validates its descriptor.
+
+This is a transport discovery limitation: action discovery accepts only route and type, not query scope. Ambiguous scoped IDs are therefore not remotely discoverable or dispatchable through catalog-driven transport consumers. Direct controller callers can still dispatch an explicit scoped target and receive validation against its selected registration. Use distinct action IDs or identical descriptors when those actions must be exposed remotely.
+
+Ancillary `Schema` is deliberately an object-root subset, not full JSON Schema. It supports property types, required properties, string enums, numeric minimum/maximum, and nested object properties/required lists. Array item constraints and other undeclared constraints are unsupported. Declarations reject unknown fields and invalid combinations rather than dropping assertions. Input and output validation preserves canonical `Value` kinds and exact integers. Defaults are rejected and never applied; no coercion occurs. Nil action schemas mean no supplied constraint claim, not successful schema validation.
+
+Numeric bounds use finite Go `float64` values. JSON declarations must express those bounds exactly; declarations requiring rounding are rejected rather than silently changing a constraint. Canonical integer inputs are compared against the exact declared binary bound without conversion to floating point.
+
+Relationship bindings may include an explicit `any` query-only dimension absent from target identity. A restricted query-only dimension cannot be proven from identity alone and remains rejected.
 
 | Result | Required meaning |
 | --- | --- |
@@ -289,6 +335,27 @@ Negotiate remote features through [`FeatureNegotiator`](../pkg/resource/v2/featu
 
 Framework owns stream channels and completion. Send events and return; never close framework-owned channels. See [stream lifetime contracts](resource-v2-contracts.md#utility-and-stream-lifetime).
 
+### Resource log-session ownership
+
+Use the existing logs capability's `ResourceSessionProvider.CreateResourceSession`,
+not a second client registry or custom resource-log tool. Canonical resource data
+stays a `Value`; supplied references and routes are validated actual bindings,
+not fabricated prerequisites. An explicit route must match the selected
+connection metadata; absent metadata does not grant a connection or authority.
+
+`CreateSessionOptions.SessionID` is an optional caller-chosen UUID for acceptance
+and cleanup correlation. It grants no authority and does not make creation
+idempotent. If an owner supplies an ID, it must close that ID after a failed or
+lost acceptance response rather than retrying creation blindly.
+
+The returned session is an acceptance receipt, not native readiness. Admission
+inherits creation cancellation; once accepted, producer lifetime is independent
+of that initiating RPC. Close, shutdown, or generation retirement cancels the
+session and fences late output. The SDK retains the existing native-generation
+lease until every native producer actually exits; cancellation alone is not
+evidence of drain or permission to destroy an in-use client. Handlers must honor
+their accepted context and close native readers so draining can finish.
+
 ## Export inventory
 
 The [advanced export inventory](resource-v2-contracts.md#export-inventory) separates provider, host, utility, and transport audiences. Transport framing is not a provider-author API.
@@ -298,4 +365,4 @@ The [advanced export inventory](resource-v2-contracts.md#export-inventory) separ
 - [Add a resource operation](resources.md).
 - [Own a native connection lifecycle](connections.md).
 - [Migrate an existing provider](sdk-v1-v2-overview.md).
-- Look up [concurrency and ownership](resource-v2-contracts.md#concurrency-and-ownership), [safety ceilings](resource-v2-contracts.md#safety-ceilings-and-exclusions), or [pending boundary decisions](resource-v2-contracts.md#cleanup-contract-decisions).
+- Look up [concurrency and ownership](resource-v2-contracts.md#concurrency-and-ownership), [safety ceilings](resource-v2-contracts.md#safety-ceilings-and-exclusions), or [recorded boundary decisions](resource-v2-contracts.md#cleanup-contract-decisions).

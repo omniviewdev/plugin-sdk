@@ -3,7 +3,7 @@
 Use the Go SDK to expose resources, terminals, logs, metrics, forwarding, and tools from your backend.
 
 > [!IMPORTANT]
-> The SDK direction is accepted. Resource-v2/MCP alignment is still in progress; coordinated publication and final API freeze are not authorized.
+> The SDK direction is accepted, and the guides describe the implemented candidate contracts. This is not merge, release, tag, coordinated publication, API-freeze, or SDK-completion approval.
 
 ## Start here
 
@@ -17,6 +17,7 @@ Create a read-only notes plugin, run it locally, and see an exact-value resource
 | --- | --- |
 | Choose which SDK capabilities my plugin exposes | [Plugin anatomy and capabilities](capabilities.md) |
 | Add a resource type, point reads, or source pages | [Expose resources](resources.md) |
+| Add a schema-validated, non-resource tool | [Expose a custom tool](tools.md) |
 | Open native clients and handle connection shutdown | [Manage connections](connections.md) |
 | Look up interfaces, request types, and return contracts | [Resource API reference](resource-v2-api.md) |
 | Move an existing resource plugin to v2 | [Migrate from resource v1](sdk-v1-v2-overview.md) |
@@ -56,8 +57,8 @@ Most authors should start with the guides above. Use these when working on host 
 
 - [Advanced resource contracts](resource-v2-contracts.md): admission, mutable ownership, utility lifetimes, and transport bounds.
 - [Provider-neutral conformance](provider-neutral-conformance.md): executable boundary coverage and its limits.
-- [Specification and acceptance review](resource-v2-spec-review.md): unresolved decisions and verification receipts.
-- [MCP integration landing plan](mcp-v2-integration-plan.md): source-linked SDK, host, and Kubernetes work catalog; not an accepted API.
+- [Specification and acceptance review](resource-v2-spec-review.md): current contract choices, historical review context, and dated verification receipts.
+- [MCP integration landing plan](mcp-v2-integration-plan.md): source-linked SDK, host, and Kubernetes work catalog and evidence; not release approval.
 - [Implementation review](resource-v2-code-review.md): historical findings and organization rationale.
 
 These review records are not the plugin-writing tutorial. Known constraints are called out at the relevant guide or reference section.

@@ -44,6 +44,56 @@ neither a route nor selected connection metadata and need no registry.
 
 Callers that previously supplied only connection metadata must migrate with the host: the SDK does not infer a missing body route. The handler still receives its admitted `PluginContext`; it does not construct a protobuf request or create a second client registry.
 
+Custom tools use only the `omniview.sdk.tools.v2` RPC namespace. Discovery and
+calls require contract version 2; there is no legacy namespace or metadata-route
+fallback. The SDK client negotiates discovery before dispatching a call.
+
+Tool schemas use JSON Schema 2020-12. Registration validates declarations;
+arguments are validated before native connection admission or handler work, and
+declared structured outputs are validated before success. Numbers remain exact
+JSON numbers, and duplicate JSON members are rejected recursively. References
+must be local fragments. Other dialects, resource `$id` declarations, and all
+`format` keywords are rejected; express supported assertions with explicit
+constraints. Schema defaults and coercion are never applied. External reference
+loading is disabled.
+Input and declared output schemas require an object root. Structured content,
+when present, must be a JSON object even without an output schema.
+
+Tools accept a bounded JSON Schema 2020-12 profile, not arbitrary recursive
+schemas. Static local JSON-pointer and anchor references remain supported;
+cyclic references and dynamic/legacy recursive references or anchors are rejected.
+Legacy `dependencies`, `definitions`, `additionalItems`, and tuple-form `items`
+are rejected; use `dependentRequired`, `dependentSchemas`, `$defs`, and
+`prefixItems`. Preflight counts
+expanded static schema edges (including unused definitions) and declaration
+nodes before compiling. Their combined cost must not exceed 10,000. Before
+validation, this cost multiplied by the square of the instance node count must
+not exceed 1,000,000; the conservative square covers pairwise assertions such as
+`uniqueItems`. Unsupported work is rejected, never silently skipped.
+
+Each schema or JSON value is limited to 1 MiB, 10,000 value nodes, and nesting
+depth 128. Numeric tokens are limited to 4,096 characters and exponent magnitude
+4,096. Exact rational parsing must succeed before schema arithmetic; no float64
+conversion, rounding, or coercion occurs. These limits apply to declaration data
+and structured results as well as arguments.
+Count assertions (`minLength`, `maxLength`, `minItems`, `maxItems`,
+`minProperties`, `maxProperties`, `minContains`, `maxContains`) must be exact
+nonnegative integers representable by the runtime's platform `int`; larger
+declarations are rejected before compilation rather than overflowing.
+
+Annotation fields are optional `*bool` values. Use `Annotations.Resolve()` for
+effective MCP hints: read-only false, destructive true, idempotent false, and
+open-world true. Explicit false remains false. These hints never grant access.
+
+Handler errors and `IsError` results expose only a fixed safe message and a
+reviewed `ErrorCode`: `EXECUTION_FAILED`, `UNAVAILABLE`, or `PERMISSION_DENIED`.
+Unknown codes become `EXECUTION_FAILED`. Raw error text, failure content, and
+failure structured content never cross the tools result boundary. Keep diagnostic
+details in local logs, not model-facing content.
+Cancellation and deadline failures retain transport error semantics rather than
+becoming successful RPCs containing tool failures. Reviewed unavailable and
+permission-denied handler errors retain their safe classification.
+
 ## Register a resource provider
 
 From [`main.go`](../examples/resource-plugin/main.go), after constructing the example's provider:
@@ -79,8 +129,15 @@ When the resource provider supplies `ConnectionContextProvider`, SDK registratio
 
 Reference-bearing utility work requires its accepted catalog observation. Body-only or opaque utility work does not need a fabricated reference or catalog pin. An explicit route still requires the selected configured connection. Accepted sessions have utility-specific lifetimes; [manage connections](connections.md) before adding these integrations.
 
+Resource logs use the existing session engine. An optional UUID correlates
+acceptance with cleanup; it is not an authority token, readiness acknowledgement,
+or idempotency key. Accepted native producers retain the shared generation lease
+until they actually drain, independently of the creation RPC. See [resource
+log-session ownership](resource-v2-api.md#resource-log-session-ownership).
+
 ## Next
 
 - [Expose a resource type and implement Get](resources.md).
+- [Expose a non-resource custom tool](tools.md).
 - [Manage native clients](connections.md).
 - [Look up the resource API surface](resource-v2-api.md).

@@ -1,12 +1,32 @@
-# Proposed plugin-sdk versus resource specification
+# Plugin SDK versus resource specification
 
-Status: **SDK direction accepted by the user; MCP alignment implementation authorized**. The earlier direction-review hold is superseded. New MCP-facing contracts still require explicit decisions and verification; this acceptance does not authorize merging, tagging, releasing, or freezing the API. SDK PR21 remains draft while integration work proceeds.
+Status: **SDK direction accepted by the user; MCP alignment implementation authorized**. The earlier direction-review hold is superseded. The implemented candidate choices below describe current author contracts, not merge, release, tag, coordinated-publication, API-freeze, or SDK-completion approval. Dated receipts remain limited to the checks they explicitly record.
 
 ## Conclusion
 
 The canonical identity/value model matches C01. The replacement public SDK is broader than that mapping. Most complexity accumulated around generation admission, connection lifecycle, and resource-bearing utilities. Those are concrete safety problems, but their current public API shape was chosen during implementation rather than prescribed by the resource specification.
 
-The requested code-review follow-up keeps transport framing internal, reduces unused adapter exports, separates controller/transport/provider responsibilities, and documents the candidate API in [the architecture guide](resource-v2-api.md). The canonical model and optional operations remain. Admission consolidation, lifecycle/overlay policy, utility scope, and transport ceilings still require explicit review before freezing the SDK.
+The code-review follow-up keeps transport framing internal, reduces unused adapter exports, separates controller/transport/provider responsibilities, and documents the implemented candidate API in [the API reference](resource-v2-api.md). The canonical model and independently optional operations remain. The historical review concerns below explain design origins; they do not reopen the accepted SDK direction or imply an API freeze.
+
+## Implemented candidate contract choices
+
+| Boundary | Author contract |
+| --- | --- |
+| Custom tools wire | Only `omniview.sdk.tools.v2`, with explicit contract version 2 discovery before calls. No old-wire dispatch or metadata-route fallback; unchanged Go package paths are not the wire version. |
+| Tool schemas and exact JSON | Bounded JSON Schema 2020-12, object roots, static local refs, exact numeric admission, recursive duplicate rejection, no defaults/coercion/network. Input precedes native work; declared structured output precedes success. See the complete [bounded profile](capabilities.md#choose-capabilities), including rejected legacy applicators and finite work/count limits. |
+| Tool hints and failures | Optional annotation bools preserve absent versus false; `Resolve()` defaults are false/true/false/true. Hints grant nothing. Reviewed execution/unavailable/permission-denied codes have fixed presentation; raw diagnostics stay local. Cancellation/deadline retain transport semantics. |
+| Native query discovery | `ResourceType.NativeQueries` describes existing native-query languages and ancillary input schemas; it does not create a query engine or imply enumeration. Omitted metadata leaves the opaque native contract without a schema claim. |
+| Model representations | `ModelRepresentation` optionally names a declared representation; it does not replace the UI's `DefaultRepresentation` or change coverage/capability. |
+| Resource actions | Exactly one instance reference or honest `TypeTarget`; no fabricated object ID. Optional `ExpectedDescriptor` retains the advertised action through admission and rejects changed/missing declarations with `RESET_REQUIRED`, not a silent fresh pin. |
+| Optional action discovery | Nil means unknown metadata; nonnil empty means explicitly no advertised actions. Route/type discovery cannot express conflicting scope-specific descriptors: ambiguous IDs are omitted and cannot be remotely dispatched through catalog-driven consumers. Direct scoped controller dispatch remains available. |
+| Native lifetime fences | Existing configured-generation leases and retained observations fence cancellation/retirement and late results. These are not native rollback or automatic write-retry guarantees. |
+| Resource logs | The existing logs engine accepts an optional UUID correlation ID, not an idempotency or authority token. Acceptance is not readiness. Accepted producers outlive creation RPC cancellation and retain the native-generation lease until actual drain; close/retirement/shutdown cancels and fences output. Lost-response owners close their chosen ID. |
+
+These are implementation choices within the accepted direction. Resource
+ancillary `Schema` remains an honestly restricted object-root subset, distinct
+from custom tools' bounded JSON Schema profile. See [resource metadata/actions](resource-v2-api.md#native-query-discovery-and-model-representations)
+and [resource log ownership](resource-v2-api.md#resource-log-session-ownership).
+
 
 ## Specification baseline
 
@@ -19,7 +39,7 @@ Paths are relative to the managed cohort. `S` is `plugin-sdk`; `H` is `omniview`
 
 ## Mapping and scope
 
-|Area|Specification|Current proposal|Assessment|
+|Area|Specification|Implemented mapping|Assessment|
 |---|---|---|---|
 |Identity versus access|Connection is a route, not identity.|ResourceAddress(provider,authority,type,scope,id), AccessRoute(connection), optional incarnation.|Matches C01; keep separate. See `ResourceAddress`, `ResourceReference`, and `AccessRoute` in `domain.go`.|
 |Authority|Host assigns canonical authority from provider evidence.|Per-type NativeAuthorityHint; host assignment, retarget/restart fencing, conservative unknown continuity.|Separation matches; per-type hint shape and restart policy are added design choices. See `NativeAuthorityHint` in `domain.go`.|
@@ -29,12 +49,12 @@ Paths are relative to the managed cohort. `S` is `plugin-sdk`; `H` is `omniview`
 |Provider operations|Catalog does not imply universal CRUD, enumeration, query, or watch.|Catalog-only Provider plus independently optional Getter/Enumerator/NativeQuerier/Mutator/Actioner and ancillary traits.|Matches accepted direction. Controller/options API is an implementation design choice. See provider traits in `domain.go` and construction in `provider_options.go`.|
 |Capabilities|Support differs from authorization/planning.|Positive resource operation/scope declarations plus separately negotiated transport traits.|Useful split; not a complete planner capability language. TS now distinguishes ResourceCapability and PluginCapability.|
 |Source pages/updates|Native acquisition is not final host query membership or result transport.|Finite SourcePage and advisory bestEffort updates.|Correct boundary. No host planner, durable source coordinator, or result lease engine is supplied.|
-|Budgets|Query-profile reference policy has smaller predicate/value limits.|SDK candidate transport: 32MiB frame,16MiB body,depth64,262144 nodes.|Different policy layers, not one interchangeable budget. Explicitly approve transport bounds; P13 still owes lower query policy enforcement. S/pkg/resource/v2/validation.go14–30 versus specification§9.|
+|Budgets|Query-profile reference policy has smaller predicate/value limits.|SDK resource transport: 32MiB frame,16MiB body,depth64,262144 nodes.|Distinct resource transport and host query-policy layers, not interchangeable budgets or custom-tool limits. See S/pkg/resource/v2/validation.go and the bounded tools profile.|
 
-Mutation discovery now declares `create`, `mutationUpdate`, and `delete` independently, each with its own scope. `update` remains exclusively advisory watch delivery. One optional `Mutator` receives request verbs `create`, `update`, or `delete`; admission maps these to their exact catalog operations before calling native code. Missing declarations return `UNSUPPORTED`; neither a `Mutator` implementation nor a different supported verb implies support. These are positive scope-qualified declarations, not authorization or a complete planner contract. Protobuf transports the same operation strings without a coarse `mutation` alias. This implementation change does not approve the public API.
+Mutation discovery declares `create`, `mutationUpdate`, and `delete` independently, each with its own scope. `update` remains exclusively advisory watch delivery. One optional `Mutator` receives request verbs `create`, `update`, or `delete`; admission maps these to their exact catalog operations before calling native code. Missing declarations return `UNSUPPORTED`; neither a `Mutator` implementation nor a different supported verb implies support. These are positive scope-qualified declarations, not authorization or a complete planner contract. Protobuf transports the same operation strings without a coarse `mutation` alias. This records the implemented contract, not publication or API-freeze approval.
 
 
-## Added API surface that deserves explicit review
+## Historical added-API review questions
 
 |Current addition|Problem it solves|Concern / simpler proposed direction|
 |---|---|---|
@@ -54,7 +74,7 @@ Mutation discovery now declares `create`, `mutationUpdate`, and `delete` indepen
 
 **Completed organization:** one controller/registry with focused lifecycle, admission, dispatch, and inventory files; an explicit ancillary router with private handlers; cohesive Helm/native provider files; separate host lookup/enumeration views; private framing; reduced adapter exports; compiling provider examples and declaration documentation.
 
-**Still requires review before SDK completion:** whether to replace default-plus-qualified pins with one route-qualified admission context; public epoch framing versus explicit generation observations; lifecycle/overlay scope; transport ceilings; the remaining integration helper surface; and [asynchronous log-session generation ownership](https://github.com/omniviewdev/plugin-sdk/issues/23). These decisions remain separate from passing implementation checks.
+**Remaining release-boundary review:** final public export inventory, whether future admission consolidation is warranted, and coordinated publication/cohort decisions. The original asynchronous log-session ownership concern is addressed by the accepted-session/actual-drain contract above; it is not a reason to detach producers from the existing registry. Direction acceptance and implementation checks do not themselves authorize SDK completion or release.
 
 **Do not restore:** old Find/mandatory-CRUD stacks, GVK identity aliases, resource fallback through legacy utility RPCs, caller-supplied authority/grants, fake stopped-state catalogs, or compatibility shims.
 
@@ -138,7 +158,7 @@ Pre-existing binding-table, zero-setting, and closed-channel test-guard directiv
 
 The first central normal run exposed two incorrect test assignments; those were fixed before the final normal/race passes. Independent review also caught a benchmark compile error, a legitimate stopped-server teardown race, and missing pre-allocation framing validation; each finding was corrected and re-reviewed. Formatter nonconvergence in a multi-value return was fixed in source without changing formatter policy.
 
-This receipt covers SDK-local checks, not a new managed-app, browser, Kubernetes cluster, or downstream build run. User API/specification review, coordinated publication pins, and asynchronous log-generation ownership remain pending. PR21 stays draft; issue12 stays open. No merge, release, tag, API freeze, or plugin-sdk completion is claimed.
+This dated receipt covers SDK-local checks, not a new managed-app, browser, Kubernetes cluster, or downstream build run. At that point API/specification review, coordinated publication pins, and asynchronous log-generation ownership were pending. The accepted direction and implemented ownership contract above supersede that status, not the receipt's limited evidence. No merge, release, tag, API freeze, or plugin-sdk completion is claimed.
 
 ## Main integration and deferred-rule audit — 2026-10-30
 
@@ -173,8 +193,8 @@ At `27153b9`, all of the following passed with `GOWORK=off GOFLAGS=`:
 
 Safe style opportunities remain in local interceptor-chain tests, exported settings conversion tests, fresh domain-JSON fixtures, and guarded protobuf scalar reads. Their existence does not justify describing every deferred warning as unsafe, nor does it establish a correctness reason to enable whole rules. No thresholds, exclusions, or deferred-rule policy were changed.
 
-These are SDK-local receipts. Public API/specification acceptance, asynchronous log-generation ownership, and coordinated publication decisions remain pending. PR21 remains draft; no PR merge, tag, release, API freeze, or plugin-sdk completion is authorized.
+These are dated SDK-local receipts. Their then-pending direction/log-ownership notes are superseded by the accepted direction and implemented contracts above; coordinated publication remains a separate decision. No PR merge, tag, release, API freeze, or plugin-sdk completion is authorized.
 
-## Review requested
+## Review and release boundary
 
-Before calling plugin-sdk done: confirm which added contracts should remain public, whether admission should be consolidated, and which transport/lifecycle details should stay internal. The existing implementation is a reviewable proposal—not a settled API merely because tests passed.
+The SDK direction is accepted and the candidate author contracts above are implemented. Future export/admission simplification must preserve those behaviors and their safety fences. Dated tests and reviews do not settle coordinated publication, release authorization, or API freeze, and this record does not declare the entire SDK or cross-repository integration complete.

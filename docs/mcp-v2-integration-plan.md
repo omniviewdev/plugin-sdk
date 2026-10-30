@@ -24,7 +24,7 @@ This catalog follows [Alex Mononen’s PR21 comment][alex], [SDK issue25][sdk-is
 
 ## Target flow
 
-**Proposed integration, not the current relay path:**
+**Candidate integration:**
 
 ```mermaid
 flowchart TB
@@ -42,9 +42,9 @@ The invocation boundary owns authorization. A catalog declaration describes supp
 
 A client-free provider does not need a native client. A plugin-scoped custom tool does not need a fabricated connection or resource catalog.
 
-### What the audits corrected
+### What the original audits corrected
 
-- `Host` is invocation provenance, not an implemented privilege ranking. The problem is agent calls using host provenance and bypassing admission; the current resource boundary is composed without an authorizer.
+- `Host` is invocation provenance, not a privilege ranking. The inspected baseline gave agent calls host provenance and composed the resource boundary without an authorizer; the candidate now issues agent scope through one authorizer.
 - Readiness is not a lease or network-health probe. Require registered-generation admission for native work, not universal Kubernetes-style `CONNECTED` checks.
 - Full custom-tool names already receive a host length/character check. Built-in names and reserved-argument collisions remain gaps.
 - `Dangerous:false` does not prove read-only, non-destructive, or idempotent behavior. MCP annotations are hints, not authorization.
@@ -60,7 +60,7 @@ Ownership below names repository roles, not assigned people. Source writers must
 
 **Owner:** host invocation/security. **Files:** `backend/pkg/invocation`, relay policy/confirmation, admitted connection inventory, composition.
 
-**Evidence:** [invocation origins and admission][invocation]; relay `server.go:300–315,398–469`; v2 `backend/pkg/plugin/resource/invocation.go:15–57`. Current production composition uses `NewBoundary(nil)` at host `main.go:293–295`.
+**Audit-baseline evidence:** [invocation origins and admission][invocation]; relay `server.go:300–315,398–469`; v2 `backend/pkg/plugin/resource/invocation.go:15–57`. The inspected composition used `NewBoundary(nil)`; the implementation now supplies the relay authorizer.
 
 - Issue host-owned external-agent provenance after bearer authentication. Never trust MCP client names, requester strings, tool arguments, or connection IDs as identity.
 - Configure one authorizer. Treat persisted relay policy as input to that boundary, not an independent permission grant. Preserve native settings-management access separately from agent-visible inventory.
@@ -79,7 +79,7 @@ Ownership below names repository roles, not assigned people. Source writers must
 
 **Evidence:** [existing capability binding][sdk-binding]; tools `plugin.go:23–32`, `manager.go:80–99`; resource `utility_context.go:36–96` and `controller_lifecycle.go:31–82`.
 
-- Tools currently participate in neither transport-level connection-consumer forwarding nor manager-side utility admission. Adding only the forwarding method does not fix dispatch.
+- The audit baseline lacked both transport-level connection-consumer forwarding and manager-side utility admission. The replacement supplies both; forwarding alone would not fix dispatch.
 - Specify explicit connection-route semantics, then migrate request types, transport, callers, and documentation together. Reject empty routes and conflicting selectors before handlers run.
 - Replace caller-supplied connection data with the sole configured registry snapshot. Use the existing controller’s typed `WithClient` within the accepted callback context; a `ConnectionContextProvider` does not itself return a typed native client.
 - Preserve cancellation, retirement drain, and post-dispatch result fences. Nested native access must retain the same slot rather than switch to a replacement generation.
@@ -222,48 +222,74 @@ The user accepted the SDK direction. The table below remains the implementation 
 | D11 — Confirmation windows | Visible workspace activation versus eligible panel ownership; truthful principal/target display. |
 | D12 — Legacy tool-peer admission | Negotiate the explicit-route/native-admission tool contract and reject unsupported peers; a new protobuf field alone does not establish support. |
 
-### First-wave decisions
+### Historical first-wave decisions
 
-- **Resource versus custom work:** resource operations use host resource services; custom plugin tools remain for non-resource work. This wave does not implement the resource-tool generator.
+- **Resource versus custom work:** resource operations use host resource services; custom plugin tools remain for non-resource work. The first wave did not implement the resource-tool generator; the later implementation does.
 - **Explicit custom route:** connection-scoped calls carry an optional canonical `AccessRoute` field in the body, required and nonempty for that scope. A body route can select a connection without metadata; conflicting metadata is rejected. Metadata never supplies authoritative configuration.
 - **Connection-free plugin scope:** plugin-scoped calls accept neither a body route nor selected connection metadata. No default route is inferred.
 - **Native ownership:** connection-scoped handlers use the existing bound connection-context provider and registry. Missing admission support fails closed; no tools-owned client registry or fabricated resource catalog is introduced. Native-client reuse remains the adapter's responsibility through its existing typed controller.
 - **Lifecycle:** handler execution and accepted unary results remain fenced by the leased generation. A callback lease ends on return; this does not redefine asynchronous log/session ownership.
 - **Wire cutover:** migrate SDK transport and host custom-tool callers together. Do not reconstruct missing body routes from metadata as a compatibility fallback.
 - **Candidate composition:** port the MCP feature onto an isolated resource-v2 host branch, preserving the metric hook and current resource services. Keep the separately reviewed CI isolation baseline; do not import the release-tag trust replacement.
-- **Scope:** authorization/catalog generation, annotation/schema expansion, result envelopes, UI recovery, and remaining lifecycle items stay explicitly open until their implementation waves. A working candidate composition is not MCP production acceptance.
+- **Historical scope:** authorization/catalog generation, annotation/schema expansion, result envelopes, UI recovery, and remaining lifecycle items were left for later implementation waves. A working candidate composition alone was not production acceptance.
 
 Do not automatically retry writes after retirement, timeout, or post-dispatch rejection. A rejected result is not proof that a native side effect rolled back.
 
+### Pre-merge implementation decisions
+
+The user authorized completing the remaining integration before any PR merges. The following choices guide that work; implementation and acceptance evidence must still be recorded.
+
+| Area | Selected contract |
+| --- | --- |
+| Caller ownership | Bearer possession authenticates a shared credential, not a client-supplied name. An immutable authenticated credential receipt survives MCP initialization; each RPC receives fresh host-owned external-agent scope tied to the actual server session. Session DELETE cancels admitted work before transport drain. |
+| Authorization | One invocation boundary admits the actual operation and target. Policy supplies restrictions; annotations never grant permission. Custom tools require explicit enablement and conservative consent. |
+| Consent | Bind immutable arguments and target observations. Recheck current policy and generation at dispatch under a defined ordering; cancel retired work and reject late results. |
+| Tool protocol | Use the exclusive `omniview.sdk.tools.v2` RPC namespace and explicit contract version 2. Unsupported peers cannot execute a fallback handler. The go-plugin protocol version is separate. |
+| Schemas | Validate JSON Schema 2020-12 with local references only, without coercion or defaults. Reject duplicate JSON fields separately. Preserve exact numbers and validate declared structured results. |
+| Annotation and error transport | Preserve optional booleans and MCP defaults. Expose reviewed error codes with fixed safe presentation; keep diagnostic text local. |
+| Resource discovery | Retain advertisement observations through admission. Names encode opaque tuple identity; schemas, handlers, and continuations remain route-specific. |
+| Query and representation metadata | Describe native query languages through generic catalog metadata. Keep UI representation defaults; declare a separate optional model representation rather than putting Kubernetes branches in the host. |
+| Actions | Type actions use a genuine type target, mutually exclusive with an instance reference. MCP advertises only unary actions; streaming actions remain on the existing supported UI lane. Retain the advertised descriptor through the SDK native fence rather than silently installing a fresh descriptor after approval. |
+| Results | Preserve canonical tagged values, source revisions, coverage, count, consistency, and bound cursors. Collection limits do not redefine native source pages or claim complete query membership. |
+| Logs | Retain the existing native lease until accepted producers exit. Separate creation-RPC cancellation from accepted-session ownership. A host-generated UUID correlates a lost creation receipt with close; it is not identity or permission to retry. Bound headless output to 5,000 lines, 1 MiB, and 30 seconds, with a default tail of 200. |
+| Kubernetes parity | Preserve selectors, namespace rules, served versions, model projection, guarded deletion, and bounded 500-item collection above 256-item source pages. Reuse native clients and define catalog refresh honestly. |
+| Optional action discovery | Nil means discovery unavailable; nonnil empty means an authoritative empty result. Preserve that distinction over RPC. Omit conflicting scope-specific action IDs from unscoped transport discovery rather than advertising an ambiguous descriptor. |
+| Debug write outcomes | Kubernetes debug creation uses the existing public-safe `PROVIDER_ERROR` code for uncertain native outcomes. Preserve the bound Pod UID and reserved container identity for inspection; never infer rollback or automatically submit again. |
+| Installation ownership | Route and retire host controllers by installation ID. Keep native handler selectors and resource references on their canonical provider and type, including alternate plugin installations. |
+| Confirmation windows | Restore and focus the host-owned main window before prompting. Mount the consent provider above both workspace and panel shells; a window does not become an agent principal. Actual native visibility remains a separate acceptance check. |
+| CI and publication | Preserve independent isolation review and managed replacements. Test exact candidate source revisions without publishing, selecting release tags, or treating old SDK tags as the new API. |
+
+Native log APIs do not necessarily support atomic incarnation preconditions. Supplied reference/body validation remains mandatory, but documentation must not invent a stronger native guarantee or introduce a hidden prerequisite Get.
+
 ## Source checklist
 
-**Open** means work remains at the inspected revision. **Decision** means the source asks for behavior whose contract needs approval. **Covered** means no duplicate feature is needed. **Roadmap** remains cataloged but is not automatically a safe-unary/five-tool landing gate. **Historical/conditional** is not a fresh check or release authorization.
+**Implemented** means candidate code and focused regressions address the source item; final combined-cohort checks remain mandatory. **Roadmap** is explicitly outside the unary/five-tool landing contract. **Publication hold** requires later authorization, not more compatibility code. Historical checks below retain their original revision scope.
 
 ### SDK issue25
 
 | Source item | Disposition | Work |
 | --- | --- | --- |
-| SDK-A1 — existing tools inheritance | Preserved; not v2-integration proof. | W2, W8 |
-| SDK-A2 — release/module pins | Conditional on future acceptance and authorization. | W8 |
-| SDK-B1 — connection selection | Open; explicit route and shared native lease. | W1, W2 |
-| SDK-B2 — action/tool vocabulary and schemas | Decision; scopes differ, safety is not boolean equivalence. | W3, D4–D5 |
-| SDK-B3 — errors | Open; classified public-safe custom failures. | W3 |
-| SDK-B4 — catalog/generation fences | Open; separate process/native generations from catalog observations. | W2, W4 |
-| SDK-B5 — static discovery | Open for resource refresh; general custom subscription is a decision. | W2, W4, W6 |
-| SDK-B6 — duplicate resource tools | Open; host service dispatch, not plugin resource reimplementation. | W4, W5 |
-| SDK-C01 — typed filters | Roadmap; schema structure and query support are distinct. | Roadmap/P07/P13 |
-| SDK-C02 — resource description | Optional enrichment; precedence/bounds undecided. | Roadmap |
-| SDK-C03 — per-type capabilities | Covered; consume scoped independent operations. | W4 |
-| SDK-C04 — action schemas/danger | Decision; never discard unavailable assertions. | W3, D4–D5 |
-| SDK-C05 — scale hints | Roadmap; hints never override finite budgets. | Roadmap |
-| SDK-C06 — headless search | Roadmap; host-owned, not a React callback or separate engine. | Roadmap |
-| SDK-C07 — streaming/progress | Decision/later adapter; unary custom transport does not implement it. | D8, Roadmap |
-| SDK-C08 — list-change notification | Open for advertised route/resource changes. | W4, W6 |
-| SDK-C09 — provenance/citations | Basic resource envelope required; history adapter later. | W4 |
-| SDK-C10 — lossless numbers | Open; exact resource envelope and unaltered custom arguments. | W3, W4 |
-| SDK-C11 — argument validation | Open; declarations, inputs, and declared outputs. | W3 |
-| SDK-C12 — annotation defaults | Open; absence/false distinction; hints are not grants. | W3 |
-| SDK-C13 — reserved arguments/name length | Partial correction: custom combined-name check exists; built-ins/injection remain. | W3, W4 |
+| SDK-A1 — existing tools inheritance | Implemented: preserve non-resource tools through the negotiated v2 transport. | W2, W8 |
+| SDK-A2 — release/module pins | Publication hold: exact source cohorts replace guessed release versions for candidate verification. | W8 |
+| SDK-B1 — connection selection | Implemented: explicit body route, trusted profile, shared native lease. | W1, W2 |
+| SDK-B2 — action/tool vocabulary and schemas | Implemented: distinct scopes, optional safety hints, independently validated restricted schemas. | W3, D4–D5 |
+| SDK-B3 — errors | Implemented: classified fixed public-safe custom errors; diagnostic causes stay local. | W3 |
+| SDK-B4 — catalog/generation fences | Implemented: retained catalog observations and separate process/native generation fences. | W2, W4 |
+| SDK-B5 — static discovery | Implemented: route catalog/inventory refresh; no general custom subscription RPC is promised. | W2, W4, W6 |
+| SDK-B6 — duplicate resource tools | Implemented: host-generated resource operations; obsolete Kubernetes tools removed after native parity proof. | W4, W5 |
+| SDK-C01 — typed filters | Roadmap: typed query-field/operator metadata remains separate from native query schemas. | Roadmap/P07/P13 |
+| SDK-C02 — resource description | Roadmap: optional descriptive enrichment does not block truthful capability discovery. | Roadmap |
+| SDK-C03 — per-type capabilities | Implemented: consume scoped, independent create/update/delete and read capabilities. | W4 |
+| SDK-C04 — action schemas/danger | Implemented: retain supported schema assertions; hints never grant authorization. | W3, D4–D5 |
+| SDK-C05 — scale hints | Roadmap: no hint can override finite acquisition budgets. | Roadmap |
+| SDK-C06 — headless search | Roadmap: no React callback or second authoritative query engine. | Roadmap |
+| SDK-C07 — streaming/progress | Roadmap: MCP advertises unary actions only; existing streaming UI APIs remain intact. | D8, Roadmap |
+| SDK-C08 — list-change notification | Implemented: committed inventory/catalog changes refresh route-specific advertisement. | W4, W6 |
+| SDK-C09 — provenance/citations | Implemented: tagged resource envelope retains route, reference, source revision, and coverage; history adapter remains later work. | W4 |
+| SDK-C10 — lossless numbers | Implemented: canonical tagged resource scalars and exact custom JSON arguments. | W3, W4 |
+| SDK-C11 — argument validation | Implemented: validate declarations, input, and declared structured output before successful publication. | W3 |
+| SDK-C12 — annotation defaults | Implemented: absent/false distinction and MCP defaults survive transport; hints are not grants. | W3 |
+| SDK-C13 — reserved arguments/name length | Implemented: validate names, reserved built-ins, argument collisions, and schema injection before advertising. | W3, W4 |
 
 Source: [full SDK audit][sdk-issue]. C numbers follow its feature-table row order.
 
@@ -271,43 +297,43 @@ Source: [full SDK audit][sdk-issue]. C numbers follow its feature-table row orde
 
 | Source item | Disposition | Work |
 | --- | --- | --- |
-| HOST-A — composition conflict/cohort | Historical overlap; keep both hooks and reconcile gate. | W8 |
-| HOST-B1 — invocation boundary | Open; host-issued agent origin, one authorizer, fresh consent. | W1 |
-| HOST-B2 — readiness | Open for native work; not a universal lifecycle requirement. | W1, D9 |
-| HOST-B3 — generated resource tools | Open; five-tool parity and correct admitted dispatch. | W4, W5 |
-| HOST-B4 — errors/refresh | Open; safe errors, retained observations, replacement. | W3, W4, W6 |
-| HOST-B5 — roadmap ledger | Open; separate relay consumer from deferred engines. | W8 |
-| HOST-C — relay-local review | All inline findings and extra notes enumerated below. | W3, W6, W7 |
-| K8S-A — registration conflict/pin | Historical overlap plus conditional publication dependency. | W5, W8 |
-| K8S-B1 — per-call clients | Open; remove unmanaged resource-tool path after replacement. | W2, W4, W5 |
-| K8S-B2 — duplicated operations | Open; selector/projection/version/log parity precedes deletion. | W4, W5 |
-| K8S-B3 — native error text | Legacy leak open; resource producer violation is wire-mitigated; logs events separate. | W3, W5 |
-| K8S-B4 — static list | Open; route catalogs and honest refresh, not assumed CRD watching. | W4, W5, W6 |
+| HOST-A — composition conflict/cohort | Implemented source integration: retain main window/performance features and the resource-v2 metric hook; final immutable pins remain an integration gate. | W8 |
+| HOST-B1 — invocation boundary | Implemented: host-issued agent origin, one authorizer, fresh bound consent, and correlated redacted audit events. | W1 |
+| HOST-B2 — readiness | Implemented: native generation admission without fabricated universal lifecycle requirements. | W1, D9 |
+| HOST-B3 — generated resource tools | Implemented: actual host service dispatch and native five-tool parity proof. | W4, W5 |
+| HOST-B4 — errors/refresh | Implemented: safe errors, retained observations, coherent replacement and refresh. | W3, W4, W6 |
+| HOST-B5 — roadmap ledger | Implemented: relay landing gates remain distinct from deferred query/search/history engines. | W8 |
+| HOST-C — relay-local review | All 16 inline findings and three additional notes are reconciled below. | W3, W6, W7 |
+| K8S-A — registration conflict/pin | Implemented source integration; publication remains separately unauthorized. | W5, W8 |
+| K8S-B1 — per-call clients | Implemented: remove unmanaged resource-tool clients; use the sole native resource registry. | W2, W4, W5 |
+| K8S-B2 — duplicated operations | Implemented: selectors, model/full representations, versions, bounded collection, guarded delete, namespace values, and native logs replace all five tools. | W4, W5 |
+| K8S-B3 — native error text | Implemented: safe resource producers, no legacy tool leak, separately sanitized asynchronous logs. | W3, W5 |
+| K8S-B4 — static list | Implemented: demand-driven catalog/OpenAPI refresh; no CRD watcher claim. | W4, W5, W6 |
 
 Sources: [host audit][host-issue], [Kubernetes audit][kube-issue].
 
 ### Relay PR218: all 16 inline findings
 
-All remain actionable at the inspected relay head; CR-02 needs a contract decision rather than an assumed security fix.
+Candidate source addresses every inline finding. CR-06 additionally requires actual native multi-window acceptance; source review or a synthetic preview cannot satisfy it.
 
 | Source item | Required result | Work |
 | --- | --- | --- |
-| [CR-01][cr01] — discovery timeout | Bound startup RPC and generation-owned cancellation. | W6 |
-| [CR-02][cr02] — `Listed` mismatch | Choose zero-accessible-connection discovery behavior; no proven dispatch bypass. | W6, D9 |
-| [CR-03][cr03] — POST body limits | Bound bytes and read duration without breaking streams. | W6 |
-| [CR-04][cr04] — post-confirm policy | Reauthorize current policy and unchanged target before dispatch. | W1 |
-| [CR-05][cr05] — resync ordering | Serialize snapshot through final publication. | W6 |
-| [CR-06][cr06] — panel confirmation | Make consent visible when workspace is hidden. | W7 |
-| [CR-07][cr07] — status event race | Newer event survives delayed status response. | W7 |
-| [CR-08][cr08] — tools query errors | Show failure, not successful empty catalog. | W7 |
-| [CR-09][cr09] — resolved request resurrection | Delayed initial snapshot cannot restore resolved consent. | W7 |
-| [CR-10][cr10] — failed replacement cache | Remove failed generation and roll back partial startup. | W6 |
-| [CR-11][cr11] — schema keyword validation | Reject malformed declarations before advertisement/injection. | W3 |
-| [CR-12][cr12] — same-name replacement | Replace descriptor, captured handler, and provenance. | W4, W6 |
-| [CR-13][cr13] — backend inventory change | Publish committed changes; refresh advertised tools. | W6 |
-| [CR-14][cr14] — UI inventory change | Invalidate mounted settings inventory from same signal. | W7 |
-| [CR-15][cr15] — AI Tools focus target | Reject unsupported alias focus while preserving valid navigation. | W7 |
-| [CR-16][cr16] — failed consent submission | Keep request actionable until success or authoritative resolution. | W7 |
+| [CR-01][cr01] — discovery timeout | Implemented: bounded startup RPC and generation-owned cancellation. | W6 |
+| [CR-02][cr02] — `Listed` mismatch | Implemented: advertise accessible routes truthfully; never invent a default connection or permission. | W6, D9 |
+| [CR-03][cr03] — POST body limits | Implemented: bound request bytes and read duration without imposing a stream lifetime limit. | W6 |
+| [CR-04][cr04] — post-confirm policy | Implemented: atomically reauthorize current policy and unchanged target before dispatch. | W1 |
+| [CR-05][cr05] — resync ordering | Implemented: serialize snapshot through publication. | W6 |
+| [CR-06][cr06] — panel confirmation | Implemented source: activate main window and mount consent in both shells; actual native Allow/Deny remains required before merge. | W7 |
+| [CR-07][cr07] — status event race | Implemented: newer events survive delayed status responses. | W7 |
+| [CR-08][cr08] — tools query errors | Implemented: explicit failure and retry, not successful empty catalog. | W7 |
+| [CR-09][cr09] — resolved request resurrection | Implemented: delayed initial snapshots cannot restore resolved consent. | W7 |
+| [CR-10][cr10] — failed replacement cache | Implemented: remove failed generations and roll back partial startup. | W6 |
+| [CR-11][cr11] — schema keyword validation | Implemented: reject malformed or unsupported declarations before advertisement/injection. | W3 |
+| [CR-12][cr12] — same-name replacement | Implemented: replace descriptor, captured handler, and provenance together. | W4, W6 |
+| [CR-13][cr13] — backend inventory change | Implemented: publish after committing inventory changes and releasing locks. | W6 |
+| [CR-14][cr14] — UI inventory change | Implemented: invalidate mounted scoped inventory from the same signal. | W7 |
+| [CR-15][cr15] — AI Tools focus target | Implemented: reject unsupported aliases while retaining valid navigation. | W7 |
+| [CR-16][cr16] — failed consent submission | Implemented: keep requests actionable until success or authoritative resolution. | W7 |
 
 ### Relay review: three additional notes
 
@@ -315,25 +341,31 @@ These are [review5706913275 notes][relay-review], not extra inline comments or p
 
 | Source item | Disposition | Work |
 | --- | --- | --- |
-| NOTE-01 — built-in/plugin `list_connections` collision | Existing precedence works; missing meaningful collision regression. | W3, W6 |
-| NOTE-02 — real nested bbolt round trip | Evidence gap, not demonstrated storage corruption; preserve nullable overrides. | W6 |
-| NOTE-03 — scoped settings rows | Existing test returns same tools for every scope; assert distinct visible rows. | W7 |
+| NOTE-01 — built-in/plugin `list_connections` collision | Implemented: preserve built-in precedence and validate collisions before advertisement. | W3, W6 |
+| NOTE-02 — real nested bbolt round trip | Implemented: persisted nested nullable overrides retain nil/false/true distinctions. | W6 |
+| NOTE-03 — scoped settings rows | Implemented: distinct scoped rows retain actual connection, readiness, and policy; callbacks edit that row. | W7 |
 
 ### Additional findings beyond the original checklist
 
 | Finding | Required action | Work |
 | --- | --- | --- |
-| N1 — fresh host catalog pin can erase stale advertisement | Compare retained observation before normal dispatch pin installation. | W4 |
-| N2 — later capability startup failure can retain tools | Roll back tools when whole plugin startup fails. | W6 |
-| N3 — listener transitions/session drain are not fully bounded | Serialize transition; cancel/drain/close under one owned lifetime. | W6 |
-| N4 — status/config/inventory errors masquerade as state | Explicit failure states; no writes from failed config load. | W7 |
-| N5 — pending snapshot failure lacks recovery | Show failure and provide explicit reload/retry. | W7 |
-| N6 — replacement-path public errors are not uniformly safe | Preserve resource-wire mitigation; repair producer fields and handle log events safely. | W3, W5 |
-| N7 — argument extraction changes numeric values | Preserve custom JSON tokens and canonical resource scalar kinds. | W3, W4 |
-| N8 — CI change alters isolation trust | Obtain explicit approval; keep candidate verification distinct from publication. | W8 |
-| N9 — type-scoped action/request mismatch | Do not invent object identities to expose type-only actions. | W4, D8 |
-| N10 — CRD discovery is not an automatic watcher | Define refresh trigger before promising live tool-list changes. | W4, W5 |
-| N11 — legacy tool contract is not negotiated | Current proof uses aligned SDK peers. Add explicit admission/version negotiation before allowing older metadata-only tool plugins in production. This is a compatibility risk, not a reproduced exploit. | W2, W3, D12 |
+| N1 — fresh host catalog pin can erase stale advertisement | Implemented: compare retained advertisement observation before normal dispatch pin installation. | W4 |
+| N2 — later capability startup failure can retain tools | Implemented: roll back tools when whole plugin startup fails. | W6 |
+| N3 — listener transitions/session drain are not fully bounded | Implemented: serialize transitions and bound owned cancellation/drain/close. | W6 |
+| N4 — status/config/inventory errors masquerade as state | Implemented: explicit failure states; no writes from failed config load. | W7 |
+| N5 — pending snapshot failure lacks recovery | Implemented: visible failure and explicit reload/retry. | W7 |
+| N6 — replacement-path public errors are not uniformly safe | Implemented: preserve resource-wire sanitization and repair producers and async logs separately. | W3, W5 |
+| N7 — argument extraction changes numeric values | Implemented: exact custom JSON tokens and canonical resource scalar kinds. | W3, W4 |
+| N8 — CI change alters isolation trust | Implemented policy: keep the independently reviewed isolation minimum and separate immutable candidate-source approval; no publication fallback. | W8 |
+| N9 — type-scoped action/request mismatch | Implemented: genuine type target and expected-descriptor native fence; no invented object identity. | W4, D8 |
+| N10 — CRD discovery is not an automatic watcher | Implemented contract: eligible demand refresh reacquires discovery/OpenAPI; no watcher guarantee. | W4, W5 |
+| N11 — legacy tool contract is not negotiated | Implemented: exclusive v2 RPC namespace and contract version; unsupported peers cannot execute a fallback handler. | W2, W3, D12 |
+| N12 — hostile schema work can exceed finite budgets | Implemented: bounded JSON, local static references, expansion/validation work, exact numeric and count limits. | W3 |
+| N13 — initialization context becomes stale | Implemented: immutable credential receipt plus fresh actual-session RPC ownership; authenticated DELETE retires work before drain. | W1, W6 |
+| N14 — authority cleanup looks like caller cancellation | Implemented: inspect the original RPC context; normal provider failures return a fixed tool error without breaking the session. | W1, W6 |
+| N15 — installation/provider selector confusion | Implemented: host maps retire by installation; native selectors derive from canonical reference provider/type. | W5, W8 |
+| N16 — uncertain debug write looks safely retryable | Implemented: safe `PROVIDER_ERROR`/reset/cancellation outcomes retain inspection state and block duplicate submission. | W5, W7 |
+| N17 — blocked-producer regression can hang on failure | Implemented: release producers before failed-test controller cleanup; retain the lifetime assertions. | SDK audit |
 
 ## Roadmap disposition
 
@@ -346,12 +378,12 @@ The original [plans13–19][plans] contain useful intent and historical APIs. Th
 | Plan15 — query execution | Provider-native knowledge and bounded acquisition. | Historical `Find`/universal plugin predicates are not current APIs. No silent filter dropping or unbounded post-filtering. |
 | Plan16 — natural-language translation | Metadata remains data; SDK never interprets prompts. | NL authoring over accepted host query contracts; not an agent-side authoritative query engine. |
 | Plan17 — cross-provider routing | Preserve provider/route provenance and partial failures. | Global query/search/indexing and `QueryAll`; no mandatory watch-everything engine. |
-| Plan18 — relationship graph | Canonical references, admitted targets, bounded traversal if exposed. | MCP graph adapters; existing graph seams do not prove integration. The [query-only-scope binding defect](resource-v2-contracts.md#relationship-helper-limitation) remains unresolved. |
+| Plan18 — relationship graph | Canonical references, admitted targets, bounded traversal if exposed. | MCP graph adapters remain later work. The SDK query-only `any` binding defect is fixed without weakening restricted-selector validation. |
 | Plan19 — diagnostics | Honest health/event/relationship evidence if used. | Diagnose, trace-failure, blast-radius, common-cause products; shared dependency is not proof of root cause. |
 | P01/P04/P13 | Accepted exact-value contracts; new agent invocation integration. | P01 acceptance is distinct from installed schema/planner/query receipts. Do not reopen its superseded numeric/CLA holds. |
 | HR29 — read-only AI history | Permitted evidence citations and budgets inform results. | Headless history query/compare/traverse adapter; live resource reads are not a historical store. |
 
-The [P01 acceptance record][p01-acceptance] supersedes earlier numeric holds. Confirm actual installed service receipts before advertising universal query/search tools. [SDK API review](resource-v2-spec-review.md) and [asynchronous logs issue23][logs-issue] remain separate gates.
+The [P01 acceptance record][p01-acceptance] supersedes earlier numeric holds. Confirm installed service receipts before advertising universal query/search tools. SDK direction is accepted; final integration checks and explicit future merge/publication authorization remain separate. The [asynchronous logs issue23][logs-issue] lifetime fix now has SDK and actual native MCP evidence.
 
 ## Landing order and evidence
 
@@ -436,9 +468,36 @@ Separate implementation and review agents covered the slices and corrections. Ce
 
 Disposable programs, private-classifier hooks, visual harness, browser tab, and preview service were removed. The isolated candidate worktree and ignored verification corpus remain available for continued integration.
 
-**Still open:** host-issued agent authorization, consent rechecks, process/catalog observation fences, catalog-derived resource tools and results, explicit tool-contract negotiation for older peers, full schema/annotation/error contracts, discovery/lifecycle hardening, five-tool Kubernetes parity/cutover, asynchronous logs ownership, native multi-window acceptance, and coordinated release/cohort pins. The relay stays disabled by default. PR21, PR192, PR218, and PR220 are not merged by this wave.
+**Historical wave-2 remainder:** the items listed here were open at that wave's revision. The reconciled source checklist above and the later implementation evidence below supersede that implementation status. Native multi-window acceptance, final combined-cohort checks, and future publication authorization remain distinct gates. The relay stays disabled by default.
 
 The host push also reported existing default-branch dependency alerts, including one critical alert. Those are not a PR-specific scan or a remediation claim; they remain a separate security backlog.
+
+## Implementation wave 3 — production contracts and native parity
+
+Separate package/file owners implemented each domain; independent agents reviewed the source and subsequent fixes. SDK behavior is in [`afd3a32`](https://github.com/omniviewdev/plugin-sdk/commit/afd3a32), bounded validation/session operations in [`dbedfc8`](https://github.com/omniviewdev/plugin-sdk/commit/dbedfc8), failure-safe blocked-producer cleanup in [`9591307`](https://github.com/omniviewdev/plugin-sdk/commit/9591307), and shared consumer descriptor validation in [`d1f7da3`](https://github.com/omniviewdev/plugin-sdk/commit/d1f7da3). Formatting has separate commits.
+
+| Executed evidence | Result and scope |
+| --- | --- |
+| Final SDK normal and race commands | Both passed: 23 tested packages and 18 without tests on the final Go source. |
+| Final SDK formatting and active lint | `make fmt-check` and `make lint-report` passed; zero active findings. No policy, threshold, or handwritten-code exclusion changed. |
+| Informational SDK audit | 1,354 findings: paralleltest 659, protogetter 539, testpackage 102, nonamedreturns 31, funcorder 23. Separate reviewers checked presence/guards and test isolation; the blocked-producer cleanup finding was fixed, not hidden. |
+| Actual SDK example | `go run ./examples/resource-plugin -smoke` read the native note and preserved `int64(9007199254740993)`. |
+| Main-integrated host foundation | Full normal suite passed: 44 tested packages, 11 without tests. TypeScript passed; frontend suite passed 1,213 tests, with three existing skips. These precede the final stacked composition and later opaque-route regressions. |
+| Full MCP package with actual native child | Passed, including actual HTTP provider-error/recovery and cancellation paths. A discovered authority-cleanup cancellation bug was fixed rather than accepted as an expected transport error. |
+| Custom schema publication and persistence | Full MCP and store packages passed after sharing SDK descriptor validation, preserving exact schema numbers, rejecting reserved-field/output-schema failures, retaining trusted built-in precedence, and round-tripping actual nested `Config` nil/false/true overrides through bbolt close/reopen. |
+| Kubernetes cutover suites | Full normal and race suites passed: 11 tested packages, six without tests. |
+| Five Kubernetes replacements | Authenticated MCP HTTP → one host boundary → real resource/log controllers → actual external Kubernetes SDK child → owned kind cluster. Verified model/full-version Get, required namespace rejection, native label query, namespace values, finite native logs, single-use collection cursors, stale UID/revision delete rejection without effects, valid deletion, and retirement rejection. |
+| Logs-only native permissions | Real service-account credentials permit `pods/log` Get but deny Pod Get. MCP logs returned actual container output and released the session while Pod Get remained denied. No hidden prerequisite Get was added. |
+| Native selector ownership | Existing real gRPC/SDK-manager/PTY/file-I/O regression passed with different installation and canonical provider IDs, including handler retirement. |
+| Main feature preservation | Resolved resource-v2 and current main architecture together. Retained workspace/panel shells, native window service, performance changes, metric hook, and canonical resource routes. |
+
+The native proof first used the real Kubernetes entrypoint with only obsolete tool registration omitted. All five replacements passed before the old implementation, registration, and capability were deleted. The rerun using the actual cutover entrypoint also passed. Final combined-cohort checks remain separate; earlier receipts do not substitute for them.
+
+### Final integration gate
+
+Immutable source pins, the dedicated reviewed-candidate SDK variable, final normal/race/frontend checks, independent combined-tree review, and actual native multi-window Allow/Deny evidence must be recorded before merge on [PR220](https://github.com/omniviewdev/omniview/pull/220) and its linked foundation/plugin PRs. This SDK ledger does not claim an unobserved final native-window pass.
+
+No merge, ready transition, API freeze, tag, release, or publication follows from these checks. The accepted direction does not make all plugin-sdk work complete. Deferred query/search/history products remain the explicit roadmap above, not hidden findings or fabricated implementations.
 
 ## Inspected revisions
 
