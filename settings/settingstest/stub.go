@@ -27,7 +27,7 @@ type StubProvider struct {
 	Floats       map[string]float64
 	FloatSlices  map[string][]float64
 	Bools        map[string]bool
-	Values_      map[string]any
+	Values_      map[string]any //nolint:revive // Preserve the exported test-fixture field name for callers.
 
 	mu       sync.Mutex
 	handlers map[string]settings.CategoryChangeFunc
@@ -41,10 +41,23 @@ func (s *StubProvider) GetSetting(_ string) (settings.Setting, error) {
 	return settings.Setting{}, nil
 }
 
-func (s *StubProvider) GetSettingValue(_ string) (any, error)                  { return nil, nil }
-func (s *StubProvider) SetSetting(_ string, _ any) error                       { return nil }
-func (s *StubProvider) SetSettings(_ map[string]any) error                     { return nil }
-func (s *StubProvider) RegisterSetting(_ string, _ settings.Setting) error     { return nil }
+// GetSettingValue models a successful unset preference.
+//
+//nolint:nilnil // The stub deliberately models a successful unset preference.
+func (s *StubProvider) GetSettingValue(_ string) (any, error) {
+	return nil, nil
+}
+
+// SetSetting accepts updates without retaining them.
+func (s *StubProvider) SetSetting(_ string, _ any) error { return nil }
+
+// SetSettings accepts bulk updates without retaining them.
+func (s *StubProvider) SetSettings(_ map[string]any) error { return nil }
+
+// RegisterSetting accepts metadata without retaining it.
+func (s *StubProvider) RegisterSetting(_ string, _ settings.Setting) error { return nil }
+
+// RegisterSettings accepts metadata without retaining it.
 func (s *StubProvider) RegisterSettings(_ string, _ ...settings.Setting) error { return nil }
 
 // RegisterChangeHandler replaces the callback for a category under a lock.

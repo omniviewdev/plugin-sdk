@@ -5,6 +5,10 @@ import (
 	"reflect"
 )
 
+// Setting describes a typed preference, its default, and optional validation.
+// Sensitive values are hidden by GetValue; validators must not disclose secrets.
+//
+//nolint:recvcheck // clone requires a value copy; public methods retain their pointer API.
 type Setting struct {
 	// ID is the unique identifier of the setting
 	ID string `json:"id"`
@@ -15,11 +19,11 @@ type Setting struct {
 	// Type is the type of the setting
 	Type SettingType `json:"type"`
 	// Value is the value of the setting
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 	// Default is the default value of the setting
-	Default interface{} `json:"default"`
+	Default any `json:"default"`
 	// Validator returns user-safe contextual feedback. Never include secrets in messages.
-	Validator func(interface{}) ValidationResult `json:"-"`
+	Validator func(any) ValidationResult `json:"-"`
 	// Options is an optional list of options for a select setting
 	Options []SettingOption `json:"options"`
 	// FileSelection is an optional setting for file selection
@@ -60,7 +64,7 @@ func (s Setting) clone() Setting {
 
 // Validate checks if the value of the setting is valid using an optional
 // validation function. If no validation function is provided, it returns nil.
-func (s *Setting) Validate(value interface{}) error {
+func (s *Setting) Validate(value any) error {
 	result := s.Validation(value)
 	if !result.Valid {
 		return fmt.Errorf("%s", result.Message)
@@ -76,7 +80,7 @@ type ValidationResult struct {
 }
 
 // Validation evaluates the registered validator without changing the setting.
-func (s *Setting) Validation(value interface{}) ValidationResult {
+func (s *Setting) Validation(value any) ValidationResult {
 	result := ValidationResult{Valid: true, Code: "valid", Message: "Value is valid."}
 	if s.Validator != nil {
 		result = s.Validator(value)
@@ -95,7 +99,7 @@ func (s *Setting) Validation(value interface{}) ValidationResult {
 
 // SetValue sets the value of the setting and validates it using the
 // validator function defined.
-func (s *Setting) SetValue(value interface{}) error {
+func (s *Setting) SetValue(value any) error {
 	if err := s.Validate(value); err != nil {
 		return err
 	}
@@ -103,7 +107,7 @@ func (s *Setting) SetValue(value interface{}) error {
 }
 
 // GetValue returns the value of the setting.
-func (s *Setting) GetValue() interface{} {
+func (s *Setting) GetValue() any {
 	if s.Sensitive {
 		// Don't expose to the UI
 		return nil
@@ -124,13 +128,13 @@ func (s *Setting) ResetValue() {
 // ========================================= PRIVATE METHODS ==================================
 
 // tryConvertSlice attempts to convert a slice of any type to a slice of interface{}.
-func tryConvertSlice(value any) ([]interface{}, bool) {
+func tryConvertSlice(value any) ([]any, bool) {
 	valReflect := reflect.ValueOf(value)
 	if valReflect.Kind() != reflect.Slice {
 		return nil, false
 	}
-	result := make([]interface{}, valReflect.Len())
-	for i := 0; i < valReflect.Len(); i++ {
+	result := make([]any, valReflect.Len())
+	for i := range valReflect.Len() {
 		result[i] = valReflect.Index(i).Interface()
 	}
 	return result, true
@@ -143,21 +147,20 @@ func (s *Setting) set(value any) error {
 	currType := reflect.TypeOf(currentVal)
 	valType := reflect.TypeOf(value)
 
-	if currType.Kind() == reflect.Slice && valType.Kind() == reflect.Slice {
+	switch {
+	case currType.Kind() == reflect.Slice && valType.Kind() == reflect.Slice:
 		// convert slice elements one by one if the destination is []interface{}
-		if slice, ok := tryConvertSlice(value); ok {
-			value = slice
-		}
-	} else if currType.ConvertibleTo(valType) {
+		value, _ = tryConvertSlice(value)
+	case currType.ConvertibleTo(valType):
 		// convert the value to the type of the current value
 		value = reflect.ValueOf(value).Convert(currType).Interface()
-	} else if currType.Kind() == reflect.Float64 && valType.Kind() == reflect.Int {
+	case currType.Kind() == reflect.Float64 && valType.Kind() == reflect.Int:
 		// convert int to float64
-		value = float64(value.(int))
-	} else if currType.Kind() == reflect.Int && valType.Kind() == reflect.Float64 {
+		value = float64(reflect.ValueOf(value).Int())
+	case currType.Kind() == reflect.Int && valType.Kind() == reflect.Float64:
 		// convert float64 to int
-		value = int(value.(float64))
-	} else if !reflect.TypeOf(value).AssignableTo(currType) {
+		value = int(reflect.ValueOf(value).Float())
+	case !reflect.TypeOf(value).AssignableTo(currType):
 		// for non-slice types, fall back to the original type check
 		return fmt.Errorf(
 			"setting type mismatch for setting '%s'. currently has %s, tried to assign %s",

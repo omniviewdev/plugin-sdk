@@ -62,7 +62,9 @@ func ProtoTypeToSettingType(t settingspb.SettingType) settings.SettingType {
 	return settings.Text
 }
 
-func ConvertInterfaceToAny(v interface{}) (*anypb.Any, error) {
+// ConvertInterfaceToAny wraps the JSON representation in a protobuf bytes value.
+// It returns protobuf encoding errors; JSON-unsupported inputs encode empty bytes.
+func ConvertInterfaceToAny(v any) (*anypb.Any, error) {
 	anyValue := &anypb.Any{}
 	bytes, _ := json.Marshal(v)
 	bytesValue := &wrapperspb.BytesValue{
@@ -72,8 +74,9 @@ func ConvertInterfaceToAny(v interface{}) (*anypb.Any, error) {
 	return anyValue, err
 }
 
-func ConvertAnyToInterface(anyValue *anypb.Any) (interface{}, error) {
-	var value interface{}
+// ConvertAnyToInterface decodes wrapped JSON; JSON numbers become float64 values.
+func ConvertAnyToInterface(anyValue *anypb.Any) (any, error) {
+	var value any
 	bytesValue := &wrapperspb.BytesValue{}
 	err := anypb.UnmarshalTo(anyValue, bytesValue, grpcproto.UnmarshalOptions{})
 	if err != nil {
@@ -177,7 +180,7 @@ func FromProtoSetting(s *settingspb.Setting) settings.Setting {
 	if err != nil {
 		return settings.Setting{Sensitive: true}
 	}
-	var defaultValue interface{}
+	var defaultValue any
 	if s.GetDefault() != nil {
 		defaultValue, err = ConvertAnyToInterface(s.GetDefault())
 		if err != nil {

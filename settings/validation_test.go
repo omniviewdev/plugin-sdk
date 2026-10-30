@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -39,7 +40,7 @@ func TestStructuredValidationEnforcesAtomicSave(t *testing.T) {
 
 func TestSensitiveValidationRedactsFeedback(t *testing.T) {
 	s := Setting{Sensitive: true, Validator: func(value any) ValidationResult {
-		return ValidationResult{Code: "secret", Message: value.(string)}
+		return ValidationResult{Code: "secret", Message: fmt.Sprint(value)}
 	}}
 	if result := s.Validation(
 		"private-input",
@@ -78,7 +79,7 @@ func TestInvalidStructuredValidationNormalizesEmptyMessage(t *testing.T) {
 
 func TestValidationUsesOneCallbackWithoutMutation(t *testing.T) {
 	calls := 0
-	s := Setting{Value: "saved", Validator: func(value any) ValidationResult {
+	s := Setting{Value: "saved", Validator: func(_ any) ValidationResult {
 		calls++
 		return ValidationResult{Valid: true, Code: "ready", Message: "Tool is ready."}
 	}}

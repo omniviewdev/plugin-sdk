@@ -12,6 +12,7 @@ import (
 // SettingsPlugin serves or consumes settings through [plugin.Plugin] gRPC integration.
 type SettingsPlugin struct {
 	plugin.Plugin
+
 	// Concrete implementation, written in Go. This is only used for plugins
 	// that are written in Go.
 	Impl Provider
@@ -28,6 +29,6 @@ func (p *SettingsPlugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
-) (interface{}, error) {
+) (any, error) {
 	return &Client{client: settingspb.NewSettingsPluginClient(c)}, nil
 }

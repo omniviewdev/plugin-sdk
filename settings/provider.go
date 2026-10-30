@@ -4,6 +4,7 @@ package settings
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 	"sync"
@@ -13,13 +14,13 @@ import (
 
 var (
 	// ErrSettingNotFound reports an unknown setting within a category.
-	ErrSettingNotFound         = errors.New("setting not found")
+	ErrSettingNotFound = errors.New("setting not found")
 	// ErrSettingTypeMismatch reports a value incompatible with the declared setting type.
-	ErrSettingTypeMismatch     = errors.New("setting type mismatch")
+	ErrSettingTypeMismatch = errors.New("setting type mismatch")
 	// ErrSettingCategoryNotFound reports an unknown category.
 	ErrSettingCategoryNotFound = errors.New("setting category not found")
 	// ErrInvalidSettingID reports an ID without nonempty category and setting components.
-	ErrInvalidSettingID        = errors.New("invalid setting ID")
+	ErrInvalidSettingID = errors.New("invalid setting ID")
 )
 
 //nolint:gochecknoglobals // don't want to have to specify this in every function
@@ -42,7 +43,8 @@ func (c Category) clone() Category {
 	cp := c
 	if c.Settings != nil {
 		cp.Settings = make(map[string]Setting, len(c.Settings))
-		for k, v := range c.Settings {
+		for k := range c.Settings {
+			v := c.Settings[k]
 			cp.Settings[k] = v.clone()
 		}
 	}
@@ -66,8 +68,8 @@ func cloneValue(v any) any {
 		cp := make([]float64, len(val))
 		copy(cp, val)
 		return cp
-	case []interface{}:
-		cp := make([]interface{}, len(val))
+	case []any:
+		cp := make([]any, len(val))
 		for i, elem := range val {
 			cp[i] = cloneValue(elem)
 		}
@@ -195,7 +197,8 @@ func (p *provider) mergeSettingsLocked(categories ...Category) {
 			// we don't have this category, go ahead and full assign it and set the settings
 			// to their defaults
 			newSettings := make(map[string]Setting, len(category.Settings))
-			for _, setting := range category.Settings {
+			for key := range category.Settings {
+				setting := category.Settings[key]
 				setting.Value = setting.Default
 				newSettings[setting.ID] = setting
 			}
@@ -210,7 +213,8 @@ func (p *provider) mergeSettingsLocked(categories ...Category) {
 		currentCategory.Description = category.Description
 		currentCategory.Icon = category.Icon
 
-		for id, setting := range category.Settings {
+		for id := range category.Settings {
+			setting := category.Settings[id]
 			current, ok := currentCategory.Settings[id]
 			if !ok {
 				// we don't have this setting, go ahead and full assign it with a default
@@ -220,51 +224,35 @@ func (p *provider) mergeSettingsLocked(categories ...Category) {
 				continue
 			}
 
-			// now for the merge behavior. We'll want to make sure that the setting type is the same
-			// as the existing setting, so we'll need to use reflection here.
-			// if there's a type mismatch, don't fail, but log an error
-			// TODO - we should probably do some behavior here to try to convert the value to the
-			// correct type, but for now, we'll just log an error
-			if setting.Type != current.Type {
-				// log an error and continue
-				p.logger.Errorf(
-					"setting type mismatch: %s. currently has %q, tried to assign %q",
-					id,
-					current.Type,
-					setting.Type,
-				)
-				continue
-			}
-
-			var toCheck interface{}
-			if setting.Value != nil {
-				toCheck = setting.Value
-			} else {
-				toCheck = setting.Default
-			}
-
-			if reflect.TypeOf(current.Value) != reflect.TypeOf(toCheck) {
-				// log an error and continue
-				p.logger.Errorf(
-					"setting value mismatch: %s. currently has %s, tried to assign %s",
-					id,
-					reflect.TypeOf(current.Value),
-					reflect.TypeOf(toCheck),
-				)
-				continue
-			}
-
-			current.Label = setting.Label
-			current.Description = setting.Description
-			current.Default = setting.Default
-			current.Validator = setting.Validator
-			current.Options = setting.Options
-
+			p.mergeSettingMetadata(id, &current, &setting)
 			currentCategory.Settings[id] = current
 		}
 
 		p.store[category.ID] = currentCategory
 	}
+}
+
+// mergeSettingMetadata preserves existing values and rejects incompatible metadata.
+func (p *provider) mergeSettingMetadata(id string, current, incoming *Setting) {
+	if incoming.Type != current.Type {
+		p.logger.Errorf("setting type mismatch: %s. currently has %q, tried to assign %q",
+			id, current.Type, incoming.Type)
+		return
+	}
+	toCheck := incoming.Value
+	if toCheck == nil {
+		toCheck = incoming.Default
+	}
+	if reflect.TypeOf(current.Value) != reflect.TypeOf(toCheck) {
+		p.logger.Errorf("setting value mismatch: %s. currently has %s, tried to assign %s",
+			id, reflect.TypeOf(current.Value), reflect.TypeOf(toCheck))
+		return
+	}
+	current.Label = incoming.Label
+	current.Description = incoming.Description
+	current.Default = incoming.Default
+	current.Validator = incoming.Validator
+	current.Options = incoming.Options
 }
 
 func (p *provider) ListSettings() Store {
@@ -288,8 +276,8 @@ func (p *provider) Values() map[string]any {
 func (p *provider) valuesLocked() map[string]any {
 	m := make(map[string]any, len(p.store))
 	for categoryID, category := range p.store {
-		for settingID, setting := range category.Settings {
-			m[fmt.Sprintf("%s.%s", categoryID, settingID)] = cloneValue(setting.Value)
+		for settingID := range category.Settings {
+			m[fmt.Sprintf("%s.%s", categoryID, settingID)] = cloneValue(category.Settings[settingID].Value)
 		}
 	}
 
@@ -360,7 +348,8 @@ func (p *provider) SetSettings(settings map[string]any) error {
 	// Phase 3: commit validated values (write lock).
 	changedCategories := make(map[string]struct{}, len(entries))
 	p.storeMu.Lock()
-	for _, e := range entries {
+	for i := range entries {
+		e := &entries[i]
 		p.store[e.category].Settings[e.settingID] = e.setting
 		changedCategories[e.category] = struct{}{}
 	}
@@ -469,7 +458,8 @@ func (p *provider) RegisterSettings(category string, settings ...Setting) error 
 	if found.Settings == nil {
 		found.Settings = make(map[string]Setting)
 	}
-	for _, setting := range settings {
+	for i := range settings {
+		setting := settings[i]
 		if existing, exists := found.Settings[setting.ID]; !exists {
 			setting.Value = setting.Default
 		} else if existing.Type != setting.Type {
@@ -495,9 +485,7 @@ func (p *provider) notifyChangeHandlers(changedCategories map[string]struct{}) {
 	p.changeHandlersMu.RLock()
 	// Snapshot the handlers to release the lock before calling them.
 	handlers := make(map[string]CategoryChangeFunc, len(p.changeHandlers))
-	for k, v := range p.changeHandlers {
-		handlers[k] = v
-	}
+	maps.Copy(handlers, p.changeHandlers)
 	p.changeHandlersMu.RUnlock()
 
 	for cat := range changedCategories {
@@ -556,30 +544,24 @@ func (p *provider) getCategoryLocked(category string) (Category, error) {
 
 // GetCategoryValues returns a map of the values of the settings by category.
 // Available on the concrete *provider via type assertion.
-func (p *provider) GetCategoryValues(category string) (map[string]interface{}, error) {
+func (p *provider) GetCategoryValues(category string) (map[string]any, error) {
 	p.storeMu.RLock()
 	defer p.storeMu.RUnlock()
 	return p.getCategoryValuesLocked(category)
 }
 
 // getCategoryValuesLocked is the private implementation. Caller must hold storeMu (read or write).
-func (p *provider) getCategoryValuesLocked(category string) (map[string]interface{}, error) {
+func (p *provider) getCategoryValuesLocked(category string) (map[string]any, error) {
 	cat, err := p.getCategoryLocked(category)
 	if err != nil {
 		return nil, err
 	}
 
-	values := make(map[string]interface{}, len(cat.Settings))
-	for id, setting := range cat.Settings {
-		values[id] = setting.Value
+	values := make(map[string]any, len(cat.Settings))
+	for id := range cat.Settings {
+		values[id] = cat.Settings[id].Value
 	}
 	return values, nil
-}
-
-func (p *provider) parseSettingID(id string) (string, string, error) {
-	p.storeMu.RLock()
-	defer p.storeMu.RUnlock()
-	return p.parseSettingIDLocked(id)
 }
 
 // parseSettingIDLocked does not access the store, but is marked Locked for consistency
@@ -591,8 +573,8 @@ func (p *provider) parseSettingIDLocked(id string) (string, string, error) {
 	}
 
 	parts := strings.Split(id, ".")
-	//nolint:gomnd // self-explanatory
-	if len(parts) != 2 {
+	const settingIDComponents = 2 // category.setting; additional dots remain invalid.
+	if len(parts) != settingIDComponents {
 		return "", "", ErrInvalidSettingID
 	}
 	if parts[0] == "" || parts[1] == "" {
@@ -637,7 +619,7 @@ func (p *provider) GetStringSlice(id string) ([]string, error) {
 	switch v := setting.Value.(type) {
 	case []string:
 		return v, nil
-	case []interface{}:
+	case []any:
 		for _, item := range v {
 			if str, valOk := item.(string); valOk {
 				strs = append(strs, str)
@@ -682,7 +664,7 @@ func (p *provider) GetIntSlice(id string) ([]int, error) {
 	}
 
 	var vals []int
-	if slice, ok := setting.Value.([]interface{}); ok {
+	if slice, ok := setting.Value.([]any); ok {
 		for _, item := range slice {
 			switch item := item.(type) {
 			case int:
@@ -743,7 +725,7 @@ func (p *provider) GetFloatSlice(id string) ([]float64, error) {
 	}
 
 	var vals []float64
-	if slice, ok := setting.Value.([]interface{}); ok {
+	if slice, ok := setting.Value.([]any); ok {
 		for _, item := range slice {
 			switch item := item.(type) {
 			case float64:

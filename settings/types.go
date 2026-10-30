@@ -67,5 +67,5 @@ type SettingOption struct {
 	// Description is an optional human readable description of the option
 	Description string `json:"description"`
 	// Value is the value of the option
-	Value interface{} `json:"value"`
+	Value any `json:"value"`
 }

@@ -2,9 +2,10 @@ package settings
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -40,7 +41,7 @@ func TestValidationRPCExecutesRegisteredCallbacksWithoutMutation(t *testing.T) {
 					Default:   "",
 					Sensitive: true,
 					Validator: func(value any) base.ValidationResult {
-						return base.ValidationResult{Code: "private", Message: value.(string)}
+						return base.ValidationResult{Code: "private", Message: fmt.Sprint(value)}
 					},
 				},
 			}}},
@@ -54,21 +55,20 @@ func TestValidationRPCExecutesRegisteredCallbacksWithoutMutation(t *testing.T) {
 	t.Cleanup(func() {
 		server.Stop()
 		_ = listener.Close()
-		<-done
+		if serveErr := <-done; serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
+			t.Errorf("owned validation RPC server: %v", serveErr)
+		}
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	connection, err := grpc.DialContext(
-		ctx,
+	connection, err := grpc.NewClient(
 		"passthrough:///validation",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return listener.DialContext(ctx)
 		}),
-		grpc.WithBlock(),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
+	waitForSettingsConnection(t, connection)
 	client := &Client{client: settingspb.NewSettingsPluginClient(connection)}
 	result, err := client.ValidateSetting("tool", "good")
 	require.NoError(t, err)

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
@@ -21,6 +22,7 @@ import (
 
 type settingValueWireServer struct {
 	settingspb.UnimplementedSettingsPluginServer
+
 	values map[string]*anypb.Any
 }
 
@@ -74,23 +76,20 @@ func TestClientGetSettingValueRPCDecodesValuesAndErrors(t *testing.T) {
 	t.Cleanup(func() {
 		server.Stop()
 		_ = listener.Close()
-		if err := <-done; err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			t.Errorf("owned settings RPC server: %v", err)
+		if serveErr := <-done; serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
+			t.Errorf("owned settings RPC server: %v", serveErr)
 		}
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	connection, err := grpc.DialContext(
-		ctx,
+	connection, err := grpc.NewClient(
 		"passthrough:///settings-contract",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return listener.DialContext(ctx)
 		}),
-		grpc.WithBlock(),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, connection.Close()) })
+	waitForSettingsConnection(t, connection)
 	client := &Client{client: settingspb.NewSettingsPluginClient(connection)}
 
 	for _, tc := range cases {
@@ -110,4 +109,19 @@ func TestClientGetSettingValueRPCDecodesValuesAndErrors(t *testing.T) {
 		_, err := client.GetSettingValue("unknown setting")
 		require.Equal(t, codes.NotFound, status.Code(err))
 	})
+}
+
+// waitForSettingsConnection preserves a bounded readiness wait for in-memory RPC fixtures.
+func waitForSettingsConnection(t *testing.T, connection *grpc.ClientConn) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	connection.Connect()
+	for {
+		state := connection.GetState()
+		if state == connectivity.Ready {
+			return
+		}
+		require.True(t, connection.WaitForStateChange(ctx, state), "settings RPC connection did not become ready")
+	}
 }

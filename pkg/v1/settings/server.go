@@ -25,8 +25,8 @@ func (s *SettingsPluginServer) ListSettings(
 	resp := s.Impl.ListSettings()
 
 	settings := make(map[string]*settingspb.Setting)
-	for k, v := range resp {
-		settings[k] = ToProtoSetting(v)
+	for k := range resp {
+		settings[k] = ToProtoSetting(resp[k])
 	}
 
 	return &settingspb.ListSettingsResponse{
@@ -96,7 +96,7 @@ func (s *SettingsPluginServer) SetSettings(
 	_ context.Context,
 	in *settingspb.SetSettingsRequest,
 ) (*emptypb.Empty, error) {
-	values := make(map[string]interface{})
+	values := make(map[string]any)
 	for k, v := range in.GetSettings() {
 		value, err := ConvertAnyToInterface(v)
 		if err != nil {

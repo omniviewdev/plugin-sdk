@@ -50,7 +50,7 @@ func TestRegisterChangeHandler_CalledOnSetSetting(t *testing.T) {
 	p := newTestProvider(t, testCategory())
 
 	var called bool
-	p.RegisterChangeHandler("test", func(vals map[string]any) {
+	p.RegisterChangeHandler("test", func(_ map[string]any) {
 		called = true
 	})
 
@@ -67,7 +67,7 @@ func TestRegisterChangeHandler_CalledOnResetSetting(t *testing.T) {
 	require.NoError(t, p.SetSetting("test.enabled", true))
 
 	var called bool
-	p.RegisterChangeHandler("test", func(vals map[string]any) {
+	p.RegisterChangeHandler("test", func(_ map[string]any) {
 		called = true
 	})
 
@@ -88,7 +88,7 @@ func TestRegisterChangeHandler_NotCalledForOtherCategory(t *testing.T) {
 	p := newTestProvider(t, testCategory(), other)
 
 	var called bool
-	p.RegisterChangeHandler("other", func(vals map[string]any) {
+	p.RegisterChangeHandler("other", func(_ map[string]any) {
 		called = true
 	})
 
@@ -129,7 +129,7 @@ func TestRegisterChangeHandler_SetSettingsBulkCallsOncePerCategory(t *testing.T)
 	p := newTestProvider(t, testCategory())
 
 	callCount := 0
-	p.RegisterChangeHandler("test", func(vals map[string]any) {
+	p.RegisterChangeHandler("test", func(_ map[string]any) {
 		callCount++
 	})
 
@@ -212,7 +212,7 @@ func TestSetSetting_Validates(t *testing.T) {
 				ID:      "port",
 				Type:    Integer,
 				Default: 8080,
-				Validator: func(v interface{}) ValidationResult {
+				Validator: func(v any) ValidationResult {
 					n, ok := v.(int)
 					if !ok {
 						return ValidationResult{Code: "invalid_type", Message: "must be int"}
@@ -253,7 +253,7 @@ func TestSetSetting_TypeCoercion(t *testing.T) {
 	require.NoError(t, p.SetSetting("misc.rate", 3))
 	val, err := p.GetSettingValue("misc.rate")
 	require.NoError(t, err)
-	assert.Equal(t, float64(3), val)
+	assert.InDelta(t, float64(3), val, 0)
 
 	// float64 -> int coercion
 	require.NoError(t, p.SetSetting("misc.count", float64(42)))
@@ -285,7 +285,7 @@ func TestSetSettings_PartialFailure(t *testing.T) {
 			"ok": {ID: "ok", Type: Text, Default: "orig"},
 			"guarded": {
 				ID: "guarded", Type: Integer, Default: 5,
-				Validator: func(v interface{}) ValidationResult {
+				Validator: func(v any) ValidationResult {
 					if n, ok := v.(int); ok && n < 0 {
 						return ValidationResult{Code: "negative", Message: "negative"}
 					}
@@ -461,7 +461,7 @@ func TestChangeHandler_FiresOnSet(t *testing.T) {
 	p := newTestProvider(t, testCategory())
 
 	fired := false
-	p.RegisterChangeHandler("test", func(vals map[string]any) {
+	p.RegisterChangeHandler("test", func(_ map[string]any) {
 		fired = true
 	})
 
@@ -473,7 +473,7 @@ func TestChangeHandler_FiresOnBulkSet(t *testing.T) {
 	p := newTestProvider(t, testCategory())
 
 	fired := false
-	p.RegisterChangeHandler("test", func(vals map[string]any) {
+	p.RegisterChangeHandler("test", func(_ map[string]any) {
 		fired = true
 	})
 
@@ -500,7 +500,7 @@ func TestChangeHandler_ReceivesAllCategoryValues_Comprehensive(t *testing.T) {
 func TestChangeHandler_PanicRecovery(t *testing.T) {
 	p := newTestProvider(t, testCategory())
 
-	p.RegisterChangeHandler("test", func(vals map[string]any) {
+	p.RegisterChangeHandler("test", func(_ map[string]any) {
 		panic("boom")
 	})
 
@@ -526,8 +526,8 @@ func TestChangeHandler_MultipleCategories(t *testing.T) {
 	p := newTestProvider(t, catA, catB)
 
 	firedA, firedB := false, false
-	p.RegisterChangeHandler("a", func(vals map[string]any) { firedA = true })
-	p.RegisterChangeHandler("b", func(vals map[string]any) { firedB = true })
+	p.RegisterChangeHandler("a", func(_ map[string]any) { firedA = true })
+	p.RegisterChangeHandler("b", func(_ map[string]any) { firedB = true })
 
 	err := p.SetSettings(map[string]any{
 		"a.x": "new-ax",
@@ -543,7 +543,7 @@ func TestChangeHandler_FiresOnNoOpSet(t *testing.T) {
 	p := newTestProvider(t, testCategory())
 
 	callCount := 0
-	p.RegisterChangeHandler("test", func(vals map[string]any) {
+	p.RegisterChangeHandler("test", func(_ map[string]any) {
 		callCount++
 	})
 
