@@ -203,6 +203,8 @@ func (p *PluginClient) ClosePortForwardSession(
 	return NewPortForwardSessionFromProto(resp.GetSession())
 }
 
+const remoteShutdownTimeout = 30 * time.Second
+
 // StopAll performs a best-effort shutdown of all remote sessions by listing
 // them and closing each individually. Per-session close errors are logged
 // but do not stop the loop.
@@ -212,7 +214,7 @@ func (p *PluginClient) StopAll() {
 		log = logging.NewNop()
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), remoteShutdownTimeout)
 	defer cancel()
 
 	// Wrap with an empty PluginContext so gRPC interceptors see consistent metadata.
@@ -275,7 +277,7 @@ func (p *PluginClient) StartResourcePortForwardSession(
 	if err := admissionError(); err != nil {
 		return nil, err
 	}
-	if response.GetResourceWireVersion() != 2 {
+	if response.GetResourceWireVersion() != resourcev2.WireVersion {
 		return nil, resourcev2.NewError("UNSUPPORTED", "Resource wire version 2 is required.")
 	}
 	if response.GetSession() == nil || response.GetSession().GetResourceConnection() == nil {

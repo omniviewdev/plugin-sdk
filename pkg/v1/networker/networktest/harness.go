@@ -64,6 +64,8 @@ func WithLogger(l logging.Logger) HarnessOption {
 	}
 }
 
+const defaultStartPort int32 = 10000
+
 // Mount creates a new Harness. Cleaned up via t.Cleanup().
 func Mount(t *testing.T, opts ...HarnessOption) *Harness {
 	t.Helper()
@@ -77,7 +79,7 @@ func Mount(t *testing.T, opts ...HarnessOption) *Harness {
 	}
 
 	if cfg.portChecker == nil {
-		cfg.portChecker = NewFakePortChecker(10000)
+		cfg.portChecker = NewFakePortChecker(defaultStartPort)
 	}
 	if cfg.logger == nil {
 		cfg.logger = logging.NewNop()

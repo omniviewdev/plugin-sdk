@@ -221,50 +221,9 @@ func (m *Manager) StartResourcePortForwardSession(
 				session, err = m.startPortForwardSession(bound, opts)
 				return err
 			}
-			lifetime, cancel := context.WithCancel(context.WithoutCancel(bound.Context))
-			request := pluginctx.Context
-			if request == nil {
-				request = context.Background()
-			}
-			stopRequest = context.AfterFunc(request, cancel)
-			type outcome struct {
-				session *PortForwardSession
-				err     error
-			}
-			created := make(chan outcome, 1)
-			go func() {
-				defer cancel()
-				published := false
-				err := m.connectionProvider.WithConnection(
-					lifetime,
-					resourcev2.AccessRoute{Connection: bound.Connection.ID},
-					func(ctx context.Context, configured types.Connection) error {
-						copy := *bound
-						copy.Context = ctx
-						copy.Connection = &configured
-						entry, err := m.createPortForwardSession(&copy, opts, true)
-						if err != nil {
-							return err
-						}
-						session := entry.snapshot()
-						created <- outcome{session: &session}
-						published = true
-						// Close/StopAll cancels the session; retirement cancels ctx.
-						select {
-						case <-entry.ctx.Done():
-						case <-ctx.Done():
-							entry.cancel(context.Cause(ctx))
-						}
-						return nil
-					},
-				)
-				if !published {
-					created <- outcome{err: err}
-				}
-			}()
-			result := <-created
-			session = result.session
-			return result.err
+			var creationErr error
+			session, stopRequest, creationErr = m.startLeasedPortForward(pluginctx.Context, bound, opts)
+			return creationErr
 		},
 	)
 	if stopRequest != nil {
@@ -280,6 +239,57 @@ func (m *Manager) StartResourcePortForwardSession(
 		return nil, err
 	}
 	return session, nil
+}
+
+// startLeasedPortForward keeps native creation and accepted lifetime within one
+// generation lease. The caller detaches only request cancellation after admission.
+func (m *Manager) startLeasedPortForward(
+	request context.Context,
+	bound *types.PluginContext,
+	opts PortForwardSessionOptions,
+) (*PortForwardSession, func() bool, error) {
+	lifetime, cancel := context.WithCancel(context.WithoutCancel(bound.Context))
+	if request == nil {
+		request = context.Background()
+	}
+	stopRequest := context.AfterFunc(request, cancel)
+	type outcome struct {
+		session *PortForwardSession
+		err     error
+	}
+	created := make(chan outcome, 1)
+	go func() {
+		defer cancel()
+		published := false
+		err := m.connectionProvider.WithConnection(
+			lifetime,
+			resourcev2.AccessRoute{Connection: bound.Connection.ID},
+			func(ctx context.Context, configured types.Connection) error {
+				boundCopy := *bound
+				boundCopy.Context = ctx
+				boundCopy.Connection = &configured
+				entry, creationErr := m.createPortForwardSession(&boundCopy, opts, true)
+				if creationErr != nil {
+					return creationErr
+				}
+				session := entry.snapshot()
+				created <- outcome{session: &session}
+				published = true
+				// Close/StopAll cancels the session; retirement cancels ctx.
+				select {
+				case <-entry.ctx.Done():
+				case <-ctx.Done():
+					entry.cancel(context.Cause(ctx))
+				}
+				return nil
+			},
+		)
+		if !published {
+			created <- outcome{err: err}
+		}
+	}()
+	result := <-created
+	return result.session, stopRequest, result.err
 }
 
 func (m *Manager) startPortForwardSession(
@@ -314,23 +324,10 @@ func (m *Manager) createPortForwardSession(
 		baseCtx = context.WithoutCancel(request)
 	}
 
-	logger := m.log.With(logging.String("connection_type", string(opts.ConnectionType)))
-
-	// Validate protocol early — reject unknown values instead of silently
-	// coercing them to TCP in the proto conversion layer.
-	if !opts.Protocol.Valid() {
-		return nil, fmt.Errorf("invalid port forward protocol: %q", opts.Protocol)
-	}
-
-	// Resolve port
 	var err error
-	if opts.LocalPort == 0 {
-		opts.LocalPort, err = m.portChecker.FindFreePort()
-		if err != nil {
-			return nil, err
-		}
-	} else if m.portChecker.IsPortUnavailable(opts.LocalPort) {
-		return nil, NewPortUnavailableError(opts.LocalPort)
+	opts, err = m.resolveForwardEndpoint(opts)
+	if err != nil {
+		return nil, err
 	}
 
 	// Shallow-copy PluginContext — never mutate the caller's instance.
@@ -361,31 +358,10 @@ func (m *Manager) createPortForwardSession(
 		return nil, NewManagerShuttingDownError(sessionID)
 	}
 
-	var result *ForwarderResult
-
-	switch opts.ConnectionType {
-	case PortForwardConnectionTypeResource:
-		result, err = m.handleResourceForward(ctx, &pctxCopy, opts)
-	case PortForwardConnectionTypeStatic:
-		result, err = m.handleStaticForward(ctx, &pctxCopy, opts)
-	default:
-		cancel(nil)
-		return nil, NewInvalidConnectionTypeError(string(opts.ConnectionType))
-	}
-
+	result, err := m.invokeForwarder(ctx, &pctxCopy, opts, sessionID)
 	if err != nil {
 		cancel(nil)
-		// Preserve already-typed NetworkerErrors; wrap others.
-		var nerr *NetworkerError
-		if errors.As(err, &nerr) {
-			return nil, err
-		}
-		return nil, NewForwarderFailedError(sessionID, err)
-	}
-
-	if result == nil {
-		cancel(nil)
-		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("forwarder returned nil result"))
+		return nil, err
 	}
 
 	// Use session ID from the forwarder if it provided one, otherwise use ours.
@@ -393,41 +369,9 @@ func (m *Manager) createPortForwardSession(
 		sessionID = result.SessionID
 	}
 
-	// Wait for the forwarder to report ready (or fail).
-	// Prefer ready over errCh with a non-blocking check first, since both
-	// may be signalled simultaneously (e.g. forwarder closes ready then errCh).
-	if result.Ready != nil {
-		select {
-		case <-result.Ready:
-			// tunnel established
-		default:
-			// Not ready yet — wait on all channels.
-			select {
-			case <-result.Ready:
-				// tunnel established
-			case err, ok := <-result.ErrCh:
-				cancel(nil)
-				if !ok {
-					return nil, NewForwarderFailedError(
-						sessionID,
-						fmt.Errorf("forwarder error channel closed before ready"),
-					)
-				}
-				if err == nil {
-					return nil, NewForwarderFailedError(
-						sessionID,
-						fmt.Errorf("forwarder error channel returned nil error"),
-					)
-				}
-				return nil, NewForwarderFailedError(sessionID, err)
-			case <-ctx.Done():
-				cancel(nil)
-				return nil, NewForwarderFailedError(sessionID, ctx.Err())
-			case <-m.clock.After(readyTimeout):
-				cancel(nil)
-				return nil, NewForwarderFailedError(sessionID, fmt.Errorf("timed out waiting for tunnel to be ready"))
-			}
-		}
+	if readinessErr := m.waitForwarderReady(ctx, result); readinessErr != nil {
+		cancel(nil)
+		return nil, NewForwarderFailedError(sessionID, readinessErr)
 	}
 	// Readiness can race cancellation, including an already-closed Ready.
 	stopRequest()
@@ -436,49 +380,130 @@ func (m *Manager) createPortForwardSession(
 		return nil, NewForwarderFailedError(sessionID, err)
 	}
 
-	// Defensive copy of labels to prevent external mutation.
-	labels := maps.Clone(opts.Labels)
-
 	now := m.clock.Now()
-	newSession := PortForwardSession{
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		Labels:         labels,
-		Connection:     cloneConnection(opts.Connection),
-		ID:             sessionID,
-		Protocol:       opts.Protocol,
-		State:          SessionStateActive,
-		ConnectionType: opts.ConnectionType,
-		Encryption:     opts.Encryption,
-		LocalPort:      opts.LocalPort,
-		RemotePort:     opts.RemotePort,
-	}
-
 	entry := &sessionEntry{
-		session: newSession,
-		ctx:     ctx,
-		cancel:  cancel,
+		session: PortForwardSession{
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			Labels:         maps.Clone(opts.Labels),
+			Connection:     cloneConnection(opts.Connection),
+			ID:             sessionID,
+			Protocol:       opts.Protocol,
+			State:          SessionStateActive,
+			ConnectionType: opts.ConnectionType,
+			Encryption:     opts.Encryption,
+			LocalPort:      opts.LocalPort,
+			RemotePort:     opts.RemotePort,
+		},
+		ctx:    ctx,
+		cancel: cancel,
 	}
 
-	m.mu.Lock()
-	if m.stopped {
-		m.mu.Unlock()
+	if publishErr := m.publishSession(entry, result.ErrCh); publishErr != nil {
 		cancel(nil)
-		return nil, NewManagerShuttingDownError(sessionID)
+		return nil, publishErr
+	}
+
+	m.log.With(logging.String("connection_type", string(opts.ConnectionType))).
+		Debugw(ctx, "port forward session started", "session_id", sessionID)
+
+	return entry, nil
+}
+
+// resolveForwardEndpoint validates the requested transport before probing a
+// listener port. Port discovery does not reserve that port for native creation.
+func (m *Manager) resolveForwardEndpoint(opts PortForwardSessionOptions) (PortForwardSessionOptions, error) {
+	if !opts.Protocol.Valid() {
+		return opts, fmt.Errorf("invalid port forward protocol: %q", opts.Protocol)
+	}
+	if opts.LocalPort == 0 {
+		port, err := m.portChecker.FindFreePort()
+		if err != nil {
+			return opts, err
+		}
+		opts.LocalPort = port
+	} else if m.portChecker.IsPortUnavailable(opts.LocalPort) {
+		return opts, NewPortUnavailableError(opts.LocalPort)
+	}
+	return opts, nil
+}
+
+// waitForwarderReady prefers readiness when both forwarder channels are ready.
+// Cancellation still wins at the caller's final admission fence.
+func (m *Manager) waitForwarderReady(ctx context.Context, result *ForwarderResult) error {
+	if result.Ready == nil {
+		return nil
+	}
+	select {
+	case <-result.Ready:
+		return nil
+	default:
+	}
+	select {
+	case <-result.Ready:
+		return nil
+	case err, ok := <-result.ErrCh:
+		if !ok {
+			return fmt.Errorf("forwarder error channel closed before ready")
+		}
+		if err == nil {
+			return fmt.Errorf("forwarder error channel returned nil error")
+		}
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-m.clock.After(readyTimeout):
+		return fmt.Errorf("timed out waiting for tunnel to be ready")
+	}
+}
+
+// publishSession checks shutdown and ID uniqueness under the same lock that
+// starts monitoring, so StopAll cannot race a new WaitGroup admission.
+func (m *Manager) publishSession(entry *sessionEntry, errCh <-chan error) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sessionID := entry.session.ID
+	if m.stopped {
+		return NewManagerShuttingDownError(sessionID)
 	}
 	if _, exists := m.sessions[sessionID]; exists {
-		m.mu.Unlock()
-		cancel(nil)
-		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("duplicate session ID %q", sessionID))
+		return NewForwarderFailedError(sessionID, fmt.Errorf("duplicate session ID %q", sessionID))
 	}
 	m.sessions[sessionID] = entry
 	m.wg.Add(1)
-	go m.monitorSession(entry, result.ErrCh)
-	m.mu.Unlock()
+	go m.monitorSession(entry, errCh)
+	return nil
+}
 
-	logger.Debugw(ctx, "port forward session started", "session_id", sessionID)
-
-	return entry, nil
+// invokeForwarder dispatches one native creation and normalizes failure without
+// replacing an existing NetworkerError classification.
+func (m *Manager) invokeForwarder(
+	ctx context.Context,
+	pluginctx *types.PluginContext,
+	opts PortForwardSessionOptions,
+	sessionID string,
+) (*ForwarderResult, error) {
+	var result *ForwarderResult
+	var err error
+	switch opts.ConnectionType {
+	case PortForwardConnectionTypeResource:
+		result, err = m.handleResourceForward(ctx, pluginctx, opts)
+	case PortForwardConnectionTypeStatic:
+		result, err = m.handleStaticForward(ctx, pluginctx, opts)
+	default:
+		return nil, NewInvalidConnectionTypeError(string(opts.ConnectionType))
+	}
+	if err != nil {
+		var nerr *NetworkerError
+		if errors.As(err, &nerr) {
+			return nil, err
+		}
+		return nil, NewForwarderFailedError(sessionID, err)
+	}
+	if result == nil {
+		return nil, NewForwarderFailedError(sessionID, fmt.Errorf("forwarder returned nil result"))
+	}
+	return result, nil
 }
 
 func (m *Manager) handleResourceForward(

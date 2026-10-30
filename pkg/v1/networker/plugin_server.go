@@ -17,6 +17,7 @@ import (
 // PluginServer exposes a forwarding provider over gRPC with resource wire admission.
 type PluginServer struct {
 	networkerpb.UnimplementedNetworkerPluginServer
+
 	Impl Provider
 }
 
@@ -43,7 +44,7 @@ func grpcCodeForNetworkerError(err error) codes.Code {
 			return codes.NotFound
 		case ErrCodePortUnavailable:
 			return codes.FailedPrecondition
-		case ErrCodeForwarderFailed:
+		case ErrCodeForwarderFailed, ErrCodeManagerShuttingDown:
 			return codes.Internal
 		case ErrCodeInvalidStateTransition:
 			return codes.FailedPrecondition
@@ -81,7 +82,7 @@ func (s *PluginServer) GetPortForwardSession(
 	if resp == nil {
 		return &networkerpb.PortForwardSessionByIdResponse{Session: nil}, nil
 	}
-	if err := preflightSessions([]*PortForwardSession{resp}, false); err != nil {
+	if err = preflightSessions([]*PortForwardSession{resp}, false); err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 
@@ -101,7 +102,7 @@ func (s *PluginServer) ListPortForwardSessions(
 	if err != nil {
 		return nil, networkRPCError(err)
 	}
-	if err := preflightSessions(resp, false); err != nil {
+	if err = preflightSessions(resp, false); err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	sessions := make([]*networkerpb.PortForwardSession, 0, len(resp))
@@ -109,15 +110,15 @@ func (s *PluginServer) ListPortForwardSessions(
 		if session == nil {
 			continue
 		}
-		p, err := session.ToProto()
-		if err != nil {
-			return nil, resourceplugin.ResourceRPCError(err)
+		p, conversionErr := session.ToProto()
+		if conversionErr != nil {
+			return nil, resourceplugin.ResourceRPCError(conversionErr)
 		}
 		sessions = append(sessions, p)
 	}
 
 	out := &networkerpb.PortForwardSessionListResponse{Sessions: sessions}
-	if err := validateFrame(out); err != nil {
+	if err = validateFrame(out); err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	return out, nil
@@ -136,7 +137,7 @@ func (s *PluginServer) FindPortForwardSessions(
 		return nil, networkRPCError(err)
 	}
 
-	if err := preflightSessions(resp, false); err != nil {
+	if err = preflightSessions(resp, false); err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	sessions := make([]*networkerpb.PortForwardSession, 0, len(resp))
@@ -144,15 +145,15 @@ func (s *PluginServer) FindPortForwardSessions(
 		if session == nil {
 			continue
 		}
-		p, err := session.ToProto()
-		if err != nil {
-			return nil, resourceplugin.ResourceRPCError(err)
+		p, conversionErr := session.ToProto()
+		if conversionErr != nil {
+			return nil, resourceplugin.ResourceRPCError(conversionErr)
 		}
 		sessions = append(sessions, p)
 	}
 
 	out := &networkerpb.PortForwardSessionListResponse{Sessions: sessions}
-	if err := validateFrame(out); err != nil {
+	if err = validateFrame(out); err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	return out, nil
@@ -177,7 +178,7 @@ func (s *PluginServer) StartPortForwardSession(
 	if resp == nil {
 		return &networkerpb.PortForwardSessionByIdResponse{Session: nil}, nil
 	}
-	if err := preflightSessions([]*PortForwardSession{resp}, false); err != nil {
+	if err = preflightSessions([]*PortForwardSession{resp}, false); err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 
@@ -203,7 +204,7 @@ func (s *PluginServer) ClosePortForwardSession(
 	if resp == nil {
 		return &networkerpb.PortForwardSessionByIdResponse{Session: nil}, nil
 	}
-	if err := preflightSessions([]*PortForwardSession{resp}, false); err != nil {
+	if err = preflightSessions([]*PortForwardSession{resp}, false); err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 
@@ -234,7 +235,7 @@ func (s *PluginServer) StartResourcePortForwardSession(
 	if pctx == nil {
 		pctx = &types.PluginContext{Context: ctx}
 	}
-	if err := validateResourceContext(pctx, *opts); err != nil {
+	if err = validateResourceContext(pctx, *opts); err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	provider, ok := s.Impl.(ResourcePortForwardProvider)
@@ -251,15 +252,18 @@ func (s *PluginServer) StartResourcePortForwardSession(
 	if _, ok := resourceConnection(session.Connection); !ok {
 		return nil, resourceplugin.ResourceRPCError(resourceInvalidResponse())
 	}
-	if err := preflightSessions([]*PortForwardSession{session}, true); err != nil {
+	if err = preflightSessions([]*PortForwardSession{session}, true); err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	wire, err := session.ToProto()
 	if err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
-	out := &networkerpb.ResourcePortForwardSessionResponse{ResourceWireVersion: 2, Session: wire}
-	if err := validateFrame(out); err != nil {
+	out := &networkerpb.ResourcePortForwardSessionResponse{
+		ResourceWireVersion: resourcev2.WireVersion,
+		Session:             wire,
+	}
+	if err = validateFrame(out); err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	return out, nil

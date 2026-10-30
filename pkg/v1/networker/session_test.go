@@ -44,7 +44,7 @@ func TestCanTransition_InvalidPaths(t *testing.T) {
 	}
 }
 
-func TestConnectionInterface_ResourceConnection(t *testing.T) {
+func TestConnectionInterface_ResourceConnection(_ *testing.T) {
 	var c networker.Connection = networker.PortForwardResourceConnection{
 		ResourceKey: "core::v1::Pod",
 		ResourceID:  "my-pod",
@@ -52,7 +52,7 @@ func TestConnectionInterface_ResourceConnection(t *testing.T) {
 	_ = c // just verifying the interface is satisfied
 }
 
-func TestConnectionInterface_StaticConnection(t *testing.T) {
+func TestConnectionInterface_StaticConnection(_ *testing.T) {
 	var c networker.Connection = networker.PortForwardStaticConnection{
 		Address: "localhost:8080",
 	}

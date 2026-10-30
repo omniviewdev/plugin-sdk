@@ -13,8 +13,10 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
+const resourceDataWireField protowire.Number = 6
+
 // preflightResource bounds the enclosing frame before allocating a protobuf Value tree.
-func preflightResource(parent proto.Message, field int, connection Connection) error {
+func preflightResource(parent proto.Message, field protowire.Number, connection Connection) error {
 	c, ok := resourceConnection(connection)
 	if !ok {
 		return validateFrame(parent)
@@ -26,7 +28,7 @@ func preflightResource(parent proto.Message, field int, connection Connection) e
 	if proto.Size(
 		parent,
 	)+protowire.SizeTag(
-		protowire.Number(field),
+		field,
 	)+protowire.SizeBytes(
 		size,
 	) > resourcev2.MaxMessageBytes {
@@ -48,7 +50,7 @@ func resourceConnectionWireSize(c PortForwardResourceConnection) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		size += protowire.SizeTag(6) + protowire.SizeBytes(n)
+		size += protowire.SizeTag(resourceDataWireField) + protowire.SizeBytes(n)
 	}
 	return size, nil
 }
@@ -72,7 +74,7 @@ func preflightSessions(sessions []*PortForwardSession, resourceResponse bool) er
 				if err != nil {
 					return err
 				}
-				bodyBytes = protowire.SizeTag(6) + protowire.SizeBytes(n)
+				bodyBytes = protowire.SizeTag(resourceDataWireField) + protowire.SizeBytes(n)
 			}
 			c.ResourceData = nil
 			metadata.Connection = c
@@ -228,8 +230,8 @@ func cloneValue(v resourcev2.Value) resourcev2.Value {
 	}
 	if v.Map != nil {
 		cp := make(map[string]resourcev2.Value, len(v.Map))
-		for k, value := range v.Map {
-			cp[k] = cloneValue(value)
+		for k := range v.Map {
+			cp[k] = cloneValue(v.Map[k])
 		}
 		v.Map = cp
 	}

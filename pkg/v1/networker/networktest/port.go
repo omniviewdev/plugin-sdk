@@ -29,7 +29,7 @@ func (f *FakePortChecker) FindFreePort() (int32, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	const maxProbes = 10000
-	for i := 0; i < maxProbes; i++ {
+	for range maxProbes {
 		port := f.nextPort
 		f.nextPort++
 		if !f.unavailablePorts[port] {

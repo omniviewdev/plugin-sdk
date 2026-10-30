@@ -65,7 +65,10 @@ func TestResourceNetworkSnapshotDeepClone(t *testing.T) {
 		Route: &resourcev2.AccessRoute{Connection: "original"},
 	}
 	entry := sessionEntry{session: PortForwardSession{Connection: source}}
-	copied := entry.snapshot().Connection.(PortForwardResourceConnection)
+	copied, ok := entry.snapshot().Connection.(PortForwardResourceConnection)
+	if !ok {
+		t.Fatal("snapshot lost resource connection type")
+	}
 	nested := copied.ResourceData.Map["nested"]
 	nested.List[0].String = "changed"
 	copied.Reference.Address.Scope[0].Value = "changed"

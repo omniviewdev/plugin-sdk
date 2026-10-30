@@ -21,6 +21,7 @@ const (
 )
 
 // PortForwardProvider manages forwarding sessions and reports supported resource targets.
+//nolint:iface // Both exported contracts retain provider source compatibility and identical method membership.
 type PortForwardProvider interface {
 	GetSupportedPortForwardTargets(*types.PluginContext) ([]string, error)
 	GetPortForwardSession(*types.PluginContext, string) (*PortForwardSession, error)
@@ -47,6 +48,7 @@ type ResourcePortForwardProvider interface {
 
 // Provider embeds the session-management contract shared by local managers and
 // remote clients. Resource forwarding is an optional [ResourcePortForwardProvider].
+//nolint:iface // Keep this exported contract distinct without removing any PortForwardProvider methods.
 type Provider interface {
 	PortForwardProvider
 }
@@ -54,6 +56,7 @@ type Provider interface {
 // Plugin connects a forwarding provider to the HashiCorp gRPC plugin protocol.
 type Plugin struct {
 	plugin.Plugin
+
 	Impl Provider
 }
 
@@ -75,7 +78,7 @@ func (p *Plugin) GRPCClient(
 	_ context.Context,
 	_ *plugin.GRPCBroker,
 	c *grpc.ClientConn,
-) (interface{}, error) {
+) (any, error) {
 	return &PluginClient{
 		client: networkerpb.NewNetworkerPluginClient(c),
 		log:    logging.Default().Named("networker.plugin.client"),

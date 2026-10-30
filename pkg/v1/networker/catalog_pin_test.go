@@ -47,15 +47,15 @@ func networkCatalogFixture(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := controller.Close(); err != nil {
-			t.Error(err)
+		if closeErr := controller.Close(); closeErr != nil {
+			t.Error(closeErr)
 		}
 	})
-	if _, err := controller.LoadConnections(context.Background()); err != nil {
-		t.Fatal(err)
+	if _, loadErr := controller.LoadConnections(context.Background()); loadErr != nil {
+		t.Fatal(loadErr)
 	}
-	if _, err := controller.StartConnection(context.Background(), "fixture"); err != nil {
-		t.Fatal(err)
+	if _, startErr := controller.StartConnection(context.Background(), "fixture"); startErr != nil {
+		t.Fatal(startErr)
 	}
 	manager.BindConnectionContextProvider(controller)
 	catalog, err := controller.Catalog(
@@ -157,14 +157,14 @@ func TestNetworkCatalogPinAdmission(t *testing.T) {
 
 func TestNetworkPostFenceClosesCreatedForward(t *testing.T) {
 	var changed atomic.Bool
-	var nativeContext context.Context
+	var nativeErr func() error
 	manager := NewManager(
 		ManagerConfig{PortChecker: canonicalPorts{}},
 		PluginOpts{
 			ResourceForwarders: map[string]ResourceForwarder{
 				"opaque/type": ResourceForwarderFunc(
 					func(ctx context.Context, _ *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
-						nativeContext = ctx
+						nativeErr = ctx.Err
 						changed.Store(true)
 						ready := make(chan struct{})
 						close(ready)
@@ -197,7 +197,7 @@ func TestNetworkPostFenceClosesCreatedForward(t *testing.T) {
 	) != "RESET_REQUIRED" {
 		t.Fatalf("post fence: %v", err)
 	}
-	if nativeContext == nil || nativeContext.Err() == nil {
+	if nativeErr == nil || nativeErr() == nil {
 		t.Fatal("created forward context was not canceled")
 	}
 }
@@ -206,76 +206,7 @@ func TestForwardAdmissionCancellation(t *testing.T) {
 	for _, phase := range []string{"creation", "readiness", "ready-race"} {
 		for _, retire := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/retire=%t", phase, retire), func(t *testing.T) {
-				entered := make(chan struct{})
-				manager := NewManager(
-					ManagerConfig{PortChecker: canonicalPorts{}},
-					PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
-						"opaque/type": ResourceForwarderFunc(
-							func(ctx context.Context, _ *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
-								close(entered)
-								if phase == "creation" {
-									<-ctx.Done()
-									return nil, ctx.Err()
-								}
-								ready := make(chan struct{})
-								if phase == "ready-race" {
-									<-ctx.Done()
-									close(ready)
-								}
-								return &ForwarderResult{Ready: ready}, nil
-							},
-						),
-					}},
-				)
-				controller, pc := networkCatalogFixture(t, manager)
-				t.Cleanup(manager.StopAll)
-				request, cancel := context.WithCancel(pc.Context)
-				defer cancel()
-				pc.Context = request
-				result := make(chan error, 1)
-				go func() {
-					session, err := manager.StartResourcePortForwardSession(pc, canonicalResourceOptions(nil))
-					if session != nil {
-						t.Error("canceled admission returned a session")
-					}
-					result <- err
-				}()
-				select {
-				case <-entered:
-				case <-time.After(time.Second):
-					t.Fatal("native creation did not start")
-				}
-				stopped := make(chan error, 1)
-				if retire {
-					go func() {
-						_, err := controller.StopConnection(context.Background(), "fixture")
-						stopped <- err
-					}()
-				} else {
-					cancel()
-				}
-				select {
-				case err := <-result:
-					if err == nil {
-						t.Fatal("canceled admission succeeded")
-					}
-				case <-time.After(time.Second):
-					t.Fatal("cancellation did not release admission")
-				}
-				if retire {
-					select {
-					case err := <-stopped:
-						if err != nil {
-							t.Fatal(err)
-						}
-					case <-time.After(time.Second):
-						t.Fatal("retirement retained a lease")
-					}
-				}
-				sessions, err := manager.ListPortForwardSessions(pc)
-				if err != nil || len(sessions) != 0 {
-					t.Fatalf("failed admission retained sessions: %v, %v", sessions, err)
-				}
+				testForwardAdmissionCancellation(t, phase, retire)
 			})
 		}
 	}
@@ -284,54 +215,7 @@ func TestForwardAdmissionCancellation(t *testing.T) {
 func TestAcceptedForwardLifetime(t *testing.T) {
 	for _, retire := range []bool{false, true} {
 		t.Run(fmt.Sprintf("retire=%t", retire), func(t *testing.T) {
-			var native context.Context
-			manager := NewManager(
-				ManagerConfig{PortChecker: canonicalPorts{}},
-				PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
-					"opaque/type": ResourceForwarderFunc(
-						func(ctx context.Context, _ *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
-							native = ctx
-							ready := make(chan struct{})
-							close(ready)
-							return &ForwarderResult{Ready: ready}, nil
-						},
-					),
-				}},
-			)
-			controller, pc := networkCatalogFixture(t, manager)
-			t.Cleanup(manager.StopAll)
-			request, cancel := context.WithCancel(pc.Context)
-			defer cancel()
-			pc.Context = request
-			session, err := manager.StartResourcePortForwardSession(pc, canonicalResourceOptions(nil))
-			if err != nil {
-				t.Fatal(err)
-			}
-			cancel()
-			if native.Err() != nil {
-				t.Fatal("RPC completion canceled accepted forward")
-			}
-			if !retire {
-				if _, err := manager.ClosePortForwardSession(pc, session.ID); err != nil {
-					t.Fatal(err)
-				}
-			}
-			stopped := make(chan error, 1)
-			go func() {
-				_, err := controller.StopConnection(context.Background(), "fixture")
-				stopped <- err
-			}()
-			select {
-			case err := <-stopped:
-				if err != nil {
-					t.Fatal(err)
-				}
-			case <-time.After(time.Second):
-				t.Fatal("closed or retired session retained its generation lease")
-			}
-			if native.Err() == nil {
-				t.Fatal("close or retirement did not cancel native forward")
-			}
+			testAcceptedForwardLifetime(t, retire)
 		})
 	}
 }
@@ -339,54 +223,7 @@ func TestAcceptedForwardLifetime(t *testing.T) {
 func TestForwardFailureReleasesGenerationLease(t *testing.T) {
 	for _, creation := range []bool{false, true} {
 		t.Run(fmt.Sprintf("creation=%t", creation), func(t *testing.T) {
-			failed := make(chan error, 1)
-			manager := NewManager(
-				ManagerConfig{PortChecker: canonicalPorts{}},
-				PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
-					"opaque/type": ResourceForwarderFunc(
-						func(context.Context, *types.PluginContext, ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
-							if creation {
-								return nil, fmt.Errorf("native creation failed")
-							}
-							ready := make(chan struct{})
-							close(ready)
-							return &ForwarderResult{Ready: ready, ErrCh: failed}, nil
-						},
-					),
-				}},
-			)
-			controller, pc := networkCatalogFixture(t, manager)
-			t.Cleanup(manager.StopAll)
-			_, err := manager.StartResourcePortForwardSession(pc, canonicalResourceOptions(nil))
-			if creation && err == nil {
-				t.Fatal("native creation failure succeeded")
-			}
-			if !creation {
-				if err != nil {
-					t.Fatal(err)
-				}
-				failed <- fmt.Errorf("native tunnel failed")
-				done := make(chan struct{})
-				go func() { manager.wg.Wait(); close(done) }()
-				select {
-				case <-done:
-				case <-time.After(time.Second):
-					t.Fatal("native failure did not finish monitor")
-				}
-			}
-			stopped := make(chan error, 1)
-			go func() {
-				_, err := controller.StopConnection(context.Background(), "fixture")
-				stopped <- err
-			}()
-			select {
-			case err := <-stopped:
-				if err != nil {
-					t.Fatal(err)
-				}
-			case <-time.After(time.Second):
-				t.Fatal("failed forward retained generation lease")
-			}
+			testForwardFailureReleasesGenerationLease(t, creation)
 		})
 	}
 }
@@ -412,8 +249,8 @@ func TestForwardCreationOwnsExactEntryAcrossIDReuse(t *testing.T) {
 	}
 	// Reproduce the interleaving between insertion and the retained lease's
 	// lifetime wait: another caller closes and replaces the published ID.
-	if _, err := manager.ClosePortForwardSession(pc, first.session.ID); err != nil {
-		t.Fatal(err)
+	if _, closeErr := manager.ClosePortForwardSession(pc, first.session.ID); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	replacement, err := manager.createPortForwardSession(pc, canonicalResourceOptions(nil), true)
 	if err != nil {
@@ -427,5 +264,175 @@ func TestForwardCreationOwnsExactEntryAcrossIDReuse(t *testing.T) {
 		// The original lease can finish even while the replacement is active.
 	default:
 		t.Fatal("replacement hid the original session's closure")
+	}
+}
+
+func testForwardAdmissionCancellation(t *testing.T, phase string, retire bool) {
+	t.Helper()
+	entered := make(chan struct{})
+	manager := NewManager(
+		ManagerConfig{PortChecker: canonicalPorts{}},
+		PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
+			"opaque/type": ResourceForwarderFunc(
+				func(ctx context.Context, _ *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
+					close(entered)
+					if phase == "creation" {
+						<-ctx.Done()
+						return nil, ctx.Err()
+					}
+					ready := make(chan struct{})
+					if phase == "ready-race" {
+						<-ctx.Done()
+						close(ready)
+					}
+					return &ForwarderResult{Ready: ready}, nil
+				},
+			),
+		}},
+	)
+	controller, pc := networkCatalogFixture(t, manager)
+	t.Cleanup(manager.StopAll)
+	request, cancel := context.WithCancel(pc.Context)
+	defer cancel()
+	pc.Context = request
+	result := make(chan error, 1)
+	go func() {
+		session, err := manager.StartResourcePortForwardSession(pc, canonicalResourceOptions(nil))
+		if session != nil {
+			t.Error("canceled admission returned a session")
+		}
+		result <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("native creation did not start")
+	}
+	stopped := make(chan error, 1)
+	if retire {
+		go func() {
+			_, err := controller.StopConnection(context.Background(), "fixture")
+			stopped <- err
+		}()
+	} else {
+		cancel()
+	}
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("canceled admission succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancellation did not release admission")
+	}
+	if retire {
+		awaitNetworkStop(t, stopped, "retirement retained a lease")
+	}
+	sessions, err := manager.ListPortForwardSessions(pc)
+	if err != nil || len(sessions) != 0 {
+		t.Fatalf("failed admission retained sessions: %v, %v", sessions, err)
+	}
+}
+
+func testAcceptedForwardLifetime(t *testing.T, retire bool) {
+	t.Helper()
+	var nativeErr func() error
+	manager := NewManager(
+		ManagerConfig{PortChecker: canonicalPorts{}},
+		PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
+			"opaque/type": ResourceForwarderFunc(
+				func(ctx context.Context, _ *types.PluginContext, _ ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
+					nativeErr = ctx.Err
+					ready := make(chan struct{})
+					close(ready)
+					return &ForwarderResult{Ready: ready}, nil
+				},
+			),
+		}},
+	)
+	controller, pc := networkCatalogFixture(t, manager)
+	t.Cleanup(manager.StopAll)
+	request, cancel := context.WithCancel(pc.Context)
+	defer cancel()
+	pc.Context = request
+	session, err := manager.StartResourcePortForwardSession(pc, canonicalResourceOptions(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if nativeErr() != nil {
+		t.Fatal("RPC completion canceled accepted forward")
+	}
+	if !retire {
+		if _, closeErr := manager.ClosePortForwardSession(pc, session.ID); closeErr != nil {
+			t.Fatal(closeErr)
+		}
+	}
+	stopped := make(chan error, 1)
+	go func() {
+		_, stopErr := controller.StopConnection(context.Background(), "fixture")
+		stopped <- stopErr
+	}()
+	awaitNetworkStop(t, stopped, "closed or retired session retained its generation lease")
+	if nativeErr() == nil {
+		t.Fatal("close or retirement did not cancel native forward")
+	}
+}
+
+func testForwardFailureReleasesGenerationLease(t *testing.T, creation bool) {
+	t.Helper()
+	failed := make(chan error, 1)
+	manager := NewManager(
+		ManagerConfig{PortChecker: canonicalPorts{}},
+		PluginOpts{ResourceForwarders: map[string]ResourceForwarder{
+			"opaque/type": ResourceForwarderFunc(
+				func(context.Context, *types.PluginContext, ResourcePortForwardHandlerOpts) (*ForwarderResult, error) {
+					if creation {
+						return nil, fmt.Errorf("native creation failed")
+					}
+					ready := make(chan struct{})
+					close(ready)
+					return &ForwarderResult{Ready: ready, ErrCh: failed}, nil
+				},
+			),
+		}},
+	)
+	controller, pc := networkCatalogFixture(t, manager)
+	t.Cleanup(manager.StopAll)
+	_, err := manager.StartResourcePortForwardSession(pc, canonicalResourceOptions(nil))
+	if creation && err == nil {
+		t.Fatal("native creation failure succeeded")
+	}
+	if !creation {
+		if err != nil {
+			t.Fatal(err)
+		}
+		failed <- fmt.Errorf("native tunnel failed")
+		done := make(chan struct{})
+		go func() { manager.wg.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("native failure did not finish monitor")
+		}
+	}
+	stopped := make(chan error, 1)
+	go func() {
+		_, stopErr := controller.StopConnection(context.Background(), "fixture")
+		stopped <- stopErr
+	}()
+	awaitNetworkStop(t, stopped, "failed forward retained generation lease")
+}
+
+// awaitNetworkStop bounds teardown so a leaked generation lease fails the test.
+func awaitNetworkStop(t *testing.T, stopped <-chan error, message string) {
+	t.Helper()
+	select {
+	case err := <-stopped:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal(message)
 	}
 }

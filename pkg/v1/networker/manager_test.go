@@ -148,7 +148,7 @@ func TestManager_StopAll_CleansUp(t *testing.T) {
 		networktest.WithResourceForwarder("core::v1::Pod", forwarder),
 	)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		_, err := h.StartSession(networker.PortForwardSessionOptions{
 			ConnectionType: networker.PortForwardConnectionTypeResource,
 			Protocol:       networker.PortForwardProtocolTCP,
@@ -289,10 +289,8 @@ func TestManager_ConcurrentStartClose(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, count*2)
 
-	for i := 0; i < count; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range count {
+		wg.Go(func() {
 			sess, err := h.StartSession(networker.PortForwardSessionOptions{
 				ConnectionType: networker.PortForwardConnectionTypeResource,
 				Protocol:       networker.PortForwardProtocolTCP,
@@ -327,7 +325,7 @@ func TestManager_ConcurrentStartClose(t *testing.T) {
 			if _, err := h.CloseSession(sess.ID); err != nil {
 				errs <- err
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)

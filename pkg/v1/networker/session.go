@@ -17,6 +17,13 @@ import (
 	networkerpb "github.com/omniviewdev/plugin-sdk/proto/v1/networker"
 )
 
+const (
+	resourceWireVersion  = 2
+	resourceDataField    = 6
+	sessionResourceField = 20
+	optionsResourceField = 10
+)
+
 // ---------------------------------------------------------------------------
 // SessionState
 // ---------------------------------------------------------------------------
@@ -25,10 +32,14 @@ import (
 type SessionState string
 
 const (
-	SessionStateActive  SessionState = "ACTIVE"
-	SessionStatePaused  SessionState = "PAUSED"
+	// SessionStateActive means the forwarder has reported readiness.
+	SessionStateActive SessionState = "ACTIVE"
+	// SessionStatePaused permits resumption or termination.
+	SessionStatePaused SessionState = "PAUSED"
+	// SessionStateStopped marks intentional termination.
 	SessionStateStopped SessionState = "STOPPED"
-	SessionStateFailed  SessionState = "FAILED"
+	// SessionStateFailed marks unexpected termination.
+	SessionStateFailed SessionState = "FAILED"
 )
 
 // String returns the stable state label.
@@ -67,28 +78,18 @@ func sessionStateFromProto(p networkerpb.PortForwardSession_SessionState) Sessio
 	}
 }
 
-// validTransitions defines the allowed state machine transitions.
-var validTransitions = map[SessionState]map[SessionState]bool{
-	SessionStateActive: {
-		SessionStatePaused:  true,
-		SessionStateStopped: true,
-		SessionStateFailed:  true,
-	},
-	SessionStatePaused: {
-		SessionStateActive:  true,
-		SessionStateStopped: true,
-		SessionStateFailed:  true,
-	},
-	// STOPPED and FAILED are terminal states.
-}
-
-// CanTransition returns true if transitioning from → to is valid.
+// CanTransition reports whether a nonterminal state permits the requested change.
 func CanTransition(from, to SessionState) bool {
-	targets, ok := validTransitions[from]
-	if !ok {
+	switch from {
+	case SessionStateActive:
+		return to == SessionStatePaused || to == SessionStateStopped || to == SessionStateFailed
+	case SessionStatePaused:
+		return to == SessionStateActive || to == SessionStateStopped || to == SessionStateFailed
+	case SessionStateStopped, SessionStateFailed:
+		return false
+	default:
 		return false
 	}
-	return targets[to]
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +151,8 @@ type PortForwardConnectionType string
 const (
 	// PortForwardConnectionTypeResource selects a registered resource forwarder.
 	PortForwardConnectionTypeResource PortForwardConnectionType = "RESOURCE"
-	PortForwardConnectionTypeStatic   PortForwardConnectionType = "STATIC"
+	// PortForwardConnectionTypeStatic selects a registered address forwarder.
+	PortForwardConnectionTypeStatic PortForwardConnectionType = "STATIC"
 )
 
 // PortForwardProtocolFromProto converts from the protobuf enum. Unknown proto
@@ -251,6 +253,10 @@ type PortForwardSession struct {
 	RemotePort     int32                        `json:"remote_port"`
 }
 
+// ToProto validates and copies the session into a bounded wire frame.
+// A nil receiver represents an absent session and returns nil without error.
+//
+//nolint:nilnil // Nil session is an optional transport value, not a failed lookup.
 func (s *PortForwardSession) ToProto() (*networkerpb.PortForwardSession, error) {
 	if s == nil {
 		return nil, nil
@@ -282,7 +288,7 @@ func (s *PortForwardSession) ToProto() (*networkerpb.PortForwardSession, error) 
 			return nil, resourcev2.NewError("INVALID_REQUEST", err.Error())
 		}
 	}
-	if err := preflightResource(session, 20, s.Connection); err != nil {
+	if err := preflightResource(session, sessionResourceField, s.Connection); err != nil {
 		return nil, err
 	}
 
@@ -311,7 +317,10 @@ func (s *PortForwardSession) ToProto() (*networkerpb.PortForwardSession, error) 
 	return session, nil
 }
 
-// NewPortForwardSessionFromProto creates a PortForwardSession from a protobuf.
+// NewPortForwardSessionFromProto validates and decodes a bounded session frame.
+// Nil input stays absent; invalid resource states, timestamps, and versions fail.
+//
+//nolint:nilnil // Absent protobuf sessions remain absent; callers decide whether absence is valid.
 func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) (*PortForwardSession, error) {
 	if s == nil {
 		return nil, nil
@@ -390,6 +399,8 @@ func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) (*PortFor
 // PortForwardResourceConnection carries exact tagged resource data and only the
 // reference and route supplied by the caller. Opaque legacy selectors retain
 // their original spelling; no identity or resource acquisition is inferred.
+//
+//nolint:recvcheck // Value receivers keep both values and pointers in sealed Connection; codecs require nil checks.
 type PortForwardResourceConnection struct {
 	ResourceData *resourcev2.Value             `json:"resource_data,omitempty"`
 	Reference    *resourcev2.ResourceReference `json:"reference,omitempty"`
@@ -418,7 +429,7 @@ func (c *PortForwardResourceConnection) ToProto() (*networkerpb.PortForwardResou
 		PluginId:            c.PluginID,
 		ResourceId:          c.ResourceID,
 		ResourceKey:         c.ResourceKey,
-		ResourceWireVersion: 2,
+		ResourceWireVersion: resourceWireVersion,
 	}
 	var err error
 	if c.Reference != nil {
@@ -435,11 +446,11 @@ func (c *PortForwardResourceConnection) ToProto() (*networkerpb.PortForwardResou
 	}
 	frameBytes := proto.Size(out)
 	if c.ResourceData != nil {
-		size, err := resourcev2.ValueWireSize(*c.ResourceData)
-		if err != nil {
-			return nil, err
+		size, sizeErr := resourcev2.ValueWireSize(*c.ResourceData)
+		if sizeErr != nil {
+			return nil, sizeErr
 		}
-		frameBytes += protowire.SizeTag(6) + protowire.SizeBytes(size)
+		frameBytes += protowire.SizeTag(resourceDataField) + protowire.SizeBytes(size)
 	}
 	if frameBytes > resourcev2.MaxMessageBytes {
 		return nil, resourcev2.NewError("RESOURCE_LIMIT", "Resource connection exceeds frame limit.")
@@ -467,7 +478,7 @@ func PortForwardResourceConnectionFromProto(
 	if err := validateFrame(o); err != nil {
 		return PortForwardResourceConnection{}, err
 	}
-	if o.ResourceWireVersion != 2 {
+	if o.ResourceWireVersion != resourceWireVersion {
 		return PortForwardResourceConnection{}, resourcev2.NewError(
 			"UNSUPPORTED",
 			"Resource wire version 2 is required.",
@@ -516,6 +527,9 @@ func PortForwardResourceConnectionFromProto(
 // PortForwardStaticConnection
 // ---------------------------------------------------------------------------
 
+// PortForwardStaticConnection identifies a native address without resource identity.
+//
+//nolint:recvcheck // Value receivers preserve sealed Connection membership; pointer codecs preserve nil presence.
 type PortForwardStaticConnection struct {
 	Address string `json:"address"`
 }
@@ -566,6 +580,10 @@ func PortForwardStaticConnectionFromProto(
 	}
 }
 
+// PortForwardStaticConnectionFromJson reads a string address; absent or nonstring
+// addresses remain empty, matching the static target's zero value.
+//
+//nolint:revive,staticcheck // Retain the exported spelling for provider source compatibility.
 func PortForwardStaticConnectionFromJson(o map[string]any) *PortForwardStaticConnection {
 	conn := PortForwardStaticConnection{}
 
@@ -637,6 +655,7 @@ func (o *PortForwardSessionOptions) UnmarshalJSON(data []byte) error {
 	type Alias PortForwardSessionOptions
 	aux := &struct {
 		*Alias
+
 		Connection json.RawMessage `json:"connection"`
 	}{
 		Alias: (*Alias)(o),
@@ -711,7 +730,7 @@ func (o *PortForwardSessionOptions) ToProto() (*networkerpb.PortForwardSessionOp
 		Params:     maps.Clone(o.Params),
 		Encryption: o.Encryption.ToProto(),
 	}
-	if err := preflightResource(opts, 10, o.Connection); err != nil {
+	if err := preflightResource(opts, optionsResourceField, o.Connection); err != nil {
 		return nil, err
 	}
 
