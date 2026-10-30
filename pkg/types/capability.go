@@ -19,6 +19,8 @@ const (
 	CapabilityMetric Capability = "metric"
 	// CapabilitySettings enables plugin settings.
 	CapabilitySettings Capability = "settings"
+	// CapabilityTools enables tool execution.
+	CapabilityTools Capability = "tools"
 	// CapabilityUI enables frontend components without requiring a backend process.
 	CapabilityUI Capability = "ui"
 )
@@ -27,7 +29,7 @@ const (
 func (c Capability) IsBackend() bool {
 	switch c {
 	case CapabilityResource, CapabilityExec, CapabilityNetworker,
-		CapabilityLog, CapabilityMetric, CapabilitySettings:
+		CapabilityLog, CapabilityMetric, CapabilitySettings, CapabilityTools:
 		return true
 	case CapabilityUI:
 		return false
@@ -50,6 +52,7 @@ func AllCapabilities() []Capability {
 		CapabilityLog,
 		CapabilityMetric,
 		CapabilitySettings,
+		CapabilityTools,
 		CapabilityUI,
 	}
 }
@@ -60,7 +63,7 @@ func ParseCapability(s string) (Capability, bool) {
 	c := Capability(s)
 	switch c {
 	case CapabilityResource, CapabilityExec, CapabilityNetworker,
-		CapabilityLog, CapabilityMetric, CapabilitySettings, CapabilityUI:
+		CapabilityLog, CapabilityMetric, CapabilitySettings, CapabilityTools, CapabilityUI:
 		return c, true
 	default:
 		return "", false

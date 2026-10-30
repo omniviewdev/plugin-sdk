@@ -99,6 +99,10 @@ func (h Handler) String() string {
 // session with a TTY. It is passed the TTY file descriptor, a stop channel
 // for signalling errors, and a receive-only resize channel.
 //
+// The manager closes tty when the session ends, which interrupts a pending
+// Read or Write on it. Calling tty.Fd() switches the TTY to blocking mode;
+// after that, the close waits for a pending Read to return.
+//
 // Renamed from TTYHandler to avoid confusion with the Handler struct.
 type TTYHandlerFunc func(
 	ctx *types.PluginContext,

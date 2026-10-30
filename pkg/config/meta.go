@@ -53,7 +53,7 @@ func (m *PluginMeta) HasUICapabilities() bool {
 
 // HasBackendCapabilities checks if the plugin has any backend capabilities.
 func (m *PluginMeta) HasBackendCapabilities() bool {
-	caps := []string{"resource", "exec", "networker", "settings", "log", "metric"}
+	caps := []string{"resource", "exec", "networker", "settings", "log", "metric", "tools"}
 
 	for _, capability := range m.Capabilities {
 		if slices.Contains(caps, capability) {
