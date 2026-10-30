@@ -3,11 +3,10 @@ package metric
 import (
 	"context"
 
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/encoding/protowire"
-
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 func legacyQueryWire(data []byte) error {
@@ -44,7 +43,12 @@ func RegisterMetricPluginServer(registrar grpc.ServiceRegistrar, server metricpb
 func metricQueryHandler(
 	resource bool,
 ) func(any, context.Context, func(any) error, grpc.UnaryServerInterceptor) (any, error) {
-	return func(server any, ctx context.Context, decode func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	return func(
+		server any,
+		ctx context.Context,
+		decode func(any) error,
+		interceptor grpc.UnaryServerInterceptor,
+	) (any, error) {
 		p := new(metricpb.QueryMetricsRequest)
 		validator := legacyQueryWire
 		if resource {
@@ -61,11 +65,19 @@ func metricQueryHandler(
 		if resource {
 			name = "QueryResource"
 		}
-		handler := func(ctx context.Context, p any) (any, error) {
-			if resource {
-				return server.(metricpb.MetricPluginServer).QueryResource(ctx, p.(*metricpb.QueryMetricsRequest))
+		impl, ok := server.(metricpb.MetricPluginServer)
+		if !ok {
+			return nil, resourceplugin.ResourceRPCError(metricError("INTERNAL", "Invalid metric server."))
+		}
+		handler := func(ctx context.Context, request any) (any, error) {
+			query, valid := request.(*metricpb.QueryMetricsRequest)
+			if !valid {
+				return nil, resourceplugin.ResourceRPCError(metricError("INTERNAL", "Invalid metric request."))
 			}
-			return server.(metricpb.MetricPluginServer).Query(ctx, p.(*metricpb.QueryMetricsRequest))
+			if resource {
+				return impl.QueryResource(ctx, query)
+			}
+			return impl.Query(ctx, query)
 		}
 		if interceptor == nil {
 			return handler(ctx, p)
@@ -84,6 +96,7 @@ func metricQueryHandler(
 
 type metricAdmissionStream struct {
 	grpc.ServerStream
+
 	resource bool
 }
 

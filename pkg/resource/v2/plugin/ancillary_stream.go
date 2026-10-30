@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"google.golang.org/grpc"
@@ -15,8 +16,11 @@ func streamContext(stream grpc.ServerStream, s *ancillaryServer) (context.Contex
 	return incomingSession(stream.Context(), s.owner.settings)
 }
 
-func watchConnectionsHandler(srv interface{}, stream grpc.ServerStream) error {
-	s := srv.(*ancillaryServer)
+func watchConnectionsHandler(srv any, stream grpc.ServerStream) error {
+	s, ok := srv.(*ancillaryServer)
+	if !ok {
+		return rpcError(invalid("invalid ancillary server"))
+	}
 	r := &resourcepb.AncillaryRequest{}
 	e := &envelope{message: r}
 	if err := stream.RecvMsg(e); err != nil {
@@ -87,8 +91,11 @@ func watchConnectionsHandler(srv interface{}, stream grpc.ServerStream) error {
 	}
 }
 
-func streamActionHandler(srv interface{}, stream grpc.ServerStream) error {
-	s := srv.(*ancillaryServer)
+func streamActionHandler(srv any, stream grpc.ServerStream) error {
+	s, ok := srv.(*ancillaryServer)
+	if !ok {
+		return rpcError(invalid("invalid ancillary server"))
+	}
 	r := &resourcepb.ActionStreamRequest{}
 	e := &envelope{message: r}
 	if err := stream.RecvMsg(e); err != nil {
@@ -245,7 +252,7 @@ func (c *Client) WatchConnections(ctx context.Context, out chan<- []types.Connec
 		p := &resourcepb.ConnectionStreamEvent{}
 		e := &envelope{message: p}
 		if err = s.RecvMsg(e); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return domainError(err)
@@ -297,7 +304,7 @@ func (c *Client) StreamAction(
 		p := &resourcepb.ActionStreamEvent{}
 		e := &envelope{message: p}
 		if err = s.RecvMsg(e); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				if !ready {
 					return invalid("action completed without native readiness")
 				}

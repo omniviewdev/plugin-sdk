@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -804,10 +805,8 @@ func (m *Manager) streamWithReconnect(
 			return
 		}
 
-		if err == nil || err == io.EOF {
-			if !req.Follow {
-				return
-			}
+		if !req.Follow && (err == nil || errors.Is(err, io.EOF)) {
+			return
 		}
 
 		logger.Warnw(ctx, "log stream interrupted", "error", err, "source", source.ID)

@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"testing"
 	"time"
 
@@ -209,4 +211,56 @@ func TestActualGRPCConnectionBrowser(t *testing.T) {
 		}
 	default:
 	}
+}
+
+func assertValidActionEvents(t *testing.T, out <-chan resourcev2.ActionEvent) {
+	t.Helper()
+	if len(out) != 2 {
+		t.Fatal("missing action events")
+	}
+	if (<-out).Type != "ready" {
+		t.Fatal("first event not ready")
+	}
+	if (<-out).Data.Int != "9223372036854775807" {
+		t.Fatal("exact action value lost")
+	}
+}
+
+type eofClientConn struct {
+	grpc.ClientConnInterface
+
+	receiveErr error
+}
+
+func (c eofClientConn) NewStream(
+	context.Context,
+	*grpc.StreamDesc,
+	string,
+	...grpc.CallOption,
+) (grpc.ClientStream, error) {
+	return eofClientStream{receiveErr: c.receiveErr}, nil
+}
+
+type eofClientStream struct {
+	grpc.ClientStream
+
+	receiveErr error
+}
+
+func (eofClientStream) SendMsg(any) error { return nil }
+
+func (eofClientStream) CloseSend() error { return nil }
+
+func (s eofClientStream) RecvMsg(any) error { return s.receiveErr }
+
+func TestWatchConnectionsWrappedEOF(t *testing.T) {
+	client := NewClient(eofClientConn{receiveErr: fmt.Errorf("stream completed: %w", io.EOF)})
+	out := make(chan []types.Connection, 1)
+	if err := client.WatchConnections(context.Background(), out); err != nil {
+		t.Fatalf("wrapped EOF must complete successfully: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatal("EOF produced a connection event")
+	}
+	out <- []types.Connection{}
 }

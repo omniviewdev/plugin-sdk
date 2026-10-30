@@ -2,6 +2,7 @@ package metric
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"google.golang.org/protobuf/proto"
@@ -216,11 +217,11 @@ func (s *PluginServer) serveStream(
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case err := <-failures:
-			if err == io.EOF {
+		case failure := <-failures:
+			if errors.Is(failure, io.EOF) {
 				return nil
 			}
-			return err
+			return failure
 		case r, ok := <-out:
 			if !ok {
 				return nil

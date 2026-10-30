@@ -66,8 +66,13 @@ func callHandler(
 	if e.err != nil {
 		return nil, rpcError(e.err)
 	}
-	handler := func(ctx context.Context, r interface{}) (interface{}, error) {
-		return srv.(*server).Call(ctx, r.(*resourcepb.Request))
+	handler := func(ctx context.Context, r any) (any, error) {
+		owner, ownerOK := srv.(*server)
+		request, requestOK := r.(*resourcepb.Request)
+		if !ownerOK || !requestOK {
+			return nil, rpcError(invalid("invalid resource handler input"))
+		}
+		return owner.Call(ctx, request)
 	}
 	if interceptor == nil {
 		return handler(ctx, req)

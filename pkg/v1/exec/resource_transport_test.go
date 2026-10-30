@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/mem"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protowire"
 
@@ -281,5 +283,61 @@ func TestResourceExecTransportLossStaysUntyped(t *testing.T) {
 	var typed *resourcev2.ResourceOperationError
 	if err == nil || errors.As(err, &typed) || p.calls != 0 {
 		t.Fatalf("transport loss gained provider class: %v", err)
+	}
+}
+
+func assertExecNativeBody(t *testing.T, body *resourcev2.Value, want any) {
+	t.Helper()
+	if body == nil {
+		t.Fatal("native body missing")
+	}
+	got, err := resourcev2.NativeFromValue(*body)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("lossy native body: %v", err)
+	}
+	fields, ok := got.(map[string]any)
+	if !ok {
+		t.Fatalf("native body is not a map: %T", got)
+	}
+	negativeZero, ok := fields["negativeZero"].(float64)
+	if !ok || !math.Signbit(negativeZero) {
+		t.Fatal("top-level negative zero lost")
+	}
+	container, ok := fields["container"].([]any)
+	if !ok || len(container) != 3 {
+		t.Fatalf("native container changed: %#v", fields["container"])
+	}
+	nested, ok := container[2].([]any)
+	if !ok || len(nested) != 3 {
+		t.Fatalf("nested native container changed: %#v", container[2])
+	}
+	nestedZero, ok := nested[2].(float64)
+	if !ok || !math.Signbit(nestedZero) {
+		t.Fatal("nested negative zero lost")
+	}
+}
+
+func TestExecSessionHandlerRejectsInvalidDynamicTypes(t *testing.T) {
+	for _, resource := range []bool{false, true} {
+		t.Run(strconv.FormatBool(resource), func(t *testing.T) {
+			intercept := func(
+				ctx context.Context,
+				_ any,
+				_ *grpc.UnaryServerInfo,
+				handler grpc.UnaryHandler,
+			) (any, error) {
+				return handler(ctx, "not session options")
+			}
+			decode := func(any) error { return nil }
+			handler := execSessionHandler(resource)
+			_, serverErr := handler(struct{}{}, context.Background(), decode, nil)
+			if status.Code(serverErr) != codes.Internal {
+				t.Fatalf("invalid server: got %v, want Internal", serverErr)
+			}
+			_, requestErr := handler(&PluginServer{}, context.Background(), decode, intercept)
+			if status.Code(requestErr) != codes.Internal {
+				t.Fatalf("invalid request: got %v, want Internal", requestErr)
+			}
+		})
 	}
 }

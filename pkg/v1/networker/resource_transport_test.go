@@ -12,10 +12,12 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -31,6 +33,28 @@ type canonicalPorts struct{}
 
 func (canonicalPorts) FindFreePort() (int32, error) { return 32001, nil }
 func (canonicalPorts) IsPortUnavailable(int32) bool { return false }
+
+func TestNetworkHandlerRejectsInvalidDispatchTypes(t *testing.T) {
+	for _, resource := range []bool{false, true} {
+		handler := networkSessionHandler(resource)
+		decode := func(any) error { return nil }
+		if _, err := handler(struct{}{}, t.Context(), decode, nil); status.Code(err) != codes.Internal {
+			t.Fatalf("invalid server returned %v", err)
+		}
+		interceptor := func(
+			ctx context.Context,
+			_ any,
+			_ *grpc.UnaryServerInfo,
+			dispatch grpc.UnaryHandler,
+		) (any, error) {
+			return dispatch(ctx, struct{}{})
+		}
+		server := &networkerpb.UnimplementedNetworkerPluginServer{}
+		if _, err := handler(server, t.Context(), decode, interceptor); status.Code(err) != codes.Internal {
+			t.Fatalf("invalid intercepted request returned %v", err)
+		}
+	}
+}
 
 func networkPipe(t *testing.T, server *grpc.Server, pluginMetadata ...bool) *grpc.ClientConn {
 	t.Helper()

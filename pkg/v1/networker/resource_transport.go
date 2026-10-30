@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -38,6 +40,10 @@ func networkSessionHandler(
 	resource bool,
 ) func(any, context.Context, func(any) error, grpc.UnaryServerInterceptor) (any, error) {
 	return func(server any, ctx context.Context, decode func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+		typedServer, ok := server.(networkerpb.NetworkerPluginServer)
+		if !ok {
+			return nil, status.Error(codes.Internal, "invalid networker server")
+		}
 		request := new(networkerpb.PortForwardSessionOptions)
 		var legacy func([]byte) error
 		if !resource {
@@ -57,16 +63,14 @@ func networkSessionHandler(
 			method = "StartResourcePortForwardSession"
 		}
 		handler := func(ctx context.Context, message any) (any, error) {
-			if resource {
-				return server.(networkerpb.NetworkerPluginServer).StartResourcePortForwardSession(
-					ctx,
-					message.(*networkerpb.PortForwardSessionOptions),
-				)
+			options, ok := message.(*networkerpb.PortForwardSessionOptions)
+			if !ok {
+				return nil, status.Error(codes.Internal, "invalid port forward request")
 			}
-			return server.(networkerpb.NetworkerPluginServer).StartPortForwardSession(
-				ctx,
-				message.(*networkerpb.PortForwardSessionOptions),
-			)
+			if resource {
+				return typedServer.StartResourcePortForwardSession(ctx, options)
+			}
+			return typedServer.StartPortForwardSession(ctx, options)
 		}
 		if interceptor == nil {
 			return handler(ctx, request)

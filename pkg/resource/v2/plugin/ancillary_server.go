@@ -38,15 +38,21 @@ func ancillaryCallHandler(
 	if e.err != nil {
 		return nil, rpcError(e.err)
 	}
-	f := func(ctx context.Context, v interface{}) (interface{}, error) {
-		s := srv.(*ancillaryServer)
+	f := func(ctx context.Context, v any) (any, error) {
+		s, ok := srv.(*ancillaryServer)
+		if !ok {
+			return nil, rpcError(invalid("invalid ancillary server"))
+		}
 		ctx, err := incomingSession(ctx, s.owner.settings)
 		if err != nil {
 			return nil, rpcError(err)
 		}
-		request := v.(*resourcepb.AncillaryRequest)
-		if err := s.owner.checkAncillaryCatalogs(ctx, request); err != nil {
-			return nil, rpcError(s.owner.classify(err))
+		request, ok := v.(*resourcepb.AncillaryRequest)
+		if !ok {
+			return nil, rpcError(invalid("invalid ancillary request"))
+		}
+		if fenceErr := s.owner.checkAncillaryCatalogs(ctx, request); fenceErr != nil {
+			return nil, rpcError(s.owner.classify(fenceErr))
 		}
 		out, err := s.call(ctx, v.(*resourcepb.AncillaryRequest))
 		if fenceErr := s.owner.checkAncillaryCatalogs(ctx, request); fenceErr != nil {

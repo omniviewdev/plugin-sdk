@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
@@ -41,10 +43,18 @@ func execSessionHandler(
 			method = "CreateResourceSession"
 		}
 		handler := func(ctx context.Context, message any) (any, error) {
-			if resource {
-				return server.(execpb.ExecPluginServer).CreateResourceSession(ctx, message.(*execpb.SessionOptions))
+			provider, ok := server.(execpb.ExecPluginServer)
+			if !ok {
+				return nil, status.Error(codes.Internal, "invalid exec server")
 			}
-			return server.(execpb.ExecPluginServer).CreateSession(ctx, message.(*execpb.SessionOptions))
+			options, ok := message.(*execpb.SessionOptions)
+			if !ok {
+				return nil, status.Error(codes.Internal, "invalid exec session request")
+			}
+			if resource {
+				return provider.CreateResourceSession(ctx, options)
+			}
+			return provider.CreateSession(ctx, options)
 		}
 		if interceptor == nil {
 			return handler(ctx, request)

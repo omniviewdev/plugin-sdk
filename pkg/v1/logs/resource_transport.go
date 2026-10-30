@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
 
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
@@ -53,13 +55,18 @@ func logSessionHandler(
 			method = "CreateResourceSession"
 		}
 		handler := func(ctx context.Context, message any) (any, error) {
-			if resource {
-				return server.(logspb.LogPluginServer).CreateResourceSession(
-					ctx,
-					message.(*logspb.CreateLogSessionRequest),
-				)
+			provider, ok := server.(logspb.LogPluginServer)
+			if !ok {
+				return nil, status.Error(codes.Internal, "Invalid logs server.")
 			}
-			return server.(logspb.LogPluginServer).CreateSession(ctx, message.(*logspb.CreateLogSessionRequest))
+			decoded, ok := message.(*logspb.CreateLogSessionRequest)
+			if !ok {
+				return nil, status.Error(codes.Internal, "Invalid logs request type.")
+			}
+			if resource {
+				return provider.CreateResourceSession(ctx, decoded)
+			}
+			return provider.CreateSession(ctx, decoded)
 		}
 		if interceptor == nil {
 			return handler(ctx, request)

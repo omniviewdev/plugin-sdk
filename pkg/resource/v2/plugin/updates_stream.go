@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 
@@ -83,8 +84,11 @@ func (s *updateSink) established() error {
 	}
 }
 
-func listenUpdatesHandler(srv interface{}, stream grpc.ServerStream) error {
-	s := srv.(*updatesServer)
+func listenUpdatesHandler(srv any, stream grpc.ServerStream) error {
+	s, ok := srv.(*updatesServer)
+	if !ok {
+		return rpcError(invalid("invalid update server"))
+	}
 	r := &resourcepb.UpdateRequest{}
 	e := &envelope{message: r}
 	if err := stream.RecvMsg(e); err != nil {
@@ -202,7 +206,7 @@ func (c *Client) ListenForEvents(ctx context.Context, sink resourcev2.WatchEvent
 		p := &resourcepb.UpdateStreamEvent{}
 		e := &envelope{message: p}
 		if err = stream.RecvMsg(e); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				if !ready {
 					return invalid("listener ended without registration readiness")
 				}

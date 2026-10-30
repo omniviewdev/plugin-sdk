@@ -35,17 +35,24 @@ func updateCallHandler(
 	if e.err != nil {
 		return nil, rpcError(e.err)
 	}
-	f := func(ctx context.Context, v interface{}) (interface{}, error) {
-		s := srv.(*updatesServer)
+	f := func(ctx context.Context, v any) (any, error) {
+		s, ok := srv.(*updatesServer)
+		if !ok {
+			return nil, rpcError(invalid("invalid update server"))
+		}
+		request, ok := v.(*resourcepb.UpdateRequest)
+		if !ok {
+			return nil, rpcError(invalid("invalid update request"))
+		}
 		ctx, err := incomingSession(ctx, s.owner.settings)
 		if err != nil {
 			return nil, rpcError(err)
 		}
-		routes := updateRoutes(v.(*resourcepb.UpdateRequest))
-		if err := s.owner.checkCatalogRoutes(ctx, routes); err != nil {
+		routes := updateRoutes(request)
+		if err = s.owner.checkCatalogRoutes(ctx, routes); err != nil {
 			return nil, rpcError(s.owner.classify(err))
 		}
-		out, err := s.call(ctx, v.(*resourcepb.UpdateRequest))
+		out, err := s.call(ctx, request)
 		if fenceErr := s.owner.checkCatalogRoutes(ctx, routes); fenceErr != nil {
 			return nil, rpcError(s.owner.classify(fenceErr))
 		}

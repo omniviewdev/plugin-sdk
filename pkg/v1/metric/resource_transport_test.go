@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/mem"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
@@ -26,6 +28,31 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 )
+
+func TestMetricQueryHandlerRejectsInvalidDispatchTypes(t *testing.T) {
+	decode := func(any) error { return nil }
+	handler := metricQueryHandler(false)
+	t.Run("server", func(t *testing.T) {
+		_, err := handler(struct{}{}, t.Context(), decode, nil)
+		if status.Code(err) != codes.Internal {
+			t.Fatalf("invalid server status: %v", err)
+		}
+	})
+	t.Run("interceptor request", func(t *testing.T) {
+		interceptor := func(
+			ctx context.Context,
+			_ any,
+			_ *grpc.UnaryServerInfo,
+			next grpc.UnaryHandler,
+		) (any, error) {
+			return next(ctx, struct{}{})
+		}
+		_, err := handler(&PluginServer{}, t.Context(), decode, interceptor)
+		if status.Code(err) != codes.Internal {
+			t.Fatalf("invalid intercepted request status: %v", err)
+		}
+	})
+}
 
 func metricPipe(t *testing.T, s *grpc.Server) *grpc.ClientConn {
 	t.Helper()
