@@ -16,6 +16,7 @@ import (
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/interceptors"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	toolspb "github.com/omniviewdev/plugin-sdk/proto/v1/tools"
@@ -80,6 +81,7 @@ func TestWireRoundTrip(t *testing.T) {
 		},
 	}})
 	require.NoError(t, err)
+	manager.BindConnectionContextProvider(toolRegistry(t, nil))
 	client := newWireClient(t, manager)
 
 	descriptors, err := client.ListTools(types.NewPluginContext(context.Background(), "test", nil, nil, nil))
@@ -101,7 +103,14 @@ func TestWireRoundTrip(t *testing.T) {
 	require.Empty(t, descriptors[1].OutputSchema)
 
 	ctx := types.NewPluginContextWithConnection(context.Background(), "test", nil, nil, &types.Connection{ID: "conn-1"})
-	res, err := client.CallTool(ctx, CallInput{Name: "echo", Arguments: json.RawMessage(`{"x":7}`)})
+	res, err := client.CallTool(
+		ctx,
+		CallInput{
+			Name:      "echo",
+			Arguments: json.RawMessage(`{"x":7}`),
+			Route:     &resourcev2.AccessRoute{Connection: "conn-1"},
+		},
+	)
 	require.NoError(t, err)
 	require.False(t, res.IsError)
 	require.JSONEq(t, `{"connection":"conn-1","arguments":{"x":7}}`, string(res.StructuredContent))

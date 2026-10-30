@@ -6,6 +6,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	toolspb "github.com/omniviewdev/plugin-sdk/proto/v1/tools"
 )
@@ -50,11 +51,19 @@ func (p *PluginClient) ListTools(ctx *types.PluginContext) ([]Descriptor, error)
 
 // CallTool invokes a remote tool using the caller's cancellation and deadline.
 func (p *PluginClient) CallTool(ctx *types.PluginContext, input CallInput) (*Result, error) {
+	if ctx != nil && ctx.Connection != nil && ctx.Connection.ID == "" {
+		return nil, resourcev2.NewError("INVALID_REQUEST", "Selected tool connection must not be empty.")
+	}
 	grpcCtx, pctx := rpcContext(ctx)
-	resp, err := p.client.CallTool(types.WithPluginContext(grpcCtx, pctx), &toolspb.CallToolRequest{
-		Name:      input.Name,
-		Arguments: input.Arguments,
-	})
+	request := &toolspb.CallToolRequest{Name: input.Name, Arguments: input.Arguments}
+	if input.Route != nil {
+		var err error
+		request.Route, err = resourcev2.ToProtoAccessRoute(*input.Route)
+		if err != nil {
+			return nil, err
+		}
+	}
+	resp, err := p.client.CallTool(types.WithPluginContext(grpcCtx, pctx), request)
 	if err != nil {
 		return nil, err
 	}

@@ -4,10 +4,10 @@ package omniview.sdk.tools.v1;
 option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/tools;toolspb";
 
 import "google/protobuf/empty.proto";
+import "proto/resource/v2/domain.proto";
 
-// ToolsPlugin lets a plugin expose callable tools (for example to an MCP
-// relay in the host). The connection, if any, travels in the PluginContext
-// gRPC metadata, not in the request body.
+// ToolsPlugin exposes callable tools. Connection-scoped calls select their
+// configured native connection through an explicit request-body route.
 service ToolsPlugin {
   rpc ListTools(google.protobuf.Empty) returns (ListToolsResponse);
   rpc CallTool(CallToolRequest) returns (CallToolResponse);
@@ -49,6 +49,7 @@ message CallToolRequest {
   string name = 1;
   // Tool arguments serialized as a JSON object.
   bytes arguments = 2;
+  omniview.resource.v2.AccessRoute route = 3;
 }
 
 message ToolContent {

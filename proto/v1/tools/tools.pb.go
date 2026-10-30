@@ -7,6 +7,7 @@
 package toolspb
 
 import (
+	v2 "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
@@ -284,7 +285,8 @@ type CallToolRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Tool arguments serialized as a JSON object.
-	Arguments     []byte `protobuf:"bytes,2,opt,name=arguments,proto3" json:"arguments,omitempty"`
+	Arguments     []byte          `protobuf:"bytes,2,opt,name=arguments,proto3" json:"arguments,omitempty"`
+	Route         *v2.AccessRoute `protobuf:"bytes,3,opt,name=route,proto3" json:"route,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -329,6 +331,13 @@ func (x *CallToolRequest) GetName() string {
 func (x *CallToolRequest) GetArguments() []byte {
 	if x != nil {
 		return x.Arguments
+	}
+	return nil
+}
+
+func (x *CallToolRequest) GetRoute() *v2.AccessRoute {
+	if x != nil {
+		return x.Route
 	}
 	return nil
 }
@@ -464,7 +473,7 @@ var File_proto_v1_tools_tools_proto protoreflect.FileDescriptor
 
 const file_proto_v1_tools_tools_proto_rawDesc = "" +
 	"\n" +
-	"\x1aproto/v1/tools/tools.proto\x12\x15omniview.sdk.tools.v1\x1a\x1bgoogle/protobuf/empty.proto\"\x8f\x01\n" +
+	"\x1aproto/v1/tools/tools.proto\x12\x15omniview.sdk.tools.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1eproto/resource/v2/domain.proto\"\x8f\x01\n" +
 	"\x0fToolAnnotations\x12\x1b\n" +
 	"\tread_only\x18\x01 \x01(\bR\breadOnly\x12 \n" +
 	"\vdestructive\x18\x02 \x01(\bR\vdestructive\x12\x1e\n" +
@@ -482,10 +491,11 @@ const file_proto_v1_tools_tools_proto_rawDesc = "" +
 	"\x05scope\x18\x06 \x01(\x0e2 .omniview.sdk.tools.v1.ToolScopeR\x05scope\x12H\n" +
 	"\vannotations\x18\a \x01(\v2&.omniview.sdk.tools.v1.ToolAnnotationsR\vannotations\"P\n" +
 	"\x11ListToolsResponse\x12;\n" +
-	"\x05tools\x18\x01 \x03(\v2%.omniview.sdk.tools.v1.ToolDescriptorR\x05tools\"C\n" +
+	"\x05tools\x18\x01 \x03(\v2%.omniview.sdk.tools.v1.ToolDescriptorR\x05tools\"|\n" +
 	"\x0fCallToolRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
-	"\targuments\x18\x02 \x01(\fR\targuments\"+\n" +
+	"\targuments\x18\x02 \x01(\fR\targuments\x127\n" +
+	"\x05route\x18\x03 \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\"+\n" +
 	"\vToolContent\x12\x14\n" +
 	"\x04text\x18\x01 \x01(\tH\x00R\x04textB\x06\n" +
 	"\x04kind\"\x9a\x01\n" +
@@ -523,22 +533,24 @@ var file_proto_v1_tools_tools_proto_goTypes = []any{
 	(*CallToolRequest)(nil),   // 4: omniview.sdk.tools.v1.CallToolRequest
 	(*ToolContent)(nil),       // 5: omniview.sdk.tools.v1.ToolContent
 	(*CallToolResponse)(nil),  // 6: omniview.sdk.tools.v1.CallToolResponse
-	(*emptypb.Empty)(nil),     // 7: google.protobuf.Empty
+	(*v2.AccessRoute)(nil),    // 7: omniview.resource.v2.AccessRoute
+	(*emptypb.Empty)(nil),     // 8: google.protobuf.Empty
 }
 var file_proto_v1_tools_tools_proto_depIdxs = []int32{
 	0, // 0: omniview.sdk.tools.v1.ToolDescriptor.scope:type_name -> omniview.sdk.tools.v1.ToolScope
 	1, // 1: omniview.sdk.tools.v1.ToolDescriptor.annotations:type_name -> omniview.sdk.tools.v1.ToolAnnotations
 	2, // 2: omniview.sdk.tools.v1.ListToolsResponse.tools:type_name -> omniview.sdk.tools.v1.ToolDescriptor
-	5, // 3: omniview.sdk.tools.v1.CallToolResponse.content:type_name -> omniview.sdk.tools.v1.ToolContent
-	7, // 4: omniview.sdk.tools.v1.ToolsPlugin.ListTools:input_type -> google.protobuf.Empty
-	4, // 5: omniview.sdk.tools.v1.ToolsPlugin.CallTool:input_type -> omniview.sdk.tools.v1.CallToolRequest
-	3, // 6: omniview.sdk.tools.v1.ToolsPlugin.ListTools:output_type -> omniview.sdk.tools.v1.ListToolsResponse
-	6, // 7: omniview.sdk.tools.v1.ToolsPlugin.CallTool:output_type -> omniview.sdk.tools.v1.CallToolResponse
-	6, // [6:8] is the sub-list for method output_type
-	4, // [4:6] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	7, // 3: omniview.sdk.tools.v1.CallToolRequest.route:type_name -> omniview.resource.v2.AccessRoute
+	5, // 4: omniview.sdk.tools.v1.CallToolResponse.content:type_name -> omniview.sdk.tools.v1.ToolContent
+	8, // 5: omniview.sdk.tools.v1.ToolsPlugin.ListTools:input_type -> google.protobuf.Empty
+	4, // 6: omniview.sdk.tools.v1.ToolsPlugin.CallTool:input_type -> omniview.sdk.tools.v1.CallToolRequest
+	3, // 7: omniview.sdk.tools.v1.ToolsPlugin.ListTools:output_type -> omniview.sdk.tools.v1.ListToolsResponse
+	6, // 8: omniview.sdk.tools.v1.ToolsPlugin.CallTool:output_type -> omniview.sdk.tools.v1.CallToolResponse
+	7, // [7:9] is the sub-list for method output_type
+	5, // [5:7] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_tools_tools_proto_init() }

@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
@@ -79,6 +80,7 @@ func TestManagerCallToolErrors(t *testing.T) {
 		validTool("plain", ScopePlugin),
 	}})
 	require.NoError(t, err)
+	m.BindConnectionContextProvider(toolRegistry(t, nil))
 
 	_, err = m.CallTool(types.NewPluginContext(context.Background(), "t", nil, nil, nil), CallInput{Name: "missing"})
 	require.ErrorIs(t, err, ErrToolNotFound)
@@ -87,8 +89,12 @@ func TestManagerCallToolErrors(t *testing.T) {
 	require.ErrorIs(t, err, ErrConnectionRequired)
 
 	res, err := m.CallTool(
-		types.NewPluginContextWithConnection(context.Background(), "t", nil, nil, &types.Connection{ID: "c1"}),
-		CallInput{Name: "scoped", Arguments: json.RawMessage(`{"x":"1"}`)},
+		types.NewPluginContextWithConnection(context.Background(), "t", nil, nil, &types.Connection{ID: "conn-1"}),
+		CallInput{
+			Name:      "scoped",
+			Arguments: json.RawMessage(`{"x":"1"}`),
+			Route:     &resourcev2.AccessRoute{Connection: "conn-1"},
+		},
 	)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"x":"1"}`, res.Content[0].Text)

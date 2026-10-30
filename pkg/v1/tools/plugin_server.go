@@ -5,9 +5,11 @@ import (
 	"errors"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	toolspb "github.com/omniviewdev/plugin-sdk/proto/v1/tools"
 )
@@ -33,6 +35,14 @@ func grpcCodeForToolsError(err error) codes.Code {
 	case errors.Is(err, ErrConnectionRequired):
 		return codes.FailedPrecondition
 	default:
+		switch resourcev2.ErrorCode(err) {
+		case "INVALID_REQUEST":
+			return codes.InvalidArgument
+		case "NOT_FOUND":
+			return codes.NotFound
+		case "UNSUPPORTED", "RESET_REQUIRED":
+			return codes.FailedPrecondition
+		}
 		return codes.Internal
 	}
 }
@@ -58,10 +68,26 @@ func (s *PluginServer) CallTool(
 	ctx context.Context,
 	in *toolspb.CallToolRequest,
 ) (*toolspb.CallToolResponse, error) {
-	result, err := s.Impl.CallTool(types.PluginContextFromContext(ctx), CallInput{
-		Name:      in.GetName(),
-		Arguments: in.GetArguments(),
-	})
+	// Empty metadata selectors must not disappear during context extraction.
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if ids, present := md["omniview-connection-id"]; present && (len(ids) != 1 || ids[0] == "") {
+			return nil, status.Error(codes.InvalidArgument, "Selected tool connection must be nonempty and singular.")
+		}
+	}
+	input := CallInput{Name: in.GetName(), Arguments: in.GetArguments()}
+	if in.GetRoute() != nil {
+		route, err := resourcev2.FromProtoAccessRoute(in.GetRoute())
+		if err != nil {
+			return nil, status.Errorf(grpcCodeForToolsError(err), "%v", err)
+		}
+		input.Route = &route
+	}
+	pc := types.PluginContextFromContext(ctx)
+	if pc == nil {
+		// Raw RPC callers need no identity metadata, but retain RPC lifetime.
+		pc = &types.PluginContext{Context: ctx}
+	}
+	result, err := s.Impl.CallTool(pc, input)
 	if err != nil {
 		return nil, status.Errorf(grpcCodeForToolsError(err), "%v", err)
 	}

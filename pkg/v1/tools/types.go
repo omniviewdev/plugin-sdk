@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	toolspb "github.com/omniviewdev/plugin-sdk/proto/v1/tools"
 )
@@ -14,8 +15,8 @@ type Scope string
 const (
 	// ScopePlugin tools act on the plugin itself and take no connection.
 	ScopePlugin Scope = "plugin"
-	// ScopeConnection tools act on one plugin connection. The host resolves
-	// the connection and passes it in the PluginContext.
+	// ScopeConnection tools act on one configured connection selected by an
+	// explicit CallInput route and admitted by the native connection registry.
 	ScopeConnection Scope = "connection"
 )
 
@@ -55,6 +56,7 @@ type Result struct {
 type CallInput struct {
 	Name      string
 	Arguments json.RawMessage
+	Route     *resourcev2.AccessRoute
 }
 
 // Handler runs one tool call.
