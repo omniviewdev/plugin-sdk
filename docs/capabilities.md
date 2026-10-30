@@ -2,7 +2,7 @@
 
 [Docs home](README.md) · [Quickstart](quickstart.md) · [Resource API](resource-v2-api.md)
 
-A plugin is a Go executable with metadata and one or more registered capabilities. Register capabilities before calling `Serve`.
+A Go backend plugin is an executable with metadata and one or more registered capabilities. Register capabilities before calling `Serve`. This guide covers backend authoring; frontend bundles and UI-component loading belong to the host integration.
 
 ## The three pieces
 
