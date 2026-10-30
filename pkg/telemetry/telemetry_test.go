@@ -37,8 +37,10 @@ func TestConfigFromEnv_Enabled(t *testing.T) {
 }
 
 func TestConfigFromEnv_MissingEnv(t *testing.T) {
-	os.Unsetenv("OMNIVIEW_TELEMETRY_ENABLED")
-	os.Unsetenv("OMNIVIEW_PLUGIN_ID")
+	t.Setenv("OMNIVIEW_TELEMETRY_ENABLED", "")
+	t.Setenv("OMNIVIEW_PLUGIN_ID", "")
+	require.NoError(t, os.Unsetenv("OMNIVIEW_TELEMETRY_ENABLED"))
+	require.NoError(t, os.Unsetenv("OMNIVIEW_PLUGIN_ID"))
 
 	cfg := configFromEnv()
 	assert.False(t, cfg.Enabled)
