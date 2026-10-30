@@ -122,9 +122,15 @@ func TestWireErrorCodes(t *testing.T) {
 	require.NoError(t, err)
 	client := newWireClient(t, manager)
 
-	_, err = client.CallTool(types.NewPluginContext(context.Background(), "test", nil, nil, nil), CallInput{Name: "scoped"})
+	_, err = client.CallTool(
+		types.NewPluginContext(context.Background(), "test", nil, nil, nil),
+		CallInput{Name: "scoped"},
+	)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 
-	_, err = client.CallTool(types.NewPluginContext(context.Background(), "test", nil, nil, nil), CallInput{Name: "missing"})
+	_, err = client.CallTool(
+		types.NewPluginContext(context.Background(), "test", nil, nil, nil),
+		CallInput{Name: "missing"},
+	)
 	require.Equal(t, codes.NotFound, status.Code(err))
 }
