@@ -1,0 +1,65 @@
+syntax = "proto3";
+package omniview.sdk.tools.v1;
+
+option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/tools;toolspb";
+
+import "google/protobuf/empty.proto";
+
+// ToolsPlugin lets a plugin expose callable tools (for example to an MCP
+// relay in the host). The connection, if any, travels in the PluginContext
+// gRPC metadata, not in the request body.
+service ToolsPlugin {
+  rpc ListTools(google.protobuf.Empty) returns (ListToolsResponse);
+  rpc CallTool(CallToolRequest) returns (CallToolResponse);
+}
+
+enum ToolScope {
+  TOOL_SCOPE_UNSPECIFIED = 0;
+  // The tool acts on the plugin itself and needs no connection.
+  TOOL_SCOPE_PLUGIN = 1;
+  // The tool acts on one plugin connection; the host supplies it.
+  TOOL_SCOPE_CONNECTION = 2;
+}
+
+// ToolAnnotations mirror the MCP tool annotation hints.
+message ToolAnnotations {
+  bool read_only = 1;
+  bool destructive = 2;
+  bool idempotent = 3;
+  bool open_world = 4;
+}
+
+message ToolDescriptor {
+  string name = 1;
+  string title = 2;
+  string description = 3;
+  // JSON Schema (object) for the tool arguments, serialized as JSON.
+  bytes input_schema = 4;
+  // Optional JSON Schema for the structured result, serialized as JSON.
+  bytes output_schema = 5;
+  ToolScope scope = 6;
+  ToolAnnotations annotations = 7;
+}
+
+message ListToolsResponse {
+  repeated ToolDescriptor tools = 1;
+}
+
+message CallToolRequest {
+  string name = 1;
+  // Tool arguments serialized as a JSON object.
+  bytes arguments = 2;
+}
+
+message ToolContent {
+  oneof kind {
+    string text = 1;
+  }
+}
+
+message CallToolResponse {
+  repeated ToolContent content = 1;
+  // Optional structured result serialized as JSON.
+  bytes structured_content = 2;
+  bool is_error = 3;
+}
