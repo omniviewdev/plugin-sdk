@@ -130,10 +130,14 @@ func TestResultHelpers(t *testing.T) {
 
 func TestValidateDescriptorNeedsOnlyMetadataAndPreservesExactSchema(t *testing.T) {
 	descriptor := Descriptor{
-		Name: "exact_metadata",
+		Name:  "exact_metadata",
 		Scope: ScopePlugin,
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"n":{"type":"integer","minimum":9007199254740993,"maximum":9007199254740993}},"required":["n"]}`),
-		OutputSchema: json.RawMessage(`{"type":"object","properties":{"n":{"const":9007199254740993}},"required":["n"]}`),
+		InputSchema: json.RawMessage(
+			`{"type":"object","properties":{"n":{"type":"integer","minimum":9007199254740993,"maximum":9007199254740993}},"required":["n"]}`,
+		),
+		OutputSchema: json.RawMessage(
+			`{"type":"object","properties":{"n":{"const":9007199254740993}},"required":["n"]}`,
+		),
 		Annotations: Annotations{Destructive: boolPointer(false)},
 	}
 	original, err := json.Marshal(descriptor)
@@ -165,20 +169,30 @@ func TestValidateDescriptorNeedsOnlyMetadataAndPreservesExactSchema(t *testing.T
 }
 
 func TestValidateDescriptorRejectsUnpublishableMetadata(t *testing.T) {
-	for _, change := range []struct{
-		name string
+	for _, change := range []struct {
+		name  string
 		apply func(*Descriptor)
 	}{
 		{"name", func(d *Descriptor) { d.Name = "Invalid-Name" }},
 		{"scope", func(d *Descriptor) { d.Scope = "" }},
-		{"input duplicate", func(d *Descriptor) { d.InputSchema = []byte(`{"type":"object","properties":{"x":{"type":"string","type":"number"}}}`) }},
+		{"input duplicate", func(d *Descriptor) {
+			d.InputSchema = []byte(`{"type":"object","properties":{"x":{"type":"string","type":"number"}}}`)
+		}},
 		{"input declaration", func(d *Descriptor) { d.InputSchema = []byte(`{"type":"object","required":"x"}`) }},
-		{"output declaration", func(d *Descriptor) { d.OutputSchema = []byte(`{"type":"object","properties":{"x":{"minimum":"wrong"}}}`) }},
+		{"output declaration", func(d *Descriptor) {
+			d.OutputSchema = []byte(`{"type":"object","properties":{"x":{"minimum":"wrong"}}}`)
+		}},
 		{"output root", func(d *Descriptor) { d.OutputSchema = []byte(`{"type":"array"}`) }},
 		{"output count overflow", func(d *Descriptor) { d.OutputSchema = []byte(`{"type":"object","minProperties":18446744073709551616}`) }},
-		{"output exponent", func(d *Descriptor) { d.OutputSchema = []byte(`{"type":"object","properties":{"x":{"minimum":1e1000001}}}`) }},
-		{"output dialect", func(d *Descriptor) { d.OutputSchema = []byte(`{"type":"object","$schema":"http://json-schema.org/draft-07/schema#"}`) }},
-		{"output format", func(d *Descriptor) { d.OutputSchema = []byte(`{"type":"object","properties":{"x":{"format":"date-time"}}}`) }},
+		{"output exponent", func(d *Descriptor) {
+			d.OutputSchema = []byte(`{"type":"object","properties":{"x":{"minimum":1e1000001}}}`)
+		}},
+		{"output dialect", func(d *Descriptor) {
+			d.OutputSchema = []byte(`{"type":"object","$schema":"http://json-schema.org/draft-07/schema#"}`)
+		}},
+		{"output format", func(d *Descriptor) {
+			d.OutputSchema = []byte(`{"type":"object","properties":{"x":{"format":"date-time"}}}`)
+		}},
 		{"output expansion", func(d *Descriptor) { d.OutputSchema = doublingSchema(30) }},
 	} {
 		t.Run(change.name, func(t *testing.T) {
@@ -186,7 +200,10 @@ func TestValidateDescriptorRejectsUnpublishableMetadata(t *testing.T) {
 			change.apply(&descriptor)
 			require.Error(t, ValidateDescriptor(descriptor))
 			peer := &outputToolsPeer{descriptor: descriptor}
-			_, err := (&PluginClient{client: peer}).CallTool(nil, CallInput{Name: descriptor.Name, Arguments: []byte(`{}`)})
+			_, err := (&PluginClient{client: peer}).CallTool(
+				nil,
+				CallInput{Name: descriptor.Name, Arguments: []byte(`{}`)},
+			)
 			require.Error(t, err)
 			require.Zero(t, peer.calls)
 		})
