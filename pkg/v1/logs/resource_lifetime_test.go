@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ func TestAcceptedLogsCreationCancellationAndRetirementDrain(t *testing.T) {
 	entered := make(chan struct{})
 	canceled := make(chan struct{})
 	drain := make(chan struct{})
+	releaseDrain := sync.OnceFunc(func() { close(drain) })
 	released := make(chan struct{})
 	producerContexts := make(chan context.Context, 1)
 	manager := NewManager(ManagerConfig{Sink: nativeLogSink{}, Handlers: map[string]Handler{
@@ -42,6 +44,10 @@ func TestAcceptedLogsCreationCancellationAndRetirementDrain(t *testing.T) {
 			},
 		},
 	}})
+	t.Cleanup(func() {
+		releaseDrain()
+		manager.Close()
+	})
 	manager.BindConnectionContextProvider(controller)
 	creation, cancelCreation := context.WithCancel(context.Background())
 	pc := &types.PluginContext{Context: creation, Connection: &types.Connection{ID: "explicit"}}
@@ -77,7 +83,7 @@ func TestAcceptedLogsCreationCancellationAndRetirementDrain(t *testing.T) {
 		t.Fatal("native generation released before producer drained")
 	default:
 	}
-	close(drain)
+	releaseDrain()
 	awaitLifetime(t, released)
 	if err := manager.CloseSession(pc, session.ID); err != nil {
 		t.Fatal(err)
@@ -180,6 +186,7 @@ func TestRegistryRemovalRetainsAcceptedProducerLease(t *testing.T) {
 	entered := make(chan struct{})
 	canceled := make(chan struct{})
 	drain := make(chan struct{})
+	releaseDrain := sync.OnceFunc(func() { close(drain) })
 	managerClosed := make(chan struct{})
 	var manager *Manager
 	manager = NewManager(ManagerConfig{Sink: nativeLogSink{}, Handlers: map[string]Handler{
@@ -196,6 +203,10 @@ func TestRegistryRemovalRetainsAcceptedProducerLease(t *testing.T) {
 			},
 		},
 	}})
+	t.Cleanup(func() {
+		releaseDrain()
+		manager.Close()
+	})
 	manager.BindConnectionContextProvider(controller)
 	created := make(chan struct{})
 	go func() {
@@ -231,7 +242,7 @@ func TestRegistryRemovalRetainsAcceptedProducerLease(t *testing.T) {
 		t.Fatal("registry removal released a live producer lease")
 	default:
 	}
-	close(drain)
+	releaseDrain()
 	awaitLifetime(t, created)
 	awaitLifetime(t, managerClosed)
 	awaitLifetime(t, retired)
