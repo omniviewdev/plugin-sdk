@@ -140,6 +140,41 @@ The first central normal run exposed two incorrect test assignments; those were 
 
 This receipt covers SDK-local checks, not a new managed-app, browser, Kubernetes cluster, or downstream build run. User API/specification review, coordinated publication pins, and asynchronous log-generation ownership remain pending. PR21 stays draft; issue12 stays open. No merge, release, tag, API freeze, or plugin-sdk completion is claimed.
 
+## Main integration and deferred-rule audit — 2026-10-30
+
+Cleanup was pushed to PR21, then integrated with `main` commit `32a3358` in merge commit `bea90a0`. Independent two-parent review verified that conflict resolution retains the Tools capability and the platform-specific, pollable PTY implementation. The obsolete unsplit terminal file was removed; error-aware constructor cleanup was carried into the Unix implementation without calling `Fd()` or changing accepted-terminal first-error semantics. The integration worktree was removed after the original checkout fast-forwarded successfully.
+
+Main integration introduced 27 active lint findings. Documentation, equivalent source cleanup, and formatting resolved them without changing policy. Verified follow-up source is `27153b9`. Existing uncommitted configuration, Makefile, README, ignore, and CI changes remain untouched; they were not silently included in publication.
+
+Five independent reviewers assessed deferred findings by domain adapters, transport, utilities, named-return guards, and test isolation. Every reported getter site was inspected: 223 domain/test reports, 129 transport/test reports, and 166 utility/test reports. The new Tools codecs were also reviewed; they add no getter findings. All named-return reports and constructor-order reports were accounted for. Test-rule review inventoried every reported file, deeply read child/global/lifecycle groups and the three newly merged test files, and sampled remaining assertions. This is not an exhaustive security or test-suite correctness audit.
+
+| Deferred rule | Current findings | Decision |
+| --- | ---: | --- |
+| `protogetter` | 518 | Keep informational. Required-message, oneof, duplicate, and optional-presence checks remain explicit. Guarded scalar accesses offer safe local style changes, not demonstrated defects. |
+| `nonamedreturns` | 29 | Keep informational. All reports belong to 19 signatures with deferred recovery/classification guards or their consistently named result tuples. No wrong capture or guard-order defect was found. |
+| `paralleltest` | 583 | Keep informational. Shared process state, child entrypoints, parent-deferred cleanup, and shared per-case counters prohibit blanket parallelization. Independently owned pure tests remain optional candidates. |
+| `testpackage` | 82 | Keep informational. White-box watch/readiness/state tests need private access. Some public-API tests can migrate independently; mechanically renaming packages would lose coverage or require new API. |
+| `funcorder` | 23 | Keep informational. These are constructor-versus-method placement preferences, including paired transport conversions, not initialization-order defects. |
+
+No production finding required promotion to the active gate. The review did expose two existing test hygiene defects, which were fixed rather than dismissed as deferred style:
+
+1. `TestConfigFromEnv_MissingEnv` removed two process environment variables without restoration. A throwaway nested-test probe reproduced the leak before the fix and passed afterward. Commit `9c7dee8` registers both values with `t.Setenv` before deliberately unsetting them, preserving true absence during the test and restoring original values or original absence afterward.
+2. The newly merged real-PTY master-read test did not register terminal cleanup immediately after allocation. An early resize/assertion failure could leak descriptors until process exit. Commit `27153b9` registers cleanup before those failure points, tolerates the expected already-closed result after the explicit shutdown assertion, and preserves the duplicate-TTY/read-completion ordering. Independent review verified this failure-path correction; no failure-injection runtime claim is made.
+
+A separate executable getter probe rejected seven malformed protobuf values, preserved four explicitly selected zero scalars, and rejected four missing required messages without panic. It covered nil roots, typed-nil oneofs, absent payload messages, nil map entries, and duplicate keys. Both throwaway probe sources were removed after their receipts were captured.
+
+At `27153b9`, all of the following passed with `GOWORK=off GOFLAGS=`:
+
+- `make fmt`, `make fmt-check`, and `make lint-report`: zero active findings and no formatting diff.
+- `make lint-audit`: 1,235 informational findings, exclusively the five rules above.
+- `go test ./... -count=1` and `go test -race ./... -count=1`: 23 tested packages and 17 without tests in each run.
+- `go test ./pkg/v1/exec -run '^TestRealTerminal_' -count=1 -v`: actual PTY blocking-read interruption and prompt session closure passed.
+- `go test ./internal/resourceconformance -run 'TestCurrentSDK(NativeBoundary|GenerationFence|ChildIsolation)$' -count=1 -v`: actual disposable-child gRPC native reads, generation fences, isolation, and teardown passed.
+
+Safe style opportunities remain in local interceptor-chain tests, exported settings conversion tests, fresh domain-JSON fixtures, and guarded protobuf scalar reads. Their existence does not justify describing every deferred warning as unsafe, nor does it establish a correctness reason to enable whole rules. No thresholds, exclusions, or deferred-rule policy were changed.
+
+These are SDK-local receipts. Public API/specification acceptance, asynchronous log-generation ownership, and coordinated publication decisions remain pending. PR21 remains draft; no PR merge, tag, release, API freeze, or plugin-sdk completion is authorized.
+
 ## Review requested
 
 Before calling plugin-sdk done: confirm which added contracts should remain public, whether admission should be consolidated, and which transport/lifecycle details should stay internal. The existing implementation is a reviewable proposal—not a settled API merely because tests passed.
