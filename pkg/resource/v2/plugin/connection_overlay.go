@@ -9,12 +9,17 @@ import (
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
+const (
+	connectionOverlayOperation = "applyConnectionOverlay"
+	nativeConnectionsOperation = "nativeConnections"
+)
+
 // ApplyConnectionOverlay replaces host intent; an empty overlay restores native discovery.
 func (c *Client) ApplyConnectionOverlay(ctx context.Context, overlay resourcev2.ConnectionOverlay) error {
 	if err := resourcev2.ValidateConnectionOverlay(overlay); err != nil {
 		return err
 	}
-	data, err := json.Marshal(overlay)
+	data, err := json.Marshal(overlay) //nolint:musttag // Nested types.Connection retains its established JSON field names.
 	if err != nil {
 		return invalid("invalid connection overlay JSON")
 	}
@@ -23,7 +28,7 @@ func (c *Client) ApplyConnectionOverlay(ctx context.Context, overlay resourcev2.
 	}
 	return c.ancillaryJSON(
 		ctx,
-		&resourcepb.AncillaryRequest{Operation: "applyConnectionOverlay", ConnectionJson: data},
+		&resourcepb.AncillaryRequest{Operation: connectionOverlayOperation, ConnectionJson: data},
 		&struct{}{},
 	)
 }
@@ -31,6 +36,6 @@ func (c *Client) ApplyConnectionOverlay(ctx context.Context, overlay resourcev2.
 // NativeConnections returns source-owned profiles before host overlays apply.
 func (c *Client) NativeConnections(ctx context.Context) ([]types.Connection, error) {
 	var connections []types.Connection
-	err := c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "nativeConnections"}, &connections)
+	err := c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: nativeConnectionsOperation}, &connections)
 	return connections, err
 }

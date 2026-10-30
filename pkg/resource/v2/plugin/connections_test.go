@@ -75,17 +75,19 @@ func TestServerBindsConnectionResponseIDs(t *testing.T) {
 
 type maliciousConnectionServer struct {
 	resourcepb.UnimplementedResourceProviderServer
+
 	json []byte
 }
 
 func (s *maliciousConnectionServer) Call(_ context.Context, in *resourcepb.Request) (*resourcepb.Response, error) {
 	out := &resourcepb.ConnectionOutput{}
 	operation := in.GetConnection().Operation
-	if s.json != nil {
+	switch {
+	case s.json != nil:
 		out.ConnectionJson = s.json
-	} else if operation == "start" || operation == "check" || operation == "state" {
+	case operation == "start" || operation == "check" || operation == "state":
 		out.StatusJson = []byte(`{"connection":{"id":"other"},"status":0,"error":"","details":""}`)
-	} else {
+	default:
 		out.ConnectionJson = []byte(`{"id":"other"}`)
 	}
 	return &resourcepb.Response{Version: 2, Result: &resourcepb.Response_Connection{Connection: out}}, nil
@@ -110,6 +112,7 @@ func TestActualGRPCConnectionJSONRejectsAmbiguity(t *testing.T) {
 
 type blockedCloser struct {
 	countProvider
+
 	started chan struct{}
 	release chan struct{}
 }

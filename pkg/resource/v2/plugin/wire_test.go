@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"net"
 	"reflect"
 	"sync/atomic"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/health"
@@ -48,22 +50,49 @@ func (p *countProvider) Catalog(context.Context, resourcev2.CatalogRequest) (res
 func pipe(t *testing.T, s *grpc.Server) *grpc.ClientConn {
 	t.Helper()
 	l := bufconn.Listen(1 << 20)
-	go s.Serve(l)
-	t.Cleanup(func() { s.Stop(); l.Close() })
+	go func() {
+		if serveErr := s.Serve(l); serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
+			t.Errorf("serve test transport: %v", serveErr)
+		}
+	}()
+	t.Cleanup(func() {
+		s.Stop()
+		if closeErr := l.Close(); closeErr != nil {
+			t.Errorf("close test listener: %v", closeErr)
+		}
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	c, err := grpc.DialContext(
-		ctx,
+	c, err := grpc.NewClient(
 		"passthrough:///resource",
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return l.Dial() }),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { c.Close() })
+	c.Connect()
+	waitForPipeReady(ctx, t, c)
+	t.Cleanup(func() {
+		if closeErr := c.Close(); closeErr != nil {
+			t.Errorf("close test connection: %v", closeErr)
+		}
+	})
 	return c
+}
+
+// waitForPipeReady keeps fixture setup synchronous without deprecated blocking dial options.
+func waitForPipeReady(ctx context.Context, t *testing.T, c *grpc.ClientConn) {
+	t.Helper()
+	for {
+		state := c.GetState()
+		if state == connectivity.Ready {
+			return
+		}
+		if !c.WaitForStateChange(ctx, state) {
+			t.Fatalf("test transport did not become ready: %v", ctx.Err())
+		}
+	}
 }
 
 func bytesField(n protowire.Number, v []byte) []byte {
@@ -162,12 +191,13 @@ func TestRawRequestAdmissionDefaultProto(t *testing.T) {
 }
 
 func TestRawResponseAdmission(t *testing.T) {
-	cases := [][]byte{
-		{8, 2, 8, 2},
-		{8, 2, 120, 1},
+	cases := make([][]byte, 0, 10)
+	cases = append(cases,
+		[]byte{8, 2, 8, 2},
+		[]byte{8, 2, 120, 1},
 		append([]byte{8, 2}, bytesField(5, []byte{16, 1, 16, 1})...),
-		{8, 2, 42, 128},
-	}
+		[]byte{8, 2, 42, 128},
+	)
 	entry := append(bytesField(1, []byte("k")), bytesField(2, []byte{10, 0})...)
 	for _, value := range [][]byte{{10, 0, 10, 0}, {16, 1, 26, 0}, bytesField(7, []byte{16, 0, 16, 0}), bytesField(9, append(bytesField(1, entry), bytesField(1, entry)...)), {26, 1, 255}, {16, 128}} {
 		cases = append(cases, append([]byte{8, 2}, bytesField(5, value)...))
@@ -191,16 +221,16 @@ func TestRawResponseAdmission(t *testing.T) {
 }
 
 func TestRawValueControls(t *testing.T) {
+	first := append(bytesField(1, []byte("a")), bytesField(2, []byte{10, 0})...)
+	second := append(bytesField(1, []byte("b")), bytesField(2, []byte{26, 0})...)
 	values := [][]byte{
 		{10, 0},
 		{66, 0},
 		{74, 0},
 		bytesField(7, nil),
 		bytesField(8, append(bytesField(1, []byte{16, 1}), bytesField(1, []byte{26, 0})...)),
+		bytesField(9, append(bytesField(1, first), bytesField(1, second)...)),
 	}
-	first := append(bytesField(1, []byte("a")), bytesField(2, []byte{10, 0})...)
-	second := append(bytesField(1, []byte("b")), bytesField(2, []byte{26, 0})...)
-	values = append(values, bytesField(9, append(bytesField(1, first), bytesField(1, second)...)))
 	for _, data := range values {
 		if err := ValidateWire(data, (&resourcepb.Value{}).ProtoReflect().Descriptor()); err != nil {
 			t.Fatal(err)

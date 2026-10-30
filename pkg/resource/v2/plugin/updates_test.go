@@ -13,6 +13,7 @@ import (
 
 type updateProvider struct {
 	qualifiedProvider
+
 	mode    string
 	trigger chan struct{}
 	joined  chan struct{}
@@ -42,6 +43,7 @@ func (p *updateProvider) StopConnectionWatch(context.Context, resourcev2.AccessR
 }
 func (p *updateProvider) HasWatch(context.Context, resourcev2.AccessRoute) bool { return true }
 
+//nolint:nilnil // A missing watch summary is a legitimate successful result, distinct from an empty summary.
 func (p *updateProvider) GetWatchState(
 	context.Context,
 	resourcev2.AccessRoute,
@@ -132,7 +134,7 @@ func TestActualGRPCBestEffortReadinessAndCancel(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
-	ctx, cancel := context.WithCancel(acceptedCatalogContext(t, context.Background(), c, updateTarget().Route))
+	ctx, cancel := context.WithCancel(acceptedCatalogContext(context.Background(), t, c, updateTarget().Route))
 	defer cancel()
 	ready := make(chan struct{})
 	done := make(chan error, 1)

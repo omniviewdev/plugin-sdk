@@ -9,6 +9,11 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+const (
+	resourceErrorDomain = "omniview.resource.v2"
+	rpcCallMethod       = "Call"
+)
+
 // TransportEnvelope preserves admission errors before generated protobuf decoding.
 type TransportEnvelope = envelope
 
@@ -19,11 +24,15 @@ func NewTransportEnvelope(message proto.Message, legacyExec bool) *TransportEnve
 
 // AdmissionError returns the raw-wire admission failure retained during decoding.
 func (e *envelope) AdmissionError() error { return e.err }
-func ResourceRPCError(err error) error    { return rpcError(err) }
+
+// ResourceRPCError converts a domain error into a public-safe gRPC status.
+func ResourceRPCError(err error) error { return rpcError(err) }
+
+// ResourceDomainError restores a classified resource error from a gRPC status.
 func ResourceDomainError(err error) error { return domainError(err) }
 
 func strictRoot(d protoreflect.MessageDescriptor) bool {
-	return d.ParentFile().Package() == "omniview.resource.v2" || strictUtilityRoot(d)
+	return d.ParentFile().Package() == resourceErrorDomain || strictUtilityRoot(d)
 }
 
 // ValidateLegacyExecWire detects resource intent without discarding reserved fields.

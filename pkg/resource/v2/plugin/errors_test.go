@@ -20,7 +20,8 @@ func testErrorClass(err error) string {
 	if errors.As(err, &typed) {
 		return resourcev2.ErrorCode(err)
 	}
-	switch status.Code(err) {
+	code := status.Code(err)
+	switch code {
 	case codes.Canceled:
 		return "CANCELLED"
 	case codes.DeadlineExceeded:
@@ -32,7 +33,6 @@ func testErrorClass(err error) string {
 }
 
 type outageProvider struct {
-	countProvider
 	declared bool
 	ordinary bool
 }
@@ -140,7 +140,7 @@ func TestUnknownActionErrorCodeRejectedBeforeDelivery(t *testing.T) {
 	resourcepb.RegisterResourceAncillaryServer(s, &unknownActionCodeServer{})
 	out := make(chan resourcev2.ActionEvent, 2)
 	client := NewClient(pipe(t, s))
-	ctx := acceptedCatalogContext(t, context.Background(), client, actionInput().Route)
+	ctx := acceptedCatalogContext(context.Background(), t, client, actionInput().Route)
 	err := client.StreamAction(ctx, actionInput(), out)
 	if resourcev2.ErrorCode(err) != "INTERNAL" {
 		t.Fatalf("unknown action code: %v", err)

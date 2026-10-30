@@ -16,6 +16,7 @@ import (
 
 type largeProvider struct {
 	qualifiedProvider
+
 	payload string
 }
 
@@ -64,7 +65,7 @@ func TestActualGRPCMultiMiBResourceBodies(t *testing.T) {
 			RegisterServer(s, p)
 			c := NewClient(pipe(t, s))
 			started := time.Now()
-			record, err := c.Get(acceptedCatalogContext(t, context.Background(), c, testGet().Route), testGet())
+			record, err := c.Get(acceptedCatalogContext(context.Background(), t, c, testGet().Route), testGet())
 			elapsed := time.Since(started)
 			if err != nil {
 				t.Fatal(err)
@@ -118,9 +119,10 @@ func TestActualGRPCAggregatePageFrameLimit(t *testing.T) {
 		t.Fatal("fixture body exceeds per-document bound")
 	}
 	record := bytesField(2, body)
-	page := []byte{}
+	framedRecord := bytesField(1, record)
+	page := make([]byte, 0, 3*len(framedRecord))
 	for range 3 {
-		page = append(page, bytesField(1, record)...)
+		page = append(page, framedRecord...)
 	}
 	data := append([]byte{8, 2}, bytesField(4, page)...)
 	if err := ValidateWire(

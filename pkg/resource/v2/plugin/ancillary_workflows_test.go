@@ -108,6 +108,7 @@ func (*ancillaryFixtureProvider) GetHealth(
 	resourcev2.GetRequest,
 	resourcev2.Value,
 ) (*resourcev2.ResourceHealth, error) {
+	//nolint:nilnil // This fixture exercises successful absence of optional health.
 	return nil, nil
 }
 
@@ -142,7 +143,7 @@ func TestActualGRPCCanonicalAncillaryWorkflows(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, &ancillaryFixtureProvider{})
 	c := NewClient(pipe(t, s))
-	ctx := acceptedRelationshipContext(t, context.Background(), c, relationshipFixtureRequest())
+	ctx := acceptedRelationshipContext(context.Background(), t, c, relationshipFixtureRequest())
 	route := testGet().Route
 	groups, err := c.GetResourceGroups(ctx, route)
 	if err != nil || len(groups) != 1 || groups[0].Resources[0] != "opaque/type" {

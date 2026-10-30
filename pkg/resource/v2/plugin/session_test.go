@@ -44,6 +44,7 @@ func TestActualGRPCFeaturesAreProviderTruth(t *testing.T) {
 
 type sessionProvider struct {
 	countProvider
+
 	seen chan resourcev2.Session
 	wait bool
 }
@@ -173,7 +174,7 @@ func TestActualGRPCCancellationReachesProvider(t *testing.T) {
 	}
 }
 
-type classifierPanicProvider struct{ countProvider }
+type classifierPanicProvider struct{}
 
 func (*classifierPanicProvider) Catalog(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
 	return resourcev2.Catalog{}, errors.New("native failure")

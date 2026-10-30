@@ -2,7 +2,7 @@ package plugin
 
 import (
 	"context"
-	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -32,19 +32,7 @@ func TestActualGRPCDistinctRelationshipRouteCatalogPins(t *testing.T) {
 			RegisterServer(s, p)
 			c := NewClient(pipe(t, s))
 			request := relationshipFixtureRequest()
-			ctx := acceptedCatalogContext(t, context.Background(), c, request.Source.Route)
-			if mode != "missing" {
-				target := request.Targets[0]
-				catalog, err := c.Catalog(ctx, resourcev2.CatalogRequest{Route: target.Route})
-				if err != nil {
-					t.Fatal(err)
-				}
-				revision := catalog.Revision
-				if mode == "wrong" {
-					revision = "wrong-observation"
-				}
-				ctx = resourcev2.WithCatalogRevisionForRoute(ctx, target.Provider, target.Route, revision)
-			}
+			ctx := relationshipRoutePinContext(context.Background(), t, c, request, mode)
 			result, err := c.ResolveRelationships(ctx, request)
 			if mode == "valid" {
 				if err != nil || len(result) != 1 || p.calls.Load() != 1 {
@@ -105,14 +93,43 @@ func TestQualifiedCatalogContextRejectsDuplicatesAndAggregateLimit(t *testing.T)
 	}
 	ctx = context.Background()
 	for i := range 9 {
-		ctx = resourcev2.WithCatalogRevisionForRoute(
-			ctx,
-			"test",
-			resourcev2.AccessRoute{Connection: fmt.Sprint(i)},
-			strings.Repeat("x", resourcev2.MaxCatalogRevisionBytes),
-		)
+		//nolint:fatcontext // Accumulate all nine observations to exercise the aggregate limit.
+		ctx = appendLargeRouteObservation(ctx, i)
 	}
 	if _, err := outgoingSession(ctx); resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {
 		t.Fatalf("aggregate context: %v", err)
 	}
+}
+
+func relationshipRoutePinContext(
+	ctx context.Context,
+	t *testing.T,
+	p resourcev2.Provider,
+	request resourcev2.RelationshipResolutionRequest,
+	mode string,
+) context.Context {
+	t.Helper()
+	ctx = acceptedCatalogContext(ctx, t, p, request.Source.Route)
+	if mode == "missing" {
+		return ctx
+	}
+	target := request.Targets[0]
+	catalog, err := p.Catalog(ctx, resourcev2.CatalogRequest{Route: target.Route})
+	if err != nil {
+		t.Fatal(err)
+	}
+	revision := catalog.Revision
+	if mode == "wrong" {
+		revision = "wrong-observation"
+	}
+	return resourcev2.WithCatalogRevisionForRoute(ctx, target.Provider, target.Route, revision)
+}
+
+func appendLargeRouteObservation(ctx context.Context, index int) context.Context {
+	return resourcev2.WithCatalogRevisionForRoute(
+		ctx,
+		"test",
+		resourcev2.AccessRoute{Connection: strconv.Itoa(index)},
+		strings.Repeat("x", resourcev2.MaxCatalogRevisionBytes),
+	)
 }

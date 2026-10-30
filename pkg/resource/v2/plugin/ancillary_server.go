@@ -9,14 +9,31 @@ import (
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
+const (
+	ancillaryListConnections      = "listConnections"
+	ancillaryScopeValues          = "scopeValues"
+	ancillaryUpdateConnection     = "updateConnection"
+	ancillaryDeleteConnection     = "deleteConnection"
+	ancillaryGroups               = "groups"
+	ancillaryDefinition           = "definition"
+	ancillaryEditorSchemas        = "editorSchemas"
+	ancillaryActions              = "actions"
+	ancillaryRelationships        = "relationships"
+	ancillaryResolveRelationships = "resolveRelationships"
+	ancillaryHealth               = "health"
+	ancillaryEvents               = "events"
+	ancillarySchemaDocument       = "schemaDocument"
+)
+
 type ancillaryServer struct {
 	resourcepb.UnimplementedResourceAncillaryServer
+
 	owner *server
 }
 
 func registerAncillary(s *grpc.Server, owner *server) {
 	d := resourcepb.ResourceAncillary_ServiceDesc
-	d.Methods = []grpc.MethodDesc{{MethodName: "Call", Handler: ancillaryCallHandler}}
+	d.Methods = []grpc.MethodDesc{{MethodName: rpcCallMethod, Handler: ancillaryCallHandler}}
 	d.Streams = []grpc.StreamDesc{
 		{StreamName: "WatchConnections", Handler: watchConnectionsHandler, ServerStreams: true},
 		{StreamName: "StreamAction", Handler: streamActionHandler, ServerStreams: true},
@@ -24,12 +41,22 @@ func registerAncillary(s *grpc.Server, owner *server) {
 	s.RegisterService(&d, &ancillaryServer{owner: owner})
 }
 
+//nolint:revive // gRPC requires the server argument before the request context.
 func ancillaryCallHandler(
-	srv interface{},
+	srv any,
 	ctx context.Context,
-	dec func(interface{}) error,
+	dec func(any) error,
 	i grpc.UnaryServerInterceptor,
-) (interface{}, error) {
+) (any, error) {
+	return handleAncillaryCall(ctx, srv, dec, i)
+}
+
+func handleAncillaryCall(
+	ctx context.Context,
+	srv any,
+	dec func(any) error,
+	i grpc.UnaryServerInterceptor,
+) (any, error) {
 	r := &resourcepb.AncillaryRequest{}
 	e := &envelope{message: r}
 	if err := dec(e); err != nil {
@@ -54,7 +81,7 @@ func ancillaryCallHandler(
 		if fenceErr := s.owner.checkAncillaryCatalogs(ctx, request); fenceErr != nil {
 			return nil, rpcError(s.owner.classify(fenceErr))
 		}
-		out, err := s.call(ctx, v.(*resourcepb.AncillaryRequest))
+		out, err := s.call(ctx, request)
 		if fenceErr := s.owner.checkAncillaryCatalogs(ctx, request); fenceErr != nil {
 			return nil, rpcError(s.owner.classify(fenceErr))
 		}
@@ -88,11 +115,20 @@ func (s *ancillaryServer) call(
 		}
 	}
 	switch r.Operation {
-	case "nativeConnections", "applyConnectionOverlay", "listConnections", "updateConnection", "deleteConnection":
+	case nativeConnectionsOperation,
+		connectionOverlayOperation,
+		ancillaryListConnections,
+		ancillaryUpdateConnection,
+		ancillaryDeleteConnection:
 		return s.connectionCall(ctx, r)
-	case "scopeValues", "schemaDocument", "groups", "definition", "editorSchemas", "actions":
+	case ancillaryScopeValues,
+		ancillarySchemaDocument,
+		ancillaryGroups,
+		ancillaryDefinition,
+		ancillaryEditorSchemas,
+		ancillaryActions:
 		return s.presentationCall(ctx, r, route)
-	case "relationships", "resolveRelationships", "health", "events":
+	case ancillaryRelationships, ancillaryResolveRelationships, ancillaryHealth, ancillaryEvents:
 		return s.relationshipHealthCall(ctx, r, route)
 	default:
 		return nil, unsupported("unknown ancillary operation")

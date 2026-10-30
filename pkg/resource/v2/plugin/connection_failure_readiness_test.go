@@ -18,228 +18,274 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
+type failedStartNativeClient struct{ id, mode string }
+
+type failedStartScenario struct {
+	ctx                                          context.Context
+	cancel                                       context.CancelFunc
+	client                                       *Client
+	failing                                      atomic.Bool
+	created, probes, catalogs, httpCalls, nextID atomic.Int32
+	mu                                           sync.Mutex
+	allocated                                    map[string]bool
+	native                                       *httptest.Server
+	cleanupEntered, releaseCleanup               chan struct{}
+	cleanupOnce, releaseOnce                     sync.Once
+}
+
 func TestActualGRPCFailedStartReadinessSurvivesNativeCleanup(t *testing.T) {
 	for _, failure := range []string{"create", "on-start"} {
 		t.Run(failure, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			var failing atomic.Bool
-			failing.Store(true)
-			var created, probes, catalogs, httpCalls, nextID atomic.Int32
-			var mu sync.Mutex
-			allocated := map[string]bool{}
-			native := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				httpCalls.Add(1)
-				mu.Lock()
-				defer mu.Unlock()
-				if r.Method == http.MethodPost {
-					if r.URL.Path == "/create" && failing.Load() {
-						http.Error(w, "native creation denied", http.StatusServiceUnavailable)
-						return
-					}
-					id := strconv.Itoa(int(nextID.Add(1)))
-					allocated[id] = true
-					w.Header().Set("X-Native-ID", id)
-					w.WriteHeader(http.StatusCreated)
-					return
-				}
-				if r.Method == http.MethodDelete && allocated[strings.TrimPrefix(r.URL.Path, "/")] {
-					delete(allocated, strings.TrimPrefix(r.URL.Path, "/"))
-					w.WriteHeader(http.StatusNoContent)
-					return
-				}
-				http.NotFound(w, r)
-			}))
-			t.Cleanup(native.Close)
-			type nativeClient struct{ id, mode string }
-			cleanupEntered, releaseCleanup := make(chan struct{}), make(chan struct{})
-			var cleanupOnce, releaseOnce sync.Once
-			defer releaseOnce.Do(func() { close(releaseCleanup) })
-			controller, err := resourcev2.NewController(resourcev2.Config[nativeClient]{
-				Catalog: func(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
-					catalogs.Add(1)
-					return resourcev2.Catalog{}, nil
-				},
-				Lifecycle: &resourcev2.Lifecycle[nativeClient]{
-					LoadConnections: func(context.Context) ([]types.Connection, error) {
-						return []types.Connection{
-							{ID: "native", Name: "original", Data: map[string]any{"mode": failure}},
-						}, nil
-					},
-					CreateClient: func(ctx context.Context, connection types.Connection) (*nativeClient, error) {
-						created.Add(1)
-						mode := connection.Data["mode"].(string)
-						request, err := http.NewRequestWithContext(ctx, http.MethodPost, native.URL+"/"+mode, nil)
-						if err != nil {
-							return nil, err
-						}
-						response, err := http.DefaultClient.Do(request)
-						if err != nil {
-							return nil, err
-						}
-						defer response.Body.Close()
-						if response.StatusCode != http.StatusCreated {
-							return nil, fmt.Errorf("native creation failed")
-						}
-						return &nativeClient{id: response.Header.Get("X-Native-ID"), mode: mode}, nil
-					},
-					OnStart: func(_ context.Context, _ types.Connection, client *nativeClient) error {
-						if client.mode == "on-start" && failing.Load() {
-							return fmt.Errorf("native startup failed")
-						}
-						return nil
-					},
-					DestroyClient: func(ctx context.Context, client *nativeClient) error {
-						if client.mode == "on-start" && failing.Load() {
-							cleanupOnce.Do(func() {
-								close(cleanupEntered)
-								select {
-								case <-releaseCleanup:
-								case <-ctx.Done():
-								}
-							})
-						}
-						request, err := http.NewRequestWithContext(
-							ctx,
-							http.MethodDelete,
-							native.URL+"/"+client.id,
-							nil,
-						)
-						if err != nil {
-							return err
-						}
-						response, err := http.DefaultClient.Do(request)
-						if err != nil {
-							return err
-						}
-						response.Body.Close()
-						if response.StatusCode != http.StatusNoContent {
-							return fmt.Errorf("native cleanup failed")
-						}
-						return nil
-					},
-					CheckConnection: func(context.Context, types.Connection, *nativeClient) (types.ConnectionStatus, error) {
-						probes.Add(1)
-						return types.ConnectionStatus{}, fmt.Errorf("health probe must not run")
-					},
-				},
-			})
-			if err != nil {
-				t.Fatal(err)
+			scenario := newFailedStartScenario(t, failure)
+			defer scenario.cancel()
+			defer scenario.releaseOnce.Do(func() { close(scenario.releaseCleanup) })
+			scenario.checkInitialFailure(t, failure)
+			scenario.checkRecovery(t)
+		})
+	}
+}
+
+func newFailedStartScenario(t *testing.T, failure string) *failedStartScenario {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(cancel)
+	s := &failedStartScenario{
+		ctx:            ctx,
+		cancel:         cancel,
+		allocated:      map[string]bool{},
+		cleanupEntered: make(chan struct{}),
+		releaseCleanup: make(chan struct{}),
+	}
+	s.failing.Store(true)
+	s.native = httptest.NewServer(http.HandlerFunc(s.serveNative))
+	t.Cleanup(s.native.Close)
+	controller, err := resourcev2.NewController(resourcev2.Config[failedStartNativeClient]{
+		Catalog: func(context.Context, resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
+			s.catalogs.Add(1)
+			return resourcev2.Catalog{}, nil
+		},
+		Lifecycle: s.lifecycle(failure),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if closeErr := controller.Close(); closeErr != nil {
+			t.Error(closeErr)
+		}
+	})
+	server := grpc.NewServer()
+	RegisterServer(server, controller)
+	s.client = NewClient(pipe(t, server))
+	if _, err = s.client.LoadConnections(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func (s *failedStartScenario) serveNative(w http.ResponseWriter, r *http.Request) {
+	s.httpCalls.Add(1)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if r.Method == http.MethodPost {
+		if r.URL.Path == "/create" && s.failing.Load() {
+			http.Error(w, "native creation denied", http.StatusServiceUnavailable)
+			return
+		}
+		id := strconv.Itoa(int(s.nextID.Add(1)))
+		s.allocated[id] = true
+		w.Header().Set("X-Native-Id", id)
+		w.WriteHeader(http.StatusCreated)
+		return
+	}
+	if r.Method == http.MethodDelete && s.allocated[strings.TrimPrefix(r.URL.Path, "/")] {
+		delete(s.allocated, strings.TrimPrefix(r.URL.Path, "/"))
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	http.NotFound(w, r)
+}
+
+func (s *failedStartScenario) lifecycle(failure string) *resourcev2.Lifecycle[failedStartNativeClient] {
+	return &resourcev2.Lifecycle[failedStartNativeClient]{
+		LoadConnections: func(context.Context) ([]types.Connection, error) {
+			return []types.Connection{
+				{ID: "native", Name: "original", Data: map[string]any{"mode": failure}},
+			}, nil
+		},
+		CreateClient: s.createClient,
+		OnStart: func(_ context.Context, _ types.Connection, client *failedStartNativeClient) error {
+			if client.mode == "on-start" && s.failing.Load() {
+				return fmt.Errorf("native startup failed")
 			}
-			t.Cleanup(func() {
-				if err := controller.Close(); err != nil {
-					t.Error(err)
-				}
-			})
-			server := grpc.NewServer()
-			RegisterServer(server, controller)
-			client := NewClient(pipe(t, server))
-			if _, err := client.LoadConnections(ctx); err != nil {
-				t.Fatal(err)
-			}
-			state := func(want types.ConnectionStatusCode) {
-				t.Helper()
-				beforeHTTP, beforeCreate := httpCalls.Load(), created.Load()
-				status, err := client.GetConnectionStatus(ctx, "native")
-				if err != nil || status.Status != want || status.Connection == nil || status.Error != "" ||
-					status.Details != "" {
-					t.Fatalf("want %s: %+v %v", want, status, err)
-				}
-				if httpCalls.Load() != beforeHTTP || created.Load() != beforeCreate || probes.Load() != 0 ||
-					catalogs.Load() != 0 {
-					t.Fatal("readiness performed native work")
-				}
-			}
-			failedStart := func() {
-				t.Helper()
-				if _, err := client.StartConnection(ctx, "native"); err == nil {
-					t.Fatal("native failure returned success")
-				}
-				state(types.ConnectionStatusFailed)
-				mu.Lock()
-				remaining := len(allocated)
-				mu.Unlock()
-				if remaining != 0 {
-					t.Fatalf("failed startup leaked %d actual native allocations", remaining)
-				}
-			}
-			if failure == "on-start" {
-				started := make(chan error, 1)
-				go func() { _, err := client.StartConnection(ctx, "native"); started <- err }()
-				select {
-				case <-cleanupEntered:
-				case <-ctx.Done():
-					t.Fatal(ctx.Err())
-				}
-				state(types.ConnectionStatusFailed)
-				mu.Lock()
-				remaining := len(allocated)
-				mu.Unlock()
-				if remaining != 1 {
-					t.Fatal("OnStart failure did not retain actual native resource during blocked cleanup")
-				}
-				releaseOnce.Do(func() { close(releaseCleanup) })
-				if err := <-started; err == nil {
-					t.Fatal("OnStart failure returned success")
-				}
-				state(types.ConnectionStatusFailed)
-				mu.Lock()
-				remaining = len(allocated)
-				mu.Unlock()
-				if remaining != 0 {
-					t.Fatal("failed OnStart did not clean actual native resource")
-				}
-			} else {
-				failedStart()
-			}
-			connection, err := client.GetConnection(ctx, "native")
-			if err != nil {
-				t.Fatal(err)
-			}
-			connection.Name = "renamed"
-			if _, err := client.UpdateConnection(ctx, connection); err != nil {
-				t.Fatal(err)
-			}
-			state(types.ConnectionStatusFailed)
-			failing.Store(false)
-			if _, err := client.StartConnection(ctx, "native"); err != nil {
-				t.Fatal(err)
-			}
-			state(types.ConnectionStatusConnected)
-			if _, err := client.StopConnection(ctx, "native"); err != nil {
-				t.Fatal(err)
-			}
-			state(types.ConnectionStatusDisconnected)
-			failing.Store(true)
-			failedStart()
-			if _, err := client.StopConnection(ctx, "native"); err != nil {
-				t.Fatal(err)
-			}
-			state(types.ConnectionStatusDisconnected)
-			failedStart()
-			connection.Data = map[string]any{"mode": "healthy"}
-			if err := client.ApplyConnectionOverlay(
-				ctx,
-				resourcev2.ConnectionOverlay{Upserts: []types.Connection{connection}, DisabledIDs: []string{}},
-			); err != nil {
-				t.Fatal(err)
-			}
-			state(types.ConnectionStatusDisconnected)
-			if _, err := client.StartConnection(ctx, "native"); err != nil {
-				t.Fatal(err)
-			}
-			state(types.ConnectionStatusConnected)
-			if _, err := client.StopConnection(ctx, "native"); err != nil {
-				t.Fatal(err)
-			}
-			state(types.ConnectionStatusDisconnected)
-			mu.Lock()
-			remaining := len(allocated)
-			mu.Unlock()
-			if remaining != 0 {
-				t.Fatal("recovery leaked actual native resources")
+			return nil
+		},
+		DestroyClient: s.destroyClient,
+		CheckConnection: func(
+			context.Context, types.Connection, *failedStartNativeClient,
+		) (types.ConnectionStatus, error) {
+			s.probes.Add(1)
+			return types.ConnectionStatus{}, fmt.Errorf("health probe must not run")
+		},
+	}
+}
+
+func (s *failedStartScenario) createClient(
+	ctx context.Context, connection types.Connection,
+) (*failedStartNativeClient, error) {
+	s.created.Add(1)
+	mode, ok := connection.Data["mode"].(string)
+	if !ok {
+		panic("connection fixture mode must be a string")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.native.URL+"/"+mode, nil)
+	if err != nil {
+		return nil, err
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	if err = response.Body.Close(); err != nil {
+		return nil, err
+	}
+	if response.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("native creation failed")
+	}
+	return &failedStartNativeClient{id: response.Header.Get("X-Native-Id"), mode: mode}, nil
+}
+
+func (s *failedStartScenario) destroyClient(ctx context.Context, client *failedStartNativeClient) error {
+	if client.mode == "on-start" && s.failing.Load() {
+		s.cleanupOnce.Do(func() {
+			close(s.cleanupEntered)
+			select {
+			case <-s.releaseCleanup:
+			case <-ctx.Done():
 			}
 		})
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, s.native.URL+"/"+client.id, nil)
+	if err != nil {
+		return err
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return err
+	}
+	if err = response.Body.Close(); err != nil {
+		return err
+	}
+	if response.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("native cleanup failed")
+	}
+	return nil
+}
+
+func (s *failedStartScenario) state(t *testing.T, want types.ConnectionStatusCode) {
+	t.Helper()
+	beforeHTTP, beforeCreate := s.httpCalls.Load(), s.created.Load()
+	status, err := s.client.GetConnectionStatus(s.ctx, "native")
+	if err != nil || status.Status != want || status.Connection == nil || status.Error != "" ||
+		status.Details != "" {
+		t.Fatalf("want %s: %+v %v", want, status, err)
+	}
+	if s.httpCalls.Load() != beforeHTTP || s.created.Load() != beforeCreate || s.probes.Load() != 0 ||
+		s.catalogs.Load() != 0 {
+		t.Fatal("readiness performed native work")
+	}
+}
+
+func (s *failedStartScenario) allocationCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.allocated)
+}
+
+func (s *failedStartScenario) failedStart(t *testing.T) {
+	t.Helper()
+	if _, err := s.client.StartConnection(s.ctx, "native"); err == nil {
+		t.Fatal("native failure returned success")
+	}
+	s.state(t, types.ConnectionStatusFailed)
+	if remaining := s.allocationCount(); remaining != 0 {
+		t.Fatalf("failed startup leaked %d actual native allocations", remaining)
+	}
+}
+
+func (s *failedStartScenario) checkInitialFailure(t *testing.T, failure string) {
+	t.Helper()
+	// Keep this defer in the running scenario, ahead of all registered cleanup.
+	defer s.releaseOnce.Do(func() { close(s.releaseCleanup) })
+	if failure != "on-start" {
+		s.failedStart(t)
+		return
+	}
+	started := make(chan error, 1)
+	go func() { _, err := s.client.StartConnection(s.ctx, "native"); started <- err }()
+	select {
+	case <-s.cleanupEntered:
+	case <-s.ctx.Done():
+		t.Fatal(s.ctx.Err())
+	}
+	s.state(t, types.ConnectionStatusFailed)
+	if s.allocationCount() != 1 {
+		t.Fatal("OnStart failure did not retain actual native resource during blocked cleanup")
+	}
+	s.releaseOnce.Do(func() { close(s.releaseCleanup) })
+	if err := <-started; err == nil {
+		t.Fatal("OnStart failure returned success")
+	}
+	s.state(t, types.ConnectionStatusFailed)
+	if s.allocationCount() != 0 {
+		t.Fatal("failed OnStart did not clean actual native resource")
+	}
+}
+
+func (s *failedStartScenario) checkRecovery(t *testing.T) {
+	t.Helper()
+	connection, err := s.client.GetConnection(s.ctx, "native")
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection.Name = "renamed"
+	if _, err = s.client.UpdateConnection(s.ctx, connection); err != nil {
+		t.Fatal(err)
+	}
+	s.state(t, types.ConnectionStatusFailed)
+	s.failing.Store(false)
+	if _, err = s.client.StartConnection(s.ctx, "native"); err != nil {
+		t.Fatal(err)
+	}
+	s.state(t, types.ConnectionStatusConnected)
+	if _, err = s.client.StopConnection(s.ctx, "native"); err != nil {
+		t.Fatal(err)
+	}
+	s.state(t, types.ConnectionStatusDisconnected)
+	s.failing.Store(true)
+	s.failedStart(t)
+	if _, err = s.client.StopConnection(s.ctx, "native"); err != nil {
+		t.Fatal(err)
+	}
+	s.state(t, types.ConnectionStatusDisconnected)
+	s.failedStart(t)
+	connection.Data = map[string]any{"mode": "healthy"}
+	if err = s.client.ApplyConnectionOverlay(
+		s.ctx,
+		resourcev2.ConnectionOverlay{Upserts: []types.Connection{connection}, DisabledIDs: []string{}},
+	); err != nil {
+		t.Fatal(err)
+	}
+	s.state(t, types.ConnectionStatusDisconnected)
+	if _, err = s.client.StartConnection(s.ctx, "native"); err != nil {
+		t.Fatal(err)
+	}
+	s.state(t, types.ConnectionStatusConnected)
+	if _, err = s.client.StopConnection(s.ctx, "native"); err != nil {
+		t.Fatal(err)
+	}
+	s.state(t, types.ConnectionStatusDisconnected)
+	if s.allocationCount() != 0 {
+		t.Fatal("recovery leaked actual native resources")
 	}
 }

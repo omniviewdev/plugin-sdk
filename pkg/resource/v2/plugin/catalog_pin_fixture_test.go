@@ -8,8 +8,8 @@ import (
 )
 
 func acceptedCatalogContext(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	p resourcev2.Provider,
 	route resourcev2.AccessRoute,
 ) context.Context {
@@ -22,13 +22,13 @@ func acceptedCatalogContext(
 }
 
 func acceptedWireContext(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	p resourcev2.Provider,
 	route resourcev2.AccessRoute,
 ) context.Context {
 	t.Helper()
-	ctx, err := outgoingSession(acceptedCatalogContext(t, ctx, p, route))
+	ctx, err := outgoingSession(acceptedCatalogContext(ctx, t, p, route))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,13 +36,13 @@ func acceptedWireContext(
 }
 
 func acceptedRelationshipContext(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	p resourcev2.Provider,
 	request resourcev2.RelationshipResolutionRequest,
 ) context.Context {
 	t.Helper()
-	ctx = acceptedCatalogContext(t, ctx, p, request.Source.Route)
+	ctx = acceptedCatalogContext(ctx, t, p, request.Source.Route)
 	seen := map[struct {
 		provider string
 		route    resourcev2.AccessRoute
@@ -56,25 +56,38 @@ func acceptedRelationshipContext(
 			continue
 		}
 		seen[key] = true
-		catalog, err := p.Catalog(ctx, resourcev2.CatalogRequest{Route: target.Route})
-		if err != nil {
-			t.Fatal(err)
-		}
-		ctx = resourcev2.WithCatalogRevisionForRoute(ctx, target.Provider, target.Route, catalog.Revision)
+		//nolint:fatcontext // Each target observation must remain in the accumulated context.
+		ctx = acceptedQualifiedCatalogContext(ctx, t, p, target.Provider, target.Route)
 	}
 	return ctx
 }
 
 func acceptedRelationshipWireContext(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	p resourcev2.Provider,
 	request resourcev2.RelationshipResolutionRequest,
 ) context.Context {
 	t.Helper()
-	ctx, err := outgoingSession(acceptedRelationshipContext(t, ctx, p, request))
+	ctx, err := outgoingSession(acceptedRelationshipContext(ctx, t, p, request))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return ctx
+}
+
+// acceptedQualifiedCatalogContext records one route's actual catalog observation.
+func acceptedQualifiedCatalogContext(
+	ctx context.Context,
+	t *testing.T,
+	p resourcev2.Provider,
+	provider string,
+	route resourcev2.AccessRoute,
+) context.Context {
+	t.Helper()
+	catalog, err := p.Catalog(ctx, resourcev2.CatalogRequest{Route: route})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resourcev2.WithCatalogRevisionForRoute(ctx, provider, route, catalog.Revision)
 }

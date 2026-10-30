@@ -87,7 +87,7 @@ func TestCatalogDeniesDirectProviderDispatch(t *testing.T) {
 	}
 	var out resourcepb.Response
 	err = c.Invoke(
-		acceptedWireContext(t, context.Background(), NewClient(c), testGet().Route),
+		acceptedWireContext(context.Background(), t, NewClient(c), testGet().Route),
 		resourcepb.ResourceProvider_Call_FullMethodName,
 		&resourcepb.Request{Version: 2, Operation: &resourcepb.Request_Get{Get: input}},
 		&out,
@@ -105,7 +105,7 @@ func TestServerRejectsEscapedResponse(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
-	_, err := c.Get(acceptedCatalogContext(t, context.Background(), c, testGet().Route), testGet())
+	_, err := c.Get(acceptedCatalogContext(context.Background(), t, c, testGet().Route), testGet())
 	if resourcev2.ErrorCode(err) != "INTERNAL" {
 		t.Fatalf("escaped response accepted: %v", err)
 	}
@@ -117,6 +117,7 @@ func TestServerRejectsEscapedResponse(t *testing.T) {
 // maliciousServer bypasses domain response admission, but not the client's default codec.
 type maliciousServer struct {
 	resourcepb.UnimplementedResourceProviderServer
+
 	provider *qualifiedProvider
 }
 
@@ -142,7 +143,7 @@ func TestClientRejectsEscapedResponse(t *testing.T) {
 	s := grpc.NewServer()
 	resourcepb.RegisterResourceProviderServer(s, &maliciousServer{provider: p})
 	c := NewClient(pipe(t, s))
-	_, err := c.Get(acceptedCatalogContext(t, context.Background(), c, testGet().Route), testGet())
+	_, err := c.Get(acceptedCatalogContext(context.Background(), t, c, testGet().Route), testGet())
 	if resourcev2.ErrorCode(err) != "INTERNAL" {
 		t.Fatalf("client accepted escaped response: %v", err)
 	}

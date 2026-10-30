@@ -17,6 +17,7 @@ type observedSession struct {
 }
 type workflowContextProvider struct {
 	browserProvider
+
 	seen chan observedSession
 }
 
@@ -110,7 +111,7 @@ func TestDiagnosticsCrossAncillaryLifecycleAndActionStreams(t *testing.T) {
 		context.Background(),
 		resourcev2.Session{RequestID: "workflow-request", RequesterID: "diagnostic-requester"},
 	)
-	ctx = acceptedRelationshipContext(t, ctx, c, relationshipFixtureRequest())
+	ctx = acceptedRelationshipContext(ctx, t, c, relationshipFixtureRequest())
 	if _, err := c.ListConnections(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -143,6 +144,7 @@ func TestDiagnosticsCrossAncillaryLifecycleAndActionStreams(t *testing.T) {
 
 type updateContextProvider struct {
 	updateProvider
+
 	seen chan resourcev2.Session
 }
 

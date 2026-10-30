@@ -1,9 +1,21 @@
 package plugin
 
 import (
+	"slices"
+
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+)
+
+const (
+	utilityMetricStreamInputName       = "MetricStreamInput"
+	utilityPortForwardSessionName      = "PortForwardSession"
+	utilityPortForwardByIDResponseName = "PortForwardSessionByIdResponse"
+	utilityPortForwardListResponseName = "PortForwardSessionListResponse"
+	maxNetworkUtilityResponseDepth     = 3
+	networkUtilityResourceField        = 20
+	networkUtilitySessionField         = 1
 )
 
 // NewUtilityTransportEnvelope admits a resource utility message before generated
@@ -35,26 +47,30 @@ func ValidateLegacyUtilityWire(data []byte, resourceFields, nonemptyFields []pro
 		if size < 0 {
 			return invalid("malformed utility protobuf value")
 		}
-		for _, field := range resourceFields {
-			if number == field {
-				return unsupported("resource utility requires its explicit resource RPC")
-			}
+		if slices.Contains(resourceFields, number) {
+			return unsupported("resource utility requires its explicit resource RPC")
 		}
-		for _, field := range nonemptyFields {
-			if number == field {
-				if wire != protowire.BytesType {
-					return invalid("invalid utility resource selector")
-				}
-				value, n := protowire.ConsumeBytes(data)
-				if n < 0 {
-					return invalid("malformed utility resource selector")
-				}
-				if len(value) > 0 {
-					return unsupported("resource utility requires its explicit resource RPC")
-				}
+		if slices.Contains(nonemptyFields, number) {
+			if err := validateLegacyUtilitySelector(data, wire); err != nil {
+				return err
 			}
 		}
 		data = data[size:]
+	}
+	return nil
+}
+
+// validateLegacyUtilitySelector rejects resource intent without decoding legacy data.
+func validateLegacyUtilitySelector(data []byte, wire protowire.Type) error {
+	if wire != protowire.BytesType {
+		return invalid("invalid utility resource selector")
+	}
+	value, n := protowire.ConsumeBytes(data)
+	if n < 0 {
+		return invalid("malformed utility resource selector")
+	}
+	if len(value) > 0 {
+		return unsupported("resource utility requires its explicit resource RPC")
 	}
 	return nil
 }
@@ -78,8 +94,11 @@ func strictUtilityRoot(d protoreflect.MessageDescriptor) bool {
 	switch d.Name() {
 	case "SessionOptions", "ResourceSessionResponse",
 		"CreateLogSessionRequest", "ResourceLogSessionResponse",
-		"QueryMetricsRequest", "MetricStreamInput", "ResourceQueryMetricsResponse", "ResourceMetricStreamOutput",
-		"PortForwardSessionOptions", "PortForwardResourceConnection", "PortForwardSession", "ResourcePortForwardSessionResponse", "PortForwardSessionByIdResponse", "PortForwardSessionListResponse":
+		"QueryMetricsRequest", utilityMetricStreamInputName,
+		"ResourceQueryMetricsResponse", "ResourceMetricStreamOutput",
+		"PortForwardSessionOptions", "PortForwardResourceConnection",
+		utilityPortForwardSessionName, "ResourcePortForwardSessionResponse",
+		utilityPortForwardByIDResponseName, utilityPortForwardListResponseName:
 		return true
 	}
 	return false
@@ -93,7 +112,7 @@ func legacyUtilityRequest(d protoreflect.MessageDescriptor) bool {
 	case "SessionOptions",
 		"CreateLogSessionRequest",
 		"QueryMetricsRequest",
-		"MetricStreamInput",
+		utilityMetricStreamInputName,
 		"PortForwardSessionOptions":
 		return true
 	}
@@ -119,7 +138,7 @@ func networkSessionResponse(d protoreflect.MessageDescriptor) bool {
 		return false
 	}
 	switch d.Name() {
-	case "PortForwardSessionByIdResponse", "PortForwardSessionListResponse", "PortForwardSession":
+	case utilityPortForwardByIDResponseName, utilityPortForwardListResponseName, utilityPortForwardSessionName:
 		return true
 	}
 	return false
@@ -130,8 +149,12 @@ func networkResourcePresent(data []byte, d protoreflect.MessageDescriptor) (bool
 	return budget.networkResourcePresent(data, d, 0)
 }
 
-func (b *wireBudget) networkResourcePresent(data []byte, d protoreflect.MessageDescriptor, depth int) (bool, error) {
-	if depth > 3 {
+func (b *wireBudget) networkResourcePresent(
+	data []byte,
+	d protoreflect.MessageDescriptor,
+	depth int,
+) (bool, error) {
+	if depth > maxNetworkUtilityResponseDepth {
 		return false, invalid("invalid network utility response nesting")
 	}
 	for len(data) > 0 {
@@ -148,27 +171,39 @@ func (b *wireBudget) networkResourcePresent(data []byte, d protoreflect.MessageD
 		if size < 0 {
 			return false, invalid("malformed network utility response")
 		}
-		resource := d.Name() == "PortForwardSession" && number == 20
-		session := (d.Name() == "PortForwardSessionByIdResponse" || d.Name() == "PortForwardSessionListResponse") &&
-			number == 1
-		if resource || session {
-			if wire != protowire.BytesType {
-				return false, invalid("invalid network utility response field")
-			}
-			if resource {
-				return true, nil
-			}
-			value, n := protowire.ConsumeBytes(data)
-			if n < 0 {
-				return false, invalid("malformed network utility session")
-			}
-			field := d.Fields().ByNumber(number)
-			found, err := b.networkResourcePresent(value, field.Message(), depth+1)
-			if err != nil || found {
-				return found, err
-			}
+		found, err := b.networkResponseField(data[:size], d, number, wire, depth)
+		if err != nil || found {
+			return found, err
 		}
 		data = data[size:]
 	}
 	return false, nil
+}
+
+// networkResponseField follows only session containers and canonical resource fields.
+func (b *wireBudget) networkResponseField(
+	data []byte,
+	d protoreflect.MessageDescriptor,
+	number protowire.Number,
+	wire protowire.Type,
+	depth int,
+) (bool, error) {
+	resource := d.Name() == utilityPortForwardSessionName && number == networkUtilityResourceField
+	session := (d.Name() == utilityPortForwardByIDResponseName ||
+		d.Name() == utilityPortForwardListResponseName) && number == networkUtilitySessionField
+	if !resource && !session {
+		return false, nil
+	}
+	if wire != protowire.BytesType {
+		return false, invalid("invalid network utility response field")
+	}
+	if resource {
+		return true, nil
+	}
+	value, n := protowire.ConsumeBytes(data)
+	if n < 0 {
+		return false, invalid("malformed network utility session")
+	}
+	field := d.Fields().ByNumber(number)
+	return b.networkResourcePresent(value, field.Message(), depth+1)
 }

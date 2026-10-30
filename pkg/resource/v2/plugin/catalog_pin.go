@@ -38,9 +38,15 @@ func finiteRoute(r *resourcepb.Request) *resourcepb.AccessRoute {
 
 func ancillaryRoutes(r *resourcepb.AncillaryRequest) []*resourcepb.AccessRoute {
 	switch r.Operation {
-	case "scopeValues", "schemaDocument", "groups", "definition", "editorSchemas", "actions", "relationships":
+	case ancillaryScopeValues,
+		ancillarySchemaDocument,
+		ancillaryGroups,
+		ancillaryDefinition,
+		ancillaryEditorSchemas,
+		ancillaryActions,
+		ancillaryRelationships:
 		return []*resourcepb.AccessRoute{r.Route}
-	case "health", "events":
+	case ancillaryHealth, ancillaryEvents:
 		return []*resourcepb.AccessRoute{r.Get.GetRoute()}
 	}
 	return nil
@@ -57,52 +63,64 @@ func (s *server) checkCatalogRoutes(ctx context.Context, routes []*resourcepb.Ac
 
 func updateRoutes(r *resourcepb.UpdateRequest) []*resourcepb.AccessRoute {
 	switch r.Operation {
-	case "startConnection":
+	case updateStartConnection:
 		routes := make([]*resourcepb.AccessRoute, 0, len(r.Targets))
 		for _, target := range r.Targets {
 			routes = append(routes, target.GetRoute())
 		}
 		return routes
-	case "ensure", "restart":
+	case updateEnsure, updateRestart:
 		return []*resourcepb.AccessRoute{r.Target.GetRoute()}
-	case "stopConnection", "has", "state", "stopResource", "running":
+	case updateStopConnection, updateHas, updateState, updateStopResource, updateRunning:
 		return []*resourcepb.AccessRoute{r.Route}
 	}
 	return nil
 }
 
 func (s *server) checkAncillaryCatalogs(ctx context.Context, request *resourcepb.AncillaryRequest) error {
-	if request.Operation == "resolveRelationships" {
+	if request.Operation == ancillaryResolveRelationships {
 		in, err := resourcev2.FromProtoRelationshipResolutionRequest(request.RelationshipResolution)
 		if err != nil {
 			return err
 		}
-		sourceProvider := in.Source.Reference.Address.Provider
 		for _, target := range in.Targets {
-			if target.Route != in.Source.Route || target.Provider != sourceProvider {
-				revision, ok := resourcev2.QualifiedCatalogRevisionFromContext(ctx, target.Provider, target.Route)
-				if !ok {
-					return resourcev2.NewError(
-						"RESET_REQUIRED",
-						"An explicit accepted catalog revision is required for each relationship target route.",
-					)
-				}
-				if err := resourcev2.ValidateCatalogRevision(revision); err != nil {
-					return err
-				}
-			}
-			catalog, err := s.impl.Catalog(ctx, resourcev2.CatalogRequest{Route: target.Route})
-			if err != nil {
-				return err
-			}
-			if catalog.Provider != target.Provider {
-				return resourcev2.NewError("RESET_REQUIRED", "The accepted target catalog provider no longer matches.")
-			}
-			if err := resourcev2.CheckCatalogRevisionForRoute(ctx, catalog, target.Route); err != nil {
+			if err := s.checkRelationshipTarget(ctx, in, target); err != nil {
 				return err
 			}
 		}
 		return s.checkCatalogRoute(ctx, request.RelationshipResolution.GetSource().GetRoute())
 	}
 	return s.checkCatalogRoutes(ctx, ancillaryRoutes(request))
+}
+
+func (s *server) checkRelationshipTarget(
+	ctx context.Context,
+	in resourcev2.RelationshipResolutionRequest,
+	target resourcev2.ReadTarget,
+) error {
+	sourceProvider := in.Source.Reference.Address.Provider
+
+	if target.Route != in.Source.Route || target.Provider != sourceProvider {
+		revision, ok := resourcev2.QualifiedCatalogRevisionFromContext(ctx, target.Provider, target.Route)
+		if !ok {
+			return resourcev2.NewError(
+				"RESET_REQUIRED",
+				"An explicit accepted catalog revision is required for each relationship target route.",
+			)
+		}
+		if err := resourcev2.ValidateCatalogRevision(revision); err != nil {
+			return err
+		}
+	}
+	catalog, err := s.impl.Catalog(ctx, resourcev2.CatalogRequest{Route: target.Route})
+	if err != nil {
+		return err
+	}
+	if catalog.Provider != target.Provider {
+		return resourcev2.NewError("RESET_REQUIRED", "The accepted target catalog provider no longer matches.")
+	}
+	if err := resourcev2.CheckCatalogRevisionForRoute(ctx, catalog, target.Route); err != nil {
+		return err
+	}
+	return nil
 }

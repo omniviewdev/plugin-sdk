@@ -20,6 +20,7 @@ import (
 
 type nativeSchemaReasonProvider struct {
 	qualifiedProvider
+
 	endpoint string
 }
 
@@ -90,7 +91,9 @@ func TestActualRPCSchemaUnavailableReasonRetainsNativeSchemas(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"type":"object","properties":{"metadata":{"type":"object"}}}`)
+		if _, err := io.WriteString(w, `{"type":"object","properties":{"metadata":{"type":"object"}}}`); err != nil {
+			t.Errorf("write schema response: %v", err)
+		}
 	}))
 	defer endpoint.Close()
 	provider := &nativeSchemaReasonProvider{endpoint: endpoint.URL}
@@ -98,7 +101,7 @@ func TestActualRPCSchemaUnavailableReasonRetainsNativeSchemas(t *testing.T) {
 	RegisterServer(server, provider)
 	client := NewClient(pipe(t, server))
 	route := resourcev2.AccessRoute{Connection: "explicit"}
-	ctx := acceptedCatalogContext(t, context.Background(), client, route)
+	ctx := acceptedCatalogContext(context.Background(), t, client, route)
 	schemas, err := client.GetEditorSchemas(ctx, route)
 	if err != nil || len(schemas) != 2 {
 		t.Fatalf("native schemas lost after partial denial: %+v %v", schemas, err)

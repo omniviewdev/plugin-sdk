@@ -9,24 +9,43 @@ import (
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
+const (
+	updateCallMethod      = "Call"
+	updateStartConnection = "startConnection"
+	updateEnsure          = "ensure"
+	updateRestart         = "restart"
+	updateStopConnection  = "stopConnection"
+	updateHas             = "has"
+	updateState           = "state"
+	updateStopResource    = "stopResource"
+	updateRunning         = "running"
+	updateListen          = "listen"
+)
+
 type updatesServer struct {
 	resourcepb.UnimplementedResourceUpdatesServer
+
 	owner *server
 }
 
 func registerUpdates(s *grpc.Server, owner *server) {
 	d := resourcepb.ResourceUpdates_ServiceDesc
-	d.Methods = []grpc.MethodDesc{{MethodName: "Call", Handler: updateCallHandler}}
+	d.Methods = []grpc.MethodDesc{{
+		MethodName: updateCallMethod,
+		Handler: func(srv any, ctx context.Context, dec func(any) error, i grpc.UnaryServerInterceptor) (any, error) {
+			return updateCallHandler(ctx, srv, dec, i)
+		},
+	}}
 	d.Streams = []grpc.StreamDesc{{StreamName: "Listen", Handler: listenUpdatesHandler, ServerStreams: true}}
 	s.RegisterService(&d, &updatesServer{owner: owner})
 }
 
 func updateCallHandler(
-	srv interface{},
 	ctx context.Context,
-	dec func(interface{}) error,
+	srv any,
+	dec func(any) error,
 	i grpc.UnaryServerInterceptor,
-) (interface{}, error) {
+) (any, error) {
 	r := &resourcepb.UpdateRequest{}
 	e := &envelope{message: r}
 	if err := dec(e); err != nil {
@@ -66,85 +85,120 @@ func updateCallHandler(
 }
 
 func (s *updatesServer) call(ctx context.Context, r *resourcepb.UpdateRequest) (*resourcepb.UpdateResponse, error) {
-	if r.Version != 2 {
+	if r.Version != resourcev2.WireVersion {
 		return nil, unsupported("unsupported update wire version")
 	}
 	p, ok := s.owner.impl.(resourcev2.BestEffortUpdateProvider)
 	if !ok {
 		return nil, unsupported("best-effort updates unsupported")
 	}
-	out := &resourcepb.UpdateResponse{Version: 2, Result: &resourcepb.UpdateResponse_Success{Success: true}}
+	out := &resourcepb.UpdateResponse{
+		Version: resourcev2.WireVersion, Result: &resourcepb.UpdateResponse_Success{Success: true},
+	}
 	switch r.Operation {
-	case "startConnection":
-		if len(r.Targets) == 0 || len(r.Targets) > MaxPageSize {
-			return nil, invalid("explicit bounded watch targets required")
-		}
-		targets := make([]resourcev2.ReadTarget, 0, len(r.Targets))
-		for _, target := range r.Targets {
-			v, err := resourcev2.FromProtoReadTarget(target)
-			if err != nil {
-				return nil, err
-			}
-			if _, err = resourcev2.AdmitBestEffortTarget(ctx, s.owner.impl, v); err != nil {
-				return nil, err
-			}
-			targets = append(targets, v)
-		}
-		return out, p.StartConnectionWatch(ctx, targets)
-	case "ensure", "restart":
-		target, err := resourcev2.FromProtoReadTarget(r.Target)
+	case updateStartConnection:
+		targets, err := s.admitUpdateTargets(ctx, r.Targets)
 		if err != nil {
 			return nil, err
 		}
-		if _, err = resourcev2.AdmitBestEffortTarget(ctx, s.owner.impl, target); err != nil {
+		return out, p.StartConnectionWatch(ctx, targets)
+	case updateEnsure, updateRestart:
+		target, err := s.admitUpdateTarget(ctx, r.Target)
+		if err != nil {
 			return nil, err
 		}
-		if r.Operation == "ensure" {
+		if r.Operation == updateEnsure {
 			return out, p.EnsureResourceWatch(ctx, target)
 		}
 		return out, p.RestartResourceWatch(ctx, target)
-	case "stopConnection", "has", "state", "stopResource", "running":
-		route, err := resourcev2.FromProtoAccessRoute(r.Route)
-		if err != nil {
-			return nil, err
-		}
-		switch r.Operation {
-		case "stopConnection":
-			return out, p.StopConnectionWatch(ctx, route)
-		case "has":
-			out.Result = &resourcepb.UpdateResponse_Running{Running: p.HasWatch(ctx, route)}
-		case "state":
-			v, err := p.GetWatchState(ctx, route)
-			if err != nil {
-				return nil, err
-			}
-			result := &resourcepb.OptionalWatchSummary{}
-			if v != nil {
-				result.Summary, err = resourcev2.ToProtoWatchConnectionSummary(*v)
-				if err != nil {
-					return nil, err
-				}
-			}
-			out.Result = &resourcepb.UpdateResponse_Summary{Summary: result}
-		case "stopResource":
-			if r.Type == "" {
-				return nil, invalid("missing resource type")
-			}
-			return out, p.StopResourceWatch(ctx, route, r.Type)
-		case "running":
-			if r.Type == "" {
-				return nil, invalid("missing resource type")
-			}
-			running, err := p.IsResourceWatchRunning(ctx, route, r.Type)
-			if err != nil {
-				return nil, err
-			}
-			out.Result = &resourcepb.UpdateResponse_Running{Running: running}
-		}
+	case updateStopConnection, updateHas, updateState, updateStopResource, updateRunning:
+		return routeUpdate(ctx, p, r, out)
 	default:
 		return nil, unsupported("unknown update operation")
 	}
+}
+
+func (s *updatesServer) admitUpdateTarget(
+	ctx context.Context,
+	target *resourcepb.ReadTarget,
+) (resourcev2.ReadTarget, error) {
+	value, err := resourcev2.FromProtoReadTarget(target)
+	if err != nil {
+		return value, err
+	}
+	_, err = resourcev2.AdmitBestEffortTarget(ctx, s.owner.impl, value)
+	return value, err
+}
+
+func (s *updatesServer) admitUpdateTargets(
+	ctx context.Context,
+	targets []*resourcepb.ReadTarget,
+) ([]resourcev2.ReadTarget, error) {
+	if len(targets) == 0 || len(targets) > MaxPageSize {
+		return nil, invalid("explicit bounded watch targets required")
+	}
+	values := make([]resourcev2.ReadTarget, 0, len(targets))
+	for _, target := range targets {
+		value, err := s.admitUpdateTarget(ctx, target)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, nil
+}
+
+func routeUpdate(
+	ctx context.Context,
+	p resourcev2.BestEffortUpdateProvider,
+	r *resourcepb.UpdateRequest,
+	out *resourcepb.UpdateResponse,
+) (*resourcepb.UpdateResponse, error) {
+	route, err := resourcev2.FromProtoAccessRoute(r.Route)
+	if err != nil {
+		return nil, err
+	}
+	switch r.Operation {
+	case updateStopConnection:
+		return out, p.StopConnectionWatch(ctx, route)
+	case updateHas:
+		out.Result = &resourcepb.UpdateResponse_Running{Running: p.HasWatch(ctx, route)}
+	case updateState:
+		summary, summaryErr := updateSummary(ctx, p, route)
+		if summaryErr != nil {
+			return nil, summaryErr
+		}
+		out.Result = &resourcepb.UpdateResponse_Summary{Summary: summary}
+	case updateStopResource, updateRunning:
+		if r.Type == "" {
+			return nil, invalid("missing resource type")
+		}
+		if r.Operation == updateStopResource {
+			return out, p.StopResourceWatch(ctx, route, r.Type)
+		}
+		running, runningErr := p.IsResourceWatchRunning(ctx, route, r.Type)
+		if runningErr != nil {
+			return nil, runningErr
+		}
+		out.Result = &resourcepb.UpdateResponse_Running{Running: running}
+	}
 	return out, nil
+}
+
+func updateSummary(
+	ctx context.Context,
+	p resourcev2.BestEffortUpdateProvider,
+	route resourcev2.AccessRoute,
+) (*resourcepb.OptionalWatchSummary, error) {
+	value, err := p.GetWatchState(ctx, route)
+	if err != nil {
+		return nil, err
+	}
+	result := &resourcepb.OptionalWatchSummary{}
+	if value != nil {
+		result.Summary, err = resourcev2.ToProtoWatchConnectionSummary(*value)
+	}
+	return result, err
 }
 
 func (c *Client) update(ctx context.Context, r *resourcepb.UpdateRequest) (*resourcepb.UpdateResponse, error) {
@@ -152,7 +206,7 @@ func (c *Client) update(ctx context.Context, r *resourcepb.UpdateRequest) (*reso
 	if err != nil {
 		return nil, err
 	}
-	r.Version = 2
+	r.Version = resourcev2.WireVersion
 	out := &resourcepb.UpdateResponse{}
 	e := &envelope{message: out}
 	if err := c.conn.Invoke(
@@ -168,7 +222,7 @@ func (c *Client) update(ctx context.Context, r *resourcepb.UpdateRequest) (*reso
 	if e.err != nil {
 		return nil, e.err
 	}
-	if out.Version != 2 {
+	if out.Version != resourcev2.WireVersion {
 		return nil, unsupported("unsupported update response version")
 	}
 	return out, nil
@@ -190,7 +244,7 @@ func (c *Client) StartConnectionWatch(ctx context.Context, targets []resourcev2.
 	if len(targets) == 0 || len(targets) > MaxPageSize {
 		return invalid("explicit bounded watch targets required")
 	}
-	r := &resourcepb.UpdateRequest{Operation: "startConnection"}
+	r := &resourcepb.UpdateRequest{Operation: updateStartConnection}
 	for _, target := range targets {
 		p, err := resourcev2.ToProtoReadTarget(target)
 		if err != nil {
@@ -208,7 +262,7 @@ func (c *Client) StopConnectionWatch(ctx context.Context, route resourcev2.Acces
 	if err != nil {
 		return err
 	}
-	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: "stopConnection", Route: p})
+	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: updateStopConnection, Route: p})
 	return updateSuccess(out, err)
 }
 
@@ -218,7 +272,7 @@ func (c *Client) HasWatch(ctx context.Context, route resourcev2.AccessRoute) boo
 	if err != nil {
 		return false
 	}
-	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: "has", Route: p})
+	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: updateHas, Route: p})
 	if err != nil {
 		return false
 	}
@@ -226,6 +280,9 @@ func (c *Client) HasWatch(ctx context.Context, route resourcev2.AccessRoute) boo
 	return ok && v.Running
 }
 
+// GetWatchState returns the route's current watch summary, or nil when no watch exists.
+//
+//nolint:nilnil // A successful response without a summary means no watch exists.
 func (c *Client) GetWatchState(
 	ctx context.Context,
 	route resourcev2.AccessRoute,
@@ -234,7 +291,7 @@ func (c *Client) GetWatchState(
 	if err != nil {
 		return nil, err
 	}
-	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: "state", Route: p})
+	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: updateState, Route: p})
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +317,7 @@ func (c *Client) EnsureResourceWatch(ctx context.Context, target resourcev2.Read
 	if err != nil {
 		return err
 	}
-	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: "ensure", Target: p})
+	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: updateEnsure, Target: p})
 	return updateSuccess(out, err)
 }
 
@@ -270,7 +327,7 @@ func (c *Client) RestartResourceWatch(ctx context.Context, target resourcev2.Rea
 	if err != nil {
 		return err
 	}
-	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: "restart", Target: p})
+	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: updateRestart, Target: p})
 	return updateSuccess(out, err)
 }
 
@@ -280,7 +337,7 @@ func (c *Client) StopResourceWatch(ctx context.Context, route resourcev2.AccessR
 	if err != nil {
 		return err
 	}
-	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: "stopResource", Route: p, Type: key})
+	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: updateStopResource, Route: p, Type: key})
 	return updateSuccess(out, err)
 }
 
@@ -290,7 +347,7 @@ func (c *Client) IsResourceWatchRunning(ctx context.Context, route resourcev2.Ac
 	if err != nil {
 		return false, err
 	}
-	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: "running", Route: p, Type: key})
+	out, err := c.update(ctx, &resourcepb.UpdateRequest{Operation: updateRunning, Route: p, Type: key})
 	if err != nil {
 		return false, err
 	}

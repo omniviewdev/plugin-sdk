@@ -15,6 +15,7 @@ import (
 // GRPCPlugin exposes a resource provider through HashiCorp's gRPC plugin transport.
 type GRPCPlugin struct {
 	goplugin.NetRPCUnsupportedPlugin
+
 	Impl             resourcev2.Provider
 	SettingsProvider pkgsettings.Provider
 }
@@ -25,7 +26,8 @@ func (p *GRPCPlugin) GRPCServer(_ *goplugin.GRPCBroker, s *grpc.Server) error {
 	return nil
 }
 
-func (p *GRPCPlugin) GRPCClient(_ context.Context, _ *goplugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
+// GRPCClient constructs the remote resource provider client.
+func (p *GRPCPlugin) GRPCClient(_ context.Context, _ *goplugin.GRPCBroker, c *grpc.ClientConn) (any, error) {
 	return NewClient(c), nil
 }
 
@@ -39,13 +41,24 @@ func RegisterServer(s *grpc.Server, p resourcev2.Provider) { register(s, p, nil)
 
 type server struct {
 	resourcepb.UnimplementedResourceProviderServer
+
 	impl     resourcev2.Provider
 	settings pkgsettings.Provider
 }
 
 func register(s *grpc.Server, p resourcev2.Provider, settings pkgsettings.Provider) {
 	desc := resourcepb.ResourceProvider_ServiceDesc
-	desc.Methods = []grpc.MethodDesc{{MethodName: "Call", Handler: callHandler}}
+	desc.Methods = []grpc.MethodDesc{{
+		MethodName: rpcCallMethod,
+		Handler: func(
+			srv any,
+			ctx context.Context,
+			dec func(any) error,
+			interceptor grpc.UnaryServerInterceptor,
+		) (any, error) {
+			return callHandler(ctx, srv, dec, interceptor)
+		},
+	}}
 	owner := &server{impl: p, settings: settings}
 	s.RegisterService(&desc, owner)
 	registerAncillary(s, owner)
@@ -53,11 +66,11 @@ func register(s *grpc.Server, p resourcev2.Provider, settings pkgsettings.Provid
 }
 
 func callHandler(
-	srv interface{},
 	ctx context.Context,
-	dec func(interface{}) error,
+	srv any,
+	dec func(any) error,
 	interceptor grpc.UnaryServerInterceptor,
-) (interface{}, error) {
+) (any, error) {
 	req := &resourcepb.Request{}
 	e := &envelope{message: req}
 	if err := dec(e); err != nil {
@@ -100,8 +113,8 @@ func (s *server) Call(ctx context.Context, r *resourcepb.Request) (*resourcepb.R
 		*resourcepb.Request_NativeQuery,
 		*resourcepb.Request_Mutate,
 		*resourcepb.Request_Action:
-		if err := s.checkCatalogRoute(ctx, finiteRoute(r)); err != nil {
-			return nil, rpcError(s.classify(err))
+		if routeErr := s.checkCatalogRoute(ctx, finiteRoute(r)); routeErr != nil {
+			return nil, rpcError(s.classify(routeErr))
 		}
 	}
 	out, err := s.dispatch(ctx, r)
@@ -148,165 +161,163 @@ func (s *server) classify(err error) (out error) {
 }
 
 func (s *server) dispatch(ctx context.Context, r *resourcepb.Request) (*resourcepb.Response, error) {
-	out := &resourcepb.Response{}
 	switch op := r.Operation.(type) {
 	case *resourcepb.Request_Features:
-		features, err := resourcev2.DetectFeatures(ctx, s.impl)
-		if err != nil {
-			return nil, err
-		}
-		p := &resourcepb.FeatureSet{Traits: make([]string, len(features.Traits))}
-		for i, trait := range features.Traits {
-			p.Traits[i] = string(trait)
-		}
-		out.Result = &resourcepb.Response_Features{Features: p}
+		return s.dispatchFeatures(ctx)
 	case *resourcepb.Request_Catalog:
-		in, err := resourcev2.FromProtoCatalogRequest(op.Catalog)
-		if err != nil {
-			return nil, err
-		}
-		value, err := s.impl.Catalog(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		p, err := resourcev2.ToProtoCatalog(value)
-		if err != nil {
-			return nil, err
-		}
-		out.Result = &resourcepb.Response_Catalog{Catalog: p}
+		return s.dispatchCatalog(ctx, op)
 	case *resourcepb.Request_Get:
-		provider, ok := s.impl.(resourcev2.Getter)
-		if !ok {
-			return nil, unsupported("Get unsupported")
-		}
-		in, err := resourcev2.FromProtoGetRequest(op.Get)
-		if err != nil {
-			return nil, err
-		}
-		descriptor, err := resourcev2.AdmitOperation(ctx, s.impl, in)
-		if err != nil {
-			return nil, err
-		}
-		value, err := provider.Get(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		if err = resourcev2.ValidateOperationResult(in, value, descriptor); err != nil {
-			return nil, err
-		}
-		p, err := resourcev2.ToProtoRecord(value)
-		if err != nil {
-			return nil, err
-		}
-		out.Result = &resourcepb.Response_Record{Record: p}
+		return s.dispatchGet(ctx, op)
 	case *resourcepb.Request_Enumerate:
-		provider, ok := s.impl.(resourcev2.Enumerator)
-		if !ok {
-			return nil, unsupported("Enumerate unsupported")
-		}
-		in, err := resourcev2.FromProtoEnumerateRequest(op.Enumerate)
-		if err != nil {
-			return nil, err
-		}
-		descriptor, err := resourcev2.AdmitOperation(ctx, s.impl, in)
-		if err != nil {
-			return nil, err
-		}
-		value, err := provider.Enumerate(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		if err = resourcev2.ValidateOperationResult(in, value, descriptor); err != nil {
-			return nil, err
-		}
-		p, err := resourcev2.ToProtoSourcePage(value)
-		if err != nil {
-			return nil, err
-		}
-		out.Result = &resourcepb.Response_Page{Page: p}
+		return s.dispatchEnumerate(ctx, op)
 	case *resourcepb.Request_NativeQuery:
-		provider, ok := s.impl.(resourcev2.NativeQuerier)
-		if !ok {
-			return nil, unsupported("NativeQuery unsupported")
-		}
-		in, err := resourcev2.FromProtoNativeQueryRequest(op.NativeQuery)
-		if err != nil {
-			return nil, err
-		}
-		descriptor, err := resourcev2.AdmitOperation(ctx, s.impl, in)
-		if err != nil {
-			return nil, err
-		}
-		value, err := provider.NativeQuery(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		if err = resourcev2.ValidateOperationResult(in, value, descriptor); err != nil {
-			return nil, err
-		}
-		p, err := resourcev2.ToProtoSourcePage(value)
-		if err != nil {
-			return nil, err
-		}
-		out.Result = &resourcepb.Response_Page{Page: p}
+		return s.dispatchNativeQuery(ctx, op)
 	case *resourcepb.Request_Mutate:
-		provider, ok := s.impl.(resourcev2.Mutator)
-		if !ok {
-			return nil, unsupported("Mutate unsupported")
-		}
-		in, err := resourcev2.FromProtoMutationRequest(op.Mutate)
-		if err != nil {
-			return nil, err
-		}
-		descriptor, err := resourcev2.AdmitOperation(ctx, s.impl, in)
-		if err != nil {
-			return nil, err
-		}
-		value, err := provider.Mutate(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		if err = resourcev2.ValidateOperationResult(in, value, descriptor); err != nil {
-			return nil, err
-		}
-		p, err := resourcev2.ToProtoRecord(value)
-		if err != nil {
-			return nil, err
-		}
-		out.Result = &resourcepb.Response_Record{Record: p}
+		return s.dispatchMutate(ctx, op)
 	case *resourcepb.Request_Action:
-		provider, ok := s.impl.(resourcev2.Actioner)
-		if !ok {
-			return nil, unsupported("Action unsupported")
-		}
-		in, err := resourcev2.FromProtoActionRequest(op.Action)
-		if err != nil {
-			return nil, err
-		}
-		descriptor, err := resourcev2.AdmitOperation(ctx, s.impl, in)
-		if err != nil {
-			return nil, err
-		}
-		value, err := provider.Action(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		if err = resourcev2.ValidateOperationResult(in, value, descriptor); err != nil {
-			return nil, err
-		}
-		p, err := resourcev2.ToProtoValue(value)
-		if err != nil {
-			return nil, err
-		}
-		out.Result = &resourcepb.Response_Value{Value: p}
+		return s.dispatchAction(ctx, op)
 	case *resourcepb.Request_Connection:
 		p, err := s.connection(ctx, op.Connection)
 		if err != nil {
 			return nil, err
 		}
-		out.Result = &resourcepb.Response_Connection{Connection: p}
+		return &resourcepb.Response{Result: &resourcepb.Response_Connection{Connection: p}}, nil
 	default:
 		return nil, invalid("missing resource operation")
 	}
+}
+
+func (s *server) dispatchFeatures(ctx context.Context) (*resourcepb.Response, error) {
+	out := &resourcepb.Response{}
+	features, err := resourcev2.DetectFeatures(ctx, s.impl)
+	if err != nil {
+		return nil, err
+	}
+	p := &resourcepb.FeatureSet{Traits: make([]string, len(features.Traits))}
+	for i, trait := range features.Traits {
+		p.Traits[i] = string(trait)
+	}
+	out.Result = &resourcepb.Response_Features{Features: p}
 	return out, nil
+}
+
+func (s *server) dispatchCatalog(ctx context.Context, op *resourcepb.Request_Catalog) (*resourcepb.Response, error) {
+	out := &resourcepb.Response{}
+	in, err := resourcev2.FromProtoCatalogRequest(op.Catalog)
+	if err != nil {
+		return nil, err
+	}
+	value, err := s.impl.Catalog(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	p, err := resourcev2.ToProtoCatalog(value)
+	if err != nil {
+		return nil, err
+	}
+	out.Result = &resourcepb.Response_Catalog{Catalog: p}
+	return out, nil
+}
+
+// finiteServerOperation decodes only after the handler checks interface support,
+// then retains the admission descriptor through dispatch and result validation.
+func finiteServerOperation[P, I, O any](
+	ctx context.Context,
+	s *server,
+	input P,
+	decode func(P) (I, error),
+	dispatch func(context.Context, I) (O, error),
+	encode func(O) (*resourcepb.Response, error),
+) (*resourcepb.Response, error) {
+	in, err := decode(input)
+	if err != nil {
+		return nil, err
+	}
+	descriptor, err := resourcev2.AdmitOperation(ctx, s.impl, in)
+	if err != nil {
+		return nil, err
+	}
+	value, err := dispatch(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	if err = resourcev2.ValidateOperationResult(in, value, descriptor); err != nil {
+		return nil, err
+	}
+	return encode(value)
+}
+
+func encodeRecordResponse(value resourcev2.Record) (*resourcepb.Response, error) {
+	p, err := resourcev2.ToProtoRecord(value)
+	if err != nil {
+		return nil, err
+	}
+	return &resourcepb.Response{Result: &resourcepb.Response_Record{Record: p}}, nil
+}
+
+func encodePageResponse(value resourcev2.SourcePage) (*resourcepb.Response, error) {
+	p, err := resourcev2.ToProtoSourcePage(value)
+	if err != nil {
+		return nil, err
+	}
+	return &resourcepb.Response{Result: &resourcepb.Response_Page{Page: p}}, nil
+}
+
+func encodeValueResponse(value resourcev2.Value) (*resourcepb.Response, error) {
+	p, err := resourcev2.ToProtoValue(value)
+	if err != nil {
+		return nil, err
+	}
+	return &resourcepb.Response{Result: &resourcepb.Response_Value{Value: p}}, nil
+}
+
+func (s *server) dispatchGet(ctx context.Context, op *resourcepb.Request_Get) (*resourcepb.Response, error) {
+	provider, ok := s.impl.(resourcev2.Getter)
+	if !ok {
+		return nil, unsupported("Get unsupported")
+	}
+	return finiteServerOperation(ctx, s, op.Get, resourcev2.FromProtoGetRequest,
+		provider.Get, encodeRecordResponse)
+}
+
+func (s *server) dispatchEnumerate(
+	ctx context.Context,
+	op *resourcepb.Request_Enumerate,
+) (*resourcepb.Response, error) {
+	provider, ok := s.impl.(resourcev2.Enumerator)
+	if !ok {
+		return nil, unsupported("Enumerate unsupported")
+	}
+	return finiteServerOperation(ctx, s, op.Enumerate, resourcev2.FromProtoEnumerateRequest,
+		provider.Enumerate, encodePageResponse)
+}
+
+func (s *server) dispatchNativeQuery(
+	ctx context.Context,
+	op *resourcepb.Request_NativeQuery,
+) (*resourcepb.Response, error) {
+	provider, ok := s.impl.(resourcev2.NativeQuerier)
+	if !ok {
+		return nil, unsupported("NativeQuery unsupported")
+	}
+	return finiteServerOperation(ctx, s, op.NativeQuery, resourcev2.FromProtoNativeQueryRequest,
+		provider.NativeQuery, encodePageResponse)
+}
+
+func (s *server) dispatchMutate(ctx context.Context, op *resourcepb.Request_Mutate) (*resourcepb.Response, error) {
+	provider, ok := s.impl.(resourcev2.Mutator)
+	if !ok {
+		return nil, unsupported("Mutate unsupported")
+	}
+	return finiteServerOperation(ctx, s, op.Mutate, resourcev2.FromProtoMutationRequest,
+		provider.Mutate, encodeRecordResponse)
+}
+
+func (s *server) dispatchAction(ctx context.Context, op *resourcepb.Request_Action) (*resourcepb.Response, error) {
+	provider, ok := s.impl.(resourcev2.Actioner)
+	if !ok {
+		return nil, unsupported("Action unsupported")
+	}
+	return finiteServerOperation(ctx, s, op.Action, resourcev2.FromProtoActionRequest,
+		provider.Action, encodeValueResponse)
 }

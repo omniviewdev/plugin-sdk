@@ -13,6 +13,7 @@ import (
 
 type relationshipBoundaryProvider struct {
 	ancillaryFixtureProvider
+
 	calls  atomic.Int32
 	mutate func([]resourcev2.ResolvedRelationship)
 }
@@ -56,7 +57,7 @@ func TestActualGRPCRelationshipBindingAdmission(t *testing.T) {
 			RegisterServer(s, p)
 			client := NewClient(pipe(t, s))
 			out, err := client.ResolveRelationships(
-				acceptedRelationshipContext(t, context.Background(), client, request),
+				acceptedRelationshipContext(context.Background(), t, client, request),
 				request,
 			)
 			if mode == "valid" {
@@ -88,7 +89,7 @@ func TestActualGRPCMalformedRelationshipRequestDoesNotDispatch(t *testing.T) {
 		conn := pipe(t, s)
 		var response resourcepb.AncillaryResponse
 		err := conn.Invoke(
-			acceptedWireContext(t, context.Background(), NewClient(conn), testGet().Route),
+			acceptedWireContext(context.Background(), t, NewClient(conn), testGet().Route),
 			resourcepb.ResourceAncillary_Call_FullMethodName,
 			request,
 			&response,
@@ -101,6 +102,7 @@ func TestActualGRPCMalformedRelationshipRequestDoesNotDispatch(t *testing.T) {
 
 type unboundRelationshipServer struct {
 	resourcepb.UnimplementedResourceAncillaryServer
+
 	mode string
 }
 

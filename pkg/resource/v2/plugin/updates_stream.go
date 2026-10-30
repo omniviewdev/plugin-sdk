@@ -17,6 +17,7 @@ type updateDelivery struct {
 	err     error
 	ack     chan error
 }
+
 type updateSink struct {
 	ctx    context.Context
 	mu     sync.Mutex
@@ -38,22 +39,30 @@ func (s *updateSink) push(message *resourcepb.UpdateStreamEvent, err error) {
 
 func (s *updateSink) OnAdd(v resourcev2.WatchAddPayload) {
 	p, err := resourcev2.ToProtoWatchAddPayload(v)
-	s.push(&resourcepb.UpdateStreamEvent{Version: 2, Event: &resourcepb.UpdateStreamEvent_Add{Add: p}}, err)
+	s.push(&resourcepb.UpdateStreamEvent{
+		Version: resourcev2.WireVersion, Event: &resourcepb.UpdateStreamEvent_Add{Add: p},
+	}, err)
 }
 
 func (s *updateSink) OnUpdate(v resourcev2.WatchUpdatePayload) {
 	p, err := resourcev2.ToProtoWatchUpdatePayload(v)
-	s.push(&resourcepb.UpdateStreamEvent{Version: 2, Event: &resourcepb.UpdateStreamEvent_Update{Update: p}}, err)
+	s.push(&resourcepb.UpdateStreamEvent{
+		Version: resourcev2.WireVersion, Event: &resourcepb.UpdateStreamEvent_Update{Update: p},
+	}, err)
 }
 
 func (s *updateSink) OnDelete(v resourcev2.WatchDeletePayload) {
 	p, err := resourcev2.ToProtoWatchDeletePayload(v)
-	s.push(&resourcepb.UpdateStreamEvent{Version: 2, Event: &resourcepb.UpdateStreamEvent_Delete{Delete: p}}, err)
+	s.push(&resourcepb.UpdateStreamEvent{
+		Version: resourcev2.WireVersion, Event: &resourcepb.UpdateStreamEvent_Delete{Delete: p},
+	}, err)
 }
 
 func (s *updateSink) OnStateChange(v resourcev2.WatchStateEvent) {
 	p, err := resourcev2.ToProtoWatchStateEvent(v)
-	s.push(&resourcepb.UpdateStreamEvent{Version: 2, Event: &resourcepb.UpdateStreamEvent_State{State: p}}, err)
+	s.push(&resourcepb.UpdateStreamEvent{
+		Version: resourcev2.WireVersion, Event: &resourcepb.UpdateStreamEvent_State{State: p},
+	}, err)
 }
 
 func (s *updateSink) established() error {
@@ -70,7 +79,12 @@ func (s *updateSink) established() error {
 	s.ready = true
 	ack := make(chan error, 1)
 	select {
-	case s.events <- updateDelivery{message: &resourcepb.UpdateStreamEvent{Version: 2, Event: &resourcepb.UpdateStreamEvent_Ready{Ready: true}}, ack: ack}:
+	case s.events <- updateDelivery{
+		message: &resourcepb.UpdateStreamEvent{
+			Version: resourcev2.WireVersion, Event: &resourcepb.UpdateStreamEvent_Ready{Ready: true},
+		},
+		ack: ack,
+	}:
 	case <-s.ctx.Done():
 		s.mu.Unlock()
 		return s.ctx.Err()
@@ -97,10 +111,10 @@ func listenUpdatesHandler(srv any, stream grpc.ServerStream) error {
 	if e.err != nil {
 		return rpcError(e.err)
 	}
-	if r.Version != 2 {
+	if r.Version != resourcev2.WireVersion {
 		return rpcError(unsupported("unsupported update stream version"))
 	}
-	if r.Operation != "listen" {
+	if r.Operation != updateListen {
 		return rpcError(invalid("unexpected update listener operation"))
 	}
 	base, err := incomingSession(stream.Context(), s.owner.settings)
@@ -119,55 +133,76 @@ func listenUpdatesHandler(srv any, stream grpc.ServerStream) error {
 	defer func() {
 		cancel()
 		if !joined {
-			<-done
+			<-done //nolint:errcheck // Join after cancellation; the selected stream failure already owns the result.
 		}
 	}()
-	ready := false
-	send := func(d updateDelivery) error {
-		if d.err != nil {
-			return d.err
+	return s.forwardUpdates(ctx, stream, sink.events, done, &joined)
+}
+
+// updateSender serializes readiness and acknowledges its actual transport send.
+type updateSender struct {
+	stream grpc.ServerStream
+	ready  bool
+}
+
+func (s *updateSender) send(d updateDelivery) error {
+	if d.err != nil {
+		return d.err
+	}
+	if d.message.GetReady() {
+		if s.ready {
+			return invalid("duplicate update listener readiness")
 		}
-		if d.message.GetReady() {
-			if ready {
-				return invalid("duplicate update listener readiness")
+		s.ready = true
+	}
+	err := sendResource(s.stream, d.message)
+	if d.ack != nil {
+		d.ack <- err
+	}
+	return err
+}
+
+func (s *updateSender) drain(events <-chan updateDelivery) error {
+	for {
+		select {
+		case delivery := <-events:
+			if err := s.send(delivery); err != nil {
+				return err
 			}
-			ready = true
+		default:
+			return nil
 		}
-		err := sendResource(stream, d.message)
-		if d.ack != nil {
-			d.ack <- err
-		}
-		return err
 	}
-	finish := func(err error) error {
-		if err != nil {
-			return rpcError(s.owner.classify(err))
-		}
-		if !ready {
-			return rpcError(invalid("listener ended without registration readiness"))
-		}
-		return nil
-	}
+}
+
+func (s *updatesServer) forwardUpdates(
+	ctx context.Context,
+	stream grpc.ServerStream,
+	events <-chan updateDelivery,
+	done <-chan error,
+	joined *bool,
+) error {
+	sender := updateSender{stream: stream}
 	for {
 		select {
 		case <-ctx.Done():
 			return rpcError(ctx.Err())
-		case d := <-sink.events:
-			if err := send(d); err != nil {
+		case delivery := <-events:
+			if err := sender.send(delivery); err != nil {
 				return rpcError(err)
 			}
 		case err := <-done:
-			joined = true
-			for {
-				select {
-				case d := <-sink.events:
-					if e := send(d); e != nil {
-						return rpcError(e)
-					}
-				default:
-					return finish(err)
-				}
+			*joined = true
+			if drainErr := sender.drain(events); drainErr != nil {
+				return rpcError(drainErr)
 			}
+			if err != nil {
+				return rpcError(s.owner.classify(err))
+			}
+			if !sender.ready {
+				return rpcError(invalid("listener ended without registration readiness"))
+			}
+			return nil
 		}
 	}
 }
@@ -195,17 +230,21 @@ func (c *Client) ListenForEvents(ctx context.Context, sink resourcev2.WatchEvent
 	if err != nil {
 		return domainError(err)
 	}
-	if err = stream.SendMsg(&resourcepb.UpdateRequest{Version: 2, Operation: "listen"}); err != nil {
+	request := &resourcepb.UpdateRequest{Version: resourcev2.WireVersion, Operation: updateListen}
+	if err = stream.SendMsg(request); err != nil {
 		return domainError(err)
 	}
 	if err = stream.CloseSend(); err != nil {
 		return domainError(err)
 	}
+	return receiveUpdates(stream, sink, onReady)
+}
+
+func receiveUpdates(stream grpc.ClientStream, sink resourcev2.WatchEventSink, onReady func() error) error {
 	ready := false
 	for {
-		p := &resourcepb.UpdateStreamEvent{}
-		e := &envelope{message: p}
-		if err = stream.RecvMsg(e); err != nil {
+		message, frame, err := receiveUpdate(stream)
+		if err != nil {
 			if errors.Is(err, io.EOF) {
 				if !ready {
 					return invalid("listener ended without registration readiness")
@@ -214,52 +253,72 @@ func (c *Client) ListenForEvents(ctx context.Context, sink resourcev2.WatchEvent
 			}
 			return domainError(err)
 		}
-		if e.err != nil {
-			return e.err
+		if frame.err != nil {
+			return frame.err
 		}
-		if p.Version != 2 {
-			return unsupported("unsupported update stream version")
-		}
-		if r, ok := p.Event.(*resourcepb.UpdateStreamEvent_Ready); ok {
-			if ready || !r.Ready {
-				return invalid("invalid listener readiness")
-			}
-			ready = true
-			if err = onReady(); err != nil {
-				return err
-			}
-			continue
-		}
-		if !ready {
-			return invalid("update event before listener readiness")
-		}
-		switch event := p.Event.(type) {
-		case *resourcepb.UpdateStreamEvent_Add:
-			v, err := resourcev2.FromProtoWatchAddPayload(event.Add)
-			if err != nil {
-				return err
-			}
-			sink.OnAdd(v)
-		case *resourcepb.UpdateStreamEvent_Update:
-			v, err := resourcev2.FromProtoWatchUpdatePayload(event.Update)
-			if err != nil {
-				return err
-			}
-			sink.OnUpdate(v)
-		case *resourcepb.UpdateStreamEvent_Delete:
-			v, err := resourcev2.FromProtoWatchDeletePayload(event.Delete)
-			if err != nil {
-				return err
-			}
-			sink.OnDelete(v)
-		case *resourcepb.UpdateStreamEvent_State:
-			v, err := resourcev2.FromProtoWatchStateEvent(event.State)
-			if err != nil {
-				return err
-			}
-			sink.OnStateChange(v)
-		default:
-			return invalid("missing update event")
+		if err = acceptUpdate(message, &ready, sink, onReady); err != nil {
+			return err
 		}
 	}
+}
+
+func acceptUpdate(
+	message *resourcepb.UpdateStreamEvent,
+	ready *bool,
+	sink resourcev2.WatchEventSink,
+	onReady func() error,
+) error {
+	if message.Version != resourcev2.WireVersion {
+		return unsupported("unsupported update stream version")
+	}
+	if registration, ok := message.Event.(*resourcepb.UpdateStreamEvent_Ready); ok {
+		if *ready || !registration.Ready {
+			return invalid("invalid listener readiness")
+		}
+		*ready = true
+		return onReady()
+	}
+	if !*ready {
+		return invalid("update event before listener readiness")
+	}
+	return deliverUpdate(sink, message)
+}
+
+func receiveUpdate(stream grpc.ClientStream) (*resourcepb.UpdateStreamEvent, *envelope, error) {
+	message := &resourcepb.UpdateStreamEvent{}
+	frame := &envelope{message: message}
+	err := stream.RecvMsg(frame)
+	return message, frame, err
+}
+
+func deliverUpdate(sink resourcev2.WatchEventSink, message *resourcepb.UpdateStreamEvent) error {
+	switch event := message.Event.(type) {
+	case *resourcepb.UpdateStreamEvent_Add:
+		value, err := resourcev2.FromProtoWatchAddPayload(event.Add)
+		if err != nil {
+			return err
+		}
+		sink.OnAdd(value)
+	case *resourcepb.UpdateStreamEvent_Update:
+		value, err := resourcev2.FromProtoWatchUpdatePayload(event.Update)
+		if err != nil {
+			return err
+		}
+		sink.OnUpdate(value)
+	case *resourcepb.UpdateStreamEvent_Delete:
+		value, err := resourcev2.FromProtoWatchDeletePayload(event.Delete)
+		if err != nil {
+			return err
+		}
+		sink.OnDelete(value)
+	case *resourcepb.UpdateStreamEvent_State:
+		value, err := resourcev2.FromProtoWatchStateEvent(event.State)
+		if err != nil {
+			return err
+		}
+		sink.OnStateChange(value)
+	default:
+		return invalid("missing update event")
+	}
+	return nil
 }

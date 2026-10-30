@@ -73,7 +73,7 @@ func ancillaryRoute(route resourcev2.AccessRoute) (*resourcepb.AccessRoute, erro
 // ListConnections returns configured connection snapshots without starting native clients.
 func (c *Client) ListConnections(ctx context.Context) ([]types.Connection, error) {
 	var out []types.Connection
-	err := c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "listConnections"}, &out)
+	err := c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: ancillaryListConnections}, &out)
 	return out, err
 }
 
@@ -84,7 +84,11 @@ func (c *Client) ScopeValues(ctx context.Context, route resourcev2.AccessRoute, 
 	if err != nil {
 		return nil, err
 	}
-	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "scopeValues", Route: p, Type: dimension}, &out)
+	err = c.ancillaryJSON(
+		ctx,
+		&resourcepb.AncillaryRequest{Operation: ancillaryScopeValues, Route: p, Type: dimension},
+		&out,
+	)
 	return out, err
 }
 
@@ -94,6 +98,8 @@ func (c *Client) UpdateConnection(ctx context.Context, in types.Connection) (typ
 	if err := resourcev2.ValidateMetadata(in); err != nil {
 		return out, err
 	}
+	// Connection JSON uses the existing public connection serialization contract.
+	//nolint:musttag // types.Connection owns its established wire field names.
 	data, err := json.Marshal(in)
 	if err != nil {
 		return out, invalid("invalid connection JSON")
@@ -101,13 +107,17 @@ func (c *Client) UpdateConnection(ctx context.Context, in types.Connection) (typ
 	if err = resourcev2.ValidateJSON(data); err != nil {
 		return out, err
 	}
-	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "updateConnection", ConnectionJson: data}, &out)
+	err = c.ancillaryJSON(
+		ctx,
+		&resourcepb.AncillaryRequest{Operation: ancillaryUpdateConnection, ConnectionJson: data},
+		&out,
+	)
 	return out, err
 }
 
 // DeleteConnection removes the configured connection identified by id.
 func (c *Client) DeleteConnection(ctx context.Context, id string) error {
-	return c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "deleteConnection", Id: id}, &struct{}{})
+	return c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: ancillaryDeleteConnection, Id: id}, &struct{}{})
 }
 
 // GetResourceGroups returns validated presentation groups for the selected route.
@@ -120,7 +130,7 @@ func (c *Client) GetResourceGroups(
 	if err != nil {
 		return out, err
 	}
-	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "groups", Route: p}, &out)
+	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: ancillaryGroups, Route: p}, &out)
 	return out, err
 }
 
@@ -135,7 +145,7 @@ func (c *Client) GetResourceDefinition(
 	if err != nil {
 		return out, err
 	}
-	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "definition", Route: p, Type: key}, &out)
+	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: ancillaryDefinition, Route: p, Type: key}, &out)
 	return out, err
 }
 
@@ -148,7 +158,7 @@ func (c *Client) GetEditorSchemas(
 	if err != nil {
 		return nil, err
 	}
-	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: "editorSchemas", Route: p})
+	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: ancillaryEditorSchemas, Route: p})
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +187,7 @@ func (c *Client) GetActions(
 	if err != nil {
 		return out, err
 	}
-	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: "actions", Route: p, Type: key}, &out)
+	err = c.ancillaryJSON(ctx, &resourcepb.AncillaryRequest{Operation: ancillaryActions, Route: p, Type: key}, &out)
 	return out, err
 }
 
@@ -191,7 +201,7 @@ func (c *Client) GetRelationships(
 	if err != nil {
 		return nil, err
 	}
-	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: "relationships", Route: p, Type: key})
+	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: ancillaryRelationships, Route: p, Type: key})
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +230,7 @@ func (c *Client) ResolveRelationships(
 	}
 	r, err := c.ancillary(
 		ctx,
-		&resourcepb.AncillaryRequest{Operation: "resolveRelationships", RelationshipResolution: p},
+		&resourcepb.AncillaryRequest{Operation: ancillaryResolveRelationships, RelationshipResolution: p},
 	)
 	if err != nil {
 		return nil, err
@@ -256,7 +266,7 @@ func (c *Client) GetHealth(
 	if err != nil {
 		return nil, err
 	}
-	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: "health", Get: p, Value: v})
+	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: ancillaryHealth, Get: p, Value: v})
 	if err != nil {
 		return nil, err
 	}
@@ -264,6 +274,7 @@ func (c *Client) GetHealth(
 		return nil, invalid("unexpected health result")
 	}
 	if r.GetHealth().Health == nil {
+		//nolint:nilnil // Absent optional health is a successful result, not a provider failure.
 		return nil, nil
 	}
 	out, err := resourcev2.FromProtoResourceHealth(r.GetHealth().Health)
@@ -286,7 +297,7 @@ func (c *Client) GetResourceEvents(
 	if err != nil {
 		return nil, err
 	}
-	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: "events", Get: p, Limit: limit})
+	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: ancillaryEvents, Get: p, Limit: limit})
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +332,10 @@ func (c *Client) GetSchemaDocument(
 	if err != nil {
 		return resourcev2.SchemaDocument{}, err
 	}
-	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: "schemaDocument", Route: p, DocumentRef: ref})
+	r, err := c.ancillary(
+		ctx,
+		&resourcepb.AncillaryRequest{Operation: ancillarySchemaDocument, Route: p, DocumentRef: ref},
+	)
 	if err != nil {
 		return resourcev2.SchemaDocument{}, err
 	}

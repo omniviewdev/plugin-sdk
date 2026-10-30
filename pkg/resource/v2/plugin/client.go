@@ -15,6 +15,7 @@ type Client struct{ conn grpc.ClientConnInterface }
 
 // NewClient binds resource operations to an existing gRPC connection.
 func NewClient(c grpc.ClientConnInterface) *Client { return &Client{conn: c} }
+
 func (c *Client) call(ctx context.Context, r *resourcepb.Request) (*resourcepb.Response, error) {
 	var err error
 	ctx, err = outgoingSession(ctx)
@@ -59,135 +60,96 @@ func (c *Client) Catalog(ctx context.Context, in resourcev2.CatalogRequest) (res
 	return resourcev2.FromProtoCatalog(out.GetCatalog())
 }
 
-func (c *Client) Get(ctx context.Context, in resourcev2.GetRequest) (resourcev2.Record, error) {
+// finiteClientOperation retains admission before encoding and validates decoded
+// results against that same descriptor, never a newly fetched catalog.
+func finiteClientOperation[I, P, O any](
+	ctx context.Context,
+	c *Client,
+	in I,
+	encode func(I) (P, error),
+	wrap func(P) *resourcepb.Request,
+	decode func(*resourcepb.Response) (O, error),
+) (O, error) {
+	var zero O
 	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
 	if err != nil {
-		return resourcev2.Record{}, err
+		return zero, err
 	}
-	p, err := resourcev2.ToProtoGetRequest(in)
+	p, err := encode(in)
 	if err != nil {
-		return resourcev2.Record{}, err
+		return zero, err
 	}
-	out, err := c.call(ctx, &resourcepb.Request{Operation: &resourcepb.Request_Get{Get: p}})
+	out, err := c.call(ctx, wrap(p))
 	if err != nil {
-		return resourcev2.Record{}, err
+		return zero, err
 	}
-	if out.GetRecord() == nil {
-		return resourcev2.Record{}, invalid("unexpected response result")
-	}
-	value, err := resourcev2.FromProtoRecord(out.GetRecord())
+	value, err := decode(out)
 	if err == nil {
 		err = resourcev2.ValidateOperationResult(in, value, descriptor)
 	}
 	if err != nil {
-		return resourcev2.Record{}, err
+		return zero, err
 	}
 	return value, nil
 }
 
-func (c *Client) Enumerate(ctx context.Context, in resourcev2.EnumerateRequest) (resourcev2.SourcePage, error) {
-	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
-	if err != nil {
-		return resourcev2.SourcePage{}, err
+func decodeRecordResponse(out *resourcepb.Response) (resourcev2.Record, error) {
+	if out.GetRecord() == nil {
+		return resourcev2.Record{}, invalid("unexpected response result")
 	}
-	p, err := resourcev2.ToProtoEnumerateRequest(in)
-	if err != nil {
-		return resourcev2.SourcePage{}, err
-	}
-	out, err := c.call(ctx, &resourcepb.Request{Operation: &resourcepb.Request_Enumerate{Enumerate: p}})
-	if err != nil {
-		return resourcev2.SourcePage{}, err
-	}
+	return resourcev2.FromProtoRecord(out.GetRecord())
+}
+
+func decodePageResponse(out *resourcepb.Response) (resourcev2.SourcePage, error) {
 	if out.GetPage() == nil {
 		return resourcev2.SourcePage{}, invalid("unexpected response result")
 	}
-	value, err := resourcev2.FromProtoSourcePage(out.GetPage())
-	if err == nil {
-		err = resourcev2.ValidateOperationResult(in, value, descriptor)
+	return resourcev2.FromProtoSourcePage(out.GetPage())
+}
+
+func decodeValueResponse(out *resourcepb.Response) (resourcev2.Value, error) {
+	if out.GetValue() == nil {
+		return resourcev2.Value{}, invalid("unexpected response result")
 	}
-	if err != nil {
-		return resourcev2.SourcePage{}, err
-	}
-	return value, nil
+	return resourcev2.FromProtoValue(out.GetValue())
+}
+
+// Get reads an explicit representation and validates its admitted provenance.
+func (c *Client) Get(ctx context.Context, in resourcev2.GetRequest) (resourcev2.Record, error) {
+	return finiteClientOperation(ctx, c, in, resourcev2.ToProtoGetRequest,
+		func(p *resourcepb.GetInput) *resourcepb.Request {
+			return &resourcepb.Request{Operation: &resourcepb.Request_Get{Get: p}}
+		}, decodeRecordResponse)
+}
+
+// Enumerate acquires a bounded source page under the accepted catalog observation.
+func (c *Client) Enumerate(ctx context.Context, in resourcev2.EnumerateRequest) (resourcev2.SourcePage, error) {
+	return finiteClientOperation(ctx, c, in, resourcev2.ToProtoEnumerateRequest,
+		func(p *resourcepb.EnumerateInput) *resourcepb.Request {
+			return &resourcepb.Request{Operation: &resourcepb.Request_Enumerate{Enumerate: p}}
+		}, decodePageResponse)
 }
 
 // NativeQuery executes the provider's native query contract and validates its page.
 func (c *Client) NativeQuery(ctx context.Context, in resourcev2.NativeQueryRequest) (resourcev2.SourcePage, error) {
-	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
-	if err != nil {
-		return resourcev2.SourcePage{}, err
-	}
-	p, err := resourcev2.ToProtoNativeQueryRequest(in)
-	if err != nil {
-		return resourcev2.SourcePage{}, err
-	}
-	out, err := c.call(ctx, &resourcepb.Request{Operation: &resourcepb.Request_NativeQuery{NativeQuery: p}})
-	if err != nil {
-		return resourcev2.SourcePage{}, err
-	}
-	if out.GetPage() == nil {
-		return resourcev2.SourcePage{}, invalid("unexpected response result")
-	}
-	value, err := resourcev2.FromProtoSourcePage(out.GetPage())
-	if err == nil {
-		err = resourcev2.ValidateOperationResult(in, value, descriptor)
-	}
-	if err != nil {
-		return resourcev2.SourcePage{}, err
-	}
-	return value, nil
+	return finiteClientOperation(ctx, c, in, resourcev2.ToProtoNativeQueryRequest,
+		func(p *resourcepb.NativeQueryInput) *resourcepb.Request {
+			return &resourcepb.Request{Operation: &resourcepb.Request_NativeQuery{NativeQuery: p}}
+		}, decodePageResponse)
 }
 
 // Mutate admits the exact requested write verb and validates the returned record.
 func (c *Client) Mutate(ctx context.Context, in resourcev2.MutationRequest) (resourcev2.Record, error) {
-	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
-	if err != nil {
-		return resourcev2.Record{}, err
-	}
-	p, err := resourcev2.ToProtoMutationRequest(in)
-	if err != nil {
-		return resourcev2.Record{}, err
-	}
-	out, err := c.call(ctx, &resourcepb.Request{Operation: &resourcepb.Request_Mutate{Mutate: p}})
-	if err != nil {
-		return resourcev2.Record{}, err
-	}
-	if out.GetRecord() == nil {
-		return resourcev2.Record{}, invalid("unexpected response result")
-	}
-	value, err := resourcev2.FromProtoRecord(out.GetRecord())
-	if err == nil {
-		err = resourcev2.ValidateOperationResult(in, value, descriptor)
-	}
-	if err != nil {
-		return resourcev2.Record{}, err
-	}
-	return value, nil
+	return finiteClientOperation(ctx, c, in, resourcev2.ToProtoMutationRequest,
+		func(p *resourcepb.MutationInput) *resourcepb.Request {
+			return &resourcepb.Request{Operation: &resourcepb.Request_Mutate{Mutate: p}}
+		}, decodeRecordResponse)
 }
 
 // Action invokes a finite provider action under the accepted catalog observation.
 func (c *Client) Action(ctx context.Context, in resourcev2.ActionRequest) (resourcev2.Value, error) {
-	descriptor, err := resourcev2.AdmitOperation(ctx, c, in)
-	if err != nil {
-		return resourcev2.Value{}, err
-	}
-	p, err := resourcev2.ToProtoActionRequest(in)
-	if err != nil {
-		return resourcev2.Value{}, err
-	}
-	out, err := c.call(ctx, &resourcepb.Request{Operation: &resourcepb.Request_Action{Action: p}})
-	if err != nil {
-		return resourcev2.Value{}, err
-	}
-	if out.GetValue() == nil {
-		return resourcev2.Value{}, invalid("unexpected response result")
-	}
-	value, err := resourcev2.FromProtoValue(out.GetValue())
-	if err == nil {
-		err = resourcev2.ValidateOperationResult(in, value, descriptor)
-	}
-	if err != nil {
-		return resourcev2.Value{}, err
-	}
-	return value, nil
+	return finiteClientOperation(ctx, c, in, resourcev2.ToProtoActionRequest,
+		func(p *resourcepb.ActionInput) *resourcepb.Request {
+			return &resourcepb.Request{Operation: &resourcepb.Request_Action{Action: p}}
+		}, decodeValueResponse)
 }

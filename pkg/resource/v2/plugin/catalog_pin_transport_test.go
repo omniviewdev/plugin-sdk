@@ -79,6 +79,7 @@ func TestCatalogDiscoveryDoesNotRequirePin(t *testing.T) {
 
 type changingCatalogProvider struct {
 	qualifiedProvider
+
 	revision string
 }
 
@@ -102,7 +103,7 @@ func TestDirectProviderCatalogChangeRejectsResult(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
-	ctx := acceptedCatalogContext(t, context.Background(), c, testGet().Route)
+	ctx := acceptedCatalogContext(context.Background(), t, c, testGet().Route)
 	_, err := c.Get(ctx, testGet())
 	if resourcev2.ErrorCode(err) != "RESET_REQUIRED" {
 		t.Fatalf("changed catalog result escaped: %v", err)
@@ -117,7 +118,7 @@ func TestDirectProviderStaleCatalogDoesNotDispatch(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
-	ctx := acceptedCatalogContext(t, context.Background(), c, testGet().Route)
+	ctx := acceptedCatalogContext(context.Background(), t, c, testGet().Route)
 	p.revision = "changed"
 	_, err := c.Get(ctx, testGet())
 	if resourcev2.ErrorCode(err) != "RESET_REQUIRED" {

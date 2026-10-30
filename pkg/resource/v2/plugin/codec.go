@@ -7,7 +7,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding"
-	_ "google.golang.org/grpc/encoding/proto"
+	grpcproto "google.golang.org/grpc/encoding/proto"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -25,8 +25,14 @@ type envelope struct {
 }
 type strictCodec struct{ fallback encoding.CodecV2 }
 
-func init()                        { encoding.RegisterCodecV2(strictCodec{fallback: encoding.GetCodecV2("proto")}) }
-func (c strictCodec) Name() string { return "proto" }
+// init installs raw-wire admission before gRPC can decode resource messages.
+//
+//nolint:gochecknoinits // gRPC's process-wide codec registry must be set before either clients or servers start.
+func init() {
+	encoding.RegisterCodecV2(strictCodec{fallback: encoding.GetCodecV2(grpcproto.Name)})
+}
+
+func (c strictCodec) Name() string { return grpcproto.Name }
 func (c strictCodec) Marshal(v any) (mem.BufferSlice, error) {
 	if e, ok := v.(*envelope); ok {
 		v = e.message
@@ -45,27 +51,10 @@ func (c strictCodec) Unmarshal(data mem.BufferSlice, v any) error {
 	if !wrapped && p != nil && legacyUtilityRequest(p.ProtoReflect().Descriptor()) {
 		return c.fallback.Unmarshal(data, v)
 	}
-	if p == nil ||
-		(!strictRoot(p.ProtoReflect().Descriptor()) && !(wrapped && (e.legacyExec || e.forceStrict || e.legacyValidator != nil))) {
+	if !strictDecode(p, e, wrapped) {
 		return c.fallback.Unmarshal(data, v)
 	}
-	var err error
-	if data.Len() > MaxWireBytes {
-		err = limited("resource message exceeds byte limit")
-	} else {
-		buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
-		defer buf.Free()
-		if wrapped && e.legacyValidator != nil {
-			err = e.legacyValidator(buf.ReadOnlyData())
-		} else if wrapped && e.legacyExec {
-			err = ValidateLegacyExecWire(buf.ReadOnlyData())
-		} else {
-			err = ValidateWire(buf.ReadOnlyData(), p.ProtoReflect().Descriptor())
-		}
-		if err == nil {
-			err = proto.Unmarshal(buf.ReadOnlyData(), p)
-		}
-	}
+	err := decodeResource(data, p, e, wrapped)
 	if err != nil {
 		if resourcev2.ErrorCode(err) == "INTERNAL" {
 			err = invalid("malformed resource protobuf")
@@ -77,6 +66,35 @@ func (c strictCodec) Unmarshal(data mem.BufferSlice, v any) error {
 		return rpcError(err)
 	}
 	return nil
+}
+
+func strictDecode(p proto.Message, e *envelope, wrapped bool) bool {
+	if p == nil {
+		return false
+	}
+	return strictRoot(p.ProtoReflect().Descriptor()) ||
+		wrapped && (e.legacyExec || e.forceStrict || e.legacyValidator != nil)
+}
+
+func decodeResource(data mem.BufferSlice, p proto.Message, e *envelope, wrapped bool) error {
+	if data.Len() > MaxWireBytes {
+		return limited("resource message exceeds byte limit")
+	}
+	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
+	defer buf.Free()
+	var err error
+	switch {
+	case wrapped && e.legacyValidator != nil:
+		err = e.legacyValidator(buf.ReadOnlyData())
+	case wrapped && e.legacyExec:
+		err = ValidateLegacyExecWire(buf.ReadOnlyData())
+	default:
+		err = ValidateWire(buf.ReadOnlyData(), p.ProtoReflect().Descriptor())
+	}
+	if err != nil {
+		return err
+	}
+	return proto.Unmarshal(buf.ReadOnlyData(), p)
 }
 
 func rpcError(err error) error {
@@ -125,7 +143,7 @@ func rpcError(err error) error {
 		grpcCode = codes.DeadlineExceeded
 	}
 	s := status.New(grpcCode, "resource operation failed")
-	detailed, e := s.WithDetails(&errdetails.ErrorInfo{Reason: code, Domain: "omniview.resource.v2"})
+	detailed, e := s.WithDetails(&errdetails.ErrorInfo{Reason: code, Domain: resourceErrorDomain})
 	if e != nil {
 		return s.Err()
 	}
@@ -147,7 +165,7 @@ func domainError(err error) error {
 		return status.Error(codes.Unknown, "resource transport failed")
 	}
 	for _, d := range st.Details() {
-		if info, ok := d.(*errdetails.ErrorInfo); ok && info.Domain == "omniview.resource.v2" {
+		if info, ok := d.(*errdetails.ErrorInfo); ok && info.Domain == resourceErrorDomain {
 			if !resourcev2.IsErrorCode(info.Reason) {
 				return status.Error(codes.Internal, "invalid resource error classification")
 			}

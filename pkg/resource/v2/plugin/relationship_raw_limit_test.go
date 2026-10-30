@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -14,7 +15,7 @@ import (
 
 func TestActualRawGRPCRelationshipTargetLimitBeforeDecode(t *testing.T) {
 	for _, count := range []int{resourcev2.MaxRelationshipTargets, resourcev2.MaxRelationshipTargets + 1} {
-		t.Run(fmt.Sprint(count), func(t *testing.T) {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
 			p := &relationshipBoundaryProvider{}
 			server := grpc.NewServer()
 			RegisterServer(server, p)
@@ -24,7 +25,7 @@ func TestActualRawGRPCRelationshipTargetLimitBeforeDecode(t *testing.T) {
 			}
 			first := request.Targets[0]
 			for i := 1; i < count; i++ {
-				target := proto.Clone(first).(*resourcepb.ReadTarget)
+				target := cloneRelationshipReadTarget(t, first)
 				target.Type = fmt.Sprintf("opaque/other-linked-type/%d", i)
 				request.Targets = append(request.Targets, target)
 			}
@@ -39,7 +40,7 @@ func TestActualRawGRPCRelationshipTargetLimitBeforeDecode(t *testing.T) {
 			var response resourcepb.AncillaryResponse
 			conn := pipe(t, server)
 			err = conn.Invoke(
-				acceptedRelationshipWireContext(t, context.Background(), NewClient(conn), relationshipFixtureRequest()),
+				acceptedRelationshipWireContext(context.Background(), t, NewClient(conn), relationshipFixtureRequest()),
 				resourcepb.ResourceAncillary_Call_FullMethodName,
 				wireRequest,
 				&response,
@@ -53,4 +54,13 @@ func TestActualRawGRPCRelationshipTargetLimitBeforeDecode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func cloneRelationshipReadTarget(t *testing.T, target *resourcepb.ReadTarget) *resourcepb.ReadTarget {
+	t.Helper()
+	cloned, ok := proto.Clone(target).(*resourcepb.ReadTarget)
+	if !ok {
+		t.Fatal("cloned relationship target has unexpected type")
+	}
+	return cloned
 }

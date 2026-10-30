@@ -15,6 +15,7 @@ import (
 
 type streamProvider struct {
 	qualifiedProvider
+
 	mode   string
 	joined chan struct{}
 }
@@ -89,7 +90,7 @@ func TestActualGRPCActionReadiness(t *testing.T) {
 			c := NewClient(pipe(t, s))
 			out := make(chan resourcev2.ActionEvent, 8)
 			err := c.StreamAction(
-				acceptedCatalogContext(t, context.Background(), c, actionInput().Route),
+				acceptedCatalogContext(context.Background(), t, c, actionInput().Route),
 				actionInput(),
 				out,
 			)
@@ -97,15 +98,7 @@ func TestActualGRPCActionReadiness(t *testing.T) {
 				t.Fatalf("class %s want %s: %v", resourcev2.ErrorCode(err), tc.code, err)
 			}
 			if tc.mode == "valid" {
-				if len(out) != 2 {
-					t.Fatal("missing action events")
-				}
-				if (<-out).Type != "ready" {
-					t.Fatal("first event not ready")
-				}
-				if (<-out).Data.Int != "9223372036854775807" {
-					t.Fatal("exact action value lost")
-				}
+				assertValidActionEvents(t, out)
 			}
 			select {
 			case _, ok := <-out:
@@ -124,7 +117,7 @@ func TestActionCancellationJoinsProducer(t *testing.T) {
 	s := grpc.NewServer()
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
-	ctx, cancel := context.WithCancel(acceptedCatalogContext(t, context.Background(), c, actionInput().Route))
+	ctx, cancel := context.WithCancel(acceptedCatalogContext(context.Background(), t, c, actionInput().Route))
 	out := make(chan resourcev2.ActionEvent, 1)
 	done := make(chan error, 1)
 	go func() { done <- c.StreamAction(ctx, actionInput(), out) }()
@@ -183,7 +176,7 @@ func TestActualGRPCConnectionBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	values, err := c.ScopeValues(
-		acceptedCatalogContext(t, context.Background(), c, resourcev2.AccessRoute{Connection: "explicit"}),
+		acceptedCatalogContext(context.Background(), t, c, resourcev2.AccessRoute{Connection: "explicit"}),
 		resourcev2.AccessRoute{Connection: "explicit"},
 		"dimension",
 	)
