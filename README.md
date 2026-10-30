@@ -2,6 +2,13 @@
 
 The SDK for creating plugins in Omniview, the Integrated DevOps Environment
 
+## Plugin author documentation
+
+Start with the [plugin author guides](docs/README.md), or
+[run the read-only plugin quickstart](docs/quickstart.md).
+Use the [resource API reference](docs/resource-v2-api.md) for signatures and contracts,
+and the [migration guide](docs/sdk-v1-v2-overview.md) when moving from resource v1.
+
 ## Internal Logging
 
 Use `log` for plugin runtime/internal logging. This is separate from the log capability API in `pkg/v1/logs`.
@@ -165,11 +172,10 @@ finite operations, lifecycle, ancillary traits and advisory updates are optional
 Catalog declarations qualify each operation independently, including create,
 mutation update and delete. Advisory `OperationUpdate` never authorizes writes.
 
-Start with the [v1-to-v2 overview](docs/sdk-v1-v2-overview.md) for the operating
-model, exposed APIs, migration differences, and provider-neutrality review.
-Then use the [architecture and API guide](docs/resource-v2-api.md) for the
-responsibility/export map, route admission, lifecycle/overlay rules,
-concurrency, utility lifetimes, result semantics, errors and candidate ceilings.
+Start with the [plugin author guides](docs/README.md) for a runnable quickstart,
+resource recipes, connection management, and capability registration.
+Use the [API reference](docs/resource-v2-api.md) for lookup and the
+[advanced contracts](docs/resource-v2-contracts.md) for host integration details.
 The [Go package overview](pkg/resource/v2/doc.go) links those concepts to the
 [compiling public examples](pkg/resource/v2/example_test.go): catalog-only,
 get-only, controller lifecycle and custom-provider generation issuance.

@@ -134,7 +134,7 @@ Each new directive names its linter and explains the local contract. No file-wid
 | `usetesting` | Disposable child sockets use short temporary roots to stay within Unix-domain path limits; cleanup still removes them. |
 | `revive`, `staticcheck` | Required gRPC argument order and existing exported fixture/spelling contracts remain unchanged. |
 
-Pre-existing binding-table, zero-setting, and closed-channel test-guard directives remain local; they are not new policy exclusions. Boundary changes and the explicit unused command-interface export reduction are recorded in [cleanup contract decisions](resource-v2-api.md#cleanup-contract-decisions).
+Pre-existing binding-table, zero-setting, and closed-channel test-guard directives remain local; they are not new policy exclusions. Boundary changes and the explicit unused command-interface export reduction are recorded in [cleanup contract decisions](resource-v2-contracts.md#cleanup-contract-decisions).
 
 The first central normal run exposed two incorrect test assignments; those were fixed before the final normal/race passes. Independent review also caught a benchmark compile error, a legitimate stopped-server teardown race, and missing pre-allocation framing validation; each finding was corrected and re-reviewed. Formatter nonconvergence in a multi-value return was fixed in source without changing formatter policy.
 

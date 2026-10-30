@@ -1,7 +1,8 @@
 // Package resourcev2 defines the handwritten, provider-neutral resource API.
 // This API is an implementation candidate awaiting public-contract review, not
-// an approved contract. The architecture guide is docs/resource-v2-api.md in
-// the SDK repository; it maps responsibilities, exports, and operational rules.
+// an approved contract. Plugin-author guides start at docs/README.md in the SDK
+// repository. docs/resource-v2-api.md is the API reference; advanced ownership
+// and admission rules live in docs/resource-v2-contracts.md.
 //
 // # Provider construction
 //

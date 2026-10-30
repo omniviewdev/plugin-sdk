@@ -1,160 +1,301 @@
-# Resource v2 architecture and API candidate
+# Resource v2 API reference
 
-**Review status:** implementation candidate, not an approved public contract. This document describes current source behavior and caller obligations. It does not approve the admission, lifecycle, overlay, or transport policies identified in [code review](resource-v2-code-review.md) and [specification comparison](resource-v2-spec-review.md).
+**API status:** implementation candidate, not an approved public contract. This page describes current source behavior.
 
-For a plain-language comparison with the previous resource APIs, start with the [v1-to-v2 overview](sdk-v1-v2-overview.md). Concrete Kubernetes/Helm filenames below are integration landmarks, not required provider contracts; that overview also records remaining genericity limits.
+[Documentation home](README.md) · [Quickstart](quickstart.md) · [Resource tasks](resources.md) · [Connections](connections.md) · [Migration](sdk-v1-v2-overview.md)
 
-## Navigation
-
-- [Responsibilities and source map](#responsibilities-and-source-map)
-- [Export inventory](#export-inventory)
-- [Construction and examples](#construction-and-examples)
-- [Route-qualified admission](#route-qualified-admission)
-- [Connection lifecycle and overlays](#connection-lifecycle-and-overlays)
-- [Concurrency and ownership](#concurrency-and-ownership)
-- [Utility and stream lifetime](#utility-and-stream-lifetime)
-- [Results and errors](#results-and-errors)
-- [Safety ceilings and exclusions](#safety-ceilings-and-exclusions)
-- [Cleanup contract decisions](#cleanup-contract-decisions)
+Use this page to find interfaces, request fields, capabilities, values, and errors. Use [advanced contracts](resource-v2-contracts.md) for admission edge cases, ownership, limits, and pending decisions.
 
 ## Responsibilities and source map
 
-| Owner | Responsibility | Source/caller landmarks |
+| You need to… | Public surface | Source |
 | --- | --- | --- |
-| Provider domain | Canonical identity, explicit routes, scoped capabilities, representations, honest source results | SDK `pkg/resource/v2/domain.go`, `ancillary.go`, `ancillary_types.go`, `updates.go` |
-| Optional controller | One configured inventory and native-client registry; lifecycle, leasing, admission and result fences | SDK `Controller`, `Config`, `Registration`, `Lifecycle`; Kubernetes `pkg/plugin/resource/native_provider.go` constructs it |
-| Connection registry | Own actual configured profiles and active generations; utilities share this registry rather than create another | SDK `ConnectionContextProvider`; `pkg/v1/{exec,logs,metric,networker}` consumers |
-| Transport | Negotiate features/version, validate raw input before decoding, adapt domain values, preserve classification and readiness | SDK `pkg/resource/v2/plugin`, protobuf adapters, `proto/resource/v2` |
-| Host | Authorize invocation, issue authority, capture accepted catalog observations, bind source epochs, redact errors, persist/replay desired overlays | Host `backend/pkg/plugin/resource/{catalog_binding,finite_operations,ancillary_service}.go` |
-| Runtime/UI | Select independent catalog capabilities and maintain explicit target context; negotiate optional ancillary features | Host finite/subscription services and resource table consumers |
+| Discover types and support | `Provider`, `Catalog`, `ResourceType`, `Capability` | [domain.go](../pkg/resource/v2/domain.go) |
+| Implement finite operations | `Getter`, `Enumerator`, `NativeQuerier`, `Mutator`, `Actioner` | [domain.go](../pkg/resource/v2/domain.go) |
+| Compose callbacks and clients | `NewController`, `Config`, `Registration`, `Lifecycle` | [provider_options.go](../pkg/resource/v2/provider_options.go), [connections](connections.md) |
+| Build exact bodies | `Value`, `JSONToValue`, `ValueFromNative`, `NativeFromValue`, `TimestampValue` | [value_json.go](../pkg/resource/v2/value_json.go), [domain.go](../pkg/resource/v2/domain.go) |
+| Classify failures | `ResourceOperationError`, `NewError`, `ErrorClassifier`, `ErrorCode` | [errors.go](../pkg/resource/v2/errors.go) |
+| Add metadata or streams | Optional ancillary and update interfaces | [Optional extensions](#optional-extensions) |
+| Register plugin process | `sdk.RegisterResourcePlugin` | [Runnable quickstart](quickstart.md) |
+| Add exec, logs, metrics, forwarding, tools, or commands | SDK capability registration | [SDK capabilities](capabilities.md) |
 
-Kubernetes separates native catalog assembly, presentation, and relationships into `native_catalog_assembly.go`, `native_presentation.go`, and `native_relationships.go`. Helm `register.go` composes handlers; `request.go`, `catalog.go`, `read.go`, and `operations.go` own their respective workflows. These are organization boundaries, not extra registries or interface layers.
-
-## Export inventory
-
-This is an ownership inventory, not blanket approval of every exported declaration. Families below include their request/result values and constants. An exported transport helper is not thereby a provider-author recommendation.
-
-| Audience | Export family | Actual use and boundary |
-| --- | --- | --- |
-| Provider author | `Provider`; optional `Getter`, `Enumerator`, `NativeQuerier`, `Mutator`, `Actioner`; domain identity/scope/value/catalog/page types | Kubernetes native and Helm providers construct canonical values. No mandatory CRUD, namespace, enumeration, or live source. |
-| Provider author | `Config`, `Registration`, `Lifecycle`, `NewController`, `Controller.WithClient` | Kubernetes `native_provider.go` composes native/Helm registrations and the client lifecycle. Custom providers may omit this controller. |
-| Provider author | Ancillary provider interfaces, `BestEffortUpdateProvider`, watch/action event types, sync policies | Optional schema, presentation, relationships, health, actions and advisory updates; negotiate feature availability remotely. |
-| Provider author | `NewCatalogBindingEpoch`, `BindCatalogRevision` | Custom providers issue source/configuration generations; controller users receive binding automatically. See executable example. |
-| Provider author / utility integration | `ValueFromNative`, `NativeFromValue`, `JSONToValue`, `TimestampValue`, `ScopeForAddress`, validation and bounded-size helpers | Preserve exact scalar intent, validate canonical shapes, and bound source pages without protobuf construction. These helpers do not authorize work. |
-| Provider author / host integration | `ResourceOperationError`, `NewError`, `ErrorClassifier`, `ErrorCode`, `IsErrorCode` | Provider classification crosses transport; host assigns trusted provenance and final public text. |
-| Host/integration | `Session`, `WithSession`, `SessionFromContext`; connection copy/config comparison and overlay contracts | Host and SDK utility composition carry diagnostic context and manage configured profiles. Session labels are not authentication. |
-| Host/integration | `WithCatalogRevision`, `WithCatalogRevisionForRoute`, observation accessors/checkers, `CatalogBindingEpoch` | Host `finite_operations.go`, `ancillary_service.go`, and `catalog_binding.go` pin admitted observations and detect actual binding changes. |
-| Host/integration | `AdmitCatalogOperation`, `ValidateOperationResult`, feature negotiation | Host finite/subscription services reuse domain admission and fence results; remote method sets do not prove support. |
-| Utility integration | `ConnectionContextProvider`, `ConnectionContextConsumer`, `WithUtilityConnection` | Existing utility managers bind native work to the sole started registry. Ordinary nonreference utilities do not need fabricated catalogs. |
-| Transport only | `ToProto*`/`FromProto*`, wire validation/version/policy helpers, generated protobuf messages | SDK plugin servers/clients and utility adapters. Host subscription equality now uses domain-owned `CanonicalReadTarget`, not protobuf adapters. |
-
-Qualified-observation transport framing and RPC-boundary clearing belong behind SDK internal/transport ownership. Provider code uses validated observation helpers, never binary headers or token parsing. The framing cutover does not remove host epoch inspection or custom-provider generation issuance.
+Providers define native semantics. The host authorizes access, issues authority, and pins accepted catalog observations. Transport adapters and generated protobuf messages are not required in provider handlers.
 
 ## Construction and examples
 
-[Go package overview](../pkg/resource/v2/doc.go) and [executable examples](../pkg/resource/v2/example_test.go) cover four real API compositions:
+Only `Catalog` is required. Lifecycle, enumeration, writes, and watches are independent choices. `native` means provider-specific data, not Kubernetes data.
 
-1. `ExampleProvider`: catalog-only implementation with no native client or finite methods.
-2. `ExampleGetter`: get-only controller with one exact registration, descriptor, host-issued example authority, and accepted revision pin. No enumeration capability is implied.
-3. `ExampleLifecycle`: load configured profiles, explicitly start, lease a configured profile, stop, and close.
-4. `ExampleNewCatalogBindingEpoch`: immutable custom provider without Controller; issue one actual binding epoch and bind its native metadata revision.
+`pkg/resource/v2/domain.go` — contextual interface excerpts from [source](../pkg/resource/v2/domain.go). These declarations use the package's `context` import and domain types.
 
-Register a provider through `sdk.RegisterResourcePlugin(plugin, provider)`. The examples deliberately isolate domain construction from plugin process setup. A custom mutable provider must additionally synchronize generation publication, cancel retired work, and fence dispatch/results; issuing a token alone supplies none of those safeguards.
+```go
+type Provider interface {
+	Catalog(context.Context, CatalogRequest) (Catalog, error)
+}
 
-Create/update/delete catalog declarations are independent: `OperationCreate`, `OperationMutationUpdate`, and `OperationDelete`. `MutationRequest.Operation` remains `create`, `update`, or `delete`; admission maps the requested verb to its exact declaration. `OperationUpdate` means advisory watch delivery only. Implementing `Mutator` does not imply all write verbs.
+type Getter interface {
+	Get(context.Context, GetRequest) (Record, error)
+}
+
+type Enumerator interface {
+	Enumerate(context.Context, EnumerateRequest) (SourcePage, error)
+}
+
+type NativeQuerier interface {
+	NativeQuery(context.Context, NativeQueryRequest) (SourcePage, error)
+}
+
+type Mutator interface {
+	Mutate(context.Context, MutationRequest) (Record, error)
+}
+
+type Actioner interface {
+	Action(context.Context, ActionRequest) (Value, error)
+}
+```
+
+Choose either composition:
+
+1. Use `NewController(Config[T])` for callback dispatch, catalog binding epochs, admission, and result fences.
+2. Implement `Provider` directly when you own those behaviors. See [custom provider generations](resource-v2-contracts.md#route-qualified-admission).
+
+A controller without `Lifecycle` is valid. Its operation callbacks receive a nil client. Start with the [embedded notes plugin](quickstart.md); use [connections](connections.md) only when you need managed clients.
+
+### Operation capability lookup
+
+Support requires both a positive, matching scoped catalog capability and an implementation. A controller's broad method set does not advertise support.
+
+| Catalog operation | Direct interface | Controller callback | Request → result |
+| --- | --- | --- | --- |
+| `OperationGet` (`get`) | `Getter` | `Registration.Get` | `GetRequest` → `Record` |
+| `OperationEnumerate` (`enumerate`) | `Enumerator` | `Registration.Enumerate` | `EnumerateRequest` → `SourcePage` |
+| `OperationNativeQuery` (`nativeQuery`) | `NativeQuerier` | `Registration.NativeQuery` | `NativeQueryRequest` → `SourcePage` |
+| `OperationCreate` (`create`) | `Mutator` | `Registration.Mutate` | `MutationRequest{Operation: "create"}` → `Record` |
+| `OperationMutationUpdate` (`mutationUpdate`) | `Mutator` | `Registration.Mutate` | `MutationRequest{Operation: "update"}` → `Record` |
+| `OperationDelete` (`delete`) | `Mutator` | `Registration.Mutate` | `MutationRequest{Operation: "delete"}` → `Record` |
+| `OperationAction` (`action`) | `Actioner` or `StreamingActioner` | `Registration.Action` for finite actions | `ActionRequest` → `Value` or action events |
+| `OperationUpdate` (`update`) | `BestEffortUpdateProvider` | `Registration.Watch` | `ReadTarget` → advisory events |
+
+Create, mutation update, and delete are independent. `OperationUpdate` never admits a write. Actions also need action descriptors.
+
+### Controller registration lookup
+
+| Field | Meaning |
+| --- | --- |
+| `Config.Catalog` | Required route-qualified discovery callback |
+| `Config.Registrations` | Exact-type callback registrations |
+| `Config.ResolveRegistration` | Optional dynamic resolver; return the requested type and matching route |
+| `Config.DynamicUpdates` | Advertise dynamically resolved watch implementations during feature negotiation |
+| `Config.Lifecycle` | Optional configured-client ownership; [setup](connections.md#choose-client-ownership) |
+| `Config.ErrorClassifier` | Fallback classification after registration classifier declines |
+| `Registration.Type` | Exact opaque type, never a wildcard |
+| `Registration.Connection` | Restrict to one explicit route; empty permits any explicitly supplied route |
+| `Registration.Scope` | Optional additional scope restriction; nil does not bypass catalog admission |
+| `Registration.SyncPolicy` | Advisory startup policy; not finite-operation support |
+
+Overlapping registrations for the same operation fail at dispatch. Keep registration scopes and lifecycle configuration immutable after construction.
 
 ## Route-qualified admission
 
-Connection selects access, not identity. Addresses contain provider, host-issued authority, opaque type, identity scope, and opaque ID. Incarnation and source revision remain optional opaque observations. Neither a native authority hint nor equal hints grant authority or sharing rights.
+Identity and access are separate:
 
-The default and qualified helpers serve different call shapes:
+| Type | Required information | Not… |
+| --- | --- | --- |
+| `ResourceAddress` | `Provider`, host-issued `Authority`, opaque `Type`, identity `Scope`, opaque `ID` | A connection selector |
+| `ResourceReference` | `Address`; optional `Incarnation` observation | A source revision |
+| `AccessRoute` | Explicit `Connection` | Identity, permission, or an implicit default |
+| `ReadTarget` | `Route`, `Provider`, `Authority`, `Type`, query `Scope`, `Representation` | A host query plan |
 
-- `WithCatalogRevision` supplies one explicit observation for a single-route source call.
-- `WithCatalogRevisionForRoute` supplies an observation keyed by exact provider and route. Use independently admitted target observations for cross-route relationships, and optionally for the source itself.
-- Matching qualified observations take precedence over default observations. A wrong qualified observation cannot fall back to a correct default.
-- `QualifiedCatalogRevisionFromContext` never falls back. `CatalogRevisionForRouteFromContext` does. Duplicate qualified entries fail closed, even if their revision strings match; helpers append rather than overwrite. Duplicate lookup yields a present invalid token, and admission rejects it.
-- Admission validates the bounded observation set and exact current catalog equality. Missing, malformed, duplicate, or stale required observations return `RESET_REQUIRED`; aggregate excess returns `RESOURCE_LIMIT`. A new cached revision must never silently replace the accepted token.
+`NativeAuthorityHint` is metadata only. Equal hints do not grant authority or establish sharing.
 
-Pins are observations, not grants. The host must first authorize provider/authority/type/scope/operation. Finite operations, resource ancillary operations and targeted advisory sources require accepted observations. Discovery, feature negotiation, connection management, and pin-free native leasing do not. Relationship targets cannot borrow an unobserved route's source pin.
+```mermaid
+sequenceDiagram
+    participant Host
+    participant Provider
+    Host->>Provider: Catalog(explicit route)
+    Provider-->>Host: Types, capabilities, bound revision
+    Note over Host: Authorize target and operation, then retain accepted observation
+    Host->>Provider: Operation(explicit route and representation, pinned context)
+    Provider-->>Host: Validated result or classified error
+```
 
-A native metadata change changes the bound catalog revision but not the source epoch. Replacing/reconfiguring the actual native binding changes its epoch, including A→B→A transitions. Custom providers retain an issued epoch for one actual binding; stateless providers issue one per instance. Never invent a constant epoch or rotate it merely for schema/catalog churn.
+| Observation helper | Use |
+| --- | --- |
+| `WithCatalogRevision` | One explicit observation for a single-route source call |
+| `WithCatalogRevisionForRoute` | Observation keyed by exact provider and route |
+| `CheckCatalogRevisionForRoute` | Check current catalog against the selected observation |
+| `NewCatalogBindingEpoch`, `BindCatalogRevision` | Custom-provider binding generations; controllers handle these automatically |
 
-## Connection lifecycle and overlays
+Pins are observations, not permissions. Do not replace a stale accepted pin with a fresh cached revision. Required missing or stale observations return `RESET_REQUIRED`.
 
-Controller is the sole state owner. Configured profiles and registered clients are distinct. Discovery does not start clients, and no operation selects the first active connection implicitly.
+Cross-route relationships need independently accepted target observations. Qualified observations override defaults; duplicates fail closed. See [full pin rules](resource-v2-contracts.md#route-qualified-admission).
 
-- Configured, unstarted profiles report `DISCONNECTED`. Start publishes one pending slot and reports `PENDING` through readiness inspection while construction runs.
-- `CreateClient` and optional `OnStart` must finish before the slot becomes usable. Successful startup reports `CONNECTED`, which means registered lifecycle state, not network health.
-- Startup failure cancels and cleans up the slot. Every nonnil returned client is destroyed exactly once, including failed starts. Safe `FAILED` status survives client cleanup; no client/error diagnostic is retained for that status.
-- Explicit retry creates a fresh slot and clears the failure marker. Stop or meaningful configuration replacement also clears it; display-only edits preserve it.
-- Stop/configuration retirement/Close prevent new leases, cancel the generation, stop its advisory sources, wait for current leases, then invoke `OnStop` and `DestroyClient`. Cleanup uses a context without the retired generation's cancellation; callbacks must not depend on cancellation to end cleanup.
-- Unknown profile IDs return `NOT_FOUND`. `GetConnectionStatus` does not wait, start, acquire a resource lease, or probe the network. `CheckConnection` is the separate optional health operation.
+### Scope lookup
 
-The startup creator's request cancellation cancels startup until construction completes. A concurrent waiter canceling its own request does not own the shared slot. Accepted native generation lifetime then belongs to the controller, not the completed start RPC. Request leases combine caller cancellation with generation/controller cancellation; dispatch fences reject retired results even when native callbacks ignore cancellation.
+| Shape | Meaning |
+| --- | --- |
+| Address `Scope` | Each declared identity dimension exactly once |
+| `QueryScope` | Each declared query dimension exactly once; dimensions intersect |
+| `ScopeAny` | Every value of one dimension; omit `Values` |
+| `ScopeOneOf` | Exactly the nonnil `Values` selection |
+| Empty `oneOf` | Matches nothing; return an honest empty page without broad acquisition |
+| Empty query scope | Valid only when the type has no query dimensions |
 
-`ApplyConnectionOverlay` replaces the explicit in-memory desired overlay: upserts are manual profiles/overrides, disabled IDs are tombstones, and empty overlay restores native configuration. Native refresh cannot erase overrides or resurrect tombstones. The host owns persistence and startup replay; the SDK does not rewrite native configuration files.
+Query-only dimensions cannot be inferred from identity. The current relationship result helper rejects query-only target dimensions absent from returned identity; see [known limitation](resource-v2-contracts.md#relationship-helper-limitation).
 
-Inventory application stages changed routes, blocks new starts there, cancels/drains old generations, then publishes effective inventory together. Failed teardown or canceled application keeps previous desired inventory, but already retired clients stay retired. Reapplying an earlier overlay does not resurrect old clients or epochs. Display-only changes preserve active clients; ID/UID/data/private client configuration changes retire them. Nil private override data can inherit source-owned credentials only when public client configuration remains unchanged; explicit empty private data clears it. Hosts must not persist native private credentials.
+## Request and result lookup
 
-## Concurrency and ownership
+All types below live in [domain.go](../pkg/resource/v2/domain.go). Request containers are borrowed read-only during calls. Return independently owned mutable results.
 
-Controller serializes inventory changes with `configMu`; nested acquisition order is `configMu` then registry `mu`, never the reverse. Registry `mu` protects slot publication, lease admission and retirement. Teardown waits and provider callbacks run outside `mu`. Inventory teardown still holds `configMu` across callbacks: callbacks must not synchronously reenter inventory mutation/refresh. Do not synchronously Stop/Close/reconfigure the same generation from a callback holding its lease: retirement waits for that callback.
+| Request | Fields beyond explicit route/reference/target |
+| --- | --- |
+| `CatalogRequest` | `Route` only; discovery does not implicitly start a client |
+| `GetRequest` | `Route`, `Reference`, explicit `Representation` |
+| `EnumerateRequest` | `Target`, `PageSize`, optional source `Cursor` |
+| `NativeQueryRequest` | `Target`, `Language`, typed `Query`, `PageSize`, optional `Cursor` |
+| `MutationRequest` | `Route`, `Reference`, `Operation`, typed `Input`, optional native `ExpectedRevision` |
+| `ActionRequest` | `Route`, `Reference`, action name `Action`, typed `Input` |
 
-Callbacks for different requests, watches and connections can run concurrently. Synchronize shared native clients and provider state; callback execution does not imply single-threaded access. Cancellation is cooperative. Native creation, finite work and watch loops must observe their contexts, and event sends must remain cancellation-aware. A blocked callback can block retirement.
+`ExpectedRevision` is an optimistic-write observation, not a catalog pin. Canonical reads require an explicit representation. A host may resolve omitted UI selection only through the catalog's explicit `DefaultRepresentation`.
 
-Constructor registration slices are snapshotted shallowly; nested registration scopes/value slices, the Lifecycle object and captured callback state must remain immutable after construction unless the provider synchronizes its own callback state. Do not infer deep ownership from the top-level slice copy.
+| Result | Required meaning |
+| --- | --- |
+| `Catalog` | `Provider`, supported `Types`, opaque bound `Revision`, honest `Coverage` |
+| `Record` | Requested `Reference`, map-root `Body`, admitted `Representation`, honest `Coverage`; optional native `SourceRevision` |
+| `SourcePage` | Stable `Records`, optional `NextCursor`, explicit `Count`, `Coverage`, `Consistency`, optional `SourceRevision` |
+| `Representation` | Format `ID`, format-contract `Revision`, `Schema` binding |
+| `SchemaBinding` | Distinguish `available`, `absent`, and acquisition-failed `unavailable` |
 
-Controller copies mutable connection configuration at ingress, inventory/status egress and callback/session boundaries. Exported mutable credential containers remain owned even with `json:"-"`; opaque native handles/unexported implementation state retain their deliberate native ownership. Editing a profile snapshot does not apply configuration. Admitted watch targets and descriptor containers receive independent snapshots, including provider callback copies, so mutation cannot widen retained admission. General finite request/result containers must not be mutated concurrently with SDK use; produce independently owned results rather than reuse mutable buffers across calls.
+### Result metadata
 
-Framework code owns its outgoing stream channels and completion. Producers send events and return; do not close framework-owned channels. Listener cancellation retires that listener; generation retirement owns its source cleanup. Advisory data arriving before a listener is ready is dropped, not queued for replay; state retains its readiness/replay barrier. This bounded advisory behavior is not gap-free continuity.
+| Value | Valid form |
+| --- | --- |
+| Complete coverage | `Coverage{Kind: "complete"}`; no paths or reason |
+| Partial / unknown coverage | `Kind: "partial"` or `"unknown"`; public-safe `Reason` required; preserve path limitations |
+| Unknown count | `Count{Kind: "unknown"}`; nil value, not zero |
+| Exact / estimated count | `Kind: "exact"` or `"estimate"`; pointer to canonical unsigned decimal string |
+| Page consistency | `"bestEffort"` or `"pointInTime"`; neither promises snapshot/live handoff |
+| Cursor | Opaque source continuation; never reuse across changed target or generation |
+| Available schema | Revision, dialect, exactly one inline document or document reference |
+| Absent schema | No document binding; absence is not acquisition failure |
+| Unavailable schema | No inline document; optional reviewed error code, never raw diagnostics |
+| Schema validation | `full`: available, no unvalidated constraints; `reduced`: available, explicit unvalidated constraints; `none`: no constraint claims |
 
-## Utility and stream lifetime
+Schema roots are local RFC6901 URI-fragment pointers. Empty root selects the whole document. No implicit external loading or normalization occurs.
 
-`WithConnection` requires a configured, already-started native generation and supplies its actual configured-profile snapshot. Metadata is only a selector. `WithClient` exposes the registered native client under a lease; with no lifecycle configured its client is nil. Neither helper probes, implicitly starts, chooses a default connection, or grants resource access.
+`SourcePage` is bounded source acquisition, not a host query/history engine. Failed discovery is an error, not empty complete coverage. On error, callers discard the accompanying result.
 
-Reference-bearing exec/log/metric/forwarding work carries actual canonical reference/route and accepted catalog observation, without requiring an unrelated Get. Explicit route-only intent still requires a matching selected configured connection. Ordinary opaque selectors and cluster metrics do not require fabricated references or catalog pins. Body encoding validation alone does not establish connection admission.
+## Exact values
 
-Creation/admission and accepted session lifetime differ by utility; do not infer one shared guarantee:
+`Value` preserves scalar intent. Set exactly the selected payload; the zero value is invalid.
 
-- **Resource forwarding:** caller and generation cancellation remain attached through native creation/readiness. Acceptance retains the exact session's configured-generation lease until close, native completion, or retirement. Completing the initiating RPC does not close an accepted forward.
-- **Logs:** `CreateResourceSession` registers a `connecting` session and starts native acquisition asynchronously. Its connection lease covers admission only; the session context is detached from the creation RPC before native handler/resolver readiness. Registry retirement alone does not cancel or await that acquisition. Integrators must explicitly close affected log sessions when retiring a connection, or shut down the log manager. Returning a session is not proof of native readiness. Whether to enforce generation ownership inside this asynchronous engine remains a public-contract review decision.
-- **Exec:** its session engine owns accepted-session close and RPC-independent lifetime. Do not infer forwarding's retained-lease implementation merely from the shared resource admission helper.
-- **Metrics:** queries, polls, and streams retain their actual request/stream cancellation and owner-scoped subscriptions. Equal local subscription IDs on different connections cannot steal output.
+| Kind | Go payload | Tagged JSON example |
+| --- | --- | --- |
+| `null` | No payload | `{"kind":"null"}` |
+| `bool` | `Bool` | `{"kind":"bool","value":false}` |
+| `string` | `String` | `{"kind":"string","value":"welcome"}` |
+| `int64` | Canonical decimal `Int` | `{"kind":"int64","value":"-9223372036854775808"}` |
+| `uint64` | Canonical decimal `Uint` | `{"kind":"uint64","value":"18446744073709551615"}` |
+| `double` | Finite `Double`; preserves negative zero | `{"kind":"double","value":-0}` |
+| `timestamp` | UTC RFC3339 `Timestamp` | `{"kind":"timestamp","value":"2026-01-02T03:04:05Z"}` |
+| `list` | `List`; selected nil means empty list | `{"kind":"list","value":[]}` |
+| `map` | `Map`; selected nil means empty map | `{"kind":"map","value":{}}` |
 
-Action streams emit exactly one `ready` only after native establishment and before output/progress/completion. Return pre-establishment errors without ready. Framework handles producer return separately from channel closure; successful return without ready is `PROVIDER_ERROR`. Remote metric streams also complete open/ready admission before exposing output. A remote client's broad static Go method set does not prove support: use `FeatureNegotiator` before optional ancillary startup.
+Use `JSONToValue` for map-root native JSON documents. Integral tokens retain exact signed/unsigned intent; fractional/exponent tokens become doubles. JSON strings remain strings, even when they resemble timestamps.
+
+`ValueFromNative` preserves supported Go scalar types without a JSON float round trip. Use `TimestampValue` for explicit time intent.
+
+`values.go` — complete standalone program using [Value JSON encoding](../pkg/resource/v2/value_json.go).
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+)
+
+func main() {
+	value, err := resourcev2.JSONToValue([]byte(`{"count":18446744073709551615}`))
+	if err != nil {
+		panic(err)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(encoded))
+}
+```
+
+Save `values.go` at the module root, then run:
+
+```sh
+GOWORK=off GOFLAGS= go run ./values.go
+```
+
+Expected output:
+
+```json
+{"kind":"map","value":{"count":{"kind":"uint64","value":"18446744073709551615"}}}
+```
 
 ## Results and errors
 
-- **Schema:** `available` requires revision, dialect, and exactly one inline document or document reference. `absent` has no document binding. `unavailable` is acquisition failure, not absence; it cannot include inline document. Optional unavailable reason is a reviewed machine code, never diagnostics. `full` validation requires available schema and no unvalidated constraints; `reduced` requires available schema plus explicit unvalidated constraints; `none` makes no constraint claims. Roots are local RFC6901 URI-fragment pointers; empty root selects the whole document. No implicit external IO or normalization occurs.
-- **Representation:** canonical SDK Get requests and read targets require an explicit representation. A host resolving an omitted UI selection may use only the catalog's explicit `DefaultRepresentation`; it must pass the resolved representation to the provider. Result provenance must match the admitted representation.
-- **Coverage:** `complete` has no limitations; `partial` and `unknown` require a reason and retain path limitations. Failed/denied discovery is an error, not empty complete coverage.
-- **Count:** `unknown` has no value; `exact`/`estimate` use canonical unsigned decimal strings. Unknown is not zero and page length is not automatically total count.
-- **Cursor:** optional opaque source continuation, not a host query cursor or portable source identity. Preserve source semantics; never fabricate continuity or silently reuse a cursor across changed targets/generations.
-- **Scope:** valid empty `oneOf` matches nothing, including query-only dimensions. It is neither invalid nor `any`; adapters must return an honest empty page without broad native acquisition. Query-only dimensions cannot be inferred narrow from identity alone.
-- **Page:** `SourcePage` is bounded finite acquisition, with explicit coverage, consistency and optional source revision. It does not promise snapshot/watch cutover or final query planning.
+Public error text must be safe for users. Never pass native error strings, credentials, private URLs, or configuration to `NewError`. It places detail directly in `Message` without redaction.
 
-`ResourceOperationError` carries reviewed C02 classification. `Title`, `Message`, and `Suggestions` must be public-safe when providers construct them. `NewError` places its detail directly in public-facing `Message`; never pass raw native error strings, credentials, URLs or private configuration. Put raw native diagnostics in `Err`, excluded from JSON and reachable through `Unwrap`. `Error()` serializes only classification/public text, not `Err`. Host redaction and canonical AppError provenance remain authoritative.
+`pkg/resource/v2/errors.go` — contextual type excerpt from [source](../pkg/resource/v2/errors.go).
 
-`IsErrorCode` defines accepted vocabulary; unknown errors/codes fall back to `INTERNAL`. Cancellation/deadline remain `CANCELLED`/`TIMEOUT`. Classifiers may decline with nil; registration classifier precedes controller classifier, while existing typed errors and cancellation retain classification. Denial, internal and unknown failures never become trusted host recovery instructions merely because providers supplied text.
+```go
+type ResourceOperationError struct {
+	Err         error    `json:"-"`
+	Code        string   `json:"code"`
+	Title       string   `json:"title"`
+	Message     string   `json:"message"`
+	Suggestions []string `json:"suggestions,omitempty"`
+}
+```
 
-## Safety ceilings and exclusions
+Keep raw diagnostics in `Err`. `Unwrap` exposes them locally; JSON and `Error()` exclude them. The host retains final redaction, trusted provenance, and recovery policy.
 
-Candidate policy `omniview.resource-wire-policy.v1` bounds frames at 32 MiB, bodies at 16 MiB, semantic value depth at 64, nodes at 262144, fields at 1048576 and source pages at 256 records. Aggregate frame/page budgets apply before generated decoding; record limits do not multiply aggregate allowance. Protobuf-tree, JSON-tree and semantic-value depth checks are separate boundaries, not interchangeable traversal counters. Qualified observations have 4096-byte individual revision and conservative 32 KiB aggregate limits; targets are bounded at 256. Metric lanes separately bound used-ID tombstones at 4096 and retained admission metadata at 32 MiB.
+| Condition | Classification |
+| --- | --- |
+| Missing object | `NOT_FOUND` |
+| Unsupported capability | `UNSUPPORTED` |
+| Invalid canonical request | `INVALID_REQUEST` |
+| Stale/missing required pin | `RESET_REQUIRED` |
+| Retired source continuation | `CONTINUATION_EXPIRED` |
+| Bounded payload/page exceeded | `RESOURCE_LIMIT` |
+| Context cancellation / deadline | `CANCELLED` / `TIMEOUT` |
+| Unknown error or unrecognized code | `INTERNAL` |
 
-These are candidate safety ceilings, not latency promises, planner budgets, or approved product policy. Hosts may lower effective limits. The separate predicate/projection policy remains 64 KiB. `ValueWireSize` and `RecordWireSize` support bounded source construction without allocating transport messages.
+See [`IsErrorCode`](../pkg/resource/v2/errors.go) for the full accepted vocabulary. A classifier may decline with nil. Registration classifier runs before controller classifier; existing typed errors and cancellation retain classification.
 
-History ingestion/storage, search, timeline, universal planning, schema normalization (P07), and strong P05 source continuity are excluded. Advisory updates never claim replay, gap-free delivery, or atomic snapshot/live handoff. Domain documentation does not turn excluded engines into implicit requirements or completion claims.
+## Optional extensions
 
-## Cleanup contract decisions
+Negotiate remote features through [`FeatureNegotiator`](../pkg/resource/v2/features.go). Static transport method sets do not prove support.
 
-The lint cleanup preserves the candidate resource API and its pending acceptance status. It does not consolidate admission contexts, change asynchronous log-generation ownership, or approve transport ceilings. The following boundary changes are explicit:
+| Task | Interface / source | Key obligation |
+| --- | --- | --- |
+| Show connection inventory UI | `ConnectionBrowser` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Discovery does not start clients |
+| Discover dimension values | `ScopeValuesProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Values do not grant or constrain acquisition |
+| Add display metadata | `PresentationProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Does not replace catalog capability declarations |
+| Supply editor/schema documents | `EditorSchemaProvider`, `SchemaDocumentProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Preserve absence, failure, and validation states |
+| Resolve native links | `RelationshipProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Explicit target routes, authorities, scopes, and observations |
+| Report resource health/events | `HealthProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Resource health is not connection health |
+| Describe/stream actions | `ActionCatalog`, `StreamingActioner` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Exactly one `ready` after native establishment, before output |
+| Publish advisory updates | `BestEffortUpdateProvider`, `WatchEventSink` in [updates.go](../pkg/resource/v2/updates.go) | No replay, gap-free continuity, or atomic handoff |
 
-- SDK lifecycle registration rejects a positive protocol version above `math.MaxInt32` by panicking before registration, rather than truncating its wire value. Nonpositive configured versions still select the current protocol default.
-- Settings `GetIntSlice` returns `ErrSettingTypeMismatch` when a `uint64` element exceeds the platform's maximum `int`; it no longer wraps that element into a negative value.
-- Internal catalog observation sizing rejects counts and individual fields that cannot fit the framing format's unsigned 16-bit lengths, even if a caller supplies wider custom limits. Rejection occurs before frame allocation. The normal resource-domain limits are unchanged.
-- Fake-terminal cleanup and failed real-terminal construction attempt every owned descriptor close and return joined failures. An accepted real terminal still closes both descriptors and returns the first failure. `FindFreeTCPPort` reports failure to close its temporary listener instead of claiming that the selected port was released.
-- Stream completion recognizes wrapped `io.EOF`. Invalid internal RPC dispatch types return classified errors rather than unchecked assertion panics; this does not relax wire or domain admission.
+Framework owns stream channels and completion. Send events and return; never close framework-owned channels. See [stream lifetime contracts](resource-v2-contracts.md#utility-and-stream-lifetime).
 
-The unused `command.ProviderImpl` export was removed after reference and managed-consumer checks; its method now belongs directly to `command.Provider`. This is an explicit export reduction in the API candidate, not an approved compatibility guarantee. Both network provider interfaces remain exported with their existing method sets.
+## Export inventory
 
-Metric enum adapters retain their existing integer-to-`int32` conversion: unknown values within the wire range survive, and wider integers truncate. Cleanup does not claim that metadata validation rejects unknown enum values. Successful absence remains distinct from an empty health result or watch summary; disabled telemetry still returns `(nil, nil)`.
+The [advanced export inventory](resource-v2-contracts.md#export-inventory) separates provider, host, utility, and transport audiences. Transport framing is not a provider-author API.
+
+## Next steps
+
+- [Add a resource operation](resources.md).
+- [Own a native connection lifecycle](connections.md).
+- [Migrate an existing provider](sdk-v1-v2-overview.md).
+- Look up [concurrency and ownership](resource-v2-contracts.md#concurrency-and-ownership), [safety ceilings](resource-v2-contracts.md#safety-ceilings-and-exclusions), or [pending boundary decisions](resource-v2-contracts.md#cleanup-contract-decisions).
