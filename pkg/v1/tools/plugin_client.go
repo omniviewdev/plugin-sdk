@@ -55,15 +55,11 @@ func (p *PluginClient) ListTools(ctx *types.PluginContext) ([]Descriptor, error)
 		if d == nil {
 			return nil, fmt.Errorf("invalid tool descriptor")
 		}
-		if _, err := compileSchema(d.GetInputSchema()); err != nil {
-			return nil, fmt.Errorf("invalid tool input schema: %w", err)
+		descriptor := descriptorFromProto(d)
+		if err := ValidateDescriptor(descriptor); err != nil {
+			return nil, fmt.Errorf("invalid tool descriptor: %w", err)
 		}
-		if len(d.GetOutputSchema()) != 0 {
-			if _, err := compileSchema(d.GetOutputSchema()); err != nil {
-				return nil, fmt.Errorf("invalid tool output schema: %w", err)
-			}
-		}
-		out = append(out, descriptorFromProto(d))
+		out = append(out, descriptor)
 	}
 	return out, nil
 }

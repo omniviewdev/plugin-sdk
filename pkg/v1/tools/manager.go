@@ -50,22 +50,18 @@ func NewManager(log logging.Logger, opts PluginOpts) (*Manager, error) {
 	}
 	for i := range opts.Tools {
 		tool := &opts.Tools[i]
-		if err := validateTool(*tool); err != nil {
-			return nil, fmt.Errorf("tool %q: %w", tool.Name, err)
+		if tool.Handler == nil {
+			return nil, fmt.Errorf("tool %q: handler is nil", tool.Name)
 		}
 		if _, exists := m.tools[tool.Name]; exists {
 			return nil, fmt.Errorf("tool %q: duplicate name", tool.Name)
 		}
-		input, err := compileSchema(tool.InputSchema)
+		input, output, err := compileDescriptor(tool.Descriptor)
 		if err != nil {
-			return nil, fmt.Errorf("tool %q input schema: %w", tool.Name, err)
+			return nil, fmt.Errorf("tool %q: %w", tool.Name, err)
 		}
 		m.inputs[tool.Name] = input
-		if len(tool.OutputSchema) != 0 {
-			output, err := compileSchema(tool.OutputSchema)
-			if err != nil {
-				return nil, fmt.Errorf("tool %q output schema: %w", tool.Name, err)
-			}
+		if output != nil {
 			m.outputs[tool.Name] = output
 		}
 		m.tools[tool.Name] = *tool
@@ -80,19 +76,36 @@ func (m *Manager) BindConnectionContextProvider(provider resourcev2.ConnectionCo
 	m.connectionProvider = provider
 }
 
-func validateTool(tool Tool) error {
-	if !toolNamePattern.MatchString(tool.Name) {
-		return errors.New("name must match ^[a-z0-9_]{1,64}$")
+// ValidateDescriptor validates tool metadata without requiring a handler. It uses
+// the same bounded schema profile as registration, does not mutate the descriptor,
+// and performs no tool execution or native connection work. Returned diagnostics
+// are for local use, not model-facing presentation.
+func ValidateDescriptor(descriptor Descriptor) error {
+	_, _, err := compileDescriptor(descriptor)
+	return err
+}
+
+func compileDescriptor(descriptor Descriptor) (*compiledSchema, *compiledSchema, error) {
+	if !toolNamePattern.MatchString(descriptor.Name) {
+		return nil, nil, errors.New("name must match ^[a-z0-9_]{1,64}$")
 	}
-	if tool.Handler == nil {
-		return errors.New("handler is nil")
-	}
-	switch tool.Scope {
+	switch descriptor.Scope {
 	case ScopePlugin, ScopeConnection:
 	default:
-		return fmt.Errorf("scope must be %q or %q", ScopePlugin, ScopeConnection)
+		return nil, nil, fmt.Errorf("scope must be %q or %q", ScopePlugin, ScopeConnection)
 	}
-	return nil
+	input, err := compileSchema(descriptor.InputSchema)
+	if err != nil {
+		return nil, nil, fmt.Errorf("input schema: %w", err)
+	}
+	var output *compiledSchema
+	if len(descriptor.OutputSchema) != 0 {
+		output, err = compileSchema(descriptor.OutputSchema)
+		if err != nil {
+			return nil, nil, fmt.Errorf("output schema: %w", err)
+		}
+	}
+	return input, output, nil
 }
 
 // ListTools returns the descriptors in registration order.
