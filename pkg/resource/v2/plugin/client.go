@@ -75,6 +75,11 @@ func finiteClientOperation[I, P, O any](
 	if err != nil {
 		return zero, err
 	}
+	var actionDescriptor *resourcev2.ActionDescriptor
+	if action, ok := any(in).(resourcev2.ActionRequest); ok && action.ExpectedDescriptor != nil {
+		actionDescriptor, err = resourcev2.ResolveActionDescriptor(ctx, c, action, false)
+		if err != nil { return zero, err }
+	}
 	p, err := encode(in)
 	if err != nil {
 		return zero, err
@@ -86,6 +91,13 @@ func finiteClientOperation[I, P, O any](
 	value, err := decode(out)
 	if err == nil {
 		err = resourcev2.ValidateOperationResult(in, value, descriptor)
+	}
+	if err == nil {
+		if _, ok := any(in).(resourcev2.ActionRequest); ok {
+			output, valid := any(value).(resourcev2.Value)
+			if !valid { return zero, invalid("unexpected action output") }
+			err = resourcev2.ValidateResolvedActionOutput(actionDescriptor, output)
+		}
 	}
 	if err != nil {
 		return zero, err

@@ -1,6 +1,10 @@
 package resourcev2
 
-import "math"
+import (
+	"math"
+	"sort"
+)
+
 
 // ValidateResourceDefinition bounds and admits presentation metadata before
 // transport serialization. Extractors never confer identity or access.
@@ -130,10 +134,7 @@ func ValidateActionDescriptors(v []ActionDescriptor) error {
 }
 
 func validateActionSchema(schema Schema) error {
-	if err := validateActionRequired(schema.Required); err != nil {
-		return err
-	}
-	return validateActionProperties(schema.Properties, 0)
+	return ValidateSchema(schema)
 }
 
 func validateActionProperty(p SchemaProperty, depth int) error {
@@ -145,6 +146,23 @@ func validateActionProperty(p SchemaProperty, depth int) error {
 	default:
 		return invalid("unknown action schema type")
 	}
+	if p.Enum != nil && p.Type != SchemaString {
+		return invalid("action schema enum requires string type")
+	}
+	if p.Enum != nil {
+		if len(p.Enum) == 0 { return invalid("action schema enum must not be empty") }
+		seen := make(map[string]bool, len(p.Enum))
+		for _, item := range p.Enum {
+			if seen[item] { return invalid("duplicate action schema enum value") }
+			seen[item] = true
+		}
+	}
+	if (p.Minimum != nil || p.Maximum != nil) && p.Type != SchemaInteger && p.Type != SchemaNumber {
+		return invalid("action schema bounds require numeric type")
+	}
+	if (p.Properties != nil || p.Required != nil) && p.Type != SchemaObject {
+		return invalid("action schema properties require object type")
+	}
 	if p.Minimum != nil && (math.IsNaN(*p.Minimum) || math.IsInf(*p.Minimum, 0)) {
 		return invalid("nonfinite action schema minimum")
 	}
@@ -154,14 +172,15 @@ func validateActionProperty(p SchemaProperty, depth int) error {
 	if p.Minimum != nil && p.Maximum != nil && *p.Minimum > *p.Maximum {
 		return invalid("action schema minimum exceeds maximum")
 	}
-	if err := validateActionRequired(p.Required); err != nil {
-		return err
-	}
-	return validateActionProperties(p.Properties, depth+1)
+	return validateSchemaObject(p.Properties, p.Required, depth+1)
 }
 
 func validateActionProperties(properties map[string]SchemaProperty, depth int) error {
-	for name, p := range properties {
+	names := make([]string, 0, len(properties))
+	for name := range properties { names = append(names, name) }
+	sort.Strings(names)
+	for _, name := range names {
+		p := properties[name]
 		if err := text(name, true); err != nil {
 			return err
 		}
@@ -173,11 +192,12 @@ func validateActionProperties(properties map[string]SchemaProperty, depth int) e
 }
 
 func validateActionRequired(required []string) error {
-	if len(required) <= 1 {
-		return nil
-	}
+	// Required names must be unique even when only one name is supplied.
 	seen := make(map[string]bool, len(required))
 	for _, name := range required {
+		if err := text(name, true); err != nil {
+			return err
+		}
 		if seen[name] {
 			return invalid("duplicate action schema required name")
 		}

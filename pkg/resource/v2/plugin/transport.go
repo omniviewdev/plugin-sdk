@@ -32,7 +32,8 @@ func ResourceRPCError(err error) error { return rpcError(err) }
 func ResourceDomainError(err error) error { return domainError(err) }
 
 func strictRoot(d protoreflect.MessageDescriptor) bool {
-	return d.ParentFile().Package() == resourceErrorDomain || strictUtilityRoot(d)
+	namespace := d.ParentFile().Package()
+	return namespace == resourceErrorDomain || namespace == "omniview.sdk.tools.v2" || strictUtilityRoot(d)
 }
 
 // ValidateLegacyExecWire detects resource intent without discarding reserved fields.

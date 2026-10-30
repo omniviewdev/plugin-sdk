@@ -22,10 +22,24 @@ const (
 
 // Annotations are the MCP tool annotation hints.
 type Annotations struct {
-	ReadOnly    bool `json:"readOnly"`
-	Destructive bool `json:"destructive"`
-	Idempotent  bool `json:"idempotent"`
-	OpenWorld   bool `json:"openWorld"`
+	ReadOnly    *bool `json:"readOnly,omitempty"`
+	Destructive *bool `json:"destructive,omitempty"`
+	Idempotent  *bool `json:"idempotent,omitempty"`
+	OpenWorld   *bool `json:"openWorld,omitempty"`
+}
+
+// EffectiveAnnotations contains MCP defaults, not authorization decisions.
+type EffectiveAnnotations struct {
+	ReadOnly, Destructive, Idempotent, OpenWorld bool
+}
+
+// Resolve preserves explicit false values while applying MCP defaults.
+func (a Annotations) Resolve() EffectiveAnnotations {
+	value := func(p *bool, fallback bool) bool {
+		if p != nil { return *p }
+		return fallback
+	}
+	return EffectiveAnnotations{value(a.ReadOnly, false), value(a.Destructive, true), value(a.Idempotent, false), value(a.OpenWorld, true)}
 }
 
 // Descriptor describes one tool to the host.
@@ -44,12 +58,13 @@ type Content struct {
 	Text string `json:"text"`
 }
 
-// Result is the outcome of a tool call. IsError marks a tool-level failure
-// that the caller (an AI model) should read, as opposed to a transport error.
+// Result is the outcome of a tool call. IsError results expose only reviewed,
+// fixed safe presentation; diagnostic content stays local.
 type Result struct {
 	Content           []Content       `json:"content"`
 	StructuredContent json.RawMessage `json:"structuredContent,omitempty"`
 	IsError           bool            `json:"isError"`
+	ErrorCode         string          `json:"errorCode,omitempty"`
 }
 
 // CallInput names the tool and carries its JSON object arguments.
@@ -90,7 +105,7 @@ func JSONResult(v any) (*Result, error) {
 	}, nil
 }
 
-// ErrorResult returns a tool-level error result.
+// ErrorResult creates a local failure. Diagnostic text is removed at dispatch.
 func ErrorResult(format string, args ...any) *Result {
 	return &Result{
 		Content: []Content{{Text: fmt.Sprintf(format, args...)}},
@@ -171,10 +186,10 @@ func descriptorFromProto(d *toolspb.ToolDescriptor) Descriptor {
 	}
 	if a := d.GetAnnotations(); a != nil {
 		out.Annotations = Annotations{
-			ReadOnly:    a.GetReadOnly(),
-			Destructive: a.GetDestructive(),
-			Idempotent:  a.GetIdempotent(),
-			OpenWorld:   a.GetOpenWorld(),
+			ReadOnly:    a.ReadOnly,
+			Destructive: a.Destructive,
+			Idempotent:  a.Idempotent,
+			OpenWorld:   a.OpenWorld,
 		}
 	}
 	return out
@@ -188,6 +203,7 @@ func resultToProto(r *Result) *toolspb.CallToolResponse {
 		Content:           make([]*toolspb.ToolContent, 0, len(r.Content)),
 		StructuredContent: r.StructuredContent,
 		IsError:           r.IsError,
+		ErrorCode:         r.ErrorCode,
 	}
 	for _, c := range r.Content {
 		out.Content = append(out.Content, &toolspb.ToolContent{
@@ -202,6 +218,7 @@ func resultFromProto(r *toolspb.CallToolResponse) *Result {
 		Content:           make([]Content, 0, len(r.GetContent())),
 		StructuredContent: r.GetStructuredContent(),
 		IsError:           r.GetIsError(),
+		ErrorCode:         r.GetErrorCode(),
 	}
 	for _, c := range r.GetContent() {
 		out.Content = append(out.Content, Content{Text: c.GetText()})

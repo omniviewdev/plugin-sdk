@@ -64,7 +64,7 @@ func TestWireRoundTrip(t *testing.T) {
 				InputSchema:  ObjectSchema(map[string]any{"x": map[string]any{"type": "integer"}}, "x"),
 				OutputSchema: json.RawMessage(`{"type":"object"}`),
 				Scope:        ScopeConnection,
-				Annotations:  Annotations{ReadOnly: true, Idempotent: true},
+				Annotations:  Annotations{ReadOnly: boolPointer(true), Idempotent: boolPointer(true)},
 			},
 			Handler: connectionEcho,
 		},
@@ -73,7 +73,7 @@ func TestWireRoundTrip(t *testing.T) {
 				Name:        "fail",
 				InputSchema: ObjectSchema(nil),
 				Scope:       ScopePlugin,
-				Annotations: Annotations{Destructive: true},
+				Annotations: Annotations{Destructive: boolPointer(true)},
 			},
 			Handler: func(*types.PluginContext, json.RawMessage) (*Result, error) {
 				return ErrorResult("nope"), nil
@@ -90,8 +90,8 @@ func TestWireRoundTrip(t *testing.T) {
 	require.Equal(t, "echo", descriptors[0].Name)
 	require.Equal(t, "Echo", descriptors[0].Title)
 	require.Equal(t, ScopeConnection, descriptors[0].Scope)
-	require.True(t, descriptors[0].Annotations.ReadOnly)
-	require.True(t, descriptors[0].Annotations.Idempotent)
+	require.True(t, descriptors[0].Annotations.Resolve().ReadOnly)
+	require.True(t, descriptors[0].Annotations.Resolve().Idempotent)
 	require.JSONEq(t, `{"type":"object"}`, string(descriptors[0].OutputSchema))
 	require.JSONEq(
 		t,
@@ -99,7 +99,7 @@ func TestWireRoundTrip(t *testing.T) {
 		string(descriptors[0].InputSchema),
 	)
 	require.Equal(t, ScopePlugin, descriptors[1].Scope)
-	require.True(t, descriptors[1].Annotations.Destructive)
+	require.True(t, descriptors[1].Annotations.Resolve().Destructive)
 	require.Empty(t, descriptors[1].OutputSchema)
 
 	ctx := types.NewPluginContextWithConnection(context.Background(), "test", nil, nil, &types.Connection{ID: "conn-1"})
@@ -122,7 +122,7 @@ func TestWireRoundTrip(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.True(t, res.IsError)
-	require.Equal(t, "nope", res.Content[0].Text)
+	require.Equal(t, "Tool execution failed.", res.Content[0].Text)
 	require.Empty(t, res.StructuredContent)
 }
 
@@ -133,13 +133,15 @@ func TestWireErrorCodes(t *testing.T) {
 
 	_, err = client.CallTool(
 		types.NewPluginContext(context.Background(), "test", nil, nil, nil),
-		CallInput{Name: "scoped"},
+		CallInput{Name: "scoped", Arguments: json.RawMessage(`{}`)},
 	)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 
 	_, err = client.CallTool(
 		types.NewPluginContext(context.Background(), "test", nil, nil, nil),
-		CallInput{Name: "missing"},
+		CallInput{Name: "missing", Arguments: json.RawMessage(`{}`)},
 	)
-	require.Equal(t, codes.NotFound, status.Code(err))
+	require.ErrorIs(t, err, ErrToolNotFound)
 }
+
+func boolPointer(v bool) *bool { return &v }

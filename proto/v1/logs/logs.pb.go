@@ -852,8 +852,10 @@ type CreateLogSessionRequest struct {
 	ResourceWireVersion uint32                 `protobuf:"varint,6,opt,name=resource_wire_version,json=resourceWireVersion,proto3" json:"resource_wire_version,omitempty"`
 	Reference           *v2.ResourceReference  `protobuf:"bytes,7,opt,name=reference,proto3" json:"reference,omitempty"`
 	Route               *v2.AccessRoute        `protobuf:"bytes,8,opt,name=route,proto3" json:"route,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Optional host-generated UUID correlates acceptance and cleanup if the reply is lost.
+	SessionId     string `protobuf:"bytes,9,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateLogSessionRequest) Reset() {
@@ -933,6 +935,13 @@ func (x *CreateLogSessionRequest) GetRoute() *v2.AccessRoute {
 		return x.Route
 	}
 	return nil
+}
+
+func (x *CreateLogSessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
 }
 
 type CreateLogSessionResponse struct {
@@ -1522,7 +1531,7 @@ const file_proto_v1_logs_logs_proto_rawDesc = "" +
 	"\bresource\x18\x02 \x01(\tR\bresource\x12R\n" +
 	"\x0etarget_builder\x18\x03 \x01(\v2+.omniview.sdk.common.v1.ActionTargetBuilderR\rtargetBuilder\"`\n" +
 	" GetSupportedLogResourcesResponse\x12<\n" +
-	"\bhandlers\x18\x01 \x03(\v2 .omniview.sdk.logs.v1.LogHandlerR\bhandlers\"\x9c\x03\n" +
+	"\bhandlers\x18\x01 \x03(\v2 .omniview.sdk.logs.v1.LogHandlerR\bhandlers\"\xbb\x03\n" +
 	"\x17CreateLogSessionRequest\x12!\n" +
 	"\fresource_key\x18\x01 \x01(\tR\vresourceKey\x12\x1f\n" +
 	"\vresource_id\x18\x02 \x01(\tR\n" +
@@ -1531,7 +1540,9 @@ const file_proto_v1_logs_logs_proto_rawDesc = "" +
 	"\rresource_data\x18\x05 \x01(\v2\x1b.omniview.resource.v2.ValueR\fresourceData\x122\n" +
 	"\x15resource_wire_version\x18\x06 \x01(\rR\x13resourceWireVersion\x12E\n" +
 	"\treference\x18\a \x01(\v2'.omniview.resource.v2.ResourceReferenceR\treference\x127\n" +
-	"\x05route\x18\b \x01(\v2!.omniview.resource.v2.AccessRouteR\x05routeJ\x04\b\x03\x10\x04\"\x86\x01\n" +
+	"\x05route\x18\b \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\t \x01(\tR\tsessionIdJ\x04\b\x03\x10\x04\"\x86\x01\n" +
 	"\x18CreateLogSessionResponse\x12:\n" +
 	"\asession\x18\x01 \x01(\v2 .omniview.sdk.logs.v1.LogSessionR\asession\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x14\n" +

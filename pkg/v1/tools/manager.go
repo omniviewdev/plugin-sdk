@@ -3,7 +3,9 @@
 package tools
 
 import (
-	"encoding/json"
+	"context"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"errors"
 	"fmt"
 	"regexp"
@@ -30,6 +32,8 @@ type Manager struct {
 	tools              map[string]Tool
 	order              []string
 	connectionProvider resourcev2.ConnectionContextProvider
+	inputs map[string]*compiledSchema
+	outputs map[string]*compiledSchema
 }
 
 var _ Provider = (*Manager)(nil)
@@ -40,6 +44,8 @@ func NewManager(log logging.Logger, opts PluginOpts) (*Manager, error) {
 		log:   log,
 		tools: make(map[string]Tool, len(opts.Tools)),
 		order: make([]string, 0, len(opts.Tools)),
+		inputs: make(map[string]*compiledSchema),
+		outputs: make(map[string]*compiledSchema),
 	}
 	for i := range opts.Tools {
 		tool := &opts.Tools[i]
@@ -48,6 +54,14 @@ func NewManager(log logging.Logger, opts PluginOpts) (*Manager, error) {
 		}
 		if _, exists := m.tools[tool.Name]; exists {
 			return nil, fmt.Errorf("tool %q: duplicate name", tool.Name)
+		}
+		input, err := compileSchema(tool.InputSchema, true)
+		if err != nil { return nil, fmt.Errorf("tool %q input schema: %w", tool.Name, err) }
+		m.inputs[tool.Name] = input
+		if len(tool.OutputSchema) != 0 {
+			output, err := compileSchema(tool.OutputSchema, true)
+			if err != nil { return nil, fmt.Errorf("tool %q output schema: %w", tool.Name, err) }
+			m.outputs[tool.Name] = output
 		}
 		m.tools[tool.Name] = *tool
 		m.order = append(m.order, tool.Name)
@@ -73,15 +87,6 @@ func validateTool(tool Tool) error {
 	default:
 		return fmt.Errorf("scope must be %q or %q", ScopePlugin, ScopeConnection)
 	}
-	var schema struct {
-		Type string `json:"type"`
-	}
-	if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
-		return fmt.Errorf("input schema is not valid JSON: %w", err)
-	}
-	if schema.Type != "object" {
-		return errors.New(`input schema "type" must be "object"`)
-	}
 	return nil
 }
 
@@ -100,6 +105,9 @@ func (m *Manager) CallTool(ctx *types.PluginContext, input CallInput) (*Result, 
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrToolNotFound, input.Name)
 	}
+	if err := validateJSON(m.inputs[input.Name], input.Arguments); err != nil {
+		return nil, resourcev2.NewError("INVALID_REQUEST", "Tool arguments do not match the declared schema.")
+	}
 	if tool.Scope == ScopePlugin {
 		if input.Route != nil || (ctx != nil && ctx.Connection != nil) {
 			return nil, resourcev2.NewError(
@@ -107,11 +115,7 @@ func (m *Manager) CallTool(ctx *types.PluginContext, input CallInput) (*Result, 
 				"Plugin-scoped tools require no route or selected connection.",
 			)
 		}
-		result, err := tool.Handler(ctx, input.Arguments)
-		if err != nil {
-			return nil, err
-		}
-		return result, nil
+		return m.finish(tool, tool.Handler, ctx, input.Arguments)
 	}
 	if input.Route == nil || input.Route.Connection == "" {
 		return nil, fmt.Errorf("%w: %s", ErrConnectionRequired, input.Name)
@@ -132,11 +136,40 @@ func (m *Manager) CallTool(ctx *types.PluginContext, input CallInput) (*Result, 
 	err := resourcev2.WithUtilityConnection(&selected, m.connectionProvider, nil, input.Route,
 		func(bound *types.PluginContext) error {
 			var err error
-			result, err = tool.Handler(bound, input.Arguments)
+			result, err = m.finish(tool, tool.Handler, bound, input.Arguments)
 			return err
 		})
 	if err != nil {
 		return nil, err
+	}
+	return result, nil
+}
+
+func (m *Manager) finish(tool Tool, handler Handler, ctx *types.PluginContext, arguments []byte) (*Result, error) {
+	result, err := handler(ctx, arguments)
+	if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled { return nil, context.Canceled }
+	if errors.Is(err, context.DeadlineExceeded) || status.Code(err) == codes.DeadlineExceeded { return nil, context.DeadlineExceeded }
+	if err != nil {
+		code := ErrorExecutionFailed
+		switch resourcev2.ErrorCode(err) {
+		case ErrorUnavailable: code = ErrorUnavailable
+		case ErrorPermissionDenied, "FORBIDDEN": code = ErrorPermissionDenied
+		}
+		switch status.Code(err) {
+		case codes.Unavailable: code = ErrorUnavailable
+		case codes.PermissionDenied: code = ErrorPermissionDenied
+		}
+		return safeFailure(&Result{ErrorCode: code}), nil
+	}
+	if result == nil || result.IsError {
+		return safeFailure(result), nil
+	}
+	if output := m.outputs[tool.Name]; output != nil {
+		if err := validateJSON(output, result.StructuredContent); err != nil {
+			return safeFailure(nil), nil
+		}
+	} else if len(result.StructuredContent) != 0 {
+		if _, err := decodeObject(result.StructuredContent); err != nil { return safeFailure(nil), nil }
 	}
 	return result, nil
 }

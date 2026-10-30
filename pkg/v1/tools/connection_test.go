@@ -97,6 +97,7 @@ func TestToolNativeAdmission(t *testing.T) {
 		} {
 			t.Run(tc.name+map[bool]string{false: "/direct", true: "/grpc"}[wire], func(t *testing.T) {
 				before := calls
+				tc.input.Arguments = json.RawMessage(`{}`)
 				pc := types.NewPluginContextWithConnection(context.Background(), "tools-test", nil, nil, tc.connection)
 				result, callErr := call(pc, tc.input)
 				if tc.ok {
@@ -114,23 +115,23 @@ func TestToolNativeAdmission(t *testing.T) {
 	// Raw RPC bypasses client validation and proves present-empty routes reach server admission.
 	_, err = client.client.CallTool(
 		context.Background(),
-		&toolspb.CallToolRequest{Name: "scoped", Route: &resourcepb.AccessRoute{}},
+		&toolspb.CallToolRequest{ContractVersion: ContractVersion, Arguments: []byte(`{}`), Name: "scoped", Route: &resourcepb.AccessRoute{}},
 	)
 	require.Error(t, err)
 	_, err = client.client.CallTool(
 		metadata.NewOutgoingContext(context.Background(), metadata.Pairs("omniview-connection-id", "")),
-		&toolspb.CallToolRequest{Name: "scoped", Route: &resourcepb.AccessRoute{Connection: "conn-1"}},
+		&toolspb.CallToolRequest{ContractVersion: ContractVersion, Arguments: []byte(`{}`), Name: "scoped", Route: &resourcepb.AccessRoute{Connection: "conn-1"}},
 	)
 	require.Error(t, err)
 	unbound, err := NewManager(logging.NewNop(), PluginOpts{Tools: []Tool{tool, validTool("plain", ScopePlugin)}})
 	require.NoError(t, err)
 	result, err := unbound.CallTool(
 		nil,
-		CallInput{Name: "scoped", Route: &resourcev2.AccessRoute{Connection: "conn-1"}},
+		CallInput{Name: "scoped", Arguments: json.RawMessage(`{}`), Route: &resourcev2.AccessRoute{Connection: "conn-1"}},
 	)
 	require.Error(t, err)
 	require.Nil(t, result)
-	_, err = unbound.CallTool(nil, CallInput{Name: "plain"})
+	_, err = unbound.CallTool(nil, CallInput{Name: "plain", Arguments: json.RawMessage(`{}`)})
 	require.NoError(t, err)
 }
 
@@ -161,7 +162,7 @@ func TestToolLeaseRejectsLateSuccess(t *testing.T) {
 			go func() {
 				result, err := manager.CallTool(
 					&types.PluginContext{Context: ctx},
-					CallInput{Name: "scoped", Route: &resourcev2.AccessRoute{Connection: "conn-1"}},
+					CallInput{Name: "scoped", Arguments: json.RawMessage(`{}`), Route: &resourcev2.AccessRoute{Connection: "conn-1"}},
 				)
 				done <- outcome{result, err}
 			}()
@@ -210,13 +211,15 @@ func TestToolHandlerErrorDiscardsResult(t *testing.T) {
 		manager, err := NewManager(logging.NewNop(), PluginOpts{Tools: []Tool{tool}})
 		require.NoError(t, err)
 		manager.BindConnectionContextProvider(controller)
-		input := CallInput{Name: "failure"}
+		input := CallInput{Name: "failure", Arguments: json.RawMessage(`{}`)}
 		if scope == ScopeConnection {
 			input.Route = &resourcev2.AccessRoute{Connection: "conn-1"}
 		}
 		result, err := manager.CallTool(nil, input)
-		require.ErrorIs(t, err, failure)
-		require.Nil(t, result)
+		require.NoError(t, err)
+		require.True(t, result.IsError)
+		require.Equal(t, ErrorExecutionFailed, result.ErrorCode)
+		require.NotContains(t, result.Content[0].Text, failure.Error())
 	}
 }
 
@@ -331,6 +334,7 @@ func startRawToolLifetime(
 	go func() {
 		// Bypass PluginClient: no PluginContext or request-ID metadata.
 		result, callErr := client.client.CallTool(ctx, &toolspb.CallToolRequest{
+			ContractVersion: ContractVersion, Arguments: []byte(`{}`),
 			Name: "scoped", Route: &resourcepb.AccessRoute{Connection: "conn-1"},
 		})
 		if result != nil {

@@ -806,6 +806,10 @@ func (p controllerStreamOnly) Catalog(ctx context.Context, request CatalogReques
 	return p.catalog(ctx, request)
 }
 
+func (controllerStreamOnly) GetActions(context.Context, AccessRoute, string) ([]ActionDescriptor, error) {
+	return []ActionDescriptor{{ID: "stream", Scope: ActionScopeInstance, Streaming: true}}, nil
+}
+
 func (controllerStreamOnly) StreamAction(context.Context, ActionRequest, chan<- ActionEvent) error {
 	return errors.New("admission must not dispatch the streaming action")
 }

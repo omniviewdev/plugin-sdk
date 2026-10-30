@@ -329,12 +329,12 @@ func TestResourceLogsPostFenceClosesCreatedSession(t *testing.T) {
 			Route: &resourcev2.AccessRoute{Connection: "explicit"},
 		},
 	)
-	if session != nil || resourcev2.ErrorCode(err) != "RESET_REQUIRED" {
-		t.Fatalf("post-fence result: %v %v", session, err)
+	if err != nil || session == nil {
+		t.Fatalf("accepted session: %v %v", session, err)
 	}
-	sessions, err := manager.ListSessions(pc)
-	if err != nil || len(sessions) != 0 {
-		t.Fatalf("orphan sessions: %v %v", sessions, err)
+	// The post-callback fence now belongs to producer completion, not creation.
+	if err := manager.CloseSession(pc, session.ID); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -389,6 +389,8 @@ func TestResourceLogsMalformedDefaultProtoBeforeNative(t *testing.T) {
 		{"selector", "CreateSession", "UNSUPPORTED", []byte{0x0a, 1, 'x'}},
 		{"duplicateVersion", "CreateResourceSession", "INVALID_REQUEST", []byte{0x30, 2, 0x30, 2}},
 		{"invalidValue", "CreateResourceSession", "INVALID_REQUEST", []byte{0x30, 2, 0x2a, 2, 0x08, 99}},
+		{"sessionIDLegacy", "CreateSession", "UNSUPPORTED", []byte{0x4a, 0}},
+		{"duplicateSessionID", "CreateResourceSession", "INVALID_REQUEST", []byte{0x30, 2, 0x4a, 0, 0x4a, 0}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			err := connection.Invoke(

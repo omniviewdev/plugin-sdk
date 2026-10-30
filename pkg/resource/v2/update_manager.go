@@ -278,6 +278,10 @@ func copyUpdateRepresentation(representation Representation) Representation {
 func copyUpdateDescriptor(descriptor ResourceType) ResourceType {
 	descriptor.IdentityDimensions = append([]Dimension(nil), descriptor.IdentityDimensions...)
 	descriptor.QueryDimensions = append([]Dimension(nil), descriptor.QueryDimensions...)
+	descriptor.NativeQueries = append([]NativeQueryDescriptor(nil), descriptor.NativeQueries...)
+	for i := range descriptor.NativeQueries {
+		descriptor.NativeQueries[i].InputSchema = *cloneAncillarySchema(&descriptor.NativeQueries[i].InputSchema)
+	}
 	descriptor.Representations = append([]Representation(nil), descriptor.Representations...)
 	for i := range descriptor.Representations {
 		descriptor.Representations[i] = copyUpdateRepresentation(descriptor.Representations[i])

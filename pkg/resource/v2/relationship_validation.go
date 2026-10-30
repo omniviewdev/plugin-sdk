@@ -169,8 +169,10 @@ func matchRelationshipTarget(
 		for i, constraint := range target.Scope {
 			dimensions[i] = Dimension{Name: constraint.Dimension, AllowEmpty: true}
 		}
-		exact, err := exactScopeEntries(scope, dimensions)
-		if err == nil && scopeContains(target.Scope, exact) {
+		exact, _ := queryScopeForIdentity(ResourceAddress{Scope: scope}, dimensions)
+		// Missing identity coordinates remain any. They match only an explicitly
+		// unrestricted binding, never a restricted query-only selection.
+		if scopeContains(target.Scope, exact) {
 			match = target
 			count++
 		}

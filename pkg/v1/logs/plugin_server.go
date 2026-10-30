@@ -114,6 +114,14 @@ func (s *PluginServer) CreateResourceSession(
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	if resultErr := validateResourceSessionResult(session); resultErr != nil {
+		if session != nil && session.ID != "" {
+			if closeErr := s.Impl.CloseSession(pctx, session.ID); closeErr != nil {
+				if s.log != nil {
+					s.log.Errorw(ctx, "rejected log session cleanup failed", "error", closeErr)
+				}
+				return nil, resourceplugin.ResourceRPCError(resourceError("INTERNAL", "Log session cleanup failed."))
+			}
+		}
 		return nil, resourceplugin.ResourceRPCError(resultErr)
 	}
 	response := &logspb.ResourceLogSessionResponse{
@@ -121,6 +129,12 @@ func (s *PluginServer) CreateResourceSession(
 		Session:             session.ToProto(),
 	}
 	if proto.Size(response) > resourcev2.MaxMessageBytes {
+		if closeErr := s.Impl.CloseSession(pctx, session.ID); closeErr != nil {
+			if s.log != nil {
+				s.log.Errorw(ctx, "oversized log session cleanup failed", "error", closeErr)
+			}
+			return nil, resourceplugin.ResourceRPCError(resourceError("INTERNAL", "Log session cleanup failed."))
+		}
 		return nil, resourceplugin.ResourceRPCError(
 			resourceError("RESOURCE_LIMIT", "Logs response exceeds wire limit."),
 		)
@@ -179,7 +193,7 @@ func (s *PluginServer) CloseSession(
 	}
 
 	if err := s.Impl.CloseSession(logsPluginContext(ctx), in.GetSessionId()); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to close session: %v", err)
+		return nil, resourceplugin.ResourceRPCError(err)
 	}
 
 	return &logspb.CloseLogSessionResponse{

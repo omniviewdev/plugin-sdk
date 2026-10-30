@@ -76,7 +76,7 @@ func (c *Controller[T]) Enumerate(ctx context.Context, request EnumerateRequest)
 		return page, err
 	}
 	return c.dispatchPage(ctx, request.Target, request.PageSize, OperationEnumerate, &r,
-		func(ctx context.Context, client *T, registration *Registration[T]) (SourcePage, error) {
+		func(ctx context.Context, client *T, registration *Registration[T], _ ResourceType) (SourcePage, error) {
 			return registration.Enumerate(ctx, client, request)
 		})
 }
@@ -94,7 +94,10 @@ func (c *Controller[T]) NativeQuery(ctx context.Context, request NativeQueryRequ
 		return page, err
 	}
 	return c.dispatchPage(ctx, request.Target, request.PageSize, OperationNativeQuery, &r,
-		func(ctx context.Context, client *T, registration *Registration[T]) (SourcePage, error) {
+		func(ctx context.Context, client *T, registration *Registration[T], descriptor ResourceType) (SourcePage, error) {
+			if err := ValidateNativeQueryInput(descriptor, request); err != nil {
+				return SourcePage{}, err
+			}
 			return registration.NativeQuery(ctx, client, request)
 		})
 }
@@ -107,7 +110,7 @@ func (c *Controller[T]) dispatchPage(
 	size uint32,
 	operation Operation,
 	registration **Registration[T],
-	invoke func(context.Context, *T, *Registration[T]) (SourcePage, error),
+	invoke func(context.Context, *T, *Registration[T], ResourceType) (SourcePage, error),
 ) (SourcePage, error) {
 	ctx, client, done, err := c.lease(ctx, target.Route)
 	if err != nil {
@@ -124,7 +127,7 @@ func (c *Controller[T]) dispatchPage(
 	if err = c.ensureOnFirstQuery(ctx, target); err != nil {
 		return SourcePage{}, err
 	}
-	page, err := invoke(ctx, client, selected)
+	page, err := invoke(ctx, client, selected, descriptor)
 	if err == nil {
 		err = c.fenceCatalog(ctx, target.Route)
 	}
@@ -193,8 +196,17 @@ func (c *Controller[T]) Action(ctx context.Context, request ActionRequest) (valu
 		return value, err
 	}
 	defer done()
-	a := request.Reference.Address
-	r, _, err = c.resolve(ctx, request.Route, a.Provider, a.Type, "", nil, &a, OperationAction)
+	target := actionOperationTarget(request)
+	r, _, err = c.resolve(ctx, target.route, target.provider, target.typ, "", target.scope, target.address, OperationAction)
+	if err != nil {
+		return value, err
+	}
+	var descriptor *ActionDescriptor
+	if r.Actions == nil {
+		descriptor, err = unavailableActionDescriptor(request)
+	} else {
+		descriptor, err = selectActionDescriptor(request, r.Actions, false)
+	}
 	if err != nil {
 		return value, err
 	}
@@ -203,7 +215,7 @@ func (c *Controller[T]) Action(ctx context.Context, request ActionRequest) (valu
 		err = c.fenceCatalog(ctx, request.Route)
 	}
 	if err == nil {
-		err = ValidateValue(value)
+		err = ValidateResolvedActionOutput(descriptor, value)
 	}
 	return value, err
 }

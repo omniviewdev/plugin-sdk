@@ -40,11 +40,11 @@ func TestNewManagerRejectsInvalidTools(t *testing.T) {
 		{"schema not object", Tool{
 			Descriptor: Descriptor{Name: "ok", Scope: ScopePlugin, InputSchema: json.RawMessage(`{"type":"string"}`)},
 			Handler:    echoHandler,
-		}, `"type" must be "object"`},
+		}, `input schema type must be object`},
 		{"schema not json", Tool{
 			Descriptor: Descriptor{Name: "ok", Scope: ScopePlugin, InputSchema: json.RawMessage(`{`)},
 			Handler:    echoHandler,
-		}, "not valid JSON"},
+		}, "input schema"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -85,7 +85,7 @@ func TestManagerCallToolErrors(t *testing.T) {
 	_, err = m.CallTool(types.NewPluginContext(context.Background(), "t", nil, nil, nil), CallInput{Name: "missing"})
 	require.ErrorIs(t, err, ErrToolNotFound)
 
-	_, err = m.CallTool(types.NewPluginContext(context.Background(), "t", nil, nil, nil), CallInput{Name: "scoped"})
+	_, err = m.CallTool(types.NewPluginContext(context.Background(), "t", nil, nil, nil), CallInput{Name: "scoped", Arguments: json.RawMessage(`{}`)})
 	require.ErrorIs(t, err, ErrConnectionRequired)
 
 	res, err := m.CallTool(

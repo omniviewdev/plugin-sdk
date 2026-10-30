@@ -19,7 +19,7 @@ func TestActualGRPCFeaturesAreProviderTruth(t *testing.T) {
 		name     string
 		provider resourcev2.Provider
 		want     []resourcev2.Feature
-	}{{"catalogOnly", &countProvider{}, nil}, {"browser", &browserProvider{}, []resourcev2.Feature{resourcev2.FeatureConnectionBrowser, resourcev2.FeatureScopeValues}}, {"streamingAction", &streamProvider{}, []resourcev2.Feature{resourcev2.FeatureStreamingActions}}, {"updates", &updateProvider{}, []resourcev2.Feature{resourcev2.FeatureBestEffortUpdates}}} {
+	}{{"catalogOnly", &countProvider{}, nil}, {"browser", &browserProvider{}, []resourcev2.Feature{resourcev2.FeatureConnectionBrowser, resourcev2.FeatureScopeValues}}, {"streamingAction", &streamProvider{}, []resourcev2.Feature{resourcev2.FeatureActionCatalog, resourcev2.FeatureStreamingActions}}, {"updates", &updateProvider{}, []resourcev2.Feature{resourcev2.FeatureBestEffortUpdates}}} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := grpc.NewServer()
 			RegisterServer(s, tc.provider)

@@ -52,6 +52,17 @@ func (o *CreateSessionOptions) UnmarshalJSON(data []byte) error {
 
 func decodeSessionOption(decoder *json.Decoder, key any, out *CreateSessionOptions) error {
 	switch key {
+	case "session_id":
+		value, err := decoder.Token()
+		if err != nil {
+			return resourceError("INVALID_REQUEST", "Malformed resource session ID.")
+		}
+		id, ok := value.(string)
+		if !ok {
+			return resourceError("INVALID_REQUEST", "Resource session ID must be a string.")
+		}
+		out.SessionID = id
+		return nil
 	case "resource_key":
 		return decoder.Decode(&out.ResourceKey)
 	case "resource_id":

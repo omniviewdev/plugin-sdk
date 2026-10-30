@@ -38,7 +38,7 @@ func logSessionHandler(
 			legacy = func(data []byte) error {
 				return resourceplugin.ValidateLegacyUtilityWire(
 					data,
-					[]protowire.Number{3, 5, 6, 7, 8},
+					[]protowire.Number{3, 5, 6, 7, 8, 9},
 					[]protowire.Number{1, 2},
 				)
 			}

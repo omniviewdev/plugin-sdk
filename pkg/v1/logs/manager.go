@@ -1,6 +1,6 @@
 // Package logs manages asynchronous log sessions, source discovery, and streaming.
 // Accepted sessions retain context values but outlive creation RPC cancellation.
-// Callers own session closure and must close resource sessions on connection retirement.
+// Resource sessions retain their native-generation lease until producers exit.
 package logs
 
 import (
@@ -161,6 +161,7 @@ type Manager struct {
 
 	mu       sync.RWMutex
 	sessions map[string]*sessionState
+	closed bool
 	out      chan StreamOutput // nil when Sink provided via config
 	wg       sync.WaitGroup
 }
@@ -212,53 +213,96 @@ func (m *Manager) CreateSession(
 	if opts.HasResourceIntent() {
 		return nil, resourceError("UNSUPPORTED", "Resource logs require CreateResourceSession.")
 	}
-	return m.createSession(pluginctx, opts)
+	session, _, err := m.createSession(pluginctx, opts)
+	return session, err
 }
 
 // CreateResourceSession admits a configured connection and registers a connecting
 // session; native handler/resolver acquisition proceeds asynchronously. The
 // returned session is not a readiness receipt. Its lifetime is independent of the
-// initiating RPC and ends through CloseSession or manager shutdown.
+// initiating RPC and ends through CloseSession, generation retirement, or shutdown.
 //
-// The configured-generation lease covers admission, not asynchronous acquisition
-// or the accepted session. Integrators must close affected sessions when retiring
-// a connection; registry retirement alone does not cancel or await this work.
+// The configured-generation lease remains held until every native producer exits.
+// Retirement cancels the session, but cannot destroy a client still in use.
 func (m *Manager) CreateResourceSession(
 	pluginctx *types.PluginContext,
 	opts CreateSessionOptions,
 ) (*LogSession, error) {
+	if pluginctx == nil {
+		return nil, resourceError("INVALID_REQUEST", "Plugin context is required.")
+	}
 	if err := opts.Validate(); err != nil {
 		return nil, err
 	}
 	if err := validateRoute(pluginctx, opts); err != nil {
 		return nil, err
 	}
-	var session *LogSession
-	err := resourcev2.WithUtilityConnection(
-		pluginctx,
-		m.connectionProvider,
-		opts.Reference,
-		opts.Route,
-		func(bound *types.PluginContext) error {
-			var err error
-			session, err = m.createSession(bound, opts)
-			return err
-		},
-	)
-	if err != nil {
-		if session != nil {
-			_ = m.CloseSession(pluginctx, session.ID)
-		}
-		return nil, err
+	// Preserve cancellation through acquisition. Detach only at acceptance; the
+	// generation lease, rather than the creation RPC, then owns producer lifetime.
+	accepted := make(chan struct {
+		session *LogSession
+		err error
+	}, 1)
+	copyContext := *pluginctx
+	if copyContext.Context == nil {
+		copyContext.Context = context.Background()
 	}
-	return session, nil
+	creation := copyContext.Context
+	acquisition, cancelAcquisition := context.WithCancel(context.WithoutCancel(creation))
+	stopCreation := context.AfterFunc(creation, cancelAcquisition)
+	copyContext.Context = acquisition
+	go func() {
+		defer cancelAcquisition()
+		defer stopCreation()
+		published := false
+		err := resourcev2.WithUtilityConnection(
+			&copyContext, m.connectionProvider, opts.Reference, opts.Route,
+			func(bound *types.PluginContext) error {
+				// Stop the cancellation bridge at acceptance. Correlated callers can
+				// still close the chosen ID if the acceptance response is lost.
+				if !stopCreation() || creation.Err() != nil {
+					cancelAcquisition()
+					return creation.Err()
+				}
+				session, state, err := m.createSession(bound, opts)
+				if err != nil {
+					return err
+				}
+				if creation.Err() != nil {
+					state.cancel()
+					m.mu.Lock()
+					if m.sessions[session.ID] == state {
+						delete(m.sessions, session.ID)
+					}
+					m.mu.Unlock()
+					<-state.done
+					return creation.Err()
+				}
+				accepted <- struct {
+					session *LogSession
+					err error
+				}{session: session}
+				published = true
+				<-state.done
+				return nil
+			},
+		)
+		if !published {
+			accepted <- struct {
+				session *LogSession
+				err error
+			}{err: err}
+		}
+	}()
+	result := <-accepted
+	return result.session, result.err
 }
 
-func (m *Manager) createSession(pluginctx *types.PluginContext, opts CreateSessionOptions) (*LogSession, error) {
+func (m *Manager) createSession(pluginctx *types.PluginContext, opts CreateSessionOptions) (*LogSession, *sessionState, error) {
 	opts.Options.Reference = opts.Reference
 	opts.Options.Route = opts.Route
 	if pluginctx == nil {
-		return nil, fmt.Errorf("plugin context is nil")
+		return nil, nil, fmt.Errorf("plugin context is nil")
 	}
 
 	logger := m.log.With(
@@ -266,13 +310,19 @@ func (m *Manager) createSession(pluginctx *types.PluginContext, opts CreateSessi
 		logging.String("resource_id", opts.ResourceID),
 	)
 
-	sessionID := uuid.NewString()
+	sessionID := opts.SessionID
+	if sessionID == "" {
+		sessionID = uuid.NewString()
+	}
 	// Sessions outlive the creation RPC, but retain its context values.
 	parent := pluginctx.Context
 	if parent == nil {
 		parent = context.Background()
 	}
-	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
+	if !opts.HasResourceIntent() {
+		parent = context.WithoutCancel(parent)
+	}
+	ctx, cancel := context.WithCancel(parent)
 
 	// Copy the PluginContext so we don't mutate the caller's shared instance.
 	pctxCopy := *pluginctx
@@ -305,15 +355,25 @@ func (m *Manager) createSession(pluginctx *types.PluginContext, opts CreateSessi
 	}
 
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		cancel()
+		return nil, nil, resourceError("CONNECTION_ERROR", "Log manager is closed.")
+	}
+	if _, exists := m.sessions[sessionID]; exists {
+		m.mu.Unlock()
+		cancel()
+		return nil, nil, resourceError("CONFLICT", "Log session ID already exists.")
+	}
+	m.wg.Add(1)
 	m.sessions[sessionID] = ss
 	m.mu.Unlock()
 
-	m.wg.Add(1)
 	go m.orchestrateSession(ss)
 
 	logger.Debugw(ctx, "log session created", "session_id", sessionID)
 	snap := ss.snapshot()
-	return &snap, nil
+	return &snap, ss, nil
 }
 
 // GetSession returns an independent session snapshot, or an error for an unknown ID.
@@ -354,7 +414,7 @@ func (m *Manager) CloseSession(_ *types.PluginContext, sessionID string) error {
 	ss, ok := m.sessions[sessionID]
 	if !ok {
 		m.mu.Unlock()
-		return fmt.Errorf("log session %s not found", sessionID)
+		return resourceError("NOT_FOUND", "Log session was not found.")
 	}
 	delete(m.sessions, sessionID)
 	m.mu.Unlock()
@@ -425,6 +485,7 @@ func (m *Manager) Wait() {
 // Close cancels all active sessions and waits for their goroutines to finish.
 func (m *Manager) Close() {
 	m.mu.Lock()
+	m.closed = true
 	for id, ss := range m.sessions {
 		ss.cancel()
 		ss.setStatus(LogSessionStatusClosed)
@@ -442,6 +503,16 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	defer m.wg.Done()
 	defer func() {
 		ss.sourceWg.Wait()
+		if ss.ctx.Err() != nil && ss.status() != LogSessionStatusError {
+			ss.setStatus(LogSessionStatusClosed)
+		}
+		if ss.ctx.Err() == nil {
+			m.emitEvent(ss.session.ID, LogStreamEvent{
+				Type: StreamEventStreamEnded,
+				Message: "Log session ended.",
+				Timestamp: m.clock.Now(),
+			})
+		}
 		close(ss.done)
 	}()
 
@@ -492,7 +563,7 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 		ss.setStatus(LogSessionStatusError)
 		m.emitEvent(ss.session.ID, LogStreamEvent{
 			Type:      StreamEventStreamError,
-			Message:   fmt.Sprintf("failed to resolve sources: %v", err),
+			Message:   "LOG_SOURCE_FAILED: Log sources could not be opened.",
 			Timestamp: m.clock.Now(),
 		})
 		return
@@ -842,7 +913,20 @@ func (m *Manager) consumeSourceReader(
 	reader io.ReadCloser,
 	logger logging.Logger,
 ) error {
+	// Closing the source interrupts blocked reads on cancellation. Retain ownership
+	// until both the scanner and the cancellation callback have stopped.
+	closed := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		if closeErr := reader.Close(); closeErr != nil {
+			logger.Warnw(ctx, "failed to close canceled log stream", "error", closeErr, "source", source.ID)
+		}
+		close(closed)
+	})
 	err := m.readStream(ctx, ss, source, reader)
+	if !stop() {
+		<-closed
+		return err
+	}
 	if closeErr := reader.Close(); closeErr != nil {
 		logger.Warnw(ctx, "failed to close log stream", "error", closeErr, "source", source.ID)
 	}
@@ -1036,8 +1120,9 @@ func (m *Manager) handleCommands(ctx context.Context, in <-chan StreamInput) {
 func (m *Manager) emitEvent(sessionID string, event LogStreamEvent) {
 	m.mu.RLock()
 	sink := m.sink
+	ss := m.sessions[sessionID]
 	m.mu.RUnlock()
-	if sink == nil {
+	if sink == nil || ss == nil || ss.ctx.Err() != nil {
 		return
 	}
 	sink.OnEvent(sessionID, event)

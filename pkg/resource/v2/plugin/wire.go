@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"encoding/json"
 	"math"
 	"unicode/utf8"
 
@@ -335,6 +336,15 @@ func (s *wireMessage) validateBytes(f protoreflect.FieldDescriptor, v []byte) er
 			return err
 		}
 	}
+	if s.descriptor.FullName() == "omniview.resource.v2.ActionInput" && f.Name() == "expected_descriptor_json" {
+		if len(v) == 0 || len(v) > MaxBodyBytes {
+			return invalid("invalid expected action descriptor")
+		}
+		var descriptor resourcev2.ActionDescriptor
+		if err := json.Unmarshal(v, &descriptor); err != nil {
+			return invalid("invalid expected action descriptor")
+		}
+	}
 	if len(v) > MaxBodyBytes && (f.Kind() != protoreflect.MessageKind || f.Message().Name() == "Value") {
 		return limited("resource document exceeds byte limit")
 	}
@@ -397,6 +407,18 @@ func (s *wireMessage) validateDomainKey(number protoreflect.FieldNumber, v []byt
 }
 
 func (s *wireMessage) finish() error {
+	if s.descriptor.Name() == "ActionInput" {
+		reference := s.descriptor.Fields().ByName("reference")
+		typeTarget := s.descriptor.Fields().ByName("type_target")
+		if reference == nil || typeTarget == nil {
+			return unsupported("action target descriptor is incomplete")
+		}
+		hasReference := s.seen&(uint64(1)<<reference.Index()) != 0
+		hasTypeTarget := s.seen&(uint64(1)<<typeTarget.Index()) != 0
+		if hasReference == hasTypeTarget {
+			return invalid("action requires exactly one target")
+		}
+	}
 	if s.schemaReason && !s.schemaUnavailable {
 		return invalid("schema unavailable reason requires unavailable state")
 	}

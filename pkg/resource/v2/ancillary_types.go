@@ -85,13 +85,12 @@ const (
 	SchemaArray SchemaType = "array"
 )
 
-// SchemaProperty describes only the retained action-schema constraints. Default
-// and Enum are metadata, not automatic input coercion or validation by dispatch.
+// SchemaProperty describes only the supported ancillary constraints. Defaults
+// and coercion are unsupported; arrays do not constrain their elements.
 type SchemaProperty struct {
 	Type        SchemaType `json:"type"`
 	Description string     `json:"description,omitempty"`
 	Enum        []string   `json:"enum,omitempty"`
-	Default     any        `json:"default,omitempty"`
 	// Nil bounds are absent; pointers to zero express an actual numeric bound.
 	Minimum    *float64                  `json:"minimum,omitempty"`
 	Maximum    *float64                  `json:"maximum,omitempty"`
@@ -108,6 +107,9 @@ type Schema struct {
 
 // MarshalJSON emits the object-root action-schema subset without applying defaults.
 func (s Schema) MarshalJSON() ([]byte, error) {
+	if err := ValidateSchema(s); err != nil {
+		return nil, err
+	}
 	return json.Marshal(struct {
 		Type       string                    `json:"type"`
 		Properties map[string]SchemaProperty `json:"properties,omitempty"`
@@ -115,8 +117,8 @@ func (s Schema) MarshalJSON() ([]byte, error) {
 	}{"object", s.Properties, s.Required})
 }
 
-// UnmarshalJSON rejects malformed JSON, unknown fields and non-object roots.
-// It replaces s only after decoding succeeds; nested constraints remain metadata.
+// UnmarshalJSON rejects malformed or duplicate JSON, unsupported constraints,
+// unknown fields, and non-object roots. It replaces s only after validation.
 func (s *Schema) UnmarshalJSON(data []byte) error {
 	if err := ValidateJSON(data); err != nil {
 		return err
@@ -135,8 +137,11 @@ func (s *Schema) UnmarshalJSON(data []byte) error {
 	if raw.Type != "object" {
 		return NewError("INVALID_REQUEST", "action schema root must be object")
 	}
-	s.Properties = raw.Properties
-	s.Required = raw.Required
+	next := Schema{Properties: raw.Properties, Required: raw.Required}
+	if err := ValidateSchema(next); err != nil {
+		return err
+	}
+	*s = next
 	return nil
 }
 

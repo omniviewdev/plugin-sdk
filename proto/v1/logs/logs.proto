@@ -123,6 +123,8 @@ message CreateLogSessionRequest {
     uint32 resource_wire_version = 6;
     omniview.resource.v2.ResourceReference reference = 7;
     omniview.resource.v2.AccessRoute route = 8;
+    // Optional host-generated UUID correlates acceptance and cleanup if the reply is lost.
+    string session_id = 9;
 }
 
 message CreateLogSessionResponse {

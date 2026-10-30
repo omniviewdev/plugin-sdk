@@ -24,6 +24,7 @@ func (c *Controller[T]) registrations(ctx context.Context, route AccessRoute, ty
 		if r.SyncPolicy < SyncOnConnect || r.SyncPolicy > SyncNever {
 			return nil, NewError("INTERNAL", "Dynamic registration has an unknown sync policy.")
 		}
+		r.Actions = cloneActionDescriptors(r.Actions)
 		result = append(result, r)
 	}
 	return result, nil
@@ -278,25 +279,6 @@ func identityWithinQueryScope(address ResourceAddress, scope QueryScope) bool {
 	return true
 }
 
-func exactScopeEntries(entries []ScopeEntry, dimensions []Dimension) (QueryScope, error) {
-	scope := make(QueryScope, 0, len(dimensions))
-	for _, dimension := range dimensions {
-		found := false
-		for _, entry := range entries {
-			if entry.Dimension == dimension.Name {
-				values := []string{entry.Value}
-				scope = append(scope, ScopeConstraint{Dimension: dimension.Name, Match: ScopeOneOf, Values: &values})
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, NewError("UNSUPPORTED", "Exact identity cannot resolve the declared query scope.")
-		}
-	}
-	return scope, nil
-}
-
 type operationTarget struct {
 	route          AccessRoute
 	provider       string
@@ -364,6 +346,19 @@ func mutationOperation(verb string) Operation {
 	}
 }
 
+func actionOperationTarget(request ActionRequest) operationTarget {
+	target := operationTarget{route: request.Route, operation: OperationAction}
+	if request.TypeTarget != nil {
+		target.provider = request.TypeTarget.Provider
+		target.typ = request.TypeTarget.Type
+		target.scope = request.TypeTarget.Scope
+	} else {
+		a := request.Reference.Address
+		target.provider, target.typ, target.address = a.Provider, a.Type, &a
+	}
+	return target
+}
+
 func describeOperation(request any) (operationTarget, error) {
 	switch request := request.(type) {
 	case GetRequest:
@@ -410,15 +405,8 @@ func describeOperation(request any) (operationTarget, error) {
 			operation: mutationOperation(request.Operation),
 		}, validationErr
 	case ActionRequest:
-		a := request.Reference.Address
-		validationErr := ValidateActionRequest(request)
-		return operationTarget{
-			route:     request.Route,
-			provider:  a.Provider,
-			typ:       a.Type,
-			address:   &a,
-			operation: OperationAction,
-		}, validationErr
+		target := actionOperationTarget(request)
+		return target, ValidateActionRequest(request)
 	case ReadTarget:
 		validationErr := ValidateEnumerateRequest(EnumerateRequest{Target: request})
 		return operationTarget{
@@ -474,7 +462,19 @@ func AdmitOperation(ctx context.Context, provider Provider, request any) (descri
 	if !supported {
 		return descriptor, NewError("UNSUPPORTED", "Operation handler is not implemented.")
 	}
-	return admitProviderTarget(ctx, provider, target)
+	descriptor, err = admitProviderTarget(ctx, provider, target)
+	if err != nil {
+		return descriptor, err
+	}
+	switch value := request.(type) {
+	case NativeQueryRequest:
+		err = ValidateNativeQueryInput(descriptor, value)
+	case ActionRequest:
+		if value.ExpectedDescriptor != nil {
+			_, err = ResolveActionDescriptor(ctx, provider, value, false)
+		}
+	}
+	return descriptor, err
 }
 
 // AdmitStreamingAction admits the independent streaming action interface without
@@ -499,7 +499,11 @@ func AdmitStreamingAction(
 	if _, ok := provider.(StreamingActioner); !ok {
 		return descriptor, NewError("UNSUPPORTED", "Streaming action handler is not implemented.")
 	}
-	return admitProviderTarget(ctx, provider, target)
+	descriptor, err = admitProviderTarget(ctx, provider, target)
+	if err == nil && request.ExpectedDescriptor != nil {
+		_, err = ResolveActionDescriptor(ctx, provider, request, true)
+	}
+	return descriptor, err
 }
 
 func admitProviderTarget(ctx context.Context, provider Provider, target operationTarget) (ResourceType, error) {

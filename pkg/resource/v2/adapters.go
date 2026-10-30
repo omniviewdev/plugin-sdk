@@ -1,6 +1,7 @@
 package resourcev2
 
 import (
+	"encoding/json"
 	"sort"
 	"strconv"
 
@@ -139,13 +140,21 @@ func toResourceType(v ResourceType) *resourcepb.ResourceType {
 		Type:                  v.Type,
 		DisplayName:           v.DisplayName,
 		DefaultRepresentation: v.DefaultRepresentation,
+		ModelRepresentation: v.ModelRepresentation,
 		IdentityDimensions:    make([]*resourcepb.Dimension, len(v.IdentityDimensions)),
 		QueryDimensions:       make([]*resourcepb.Dimension, len(v.QueryDimensions)),
 		Representations:       make([]*resourcepb.Representation, len(v.Representations)),
 		Capabilities:          make([]*resourcepb.Capability, len(v.Capabilities)),
 	}
+	if len(v.NativeQueries) > 0 {
+		p.NativeQueries = make([]*resourcepb.NativeQueryDescriptor, len(v.NativeQueries))
+	}
 	if v.NativeAuthorityHint != nil {
 		p.NativeAuthorityHint = toNativeAuthorityHint(*v.NativeAuthorityHint)
+	}
+	for i, query := range v.NativeQueries {
+		schema, _ := json.Marshal(query.InputSchema)
+		p.NativeQueries[i] = &resourcepb.NativeQueryDescriptor{Language: query.Language, Description: query.Description, InputSchemaJson: schema}
 	}
 	for i, x := range v.IdentityDimensions {
 		p.IdentityDimensions[i] = toDimension(x)
@@ -256,12 +265,23 @@ func toMutationRequest(v MutationRequest) *resourcepb.MutationInput {
 }
 
 func toActionRequest(v ActionRequest) *resourcepb.ActionInput {
-	return &resourcepb.ActionInput{
+	p := &resourcepb.ActionInput{
 		Route:     toAccessRoute(v.Route),
-		Reference: toResourceReference(v.Reference),
 		Action:    v.Action,
 		Input:     toValue(v.Input),
 	}
+	if v.TypeTarget != nil {
+		t := v.TypeTarget
+		p.TypeTarget = &resourcepb.TypeActionTarget{
+			Provider: t.Provider, Authority: t.Authority, Type: t.Type, Scope: toQueryScope(t.Scope),
+		}
+	} else {
+		p.Reference = toResourceReference(v.Reference)
+	}
+	if v.ExpectedDescriptor != nil {
+		p.ExpectedDescriptorJson, _ = json.Marshal(v.ExpectedDescriptor)
+	}
+	return p
 }
 
 func (d *adapterDecoder) scopeEntry(p *resourcepb.ScopeEntry) ScopeEntry {
@@ -412,14 +432,29 @@ func (d *adapterDecoder) resourceType(p *resourcepb.ResourceType) ResourceType {
 		Type:                  p.Type,
 		DisplayName:           p.DisplayName,
 		DefaultRepresentation: p.DefaultRepresentation,
+		ModelRepresentation: p.ModelRepresentation,
 		IdentityDimensions:    make([]Dimension, len(p.IdentityDimensions)),
 		QueryDimensions:       make([]Dimension, len(p.QueryDimensions)),
 		Representations:       make([]Representation, len(p.Representations)),
 		Capabilities:          make([]Capability, len(p.Capabilities)),
 	}
+	if len(p.NativeQueries) > 0 {
+		v.NativeQueries = make([]NativeQueryDescriptor, len(p.NativeQueries))
+	}
 	if p.NativeAuthorityHint != nil {
 		hint := d.nativeAuthorityHint(p.NativeAuthorityHint)
 		v.NativeAuthorityHint = &hint
+	}
+	for i, query := range p.NativeQueries {
+		if query == nil {
+			d.fail("missing native query descriptor")
+			continue
+		}
+		v.NativeQueries[i].Language = query.Language
+		v.NativeQueries[i].Description = query.Description
+		if err := json.Unmarshal(query.InputSchemaJson, &v.NativeQueries[i].InputSchema); err != nil {
+			d.fail("invalid native query input schema")
+		}
 	}
 	for i, p := range p.IdentityDimensions {
 		v.IdentityDimensions[i] = d.dimension(p)
@@ -578,12 +613,32 @@ func (d *adapterDecoder) action(p *resourcepb.ActionInput) ActionRequest {
 		d.fail("missing action request")
 		return ActionRequest{}
 	}
-	return ActionRequest{
+	v := ActionRequest{
 		Route:     d.route(p.Route),
-		Reference: d.reference(p.Reference),
 		Action:    p.Action,
 		Input:     d.value(p.Input),
 	}
+	if p.Reference != nil {
+		v.Reference = d.reference(p.Reference)
+	}
+	if p.TypeTarget != nil {
+		t := p.TypeTarget
+		v.TypeTarget = &TypeActionTarget{
+			Provider: t.Provider, Authority: t.Authority, Type: t.Type, Scope: d.scope(t.Scope),
+		}
+	}
+	if p.ExpectedDescriptorJson != nil {
+		var descriptor ActionDescriptor
+		if err := json.Unmarshal(p.ExpectedDescriptorJson, &descriptor); err != nil {
+			d.fail("invalid expected action descriptor")
+		} else {
+			v.ExpectedDescriptor = &descriptor
+		}
+	}
+	if (p.Reference == nil) == (p.TypeTarget == nil) {
+		d.fail("action requires exactly one target")
+	}
+	return v
 }
 
 func validateEntry(v ScopeEntry) error {

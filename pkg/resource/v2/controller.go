@@ -102,6 +102,9 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 		}
 	}
 	cfg.Registrations = append([]Registration[T](nil), cfg.Registrations...)
+	for i := range cfg.Registrations {
+		cfg.Registrations[i].Actions = cloneActionDescriptors(cfg.Registrations[i].Actions)
+	}
 	nonce, err := newCatalogNonce()
 	if err != nil {
 		return nil, err
@@ -189,6 +192,13 @@ func (c *Controller[T]) Features(ctx context.Context) (FeatureSet, error) {
 			FeatureConnectionReadiness,
 			FeatureConnectionOverlay,
 		)
+	}
+	actionCatalog := c.cfg.ResolveRegistration != nil
+	for _, registration := range c.cfg.Registrations {
+		actionCatalog = actionCatalog || len(registration.Actions) != 0
+	}
+	if actionCatalog {
+		features.Traits = append(features.Traits, FeatureActionCatalog)
 	}
 	updates := c.cfg.DynamicUpdates
 	for _, registration := range c.cfg.Registrations {

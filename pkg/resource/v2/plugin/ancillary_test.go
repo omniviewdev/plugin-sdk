@@ -29,6 +29,10 @@ func (p *streamProvider) Catalog(ctx context.Context, in resourcev2.CatalogReque
 	return c, err
 }
 
+func (p *streamProvider) GetActions(context.Context, resourcev2.AccessRoute, string) ([]resourcev2.ActionDescriptor, error) {
+	return []resourcev2.ActionDescriptor{{ID: "test", Scope: resourcev2.ActionScopeInstance, Streaming: true}}, nil
+}
+
 func (p *streamProvider) StreamAction(
 	ctx context.Context,
 	_ resourcev2.ActionRequest,

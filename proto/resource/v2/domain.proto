@@ -130,6 +130,11 @@ message Capability {
   QueryScope scope = 2;
   string guarantee = 3;
 }
+message NativeQueryDescriptor {
+  string language = 1;
+  bytes input_schema_json = 2;
+  string description = 3;
+}
 
 message ResourceType {
   string type = 1;
@@ -140,6 +145,8 @@ message ResourceType {
   repeated Capability capabilities = 6;
   string default_representation = 7;
   NativeAuthorityHint native_authority_hint = 8;
+  string model_representation = 9;
+  repeated NativeQueryDescriptor native_queries = 10;
 }
 
 message NativeAuthorityHint {
@@ -222,11 +229,20 @@ message MutationInput {
   optional string expected_revision = 5;
 }
 
+message TypeActionTarget {
+  string provider = 1;
+  string authority = 2;
+  string type = 3;
+  QueryScope scope = 4;
+}
+
 message ActionInput {
   AccessRoute route = 1;
   ResourceReference reference = 2;
   string action = 3;
   Value input = 4;
+  TypeActionTarget type_target = 5;
+  bytes expected_descriptor_json = 6;
 }
 
 // Every call negotiates resource wire version independently of utility transports.

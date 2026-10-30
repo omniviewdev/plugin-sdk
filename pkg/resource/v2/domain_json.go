@@ -341,11 +341,34 @@ func (v *MutationRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON omits the unused instance reference for type-scoped actions.
+func (v ActionRequest) MarshalJSON() ([]byte, error) {
+	if err := ValidateActionRequest(v); err != nil {
+		return nil, err
+	}
+	var reference *ResourceReference
+	if v.TypeTarget == nil {
+		reference = &v.Reference
+	}
+	return json.Marshal(struct {
+		Route AccessRoute `json:"route"`
+		Reference *ResourceReference `json:"reference,omitempty"`
+		TypeTarget *TypeActionTarget `json:"typeTarget,omitempty"`
+		Action string `json:"action"`
+		Input Value `json:"input"`
+		ExpectedDescriptor *ActionDescriptor `json:"expectedDescriptor,omitempty"`
+	}{v.Route, reference, v.TypeTarget, v.Action, v.Input, v.ExpectedDescriptor})
+}
+
 // UnmarshalJSON decodes ActionRequest, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *ActionRequest) UnmarshalJSON(data []byte) error {
 	type plain ActionRequest
 	var out plain
-	if _, err := decodeDomainObject(data, &out, "route", "reference", "action", "input"); err != nil {
+	object, err := decodeDomainObject(data, &out, "route", "action", "input")
+	if err != nil {
+		return err
+	}
+	if err := rejectNullTokens(object, "expectedDescriptor"); err != nil {
 		return err
 	}
 	value := ActionRequest(out)
@@ -353,6 +376,17 @@ func (v *ActionRequest) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*v = value
+	return nil
+}
+
+// UnmarshalJSON rejects unknown or duplicate type-target members.
+func (v *TypeActionTarget) UnmarshalJSON(data []byte) error {
+	type plain TypeActionTarget
+	var out plain
+	if _, err := decodeDomainObject(data, &out, "provider", "authority", "type", "scope"); err != nil {
+		return err
+	}
+	*v = TypeActionTarget(out)
 	return nil
 }
 
@@ -553,7 +587,7 @@ func (v *ResourceType) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	if err := rejectNullTokens(object, "nativeAuthorityHint"); err != nil {
+	if err := rejectNullTokens(object, "nativeAuthorityHint", "nativeQueries", "modelRepresentation"); err != nil {
 		return err
 	}
 	value := ResourceType(out)

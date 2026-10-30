@@ -1276,23 +1276,85 @@ func (x *Capability) GetGuarantee() string {
 	return ""
 }
 
+type NativeQueryDescriptor struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Language        string                 `protobuf:"bytes,1,opt,name=language,proto3" json:"language,omitempty"`
+	InputSchemaJson []byte                 `protobuf:"bytes,2,opt,name=input_schema_json,json=inputSchemaJson,proto3" json:"input_schema_json,omitempty"`
+	Description     string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *NativeQueryDescriptor) Reset() {
+	*x = NativeQueryDescriptor{}
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NativeQueryDescriptor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NativeQueryDescriptor) ProtoMessage() {}
+
+func (x *NativeQueryDescriptor) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NativeQueryDescriptor.ProtoReflect.Descriptor instead.
+func (*NativeQueryDescriptor) Descriptor() ([]byte, []int) {
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *NativeQueryDescriptor) GetLanguage() string {
+	if x != nil {
+		return x.Language
+	}
+	return ""
+}
+
+func (x *NativeQueryDescriptor) GetInputSchemaJson() []byte {
+	if x != nil {
+		return x.InputSchemaJson
+	}
+	return nil
+}
+
+func (x *NativeQueryDescriptor) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
 type ResourceType struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	Type                  string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
-	DisplayName           string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	IdentityDimensions    []*Dimension           `protobuf:"bytes,3,rep,name=identity_dimensions,json=identityDimensions,proto3" json:"identity_dimensions,omitempty"`
-	QueryDimensions       []*Dimension           `protobuf:"bytes,4,rep,name=query_dimensions,json=queryDimensions,proto3" json:"query_dimensions,omitempty"`
-	Representations       []*Representation      `protobuf:"bytes,5,rep,name=representations,proto3" json:"representations,omitempty"`
-	Capabilities          []*Capability          `protobuf:"bytes,6,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
-	DefaultRepresentation string                 `protobuf:"bytes,7,opt,name=default_representation,json=defaultRepresentation,proto3" json:"default_representation,omitempty"`
-	NativeAuthorityHint   *NativeAuthorityHint   `protobuf:"bytes,8,opt,name=native_authority_hint,json=nativeAuthorityHint,proto3" json:"native_authority_hint,omitempty"`
+	state                 protoimpl.MessageState   `protogen:"open.v1"`
+	Type                  string                   `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	DisplayName           string                   `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	IdentityDimensions    []*Dimension             `protobuf:"bytes,3,rep,name=identity_dimensions,json=identityDimensions,proto3" json:"identity_dimensions,omitempty"`
+	QueryDimensions       []*Dimension             `protobuf:"bytes,4,rep,name=query_dimensions,json=queryDimensions,proto3" json:"query_dimensions,omitempty"`
+	Representations       []*Representation        `protobuf:"bytes,5,rep,name=representations,proto3" json:"representations,omitempty"`
+	Capabilities          []*Capability            `protobuf:"bytes,6,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
+	DefaultRepresentation string                   `protobuf:"bytes,7,opt,name=default_representation,json=defaultRepresentation,proto3" json:"default_representation,omitempty"`
+	NativeAuthorityHint   *NativeAuthorityHint     `protobuf:"bytes,8,opt,name=native_authority_hint,json=nativeAuthorityHint,proto3" json:"native_authority_hint,omitempty"`
+	ModelRepresentation   string                   `protobuf:"bytes,9,opt,name=model_representation,json=modelRepresentation,proto3" json:"model_representation,omitempty"`
+	NativeQueries         []*NativeQueryDescriptor `protobuf:"bytes,10,rep,name=native_queries,json=nativeQueries,proto3" json:"native_queries,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
 
 func (x *ResourceType) Reset() {
 	*x = ResourceType{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[20]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1304,7 +1366,7 @@ func (x *ResourceType) String() string {
 func (*ResourceType) ProtoMessage() {}
 
 func (x *ResourceType) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[20]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1317,7 +1379,7 @@ func (x *ResourceType) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceType.ProtoReflect.Descriptor instead.
 func (*ResourceType) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{20}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ResourceType) GetType() string {
@@ -1376,6 +1438,20 @@ func (x *ResourceType) GetNativeAuthorityHint() *NativeAuthorityHint {
 	return nil
 }
 
+func (x *ResourceType) GetModelRepresentation() string {
+	if x != nil {
+		return x.ModelRepresentation
+	}
+	return ""
+}
+
+func (x *ResourceType) GetNativeQueries() []*NativeQueryDescriptor {
+	if x != nil {
+		return x.NativeQueries
+	}
+	return nil
+}
+
 type NativeAuthorityHint struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Scheme        string                 `protobuf:"bytes,1,opt,name=scheme,proto3" json:"scheme,omitempty"`
@@ -1387,7 +1463,7 @@ type NativeAuthorityHint struct {
 
 func (x *NativeAuthorityHint) Reset() {
 	*x = NativeAuthorityHint{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[21]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1399,7 +1475,7 @@ func (x *NativeAuthorityHint) String() string {
 func (*NativeAuthorityHint) ProtoMessage() {}
 
 func (x *NativeAuthorityHint) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[21]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1412,7 +1488,7 @@ func (x *NativeAuthorityHint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeAuthorityHint.ProtoReflect.Descriptor instead.
 func (*NativeAuthorityHint) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{21}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *NativeAuthorityHint) GetScheme() string {
@@ -1448,7 +1524,7 @@ type Catalog struct {
 
 func (x *Catalog) Reset() {
 	*x = Catalog{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[22]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1460,7 +1536,7 @@ func (x *Catalog) String() string {
 func (*Catalog) ProtoMessage() {}
 
 func (x *Catalog) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[22]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1473,7 +1549,7 @@ func (x *Catalog) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Catalog.ProtoReflect.Descriptor instead.
 func (*Catalog) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{22}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *Catalog) GetProvider() string {
@@ -1518,7 +1594,7 @@ type ReadTarget struct {
 
 func (x *ReadTarget) Reset() {
 	*x = ReadTarget{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[23]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1530,7 +1606,7 @@ func (x *ReadTarget) String() string {
 func (*ReadTarget) ProtoMessage() {}
 
 func (x *ReadTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[23]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1543,7 +1619,7 @@ func (x *ReadTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadTarget.ProtoReflect.Descriptor instead.
 func (*ReadTarget) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{23}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ReadTarget) GetRoute() *AccessRoute {
@@ -1599,7 +1675,7 @@ type GetInput struct {
 
 func (x *GetInput) Reset() {
 	*x = GetInput{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[24]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1611,7 +1687,7 @@ func (x *GetInput) String() string {
 func (*GetInput) ProtoMessage() {}
 
 func (x *GetInput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[24]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1624,7 +1700,7 @@ func (x *GetInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInput.ProtoReflect.Descriptor instead.
 func (*GetInput) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{24}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetInput) GetRoute() *AccessRoute {
@@ -1659,7 +1735,7 @@ type EnumerateInput struct {
 
 func (x *EnumerateInput) Reset() {
 	*x = EnumerateInput{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[25]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1671,7 +1747,7 @@ func (x *EnumerateInput) String() string {
 func (*EnumerateInput) ProtoMessage() {}
 
 func (x *EnumerateInput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[25]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1684,7 +1760,7 @@ func (x *EnumerateInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnumerateInput.ProtoReflect.Descriptor instead.
 func (*EnumerateInput) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{25}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *EnumerateInput) GetTarget() *ReadTarget {
@@ -1721,7 +1797,7 @@ type NativeQueryInput struct {
 
 func (x *NativeQueryInput) Reset() {
 	*x = NativeQueryInput{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[26]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1733,7 +1809,7 @@ func (x *NativeQueryInput) String() string {
 func (*NativeQueryInput) ProtoMessage() {}
 
 func (x *NativeQueryInput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[26]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1746,7 +1822,7 @@ func (x *NativeQueryInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NativeQueryInput.ProtoReflect.Descriptor instead.
 func (*NativeQueryInput) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{26}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *NativeQueryInput) GetTarget() *ReadTarget {
@@ -1795,7 +1871,7 @@ type Coverage struct {
 
 func (x *Coverage) Reset() {
 	*x = Coverage{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[27]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1807,7 +1883,7 @@ func (x *Coverage) String() string {
 func (*Coverage) ProtoMessage() {}
 
 func (x *Coverage) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[27]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1820,7 +1896,7 @@ func (x *Coverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Coverage.ProtoReflect.Descriptor instead.
 func (*Coverage) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{27}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *Coverage) GetKind() string {
@@ -1854,7 +1930,7 @@ type Count struct {
 
 func (x *Count) Reset() {
 	*x = Count{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[28]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1866,7 +1942,7 @@ func (x *Count) String() string {
 func (*Count) ProtoMessage() {}
 
 func (x *Count) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[28]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1879,7 +1955,7 @@ func (x *Count) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Count.ProtoReflect.Descriptor instead.
 func (*Count) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{28}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *Count) GetKind() string {
@@ -1909,7 +1985,7 @@ type Record struct {
 
 func (x *Record) Reset() {
 	*x = Record{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[29]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1921,7 +1997,7 @@ func (x *Record) String() string {
 func (*Record) ProtoMessage() {}
 
 func (x *Record) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[29]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1934,7 +2010,7 @@ func (x *Record) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Record.ProtoReflect.Descriptor instead.
 func (*Record) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{29}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *Record) GetReference() *ResourceReference {
@@ -1986,7 +2062,7 @@ type SourcePage struct {
 
 func (x *SourcePage) Reset() {
 	*x = SourcePage{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[30]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1998,7 +2074,7 @@ func (x *SourcePage) String() string {
 func (*SourcePage) ProtoMessage() {}
 
 func (x *SourcePage) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[30]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2011,7 +2087,7 @@ func (x *SourcePage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourcePage.ProtoReflect.Descriptor instead.
 func (*SourcePage) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{30}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SourcePage) GetRecords() []*Record {
@@ -2069,7 +2145,7 @@ type MutationInput struct {
 
 func (x *MutationInput) Reset() {
 	*x = MutationInput{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[31]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2081,7 +2157,7 @@ func (x *MutationInput) String() string {
 func (*MutationInput) ProtoMessage() {}
 
 func (x *MutationInput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[31]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2094,7 +2170,7 @@ func (x *MutationInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MutationInput.ProtoReflect.Descriptor instead.
 func (*MutationInput) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{31}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *MutationInput) GetRoute() *AccessRoute {
@@ -2132,19 +2208,89 @@ func (x *MutationInput) GetExpectedRevision() string {
 	return ""
 }
 
-type ActionInput struct {
+type TypeActionTarget struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Route         *AccessRoute           `protobuf:"bytes,1,opt,name=route,proto3" json:"route,omitempty"`
-	Reference     *ResourceReference     `protobuf:"bytes,2,opt,name=reference,proto3" json:"reference,omitempty"`
-	Action        string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
-	Input         *Value                 `protobuf:"bytes,4,opt,name=input,proto3" json:"input,omitempty"`
+	Provider      string                 `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	Authority     string                 `protobuf:"bytes,2,opt,name=authority,proto3" json:"authority,omitempty"`
+	Type          string                 `protobuf:"bytes,3,opt,name=type,proto3" json:"type,omitempty"`
+	Scope         *QueryScope            `protobuf:"bytes,4,opt,name=scope,proto3" json:"scope,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *TypeActionTarget) Reset() {
+	*x = TypeActionTarget{}
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TypeActionTarget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TypeActionTarget) ProtoMessage() {}
+
+func (x *TypeActionTarget) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TypeActionTarget.ProtoReflect.Descriptor instead.
+func (*TypeActionTarget) Descriptor() ([]byte, []int) {
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *TypeActionTarget) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *TypeActionTarget) GetAuthority() string {
+	if x != nil {
+		return x.Authority
+	}
+	return ""
+}
+
+func (x *TypeActionTarget) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *TypeActionTarget) GetScope() *QueryScope {
+	if x != nil {
+		return x.Scope
+	}
+	return nil
+}
+
+type ActionInput struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	Route                  *AccessRoute           `protobuf:"bytes,1,opt,name=route,proto3" json:"route,omitempty"`
+	Reference              *ResourceReference     `protobuf:"bytes,2,opt,name=reference,proto3" json:"reference,omitempty"`
+	Action                 string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
+	Input                  *Value                 `protobuf:"bytes,4,opt,name=input,proto3" json:"input,omitempty"`
+	TypeTarget             *TypeActionTarget      `protobuf:"bytes,5,opt,name=type_target,json=typeTarget,proto3" json:"type_target,omitempty"`
+	ExpectedDescriptorJson []byte                 `protobuf:"bytes,6,opt,name=expected_descriptor_json,json=expectedDescriptorJson,proto3" json:"expected_descriptor_json,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
 func (x *ActionInput) Reset() {
 	*x = ActionInput{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[32]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2156,7 +2302,7 @@ func (x *ActionInput) String() string {
 func (*ActionInput) ProtoMessage() {}
 
 func (x *ActionInput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[32]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2169,7 +2315,7 @@ func (x *ActionInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionInput.ProtoReflect.Descriptor instead.
 func (*ActionInput) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{32}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ActionInput) GetRoute() *AccessRoute {
@@ -2200,6 +2346,20 @@ func (x *ActionInput) GetInput() *Value {
 	return nil
 }
 
+func (x *ActionInput) GetTypeTarget() *TypeActionTarget {
+	if x != nil {
+		return x.TypeTarget
+	}
+	return nil
+}
+
+func (x *ActionInput) GetExpectedDescriptorJson() []byte {
+	if x != nil {
+		return x.ExpectedDescriptorJson
+	}
+	return nil
+}
+
 // Every call negotiates resource wire version independently of utility transports.
 type FeatureRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2209,7 +2369,7 @@ type FeatureRequest struct {
 
 func (x *FeatureRequest) Reset() {
 	*x = FeatureRequest{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[33]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2221,7 +2381,7 @@ func (x *FeatureRequest) String() string {
 func (*FeatureRequest) ProtoMessage() {}
 
 func (x *FeatureRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[33]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2234,7 +2394,7 @@ func (x *FeatureRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FeatureRequest.ProtoReflect.Descriptor instead.
 func (*FeatureRequest) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{33}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{35}
 }
 
 type FeatureSet struct {
@@ -2246,7 +2406,7 @@ type FeatureSet struct {
 
 func (x *FeatureSet) Reset() {
 	*x = FeatureSet{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[34]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2258,7 +2418,7 @@ func (x *FeatureSet) String() string {
 func (*FeatureSet) ProtoMessage() {}
 
 func (x *FeatureSet) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[34]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2271,7 +2431,7 @@ func (x *FeatureSet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FeatureSet.ProtoReflect.Descriptor instead.
 func (*FeatureSet) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{34}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *FeatureSet) GetTraits() []string {
@@ -2305,7 +2465,7 @@ type Request struct {
 
 func (x *Request) Reset() {
 	*x = Request{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[35]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2317,7 +2477,7 @@ func (x *Request) String() string {
 func (*Request) ProtoMessage() {}
 
 func (x *Request) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[35]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2330,7 +2490,7 @@ func (x *Request) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Request.ProtoReflect.Descriptor instead.
 func (*Request) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{35}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *Request) GetVersion() uint32 {
@@ -2481,7 +2641,7 @@ type ConnectionInput struct {
 
 func (x *ConnectionInput) Reset() {
 	*x = ConnectionInput{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[36]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2493,7 +2653,7 @@ func (x *ConnectionInput) String() string {
 func (*ConnectionInput) ProtoMessage() {}
 
 func (x *ConnectionInput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[36]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2506,7 +2666,7 @@ func (x *ConnectionInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectionInput.ProtoReflect.Descriptor instead.
 func (*ConnectionInput) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{36}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ConnectionInput) GetOperation() string {
@@ -2534,7 +2694,7 @@ type ConnectionOutput struct {
 
 func (x *ConnectionOutput) Reset() {
 	*x = ConnectionOutput{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[37]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2546,7 +2706,7 @@ func (x *ConnectionOutput) String() string {
 func (*ConnectionOutput) ProtoMessage() {}
 
 func (x *ConnectionOutput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[37]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2559,7 +2719,7 @@ func (x *ConnectionOutput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectionOutput.ProtoReflect.Descriptor instead.
 func (*ConnectionOutput) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{37}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ConnectionOutput) GetConnectionJson() []byte {
@@ -2594,7 +2754,7 @@ type Response struct {
 
 func (x *Response) Reset() {
 	*x = Response{}
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[38]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2606,7 +2766,7 @@ func (x *Response) String() string {
 func (*Response) ProtoMessage() {}
 
 func (x *Response) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_domain_proto_msgTypes[38]
+	mi := &file_proto_resource_v2_domain_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2619,7 +2779,7 @@ func (x *Response) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Response.ProtoReflect.Descriptor instead.
 func (*Response) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{38}
+	return file_proto_resource_v2_domain_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *Response) GetVersion() uint32 {
@@ -2826,7 +2986,11 @@ const file_proto_resource_v2_domain_proto_rawDesc = "" +
 	"Capability\x12\x1c\n" +
 	"\toperation\x18\x01 \x01(\tR\toperation\x126\n" +
 	"\x05scope\x18\x02 \x01(\v2 .omniview.resource.v2.QueryScopeR\x05scope\x12\x1c\n" +
-	"\tguarantee\x18\x03 \x01(\tR\tguarantee\"\x8f\x04\n" +
+	"\tguarantee\x18\x03 \x01(\tR\tguarantee\"\x81\x01\n" +
+	"\x15NativeQueryDescriptor\x12\x1a\n" +
+	"\blanguage\x18\x01 \x01(\tR\blanguage\x12*\n" +
+	"\x11input_schema_json\x18\x02 \x01(\fR\x0finputSchemaJson\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\"\x96\x05\n" +
 	"\fResourceType\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12P\n" +
@@ -2835,7 +2999,10 @@ const file_proto_resource_v2_domain_proto_rawDesc = "" +
 	"\x0frepresentations\x18\x05 \x03(\v2$.omniview.resource.v2.RepresentationR\x0frepresentations\x12D\n" +
 	"\fcapabilities\x18\x06 \x03(\v2 .omniview.resource.v2.CapabilityR\fcapabilities\x125\n" +
 	"\x16default_representation\x18\a \x01(\tR\x15defaultRepresentation\x12]\n" +
-	"\x15native_authority_hint\x18\b \x01(\v2).omniview.resource.v2.NativeAuthorityHintR\x13nativeAuthorityHint\"]\n" +
+	"\x15native_authority_hint\x18\b \x01(\v2).omniview.resource.v2.NativeAuthorityHintR\x13nativeAuthorityHint\x121\n" +
+	"\x14model_representation\x18\t \x01(\tR\x13modelRepresentation\x12R\n" +
+	"\x0enative_queries\x18\n" +
+	" \x03(\v2+.omniview.resource.v2.NativeQueryDescriptorR\rnativeQueries\"]\n" +
 	"\x13NativeAuthorityHint\x12\x16\n" +
 	"\x06scheme\x18\x01 \x01(\tR\x06scheme\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x1e\n" +
@@ -2903,12 +3070,20 @@ const file_proto_resource_v2_domain_proto_rawDesc = "" +
 	"\toperation\x18\x03 \x01(\tR\toperation\x121\n" +
 	"\x05input\x18\x04 \x01(\v2\x1b.omniview.resource.v2.ValueR\x05input\x120\n" +
 	"\x11expected_revision\x18\x05 \x01(\tH\x00R\x10expectedRevision\x88\x01\x01B\x14\n" +
-	"\x12_expected_revision\"\xd8\x01\n" +
+	"\x12_expected_revision\"\x98\x01\n" +
+	"\x10TypeActionTarget\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12\x1c\n" +
+	"\tauthority\x18\x02 \x01(\tR\tauthority\x12\x12\n" +
+	"\x04type\x18\x03 \x01(\tR\x04type\x126\n" +
+	"\x05scope\x18\x04 \x01(\v2 .omniview.resource.v2.QueryScopeR\x05scope\"\xdb\x02\n" +
 	"\vActionInput\x127\n" +
 	"\x05route\x18\x01 \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\x12E\n" +
 	"\treference\x18\x02 \x01(\v2'.omniview.resource.v2.ResourceReferenceR\treference\x12\x16\n" +
 	"\x06action\x18\x03 \x01(\tR\x06action\x121\n" +
-	"\x05input\x18\x04 \x01(\v2\x1b.omniview.resource.v2.ValueR\x05input\"\x10\n" +
+	"\x05input\x18\x04 \x01(\v2\x1b.omniview.resource.v2.ValueR\x05input\x12G\n" +
+	"\vtype_target\x18\x05 \x01(\v2&.omniview.resource.v2.TypeActionTargetR\n" +
+	"typeTarget\x128\n" +
+	"\x18expected_descriptor_json\x18\x06 \x01(\fR\x16expectedDescriptorJson\"\x10\n" +
 	"\x0eFeatureRequest\"$\n" +
 	"\n" +
 	"FeatureSet\x12\x16\n" +
@@ -2959,7 +3134,7 @@ func file_proto_resource_v2_domain_proto_rawDescGZIP() []byte {
 	return file_proto_resource_v2_domain_proto_rawDescData
 }
 
-var file_proto_resource_v2_domain_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
+var file_proto_resource_v2_domain_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_proto_resource_v2_domain_proto_goTypes = []any{
 	(*ScopeEntry)(nil),              // 0: omniview.resource.v2.ScopeEntry
 	(*ResourceAddress)(nil),         // 1: omniview.resource.v2.ResourceAddress
@@ -2981,25 +3156,27 @@ var file_proto_resource_v2_domain_proto_goTypes = []any{
 	(*Representation)(nil),          // 17: omniview.resource.v2.Representation
 	(*Dimension)(nil),               // 18: omniview.resource.v2.Dimension
 	(*Capability)(nil),              // 19: omniview.resource.v2.Capability
-	(*ResourceType)(nil),            // 20: omniview.resource.v2.ResourceType
-	(*NativeAuthorityHint)(nil),     // 21: omniview.resource.v2.NativeAuthorityHint
-	(*Catalog)(nil),                 // 22: omniview.resource.v2.Catalog
-	(*ReadTarget)(nil),              // 23: omniview.resource.v2.ReadTarget
-	(*GetInput)(nil),                // 24: omniview.resource.v2.GetInput
-	(*EnumerateInput)(nil),          // 25: omniview.resource.v2.EnumerateInput
-	(*NativeQueryInput)(nil),        // 26: omniview.resource.v2.NativeQueryInput
-	(*Coverage)(nil),                // 27: omniview.resource.v2.Coverage
-	(*Count)(nil),                   // 28: omniview.resource.v2.Count
-	(*Record)(nil),                  // 29: omniview.resource.v2.Record
-	(*SourcePage)(nil),              // 30: omniview.resource.v2.SourcePage
-	(*MutationInput)(nil),           // 31: omniview.resource.v2.MutationInput
-	(*ActionInput)(nil),             // 32: omniview.resource.v2.ActionInput
-	(*FeatureRequest)(nil),          // 33: omniview.resource.v2.FeatureRequest
-	(*FeatureSet)(nil),              // 34: omniview.resource.v2.FeatureSet
-	(*Request)(nil),                 // 35: omniview.resource.v2.Request
-	(*ConnectionInput)(nil),         // 36: omniview.resource.v2.ConnectionInput
-	(*ConnectionOutput)(nil),        // 37: omniview.resource.v2.ConnectionOutput
-	(*Response)(nil),                // 38: omniview.resource.v2.Response
+	(*NativeQueryDescriptor)(nil),   // 20: omniview.resource.v2.NativeQueryDescriptor
+	(*ResourceType)(nil),            // 21: omniview.resource.v2.ResourceType
+	(*NativeAuthorityHint)(nil),     // 22: omniview.resource.v2.NativeAuthorityHint
+	(*Catalog)(nil),                 // 23: omniview.resource.v2.Catalog
+	(*ReadTarget)(nil),              // 24: omniview.resource.v2.ReadTarget
+	(*GetInput)(nil),                // 25: omniview.resource.v2.GetInput
+	(*EnumerateInput)(nil),          // 26: omniview.resource.v2.EnumerateInput
+	(*NativeQueryInput)(nil),        // 27: omniview.resource.v2.NativeQueryInput
+	(*Coverage)(nil),                // 28: omniview.resource.v2.Coverage
+	(*Count)(nil),                   // 29: omniview.resource.v2.Count
+	(*Record)(nil),                  // 30: omniview.resource.v2.Record
+	(*SourcePage)(nil),              // 31: omniview.resource.v2.SourcePage
+	(*MutationInput)(nil),           // 32: omniview.resource.v2.MutationInput
+	(*TypeActionTarget)(nil),        // 33: omniview.resource.v2.TypeActionTarget
+	(*ActionInput)(nil),             // 34: omniview.resource.v2.ActionInput
+	(*FeatureRequest)(nil),          // 35: omniview.resource.v2.FeatureRequest
+	(*FeatureSet)(nil),              // 36: omniview.resource.v2.FeatureSet
+	(*Request)(nil),                 // 37: omniview.resource.v2.Request
+	(*ConnectionInput)(nil),         // 38: omniview.resource.v2.ConnectionInput
+	(*ConnectionOutput)(nil),        // 39: omniview.resource.v2.ConnectionOutput
+	(*Response)(nil),                // 40: omniview.resource.v2.Response
 }
 var file_proto_resource_v2_domain_proto_depIdxs = []int32{
 	0,  // 0: omniview.resource.v2.ResourceAddress.scope:type_name -> omniview.resource.v2.ScopeEntry
@@ -3022,50 +3199,53 @@ var file_proto_resource_v2_domain_proto_depIdxs = []int32{
 	18, // 17: omniview.resource.v2.ResourceType.query_dimensions:type_name -> omniview.resource.v2.Dimension
 	17, // 18: omniview.resource.v2.ResourceType.representations:type_name -> omniview.resource.v2.Representation
 	19, // 19: omniview.resource.v2.ResourceType.capabilities:type_name -> omniview.resource.v2.Capability
-	21, // 20: omniview.resource.v2.ResourceType.native_authority_hint:type_name -> omniview.resource.v2.NativeAuthorityHint
-	20, // 21: omniview.resource.v2.Catalog.types:type_name -> omniview.resource.v2.ResourceType
-	27, // 22: omniview.resource.v2.Catalog.coverage:type_name -> omniview.resource.v2.Coverage
-	2,  // 23: omniview.resource.v2.ReadTarget.route:type_name -> omniview.resource.v2.AccessRoute
-	7,  // 24: omniview.resource.v2.ReadTarget.scope:type_name -> omniview.resource.v2.QueryScope
-	2,  // 25: omniview.resource.v2.GetInput.route:type_name -> omniview.resource.v2.AccessRoute
-	3,  // 26: omniview.resource.v2.GetInput.reference:type_name -> omniview.resource.v2.ResourceReference
-	23, // 27: omniview.resource.v2.EnumerateInput.target:type_name -> omniview.resource.v2.ReadTarget
-	23, // 28: omniview.resource.v2.NativeQueryInput.target:type_name -> omniview.resource.v2.ReadTarget
-	13, // 29: omniview.resource.v2.NativeQueryInput.query:type_name -> omniview.resource.v2.Value
-	3,  // 30: omniview.resource.v2.Record.reference:type_name -> omniview.resource.v2.ResourceReference
-	13, // 31: omniview.resource.v2.Record.body:type_name -> omniview.resource.v2.Value
-	17, // 32: omniview.resource.v2.Record.representation:type_name -> omniview.resource.v2.Representation
-	27, // 33: omniview.resource.v2.Record.coverage:type_name -> omniview.resource.v2.Coverage
-	29, // 34: omniview.resource.v2.SourcePage.records:type_name -> omniview.resource.v2.Record
-	28, // 35: omniview.resource.v2.SourcePage.count:type_name -> omniview.resource.v2.Count
-	27, // 36: omniview.resource.v2.SourcePage.coverage:type_name -> omniview.resource.v2.Coverage
-	2,  // 37: omniview.resource.v2.MutationInput.route:type_name -> omniview.resource.v2.AccessRoute
-	3,  // 38: omniview.resource.v2.MutationInput.reference:type_name -> omniview.resource.v2.ResourceReference
-	13, // 39: omniview.resource.v2.MutationInput.input:type_name -> omniview.resource.v2.Value
-	2,  // 40: omniview.resource.v2.ActionInput.route:type_name -> omniview.resource.v2.AccessRoute
-	3,  // 41: omniview.resource.v2.ActionInput.reference:type_name -> omniview.resource.v2.ResourceReference
-	13, // 42: omniview.resource.v2.ActionInput.input:type_name -> omniview.resource.v2.Value
-	2,  // 43: omniview.resource.v2.Request.catalog:type_name -> omniview.resource.v2.AccessRoute
-	24, // 44: omniview.resource.v2.Request.get:type_name -> omniview.resource.v2.GetInput
-	25, // 45: omniview.resource.v2.Request.enumerate:type_name -> omniview.resource.v2.EnumerateInput
-	26, // 46: omniview.resource.v2.Request.native_query:type_name -> omniview.resource.v2.NativeQueryInput
-	31, // 47: omniview.resource.v2.Request.mutate:type_name -> omniview.resource.v2.MutationInput
-	32, // 48: omniview.resource.v2.Request.action:type_name -> omniview.resource.v2.ActionInput
-	36, // 49: omniview.resource.v2.Request.connection:type_name -> omniview.resource.v2.ConnectionInput
-	33, // 50: omniview.resource.v2.Request.features:type_name -> omniview.resource.v2.FeatureRequest
-	22, // 51: omniview.resource.v2.Response.catalog:type_name -> omniview.resource.v2.Catalog
-	29, // 52: omniview.resource.v2.Response.record:type_name -> omniview.resource.v2.Record
-	30, // 53: omniview.resource.v2.Response.page:type_name -> omniview.resource.v2.SourcePage
-	13, // 54: omniview.resource.v2.Response.value:type_name -> omniview.resource.v2.Value
-	37, // 55: omniview.resource.v2.Response.connection:type_name -> omniview.resource.v2.ConnectionOutput
-	34, // 56: omniview.resource.v2.Response.features:type_name -> omniview.resource.v2.FeatureSet
-	35, // 57: omniview.resource.v2.ResourceProvider.Call:input_type -> omniview.resource.v2.Request
-	38, // 58: omniview.resource.v2.ResourceProvider.Call:output_type -> omniview.resource.v2.Response
-	58, // [58:59] is the sub-list for method output_type
-	57, // [57:58] is the sub-list for method input_type
-	57, // [57:57] is the sub-list for extension type_name
-	57, // [57:57] is the sub-list for extension extendee
-	0,  // [0:57] is the sub-list for field type_name
+	22, // 20: omniview.resource.v2.ResourceType.native_authority_hint:type_name -> omniview.resource.v2.NativeAuthorityHint
+	20, // 21: omniview.resource.v2.ResourceType.native_queries:type_name -> omniview.resource.v2.NativeQueryDescriptor
+	21, // 22: omniview.resource.v2.Catalog.types:type_name -> omniview.resource.v2.ResourceType
+	28, // 23: omniview.resource.v2.Catalog.coverage:type_name -> omniview.resource.v2.Coverage
+	2,  // 24: omniview.resource.v2.ReadTarget.route:type_name -> omniview.resource.v2.AccessRoute
+	7,  // 25: omniview.resource.v2.ReadTarget.scope:type_name -> omniview.resource.v2.QueryScope
+	2,  // 26: omniview.resource.v2.GetInput.route:type_name -> omniview.resource.v2.AccessRoute
+	3,  // 27: omniview.resource.v2.GetInput.reference:type_name -> omniview.resource.v2.ResourceReference
+	24, // 28: omniview.resource.v2.EnumerateInput.target:type_name -> omniview.resource.v2.ReadTarget
+	24, // 29: omniview.resource.v2.NativeQueryInput.target:type_name -> omniview.resource.v2.ReadTarget
+	13, // 30: omniview.resource.v2.NativeQueryInput.query:type_name -> omniview.resource.v2.Value
+	3,  // 31: omniview.resource.v2.Record.reference:type_name -> omniview.resource.v2.ResourceReference
+	13, // 32: omniview.resource.v2.Record.body:type_name -> omniview.resource.v2.Value
+	17, // 33: omniview.resource.v2.Record.representation:type_name -> omniview.resource.v2.Representation
+	28, // 34: omniview.resource.v2.Record.coverage:type_name -> omniview.resource.v2.Coverage
+	30, // 35: omniview.resource.v2.SourcePage.records:type_name -> omniview.resource.v2.Record
+	29, // 36: omniview.resource.v2.SourcePage.count:type_name -> omniview.resource.v2.Count
+	28, // 37: omniview.resource.v2.SourcePage.coverage:type_name -> omniview.resource.v2.Coverage
+	2,  // 38: omniview.resource.v2.MutationInput.route:type_name -> omniview.resource.v2.AccessRoute
+	3,  // 39: omniview.resource.v2.MutationInput.reference:type_name -> omniview.resource.v2.ResourceReference
+	13, // 40: omniview.resource.v2.MutationInput.input:type_name -> omniview.resource.v2.Value
+	7,  // 41: omniview.resource.v2.TypeActionTarget.scope:type_name -> omniview.resource.v2.QueryScope
+	2,  // 42: omniview.resource.v2.ActionInput.route:type_name -> omniview.resource.v2.AccessRoute
+	3,  // 43: omniview.resource.v2.ActionInput.reference:type_name -> omniview.resource.v2.ResourceReference
+	13, // 44: omniview.resource.v2.ActionInput.input:type_name -> omniview.resource.v2.Value
+	33, // 45: omniview.resource.v2.ActionInput.type_target:type_name -> omniview.resource.v2.TypeActionTarget
+	2,  // 46: omniview.resource.v2.Request.catalog:type_name -> omniview.resource.v2.AccessRoute
+	25, // 47: omniview.resource.v2.Request.get:type_name -> omniview.resource.v2.GetInput
+	26, // 48: omniview.resource.v2.Request.enumerate:type_name -> omniview.resource.v2.EnumerateInput
+	27, // 49: omniview.resource.v2.Request.native_query:type_name -> omniview.resource.v2.NativeQueryInput
+	32, // 50: omniview.resource.v2.Request.mutate:type_name -> omniview.resource.v2.MutationInput
+	34, // 51: omniview.resource.v2.Request.action:type_name -> omniview.resource.v2.ActionInput
+	38, // 52: omniview.resource.v2.Request.connection:type_name -> omniview.resource.v2.ConnectionInput
+	35, // 53: omniview.resource.v2.Request.features:type_name -> omniview.resource.v2.FeatureRequest
+	23, // 54: omniview.resource.v2.Response.catalog:type_name -> omniview.resource.v2.Catalog
+	30, // 55: omniview.resource.v2.Response.record:type_name -> omniview.resource.v2.Record
+	31, // 56: omniview.resource.v2.Response.page:type_name -> omniview.resource.v2.SourcePage
+	13, // 57: omniview.resource.v2.Response.value:type_name -> omniview.resource.v2.Value
+	39, // 58: omniview.resource.v2.Response.connection:type_name -> omniview.resource.v2.ConnectionOutput
+	36, // 59: omniview.resource.v2.Response.features:type_name -> omniview.resource.v2.FeatureSet
+	37, // 60: omniview.resource.v2.ResourceProvider.Call:input_type -> omniview.resource.v2.Request
+	40, // 61: omniview.resource.v2.ResourceProvider.Call:output_type -> omniview.resource.v2.Response
+	61, // [61:62] is the sub-list for method output_type
+	60, // [60:61] is the sub-list for method input_type
+	60, // [60:60] is the sub-list for extension type_name
+	60, // [60:60] is the sub-list for extension extendee
+	0,  // [0:60] is the sub-list for field type_name
 }
 
 func init() { file_proto_resource_v2_domain_proto_init() }
@@ -3090,13 +3270,13 @@ func file_proto_resource_v2_domain_proto_init() {
 		(*Value_MapValue)(nil),
 	}
 	file_proto_resource_v2_domain_proto_msgTypes[16].OneofWrappers = []any{}
-	file_proto_resource_v2_domain_proto_msgTypes[25].OneofWrappers = []any{}
 	file_proto_resource_v2_domain_proto_msgTypes[26].OneofWrappers = []any{}
-	file_proto_resource_v2_domain_proto_msgTypes[28].OneofWrappers = []any{}
+	file_proto_resource_v2_domain_proto_msgTypes[27].OneofWrappers = []any{}
 	file_proto_resource_v2_domain_proto_msgTypes[29].OneofWrappers = []any{}
 	file_proto_resource_v2_domain_proto_msgTypes[30].OneofWrappers = []any{}
 	file_proto_resource_v2_domain_proto_msgTypes[31].OneofWrappers = []any{}
-	file_proto_resource_v2_domain_proto_msgTypes[35].OneofWrappers = []any{
+	file_proto_resource_v2_domain_proto_msgTypes[32].OneofWrappers = []any{}
+	file_proto_resource_v2_domain_proto_msgTypes[37].OneofWrappers = []any{
 		(*Request_Catalog)(nil),
 		(*Request_Get)(nil),
 		(*Request_Enumerate)(nil),
@@ -3106,7 +3286,7 @@ func file_proto_resource_v2_domain_proto_init() {
 		(*Request_Connection)(nil),
 		(*Request_Features)(nil),
 	}
-	file_proto_resource_v2_domain_proto_msgTypes[38].OneofWrappers = []any{
+	file_proto_resource_v2_domain_proto_msgTypes[40].OneofWrappers = []any{
 		(*Response_Catalog)(nil),
 		(*Response_Record)(nil),
 		(*Response_Page)(nil),
@@ -3120,7 +3300,7 @@ func file_proto_resource_v2_domain_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_resource_v2_domain_proto_rawDesc), len(file_proto_resource_v2_domain_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   39,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

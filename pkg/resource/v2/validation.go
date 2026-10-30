@@ -761,6 +761,25 @@ func validateResourceType(t *ResourceType) error {
 	if t.DefaultRepresentation != "" && !representations[t.DefaultRepresentation] {
 		return invalid("default representation is not declared")
 	}
+	if t.ModelRepresentation != "" && !representations[t.ModelRepresentation] {
+		return invalid("model representation is not declared")
+	}
+	languages := make(map[string]bool, len(t.NativeQueries))
+	for _, query := range t.NativeQueries {
+		if err := text(query.Language, true); err != nil {
+			return err
+		}
+		if err := text(query.Description, false); err != nil {
+			return err
+		}
+		if languages[query.Language] {
+			return invalid("duplicate native query language")
+		}
+		languages[query.Language] = true
+		if err := ValidateSchema(query.InputSchema); err != nil {
+			return err
+		}
+	}
 	for _, capability := range t.Capabilities {
 		if err := validateCapability(capability); err != nil {
 			return err
@@ -847,7 +866,7 @@ func ValidateMutationRequest(v MutationRequest) error {
 	return ValidateValue(v.Input)
 }
 
-// ValidateActionRequest checks route, reference, action token, and tagged input.
+// ValidateActionRequest checks exactly one target, route, action token, and tagged input.
 func ValidateActionRequest(v ActionRequest) error {
 	if err := admission(v); err != nil {
 		return err
@@ -855,11 +874,30 @@ func ValidateActionRequest(v ActionRequest) error {
 	if err := validateRoute(v.Route); err != nil {
 		return err
 	}
-	if err := validateReference(v.Reference); err != nil {
+	if v.TypeTarget != nil {
+		a := v.Reference.Address
+		if a.Provider != "" || a.Authority != "" || a.Type != "" || a.ID != "" || len(a.Scope) != 0 || v.Reference.Incarnation != nil {
+			return invalid("action requires exactly one target")
+		}
+		t := v.TypeTarget
+		for _, value := range []string{t.Provider, t.Authority, t.Type} {
+			if err := text(value, true); err != nil {
+				return err
+			}
+		}
+		if err := ValidateScope(t.Scope); err != nil {
+			return err
+		}
+	} else if err := validateReference(v.Reference); err != nil {
 		return err
 	}
 	if err := text(v.Action, true); err != nil {
 		return err
+	}
+	if v.ExpectedDescriptor != nil {
+		if err := ValidateActionDescriptors([]ActionDescriptor{*v.ExpectedDescriptor}); err != nil {
+			return err
+		}
 	}
 	return ValidateValue(v.Input)
 }

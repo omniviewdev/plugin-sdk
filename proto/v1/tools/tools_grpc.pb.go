@@ -11,7 +11,6 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -20,15 +19,15 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	ToolsPlugin_ListTools_FullMethodName = "/omniview.sdk.tools.v1.ToolsPlugin/ListTools"
-	ToolsPlugin_CallTool_FullMethodName  = "/omniview.sdk.tools.v1.ToolsPlugin/CallTool"
+	ToolsPlugin_ListTools_FullMethodName = "/omniview.sdk.tools.v2.ToolsPlugin/ListTools"
+	ToolsPlugin_CallTool_FullMethodName  = "/omniview.sdk.tools.v2.ToolsPlugin/CallTool"
 )
 
 // ToolsPluginClient is the client API for ToolsPlugin service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ToolsPluginClient interface {
-	ListTools(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListToolsResponse, error)
+	ListTools(ctx context.Context, in *ListToolsRequest, opts ...grpc.CallOption) (*ListToolsResponse, error)
 	CallTool(ctx context.Context, in *CallToolRequest, opts ...grpc.CallOption) (*CallToolResponse, error)
 }
 
@@ -40,7 +39,7 @@ func NewToolsPluginClient(cc grpc.ClientConnInterface) ToolsPluginClient {
 	return &toolsPluginClient{cc}
 }
 
-func (c *toolsPluginClient) ListTools(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListToolsResponse, error) {
+func (c *toolsPluginClient) ListTools(ctx context.Context, in *ListToolsRequest, opts ...grpc.CallOption) (*ListToolsResponse, error) {
 	out := new(ListToolsResponse)
 	err := c.cc.Invoke(ctx, ToolsPlugin_ListTools_FullMethodName, in, out, opts...)
 	if err != nil {
@@ -62,7 +61,7 @@ func (c *toolsPluginClient) CallTool(ctx context.Context, in *CallToolRequest, o
 // All implementations should embed UnimplementedToolsPluginServer
 // for forward compatibility
 type ToolsPluginServer interface {
-	ListTools(context.Context, *emptypb.Empty) (*ListToolsResponse, error)
+	ListTools(context.Context, *ListToolsRequest) (*ListToolsResponse, error)
 	CallTool(context.Context, *CallToolRequest) (*CallToolResponse, error)
 }
 
@@ -70,7 +69,7 @@ type ToolsPluginServer interface {
 type UnimplementedToolsPluginServer struct {
 }
 
-func (UnimplementedToolsPluginServer) ListTools(context.Context, *emptypb.Empty) (*ListToolsResponse, error) {
+func (UnimplementedToolsPluginServer) ListTools(context.Context, *ListToolsRequest) (*ListToolsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListTools not implemented")
 }
 func (UnimplementedToolsPluginServer) CallTool(context.Context, *CallToolRequest) (*CallToolResponse, error) {
@@ -89,7 +88,7 @@ func RegisterToolsPluginServer(s grpc.ServiceRegistrar, srv ToolsPluginServer) {
 }
 
 func _ToolsPlugin_ListTools_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(emptypb.Empty)
+	in := new(ListToolsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -101,7 +100,7 @@ func _ToolsPlugin_ListTools_Handler(srv interface{}, ctx context.Context, dec fu
 		FullMethod: ToolsPlugin_ListTools_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ToolsPluginServer).ListTools(ctx, req.(*emptypb.Empty))
+		return srv.(ToolsPluginServer).ListTools(ctx, req.(*ListToolsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -128,7 +127,7 @@ func _ToolsPlugin_CallTool_Handler(srv interface{}, ctx context.Context, dec fun
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var ToolsPlugin_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "omniview.sdk.tools.v1.ToolsPlugin",
+	ServiceName: "omniview.sdk.tools.v2.ToolsPlugin",
 	HandlerType: (*ToolsPluginServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

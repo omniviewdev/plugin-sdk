@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
@@ -16,10 +17,13 @@ const ResourceSessionWireVersion = resourcev2.WireVersion
 // resource bodies through JSON maps or Struct. Resource data remains a canonical
 // Value; references and routes are optional actual caller bindings. Resource
 // creation never falls back to the legacy CreateSession RPC.
-// Native callbacks receive the actual RPC context. A missing serialized plugin
+// Admission inherits creation cancellation; accepted native callbacks retain its
+// values under the native-generation lifetime. A missing serialized plugin
 // context does not create a connection or authority; explicit routes still
 // require a matching connection supplied through the caller's plugin metadata.
-// Implementations retain responsibility for asynchronous session lifetime and cleanup.
+// SessionID correlates acceptance and cleanup only; it confers no authority and
+// does not make creation idempotent. Owners must close the chosen ID after a
+// failed or lost response. Manager retains the generation until producers drain.
 type ResourceSessionProvider interface {
 	CreateResourceSession(*types.PluginContext, CreateSessionOptions) (*LogSession, error)
 }
@@ -28,11 +32,16 @@ func resourceError(code, detail string) error { return resourcev2.NewError(code,
 
 // HasResourceIntent reports whether options must use the resource-aware creation path.
 func (o CreateSessionOptions) HasResourceIntent() bool {
-	return o.ResourceData != nil || o.Reference != nil || o.Route != nil || o.ResourceKey != "" || o.ResourceID != ""
+	return o.SessionID != "" || o.ResourceData != nil || o.Reference != nil || o.Route != nil || o.ResourceKey != "" || o.ResourceID != ""
 }
 
 // Validate checks canonical metadata and values without requiring a live connection.
 func (o CreateSessionOptions) Validate() error {
+	if o.SessionID != "" {
+		if _, err := uuid.Parse(o.SessionID); err != nil {
+			return resourceError("INVALID_REQUEST", "Resource session ID must be a UUID.")
+		}
+	}
 	metadata := struct {
 		ResourceKey, ResourceID string
 		Reference               *resourcev2.ResourceReference
@@ -78,6 +87,7 @@ func (o CreateSessionOptions) ToProto() (*logspb.CreateLogSessionRequest, error)
 		return nil, err
 	}
 	p := &logspb.CreateLogSessionRequest{
+		SessionId: o.SessionID,
 		ResourceKey: o.ResourceKey,
 		ResourceId:  o.ResourceID,
 		Options:     o.Options.ToProto(),
@@ -127,6 +137,7 @@ func CreateSessionOptionsFromProto(p *logspb.CreateLogSessionRequest) (CreateSes
 		return o, err
 	}
 	o.ResourceKey, o.ResourceID, o.Options = p.ResourceKey, p.ResourceId, LogSessionOptionsFromProto(p.Options)
+	o.SessionID = p.SessionId
 	if err := o.Validate(); err != nil {
 		return o, err
 	}
@@ -173,7 +184,7 @@ func validateSessionRequest(p *logspb.CreateLogSessionRequest) error {
 		return resourceError("UNSUPPORTED", "Unknown or retired logs resource field.")
 	}
 	intent := p.ResourceKey != "" || p.ResourceId != "" || p.ResourceData != nil ||
-		p.Reference != nil || p.Route != nil || p.ResourceWireVersion != 0
+		p.Reference != nil || p.Route != nil || p.ResourceWireVersion != 0 || p.SessionId != ""
 	if intent && p.ResourceWireVersion != ResourceSessionWireVersion {
 		return resourceError("UNSUPPORTED", "Unsupported logs resource wire version.")
 	}

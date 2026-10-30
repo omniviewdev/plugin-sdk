@@ -10,7 +10,6 @@ import (
 	v2 "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -77,10 +76,10 @@ func (ToolScope) EnumDescriptor() ([]byte, []int) {
 // ToolAnnotations mirror the MCP tool annotation hints.
 type ToolAnnotations struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ReadOnly      bool                   `protobuf:"varint,1,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
-	Destructive   bool                   `protobuf:"varint,2,opt,name=destructive,proto3" json:"destructive,omitempty"`
-	Idempotent    bool                   `protobuf:"varint,3,opt,name=idempotent,proto3" json:"idempotent,omitempty"`
-	OpenWorld     bool                   `protobuf:"varint,4,opt,name=open_world,json=openWorld,proto3" json:"open_world,omitempty"`
+	ReadOnly      *bool                  `protobuf:"varint,1,opt,name=read_only,json=readOnly,proto3,oneof" json:"read_only,omitempty"`
+	Destructive   *bool                  `protobuf:"varint,2,opt,name=destructive,proto3,oneof" json:"destructive,omitempty"`
+	Idempotent    *bool                  `protobuf:"varint,3,opt,name=idempotent,proto3,oneof" json:"idempotent,omitempty"`
+	OpenWorld     *bool                  `protobuf:"varint,4,opt,name=open_world,json=openWorld,proto3,oneof" json:"open_world,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -116,29 +115,29 @@ func (*ToolAnnotations) Descriptor() ([]byte, []int) {
 }
 
 func (x *ToolAnnotations) GetReadOnly() bool {
-	if x != nil {
-		return x.ReadOnly
+	if x != nil && x.ReadOnly != nil {
+		return *x.ReadOnly
 	}
 	return false
 }
 
 func (x *ToolAnnotations) GetDestructive() bool {
-	if x != nil {
-		return x.Destructive
+	if x != nil && x.Destructive != nil {
+		return *x.Destructive
 	}
 	return false
 }
 
 func (x *ToolAnnotations) GetIdempotent() bool {
-	if x != nil {
-		return x.Idempotent
+	if x != nil && x.Idempotent != nil {
+		return *x.Idempotent
 	}
 	return false
 }
 
 func (x *ToolAnnotations) GetOpenWorld() bool {
-	if x != nil {
-		return x.OpenWorld
+	if x != nil && x.OpenWorld != nil {
+		return *x.OpenWorld
 	}
 	return false
 }
@@ -152,7 +151,7 @@ type ToolDescriptor struct {
 	InputSchema []byte `protobuf:"bytes,4,opt,name=input_schema,json=inputSchema,proto3" json:"input_schema,omitempty"`
 	// Optional JSON Schema for the structured result, serialized as JSON.
 	OutputSchema  []byte           `protobuf:"bytes,5,opt,name=output_schema,json=outputSchema,proto3" json:"output_schema,omitempty"`
-	Scope         ToolScope        `protobuf:"varint,6,opt,name=scope,proto3,enum=omniview.sdk.tools.v1.ToolScope" json:"scope,omitempty"`
+	Scope         ToolScope        `protobuf:"varint,6,opt,name=scope,proto3,enum=omniview.sdk.tools.v2.ToolScope" json:"scope,omitempty"`
 	Annotations   *ToolAnnotations `protobuf:"bytes,7,opt,name=annotations,proto3" json:"annotations,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -237,16 +236,61 @@ func (x *ToolDescriptor) GetAnnotations() *ToolAnnotations {
 	return nil
 }
 
+type ListToolsRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ContractVersion uint32                 `protobuf:"varint,1,opt,name=contract_version,json=contractVersion,proto3" json:"contract_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ListToolsRequest) Reset() {
+	*x = ListToolsRequest{}
+	mi := &file_proto_v1_tools_tools_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListToolsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListToolsRequest) ProtoMessage() {}
+
+func (x *ListToolsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_tools_tools_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListToolsRequest.ProtoReflect.Descriptor instead.
+func (*ListToolsRequest) Descriptor() ([]byte, []int) {
+	return file_proto_v1_tools_tools_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ListToolsRequest) GetContractVersion() uint32 {
+	if x != nil {
+		return x.ContractVersion
+	}
+	return 0
+}
+
 type ListToolsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Tools         []*ToolDescriptor      `protobuf:"bytes,1,rep,name=tools,proto3" json:"tools,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Tools           []*ToolDescriptor      `protobuf:"bytes,1,rep,name=tools,proto3" json:"tools,omitempty"`
+	ContractVersion uint32                 `protobuf:"varint,2,opt,name=contract_version,json=contractVersion,proto3" json:"contract_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ListToolsResponse) Reset() {
 	*x = ListToolsResponse{}
-	mi := &file_proto_v1_tools_tools_proto_msgTypes[2]
+	mi := &file_proto_v1_tools_tools_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -258,7 +302,7 @@ func (x *ListToolsResponse) String() string {
 func (*ListToolsResponse) ProtoMessage() {}
 
 func (x *ListToolsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_tools_tools_proto_msgTypes[2]
+	mi := &file_proto_v1_tools_tools_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -271,7 +315,7 @@ func (x *ListToolsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListToolsResponse.ProtoReflect.Descriptor instead.
 func (*ListToolsResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_tools_tools_proto_rawDescGZIP(), []int{2}
+	return file_proto_v1_tools_tools_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ListToolsResponse) GetTools() []*ToolDescriptor {
@@ -281,19 +325,27 @@ func (x *ListToolsResponse) GetTools() []*ToolDescriptor {
 	return nil
 }
 
+func (x *ListToolsResponse) GetContractVersion() uint32 {
+	if x != nil {
+		return x.ContractVersion
+	}
+	return 0
+}
+
 type CallToolRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Tool arguments serialized as a JSON object.
-	Arguments     []byte          `protobuf:"bytes,2,opt,name=arguments,proto3" json:"arguments,omitempty"`
-	Route         *v2.AccessRoute `protobuf:"bytes,3,opt,name=route,proto3" json:"route,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Arguments       []byte          `protobuf:"bytes,2,opt,name=arguments,proto3" json:"arguments,omitempty"`
+	Route           *v2.AccessRoute `protobuf:"bytes,3,opt,name=route,proto3" json:"route,omitempty"`
+	ContractVersion uint32          `protobuf:"varint,4,opt,name=contract_version,json=contractVersion,proto3" json:"contract_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CallToolRequest) Reset() {
 	*x = CallToolRequest{}
-	mi := &file_proto_v1_tools_tools_proto_msgTypes[3]
+	mi := &file_proto_v1_tools_tools_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -305,7 +357,7 @@ func (x *CallToolRequest) String() string {
 func (*CallToolRequest) ProtoMessage() {}
 
 func (x *CallToolRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_tools_tools_proto_msgTypes[3]
+	mi := &file_proto_v1_tools_tools_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -318,7 +370,7 @@ func (x *CallToolRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallToolRequest.ProtoReflect.Descriptor instead.
 func (*CallToolRequest) Descriptor() ([]byte, []int) {
-	return file_proto_v1_tools_tools_proto_rawDescGZIP(), []int{3}
+	return file_proto_v1_tools_tools_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *CallToolRequest) GetName() string {
@@ -342,6 +394,13 @@ func (x *CallToolRequest) GetRoute() *v2.AccessRoute {
 	return nil
 }
 
+func (x *CallToolRequest) GetContractVersion() uint32 {
+	if x != nil {
+		return x.ContractVersion
+	}
+	return 0
+}
+
 type ToolContent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Kind:
@@ -354,7 +413,7 @@ type ToolContent struct {
 
 func (x *ToolContent) Reset() {
 	*x = ToolContent{}
-	mi := &file_proto_v1_tools_tools_proto_msgTypes[4]
+	mi := &file_proto_v1_tools_tools_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -366,7 +425,7 @@ func (x *ToolContent) String() string {
 func (*ToolContent) ProtoMessage() {}
 
 func (x *ToolContent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_tools_tools_proto_msgTypes[4]
+	mi := &file_proto_v1_tools_tools_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -379,7 +438,7 @@ func (x *ToolContent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolContent.ProtoReflect.Descriptor instead.
 func (*ToolContent) Descriptor() ([]byte, []int) {
-	return file_proto_v1_tools_tools_proto_rawDescGZIP(), []int{4}
+	return file_proto_v1_tools_tools_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ToolContent) GetKind() isToolContent_Kind {
@@ -414,13 +473,14 @@ type CallToolResponse struct {
 	// Optional structured result serialized as JSON.
 	StructuredContent []byte `protobuf:"bytes,2,opt,name=structured_content,json=structuredContent,proto3" json:"structured_content,omitempty"`
 	IsError           bool   `protobuf:"varint,3,opt,name=is_error,json=isError,proto3" json:"is_error,omitempty"`
+	ErrorCode         string `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
 
 func (x *CallToolResponse) Reset() {
 	*x = CallToolResponse{}
-	mi := &file_proto_v1_tools_tools_proto_msgTypes[5]
+	mi := &file_proto_v1_tools_tools_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -432,7 +492,7 @@ func (x *CallToolResponse) String() string {
 func (*CallToolResponse) ProtoMessage() {}
 
 func (x *CallToolResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_tools_tools_proto_msgTypes[5]
+	mi := &file_proto_v1_tools_tools_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -445,7 +505,7 @@ func (x *CallToolResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallToolResponse.ProtoReflect.Descriptor instead.
 func (*CallToolResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_tools_tools_proto_rawDescGZIP(), []int{5}
+	return file_proto_v1_tools_tools_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CallToolResponse) GetContent() []*ToolContent {
@@ -469,47 +529,65 @@ func (x *CallToolResponse) GetIsError() bool {
 	return false
 }
 
+func (x *CallToolResponse) GetErrorCode() string {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ""
+}
+
 var File_proto_v1_tools_tools_proto protoreflect.FileDescriptor
 
 const file_proto_v1_tools_tools_proto_rawDesc = "" +
 	"\n" +
-	"\x1aproto/v1/tools/tools.proto\x12\x15omniview.sdk.tools.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1eproto/resource/v2/domain.proto\"\x8f\x01\n" +
-	"\x0fToolAnnotations\x12\x1b\n" +
-	"\tread_only\x18\x01 \x01(\bR\breadOnly\x12 \n" +
-	"\vdestructive\x18\x02 \x01(\bR\vdestructive\x12\x1e\n" +
+	"\x1aproto/v1/tools/tools.proto\x12\x15omniview.sdk.tools.v2\x1a\x1eproto/resource/v2/domain.proto\"\xdf\x01\n" +
+	"\x0fToolAnnotations\x12 \n" +
+	"\tread_only\x18\x01 \x01(\bH\x00R\breadOnly\x88\x01\x01\x12%\n" +
+	"\vdestructive\x18\x02 \x01(\bH\x01R\vdestructive\x88\x01\x01\x12#\n" +
 	"\n" +
-	"idempotent\x18\x03 \x01(\bR\n" +
-	"idempotent\x12\x1d\n" +
+	"idempotent\x18\x03 \x01(\bH\x02R\n" +
+	"idempotent\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"open_world\x18\x04 \x01(\bR\topenWorld\"\xa6\x02\n" +
+	"open_world\x18\x04 \x01(\bH\x03R\topenWorld\x88\x01\x01B\f\n" +
+	"\n" +
+	"_read_onlyB\x0e\n" +
+	"\f_destructiveB\r\n" +
+	"\v_idempotentB\r\n" +
+	"\v_open_world\"\xa6\x02\n" +
 	"\x0eToolDescriptor\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12!\n" +
 	"\finput_schema\x18\x04 \x01(\fR\vinputSchema\x12#\n" +
 	"\routput_schema\x18\x05 \x01(\fR\foutputSchema\x126\n" +
-	"\x05scope\x18\x06 \x01(\x0e2 .omniview.sdk.tools.v1.ToolScopeR\x05scope\x12H\n" +
-	"\vannotations\x18\a \x01(\v2&.omniview.sdk.tools.v1.ToolAnnotationsR\vannotations\"P\n" +
+	"\x05scope\x18\x06 \x01(\x0e2 .omniview.sdk.tools.v2.ToolScopeR\x05scope\x12H\n" +
+	"\vannotations\x18\a \x01(\v2&.omniview.sdk.tools.v2.ToolAnnotationsR\vannotations\"=\n" +
+	"\x10ListToolsRequest\x12)\n" +
+	"\x10contract_version\x18\x01 \x01(\rR\x0fcontractVersion\"{\n" +
 	"\x11ListToolsResponse\x12;\n" +
-	"\x05tools\x18\x01 \x03(\v2%.omniview.sdk.tools.v1.ToolDescriptorR\x05tools\"|\n" +
+	"\x05tools\x18\x01 \x03(\v2%.omniview.sdk.tools.v2.ToolDescriptorR\x05tools\x12)\n" +
+	"\x10contract_version\x18\x02 \x01(\rR\x0fcontractVersion\"\xa7\x01\n" +
 	"\x0fCallToolRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
 	"\targuments\x18\x02 \x01(\fR\targuments\x127\n" +
-	"\x05route\x18\x03 \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\"+\n" +
+	"\x05route\x18\x03 \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\x12)\n" +
+	"\x10contract_version\x18\x04 \x01(\rR\x0fcontractVersion\"+\n" +
 	"\vToolContent\x12\x14\n" +
 	"\x04text\x18\x01 \x01(\tH\x00R\x04textB\x06\n" +
-	"\x04kind\"\x9a\x01\n" +
+	"\x04kind\"\xb9\x01\n" +
 	"\x10CallToolResponse\x12<\n" +
-	"\acontent\x18\x01 \x03(\v2\".omniview.sdk.tools.v1.ToolContentR\acontent\x12-\n" +
+	"\acontent\x18\x01 \x03(\v2\".omniview.sdk.tools.v2.ToolContentR\acontent\x12-\n" +
 	"\x12structured_content\x18\x02 \x01(\fR\x11structuredContent\x12\x19\n" +
-	"\bis_error\x18\x03 \x01(\bR\aisError*Y\n" +
+	"\bis_error\x18\x03 \x01(\bR\aisError\x12\x1d\n" +
+	"\n" +
+	"error_code\x18\x04 \x01(\tR\terrorCode*Y\n" +
 	"\tToolScope\x12\x1a\n" +
 	"\x16TOOL_SCOPE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11TOOL_SCOPE_PLUGIN\x10\x01\x12\x19\n" +
-	"\x15TOOL_SCOPE_CONNECTION\x10\x022\xb9\x01\n" +
-	"\vToolsPlugin\x12M\n" +
-	"\tListTools\x12\x16.google.protobuf.Empty\x1a(.omniview.sdk.tools.v1.ListToolsResponse\x12[\n" +
-	"\bCallTool\x12&.omniview.sdk.tools.v1.CallToolRequest\x1a'.omniview.sdk.tools.v1.CallToolResponseB:Z8github.com/omniviewdev/plugin-sdk/proto/v1/tools;toolspbb\x06proto3"
+	"\x15TOOL_SCOPE_CONNECTION\x10\x022\xca\x01\n" +
+	"\vToolsPlugin\x12^\n" +
+	"\tListTools\x12'.omniview.sdk.tools.v2.ListToolsRequest\x1a(.omniview.sdk.tools.v2.ListToolsResponse\x12[\n" +
+	"\bCallTool\x12&.omniview.sdk.tools.v2.CallToolRequest\x1a'.omniview.sdk.tools.v2.CallToolResponseB:Z8github.com/omniviewdev/plugin-sdk/proto/v1/tools;toolspbb\x06proto3"
 
 var (
 	file_proto_v1_tools_tools_proto_rawDescOnce sync.Once
@@ -524,28 +602,28 @@ func file_proto_v1_tools_tools_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_v1_tools_tools_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_v1_tools_tools_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_proto_v1_tools_tools_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_proto_v1_tools_tools_proto_goTypes = []any{
-	(ToolScope)(0),            // 0: omniview.sdk.tools.v1.ToolScope
-	(*ToolAnnotations)(nil),   // 1: omniview.sdk.tools.v1.ToolAnnotations
-	(*ToolDescriptor)(nil),    // 2: omniview.sdk.tools.v1.ToolDescriptor
-	(*ListToolsResponse)(nil), // 3: omniview.sdk.tools.v1.ListToolsResponse
-	(*CallToolRequest)(nil),   // 4: omniview.sdk.tools.v1.CallToolRequest
-	(*ToolContent)(nil),       // 5: omniview.sdk.tools.v1.ToolContent
-	(*CallToolResponse)(nil),  // 6: omniview.sdk.tools.v1.CallToolResponse
-	(*v2.AccessRoute)(nil),    // 7: omniview.resource.v2.AccessRoute
-	(*emptypb.Empty)(nil),     // 8: google.protobuf.Empty
+	(ToolScope)(0),            // 0: omniview.sdk.tools.v2.ToolScope
+	(*ToolAnnotations)(nil),   // 1: omniview.sdk.tools.v2.ToolAnnotations
+	(*ToolDescriptor)(nil),    // 2: omniview.sdk.tools.v2.ToolDescriptor
+	(*ListToolsRequest)(nil),  // 3: omniview.sdk.tools.v2.ListToolsRequest
+	(*ListToolsResponse)(nil), // 4: omniview.sdk.tools.v2.ListToolsResponse
+	(*CallToolRequest)(nil),   // 5: omniview.sdk.tools.v2.CallToolRequest
+	(*ToolContent)(nil),       // 6: omniview.sdk.tools.v2.ToolContent
+	(*CallToolResponse)(nil),  // 7: omniview.sdk.tools.v2.CallToolResponse
+	(*v2.AccessRoute)(nil),    // 8: omniview.resource.v2.AccessRoute
 }
 var file_proto_v1_tools_tools_proto_depIdxs = []int32{
-	0, // 0: omniview.sdk.tools.v1.ToolDescriptor.scope:type_name -> omniview.sdk.tools.v1.ToolScope
-	1, // 1: omniview.sdk.tools.v1.ToolDescriptor.annotations:type_name -> omniview.sdk.tools.v1.ToolAnnotations
-	2, // 2: omniview.sdk.tools.v1.ListToolsResponse.tools:type_name -> omniview.sdk.tools.v1.ToolDescriptor
-	7, // 3: omniview.sdk.tools.v1.CallToolRequest.route:type_name -> omniview.resource.v2.AccessRoute
-	5, // 4: omniview.sdk.tools.v1.CallToolResponse.content:type_name -> omniview.sdk.tools.v1.ToolContent
-	8, // 5: omniview.sdk.tools.v1.ToolsPlugin.ListTools:input_type -> google.protobuf.Empty
-	4, // 6: omniview.sdk.tools.v1.ToolsPlugin.CallTool:input_type -> omniview.sdk.tools.v1.CallToolRequest
-	3, // 7: omniview.sdk.tools.v1.ToolsPlugin.ListTools:output_type -> omniview.sdk.tools.v1.ListToolsResponse
-	6, // 8: omniview.sdk.tools.v1.ToolsPlugin.CallTool:output_type -> omniview.sdk.tools.v1.CallToolResponse
+	0, // 0: omniview.sdk.tools.v2.ToolDescriptor.scope:type_name -> omniview.sdk.tools.v2.ToolScope
+	1, // 1: omniview.sdk.tools.v2.ToolDescriptor.annotations:type_name -> omniview.sdk.tools.v2.ToolAnnotations
+	2, // 2: omniview.sdk.tools.v2.ListToolsResponse.tools:type_name -> omniview.sdk.tools.v2.ToolDescriptor
+	8, // 3: omniview.sdk.tools.v2.CallToolRequest.route:type_name -> omniview.resource.v2.AccessRoute
+	6, // 4: omniview.sdk.tools.v2.CallToolResponse.content:type_name -> omniview.sdk.tools.v2.ToolContent
+	3, // 5: omniview.sdk.tools.v2.ToolsPlugin.ListTools:input_type -> omniview.sdk.tools.v2.ListToolsRequest
+	5, // 6: omniview.sdk.tools.v2.ToolsPlugin.CallTool:input_type -> omniview.sdk.tools.v2.CallToolRequest
+	4, // 7: omniview.sdk.tools.v2.ToolsPlugin.ListTools:output_type -> omniview.sdk.tools.v2.ListToolsResponse
+	7, // 8: omniview.sdk.tools.v2.ToolsPlugin.CallTool:output_type -> omniview.sdk.tools.v2.CallToolResponse
 	7, // [7:9] is the sub-list for method output_type
 	5, // [5:7] is the sub-list for method input_type
 	5, // [5:5] is the sub-list for extension type_name
@@ -558,7 +636,8 @@ func file_proto_v1_tools_tools_proto_init() {
 	if File_proto_v1_tools_tools_proto != nil {
 		return
 	}
-	file_proto_v1_tools_tools_proto_msgTypes[4].OneofWrappers = []any{
+	file_proto_v1_tools_tools_proto_msgTypes[0].OneofWrappers = []any{}
+	file_proto_v1_tools_tools_proto_msgTypes[5].OneofWrappers = []any{
 		(*ToolContent_Text)(nil),
 	}
 	type x struct{}
@@ -567,7 +646,7 @@ func file_proto_v1_tools_tools_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_tools_tools_proto_rawDesc), len(file_proto_v1_tools_tools_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -117,6 +117,9 @@ func (c *PluginClient) CreateResourceSession(ctx *types.PluginContext, opts Crea
 	if err := validateResourceSessionResult(session); err != nil {
 		return nil, err
 	}
+	if opts.SessionID != "" && session.ID != opts.SessionID {
+		return nil, resourceError("PROVIDER_ERROR", "Log session correlation does not match the request.")
+	}
 	return session, nil
 }
 
@@ -158,7 +161,7 @@ func (c *PluginClient) CloseSession(ctx *types.PluginContext, sessionID string) 
 		logsClientContext(ctx),
 		&logspb.LogSessionByIdRequest{SessionId: sessionID},
 	)
-	return err
+	return resourceplugin.ResourceDomainError(err)
 }
 
 // UpdateSessionOptions changes streaming options for an existing remote session.

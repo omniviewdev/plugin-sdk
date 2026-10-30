@@ -7,7 +7,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -50,13 +49,14 @@ func grpcCodeForToolsError(err error) codes.Code {
 // ListTools returns the provider's tool descriptors for the caller's plugin context.
 func (s *PluginServer) ListTools(
 	ctx context.Context,
-	_ *emptypb.Empty,
+	in *toolspb.ListToolsRequest,
 ) (*toolspb.ListToolsResponse, error) {
+	if in.GetContractVersion() != ContractVersion { return nil, status.Error(codes.FailedPrecondition, "Unsupported tools contract.") }
 	descriptors, err := s.Impl.ListTools(types.PluginContextFromContext(ctx))
 	if err != nil {
-		return nil, status.Errorf(grpcCodeForToolsError(err), "%v", err)
+		return nil, status.Error(grpcCodeForToolsError(err), "Tool discovery failed.")
 	}
-	out := &toolspb.ListToolsResponse{Tools: make([]*toolspb.ToolDescriptor, 0, len(descriptors))}
+	out := &toolspb.ListToolsResponse{ContractVersion: ContractVersion, Tools: make([]*toolspb.ToolDescriptor, 0, len(descriptors))}
 	for _, d := range descriptors {
 		out.Tools = append(out.Tools, descriptorToProto(d))
 	}
@@ -68,6 +68,7 @@ func (s *PluginServer) CallTool(
 	ctx context.Context,
 	in *toolspb.CallToolRequest,
 ) (*toolspb.CallToolResponse, error) {
+	if in.GetContractVersion() != ContractVersion { return nil, status.Error(codes.FailedPrecondition, "Unsupported tools contract.") }
 	// Empty metadata selectors must not disappear during context extraction.
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
 		if ids, present := md["omniview-connection-id"]; present && (len(ids) != 1 || ids[0] == "") {
@@ -78,7 +79,7 @@ func (s *PluginServer) CallTool(
 	if in.GetRoute() != nil {
 		route, err := resourcev2.FromProtoAccessRoute(in.GetRoute())
 		if err != nil {
-			return nil, status.Errorf(grpcCodeForToolsError(err), "%v", err)
+			return nil, status.Error(grpcCodeForToolsError(err), "Invalid tool route.")
 		}
 		input.Route = &route
 	}
@@ -89,7 +90,8 @@ func (s *PluginServer) CallTool(
 	}
 	result, err := s.Impl.CallTool(pc, input)
 	if err != nil {
-		return nil, status.Errorf(grpcCodeForToolsError(err), "%v", err)
+		return nil, status.Error(grpcCodeForToolsError(err), "Tool call failed.")
 	}
+	if result == nil || result.IsError { result = safeFailure(result) }
 	return resultToProto(result), nil
 }

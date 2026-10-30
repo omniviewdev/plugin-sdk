@@ -66,7 +66,7 @@ func TestActionSchemaRequiredNames(t *testing.T) {
 		{name: "nil"},
 		{name: "empty", required: []string{}},
 		{name: "singleton", required: []string{"undeclared"}},
-		{name: "empty property name", required: []string{""}},
+		{name: "empty property name", required: []string{""}, wantCode: "INVALID_REQUEST"},
 		{name: "distinct undeclared names", required: []string{"first", "second"}},
 		{name: "duplicate", required: []string{"first", "first"}, wantCode: "INVALID_REQUEST"},
 		{name: "nonadjacent duplicate", required: []string{"first", "second", "first"}, wantCode: "INVALID_REQUEST"},

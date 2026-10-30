@@ -62,6 +62,8 @@ type Registration[ClientT any] struct {
 	NativeQuery func(context.Context, *ClientT, NativeQueryRequest) (SourcePage, error)
 	Mutate      func(context.Context, *ClientT, MutationRequest) (Record, error)
 	Action      func(context.Context, *ClientT, ActionRequest) (Value, error)
+	// Actions declares the finite actions handled by Action, including schemas.
+	Actions []ActionDescriptor
 	// Watch supplies advisory best-effort updates, never P05 continuity.
 	Watch           func(context.Context, *ClientT, ReadTarget, Representation, WatchEventSink) error
 	SyncPolicy      SyncPolicy

@@ -181,6 +181,8 @@ func LogSessionOptionsFromProto(p *logspb.LogSessionOptions) LogSessionOptions {
 
 // CreateSessionOptions contains everything needed to create a log session.
 type CreateSessionOptions struct {
+	// SessionID optionally binds resource-session acceptance to a host-generated UUID.
+	SessionID string `json:"session_id,omitempty"`
 	ResourceKey  string                        `json:"resource_key"`
 	ResourceID   string                        `json:"resource_id"`
 	ResourceData *resourcev2.Value             `json:"resource_data"`

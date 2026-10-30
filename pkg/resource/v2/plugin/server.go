@@ -237,12 +237,22 @@ func finiteServerOperation[P, I, O any](
 	if err != nil {
 		return nil, err
 	}
+	var actionDescriptor *resourcev2.ActionDescriptor
+	if action, ok := any(in).(resourcev2.ActionRequest); ok {
+		actionDescriptor, err = resourcev2.ResolveActionDescriptor(ctx, s.impl, action, false)
+		if err != nil { return nil, err }
+	}
 	value, err := dispatch(ctx, in)
 	if err != nil {
 		return nil, err
 	}
 	if err = resourcev2.ValidateOperationResult(in, value, descriptor); err != nil {
 		return nil, err
+	}
+	if _, ok := any(in).(resourcev2.ActionRequest); ok {
+		output, valid := any(value).(resourcev2.Value)
+		if !valid { return nil, invalid("unexpected action output") }
+		if err := resourcev2.ValidateResolvedActionOutput(actionDescriptor, output); err != nil { return nil, err }
 	}
 	return encode(value)
 }

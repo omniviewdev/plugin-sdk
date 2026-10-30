@@ -9,6 +9,7 @@ import (
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	_ "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin" // Install strict raw-wire admission.
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	toolspb "github.com/omniviewdev/plugin-sdk/proto/v1/tools"

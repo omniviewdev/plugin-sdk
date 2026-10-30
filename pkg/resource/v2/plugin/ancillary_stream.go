@@ -94,6 +94,8 @@ func streamActionHandler(srv any, stream grpc.ServerStream) error {
 	if _, err = resourcev2.AdmitStreamingAction(ctx, s.owner.impl, in); err != nil {
 		return rpcError(err)
 	}
+	descriptor, err := resourcev2.ResolveActionDescriptor(ctx, s.owner.impl, in, true)
+	if err != nil { return rpcError(err) }
 	p, ok := s.owner.impl.(resourcev2.StreamingActioner)
 	if !ok {
 		return rpcError(unsupported("streaming action unsupported"))
@@ -104,6 +106,9 @@ func streamActionHandler(srv any, stream grpc.ServerStream) error {
 
 	ready := false
 	send := func(v resourcev2.ActionEvent) error {
+		if v.Type == "output" && v.Data != nil {
+			if err := resourcev2.ValidateResolvedActionOutput(descriptor, *v.Data); err != nil { return err }
+		}
 		return s.sendActionEvent(ctx, stream, r.Action.GetRoute(), &ready, v)
 	}
 	finish := func(err error) error {
@@ -193,6 +198,12 @@ func (c *Client) StreamAction(
 	if _, err := resourcev2.AdmitStreamingAction(ctx, c, in); err != nil {
 		return err
 	}
+	var descriptor *resourcev2.ActionDescriptor
+	if in.ExpectedDescriptor != nil {
+		var err error
+		descriptor, err = resourcev2.ResolveActionDescriptor(ctx, c, in, true)
+		if err != nil { return err }
+	}
 	p, err := resourcev2.ToProtoActionRequest(in)
 	if err != nil {
 		return err
@@ -225,6 +236,9 @@ func (c *Client) StreamAction(
 		v, decodeErr := decodeActionEvent(p, &ready)
 		if decodeErr != nil {
 			return decodeErr
+		}
+		if v.Type == "output" && v.Data != nil {
+			if err := resourcev2.ValidateResolvedActionOutput(descriptor, *v.Data); err != nil { return err }
 		}
 		select {
 		case out <- v:

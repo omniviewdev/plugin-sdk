@@ -1,15 +1,14 @@
 syntax = "proto3";
-package omniview.sdk.tools.v1;
+package omniview.sdk.tools.v2;
 
 option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/tools;toolspb";
 
-import "google/protobuf/empty.proto";
 import "proto/resource/v2/domain.proto";
 
 // ToolsPlugin exposes callable tools. Connection-scoped calls select their
 // configured native connection through an explicit request-body route.
 service ToolsPlugin {
-  rpc ListTools(google.protobuf.Empty) returns (ListToolsResponse);
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
   rpc CallTool(CallToolRequest) returns (CallToolResponse);
 }
 
@@ -23,10 +22,10 @@ enum ToolScope {
 
 // ToolAnnotations mirror the MCP tool annotation hints.
 message ToolAnnotations {
-  bool read_only = 1;
-  bool destructive = 2;
-  bool idempotent = 3;
-  bool open_world = 4;
+  optional bool read_only = 1;
+  optional bool destructive = 2;
+  optional bool idempotent = 3;
+  optional bool open_world = 4;
 }
 
 message ToolDescriptor {
@@ -41,8 +40,13 @@ message ToolDescriptor {
   ToolAnnotations annotations = 7;
 }
 
+message ListToolsRequest {
+  uint32 contract_version = 1;
+}
+
 message ListToolsResponse {
   repeated ToolDescriptor tools = 1;
+  uint32 contract_version = 2;
 }
 
 message CallToolRequest {
@@ -50,6 +54,7 @@ message CallToolRequest {
   // Tool arguments serialized as a JSON object.
   bytes arguments = 2;
   omniview.resource.v2.AccessRoute route = 3;
+  uint32 contract_version = 4;
 }
 
 message ToolContent {
@@ -63,4 +68,5 @@ message CallToolResponse {
   // Optional structured result serialized as JSON.
   bytes structured_content = 2;
   bool is_error = 3;
+  string error_code = 4;
 }

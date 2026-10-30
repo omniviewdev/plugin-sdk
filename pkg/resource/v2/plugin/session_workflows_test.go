@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,18 +13,49 @@ import (
 )
 
 type observedSession struct {
-	method  string
 	session resourcev2.Session
+	inconsistent bool
 }
 type workflowContextProvider struct {
 	browserProvider
 
-	seen chan observedSession
+	mu sync.Mutex
+	seen map[string]observedSession
+}
+
+func (p *workflowContextProvider) GetActions(context.Context, resourcev2.AccessRoute, string) ([]resourcev2.ActionDescriptor, error) {
+	return []resourcev2.ActionDescriptor{{ID: "test", Scope: resourcev2.ActionScopeInstance, Streaming: true}}, nil
 }
 
 func (p *workflowContextProvider) observe(ctx context.Context, method string) {
 	s, _ := resourcev2.SessionFromContext(ctx)
-	p.seen <- observedSession{method: method, session: s}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.seen == nil {
+		p.seen = make(map[string]observedSession)
+	}
+	observation, exists := p.seen[method]
+	if !exists {
+		observation.session = s
+	} else if observation.session.RequestID != s.RequestID || observation.session.RequesterID != s.RequesterID {
+		observation.inconsistent = true
+	}
+	p.seen[method] = observation
+}
+
+func TestWorkflowObservationDoesNotAssumeRPCCount(t *testing.T) {
+	p := &workflowContextProvider{}
+	ctx := resourcev2.WithSession(context.Background(), resourcev2.Session{RequestID: "request", RequesterID: "requester"})
+	for i := 0; i < 64; i++ {
+		p.observe(ctx, "catalog")
+	}
+	p.observe(resourcev2.WithSession(context.Background(), resourcev2.Session{RequestID: "changed", RequesterID: "requester"}), "catalog")
+	p.observe(ctx, "catalog")
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.seen) != 1 || !p.seen["catalog"].inconsistent {
+		t.Fatal("repeated observations must retain diagnostic inconsistency without a call-count budget")
+	}
 }
 
 func (p *workflowContextProvider) Catalog(
@@ -103,7 +135,7 @@ func (p *workflowContextProvider) ResolveRelationships(
 }
 
 func TestDiagnosticsCrossAncillaryLifecycleAndActionStreams(t *testing.T) {
-	p := &workflowContextProvider{seen: make(chan observedSession, 16)}
+	p := &workflowContextProvider{}
 	s := grpc.NewServer()
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
@@ -127,16 +159,15 @@ func TestDiagnosticsCrossAncillaryLifecycleAndActionStreams(t *testing.T) {
 	if _, err := c.ResolveRelationships(ctx, relationshipFixtureRequest()); err != nil {
 		t.Fatal(err)
 	}
-	seen := map[string]bool{}
-	for len(p.seen) > 0 {
-		v := <-p.seen
-		if v.session.RequestID != "workflow-request" || v.session.RequesterID != "diagnostic-requester" {
-			t.Fatalf("%s lost diagnostics", v.method)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for method, observation := range p.seen {
+		if observation.inconsistent || observation.session.RequestID != "workflow-request" || observation.session.RequesterID != "diagnostic-requester" {
+			t.Fatalf("%s lost diagnostics", method)
 		}
-		seen[v.method] = true
 	}
 	for _, method := range []string{"browser", "lifecycle", "connectionStream", "actionStream", "relationships"} {
-		if !seen[method] {
+		if _, found := p.seen[method]; !found {
 			t.Fatalf("missing %s invocation", method)
 		}
 	}
