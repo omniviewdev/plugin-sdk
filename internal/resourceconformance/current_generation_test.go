@@ -191,7 +191,11 @@ func refreshGeneration(ctx context.Context, controller *resource.Controller[stri
 			_ = publishGeneration(control, "control-error", strings.NewReader(err.Error()))
 			return
 		}
-		if err = publishGeneration(control, fmt.Sprintf("applied-%d", last), strings.NewReader(command.Endpoint)); err != nil {
+		if err = publishGeneration(
+			control,
+			fmt.Sprintf("applied-%d", last),
+			strings.NewReader(command.Endpoint),
+		); err != nil {
 			return
 		}
 	}
