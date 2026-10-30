@@ -57,6 +57,48 @@ func TestPresentationRejectsDuplicateDescriptors(t *testing.T) {
 	require.Equal(t, "INVALID_REQUEST", ErrorCode(ValidateActionDescriptors([]ActionDescriptor{action})))
 }
 
+func TestActionSchemaRequiredNames(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		required []string
+		wantCode string
+	}{
+		{name: "nil"},
+		{name: "empty", required: []string{}},
+		{name: "singleton", required: []string{"undeclared"}},
+		{name: "empty property name", required: []string{""}},
+		{name: "distinct undeclared names", required: []string{"first", "second"}},
+		{name: "duplicate", required: []string{"first", "first"}, wantCode: "INVALID_REQUEST"},
+		{name: "nonadjacent duplicate", required: []string{"first", "second", "first"}, wantCode: "INVALID_REQUEST"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			property := SchemaProperty{Type: SchemaObject, Required: tc.required}
+			for _, location := range []struct {
+				name   string
+				schema *Schema
+			}{
+				{name: "root", schema: &Schema{Required: tc.required}},
+				{name: "nested", schema: &Schema{Properties: map[string]SchemaProperty{"outer": property}}},
+				{
+					name: "deeply nested",
+					schema: &Schema{Properties: map[string]SchemaProperty{
+						"outer": {Type: SchemaObject, Properties: map[string]SchemaProperty{"inner": property}},
+					}},
+				},
+			} {
+				for _, action := range []ActionDescriptor{
+					{ID: "params", Scope: ActionScopeInstance, ParamsSchema: location.schema},
+					{ID: "output", Scope: ActionScopeInstance, OutputSchema: location.schema},
+				} {
+					t.Run(location.name+"/"+action.ID, func(t *testing.T) {
+						require.Equal(t, tc.wantCode, ErrorCode(ValidateActionDescriptors([]ActionDescriptor{action})))
+					})
+				}
+			}
+		})
+	}
+}
+
 func TestTypedNilProviderErrorDoesNotPanic(t *testing.T) {
 	var typed *ResourceOperationError
 	var err error = typed

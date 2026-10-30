@@ -130,6 +130,9 @@ func ValidateActionDescriptors(v []ActionDescriptor) error {
 }
 
 func validateActionSchema(schema Schema) error {
+	if err := validateActionRequired(schema.Required); err != nil {
+		return err
+	}
 	return validateActionProperties(schema.Properties, 0)
 }
 
@@ -151,6 +154,9 @@ func validateActionProperty(p SchemaProperty, depth int) error {
 	if p.Minimum != nil && p.Maximum != nil && *p.Minimum > *p.Maximum {
 		return invalid("action schema minimum exceeds maximum")
 	}
+	if err := validateActionRequired(p.Required); err != nil {
+		return err
+	}
 	return validateActionProperties(p.Properties, depth+1)
 }
 
@@ -162,6 +168,20 @@ func validateActionProperties(properties map[string]SchemaProperty, depth int) e
 		if err := validateActionProperty(p, depth); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func validateActionRequired(required []string) error {
+	if len(required) <= 1 {
+		return nil
+	}
+	seen := make(map[string]bool, len(required))
+	for _, name := range required {
+		if seen[name] {
+			return invalid("duplicate action schema required name")
+		}
+		seen[name] = true
 	}
 	return nil
 }
