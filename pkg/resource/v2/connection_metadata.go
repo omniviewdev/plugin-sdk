@@ -397,11 +397,14 @@ func (budget *metadataValueBudget) visit(value reflect.Value, depth int) error {
 			return invalid("metadata number is not JavaScript-safe")
 		}
 		format := byte('f')
-		if absolute := math.Abs(n); absolute != 0 && (absolute < 1e-6 || absolute >= 1e21) {
+		bits := value.Type().Bits()
+		absolute := math.Abs(n)
+		if absolute != 0 && ((bits == 64 && (absolute < 1e-6 || absolute >= 1e21)) ||
+			(bits == 32 && (float32(absolute) < 1e-6 || float32(absolute) >= 1e21))) {
 			format = 'e'
 		}
 		var buffer [64]byte
-		encoded := strconv.AppendFloat(buffer[:0], n, format, -1, value.Type().Bits())
+		encoded := strconv.AppendFloat(buffer[:0], n, format, -1, bits)
 		size := len(encoded)
 		// encoding/json removes the leading zero from negative exponents.
 		if format == 'e' && size >= 4 && encoded[size-4] == 'e' && encoded[size-3] == '-' && encoded[size-2] == '0' {

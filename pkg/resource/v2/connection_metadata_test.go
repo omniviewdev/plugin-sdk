@@ -245,6 +245,52 @@ func TestConnectionMetadataTypesBounds(t *testing.T) {
 	}
 }
 
+func TestConnectionMetadataTypesFloat32WireLimits(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		value    float32
+		count    int
+		wantCode string
+	}{
+		{"positive within limit", 1e-6, 1800, ""},
+		{"positive above limit", 1e-6, 2000, "RESOURCE_LIMIT"},
+		{"negative within limit", -1e-6, 1600, ""},
+		{"negative above limit", -1e-6, 2000, "RESOURCE_LIMIT"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			values := make([]float32, test.count)
+			for index := range values {
+				values[index] = test.value
+			}
+			update := metadataTypesUpdate(values)
+			if err := ValidateConnectionMetadataUpdate(update); ErrorCode(err) != test.wantCode {
+				t.Fatalf("admission: got %v, want code %q", err, test.wantCode)
+			}
+			snapshot := metadataTypesSnapshot()
+			entry := snapshot.Entries["test.fact"]
+			entry.Value = values
+			snapshot.Entries["test.fact"] = entry
+			if err := ValidateConnectionMetadataSnapshot(snapshot); ErrorCode(err) != test.wantCode {
+				t.Fatalf("snapshot: got %v, want code %q", err, test.wantCode)
+			}
+			data, err := json.Marshal(snapshot)
+			if test.wantCode != "" {
+				if err == nil {
+					t.Fatal("serialized an oversized metadata snapshot")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded ConnectionMetadataSnapshot
+			if err := json.Unmarshal(data, &decoded); ErrorCode(err) != test.wantCode {
+				t.Fatalf("wire decoding: got %v, want code %q", err, test.wantCode)
+			}
+		})
+	}
+}
+
 func TestConnectionMetadataTypesSnapshotShape(t *testing.T) {
 	cases := []struct {
 		name   string

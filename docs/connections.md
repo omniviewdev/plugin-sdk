@@ -150,6 +150,8 @@ Use namespaced keys such as `aws.region` and `kubernetes.server_version`. Dots a
 
 An attempted key must produce success or unavailable. An update is atomic; overlapping set/remove keys and invalid or oversized JSON reject the result. Explicit null, false, zero, and empty string remain values. Use strings for large integers, IDs, and versions that cannot round-trip through JavaScript numbers.
 
+Limits apply to encoded JSON, including native `float32` values: 16 KiB per entry and 256 KiB per snapshot. Admission and wire encoding enforce the same limits, so an accepted value remains readable across the plugin boundary.
+
 `ConnectionMetadataProvider` exposes `GetConnectionMetadata`, `RefreshConnectionMetadata`, and `WatchConnectionMetadata`. Get never acquires. Refresh never starts a connection. Start schedules observation; concurrent refreshes coalesce. `InvalidateConnectionMetadata` queues a serialized refresh when server discovery changes. Reuse cached facts only when cache updates share that acquisition ordering.
 
 Stop revokes publication before cancellation and retains observations as stale. Reconnect creates a new generation; configuration changes and removal clear old facts. Revisions remain monotonic within the provider lifetime, including removal tombstones. Watch replays current snapshots/tombstones and returns `RESET_REQUIRED` when a slow consumer must resynchronize.
