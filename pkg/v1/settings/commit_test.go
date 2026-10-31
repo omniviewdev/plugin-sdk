@@ -111,7 +111,8 @@ func TestBaseCommitPersistenceResolvesScopedIDs(t *testing.T) {
 		t.Run(id, func(t *testing.T) {
 			provider := base.NewProvider(opts)
 			var saved map[string]any
-			result, err := provider.CommitSettings(context.Background(), map[string]any{id: "saved"}, func(values map[string]any) error {
+			changes := map[string]any{id: "saved"}
+			result, err := provider.CommitSettings(context.Background(), changes, func(values map[string]any) error {
 				saved = values
 				return nil
 			})
@@ -136,7 +137,8 @@ func TestPluginCommitPersistencePreservesOpaqueIDsForHydration(t *testing.T) {
 			provider := commitProvider(definition)
 			client, _ := commitClient(t, &settings.SettingsPluginServer{Impl: settings.NewProviderWrapper(provider)})
 			var saved map[string]any
-			result, err := client.CommitSettings(context.Background(), map[string]any{id: "saved"}, func(values map[string]any) error {
+			changes := map[string]any{id: "saved"}
+			result, err := client.CommitSettings(context.Background(), changes, func(values map[string]any) error {
 				saved = values
 				return nil
 			})

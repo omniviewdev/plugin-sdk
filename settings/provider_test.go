@@ -810,7 +810,9 @@ func TestCommitSettings_SerializesOtherMutationsUntilPublication(t *testing.T) {
 						mutationDone <- p.SetSetting("test.name", "later")
 						return
 					}
-					mutationDone <- p.RegisterSetting("test", Setting{ID: "name", Label: "Updated", Type: Text, Default: "new default"})
+					mutationDone <- p.RegisterSetting("test", Setting{
+						ID: "name", Label: "Updated", Type: Text, Default: "new default",
+					})
 				}()
 				// Wait until the mutation blocks on serialization, or completes if broken.
 				synctest.Wait()
