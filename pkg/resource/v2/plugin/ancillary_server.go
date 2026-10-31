@@ -37,6 +37,7 @@ func registerAncillary(s *grpc.Server, owner *server) {
 	d.Streams = []grpc.StreamDesc{
 		{StreamName: "WatchConnections", Handler: watchConnectionsHandler, ServerStreams: true},
 		{StreamName: "StreamAction", Handler: streamActionHandler, ServerStreams: true},
+		connectionMetadataStream,
 	}
 	s.RegisterService(&d, &ancillaryServer{owner: owner})
 }
@@ -115,6 +116,8 @@ func (s *ancillaryServer) call(
 		}
 	}
 	switch r.Operation {
+	case getConnectionMetadataOperation, refreshConnectionMetadataOperation:
+		return s.connectionMetadataCall(ctx, r)
 	case nativeConnectionsOperation,
 		connectionOverlayOperation,
 		ancillaryListConnections,

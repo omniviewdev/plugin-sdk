@@ -276,6 +276,9 @@ func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status 
 	}
 	c.mu.Lock()
 	stopping := s.stopping || c.closed
+	if !stopping {
+		c.metadataAdmitLocked(s)
+	}
 	c.mu.Unlock()
 	if stopping {
 		return status, NewError("CANCELLED", "Connection is stopping.")
@@ -319,6 +322,7 @@ func lifecycleCall(fn func() error) (err error) {
 
 func (c *Controller[T]) stopSlot(s *clientSlot[T]) error {
 	c.mu.Lock()
+	c.metadataStopLocked(s)
 	s.stopping = true
 	s.cancel()
 	c.mu.Unlock()
@@ -369,6 +373,7 @@ func (c *Controller[T]) StopConnection(ctx context.Context, id string) (connecti
 	s := c.clients[id]
 	delete(c.failedStarts, id)
 	if s != nil {
+		c.metadataStopLocked(s)
 		s.stopping = true
 		s.cancel()
 	}
@@ -484,6 +489,7 @@ func (c *Controller[T]) Close() error {
 		c.cancel()
 		slots := make([]*clientSlot[T], 0, len(c.clients))
 		for _, s := range c.clients {
+			c.metadataStopLocked(s)
 			s.stopping = true
 			s.cancel()
 			slots = append(slots, s)

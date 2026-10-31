@@ -182,6 +182,13 @@ func (c *Controller[T]) applyInventory(
 		}
 	}
 	maps.Copy(effective, overrides)
+	if c.cfg.ConnectionMetadata != nil {
+		for id := range effective {
+			if err := ValidateConnectionMetadataSnapshot(ConnectionMetadataSnapshot{ConnectionID: id, Revision: "1", Entries: map[string]ConnectionMetadataEntry{}}); err != nil {
+				return err
+			}
+		}
+	}
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -204,6 +211,15 @@ func (c *Controller[T]) applyInventory(
 		err = NewError("CANCELLED", "Provider is closed.")
 	}
 	if err == nil {
+		previousIDs := make(map[string]bool, len(c.connections))
+		nextIDs := make(map[string]bool, len(effective))
+		for id := range c.connections {
+			previousIDs[id] = true
+		}
+		for id := range effective {
+			nextIDs[id] = true
+		}
+		c.metadataInventoryLocked(previousIDs, nextIDs)
 		c.nativeConnections = native
 		c.overrides = overrides
 		c.disabled = disabled
@@ -270,6 +286,12 @@ func (c *Controller[T]) stageInventory(effective map[string]types.Connection) ([
 	var retired []*clientSlot[T]
 	for _, id := range changed {
 		delete(c.failedStarts, id)
+		if _, existed := c.connections[id]; existed && c.cfg.ConnectionMetadata != nil {
+			m := c.metadataStateLocked(id)
+			m.slot = nil
+			m.pending = false
+			c.metadataPublishLocked(m, ConnectionMetadataSnapshot{ConnectionID: id, Revision: m.snapshot.Revision, Entries: map[string]ConnectionMetadataEntry{}}, false)
+		}
 		if slot := c.clients[id]; slot != nil {
 			slot.stopping = true
 			slot.cancel()

@@ -10,6 +10,10 @@ import "proto/resource/v2/domain.proto";
 // definition use route/type; groups/editorSchemas use route. updateConnection and
 // applyConnectionOverlay use connection_json; deleteConnection uses id.
 // listConnections/nativeConnections carry no operation-specific input.
+// getConnectionMetadata/refreshConnectionMetadata use id and return snapshot JSON.
+// watchConnectionMetadata carries no input and streams event JSON, preserving
+// explicit null entry values. ConnectionStreamEvent.connections_json carries
+// the complete metadata event for WatchConnectionMetadata.
 // Results correspond respectively to health/events/resolved/document/
 // relationships/editor_schemas; presentation and connection results use json.
 // OptionalHealth with absent health represents unavailable health, not success
@@ -155,4 +159,5 @@ service ResourceAncillary {
  rpc Call(AncillaryRequest) returns (AncillaryResponse);
  rpc WatchConnections(AncillaryRequest) returns (stream ConnectionStreamEvent);
  rpc StreamAction(ActionStreamRequest) returns (stream ActionStreamEvent);
+ rpc WatchConnectionMetadata(AncillaryRequest) returns (stream ConnectionStreamEvent);
 }
