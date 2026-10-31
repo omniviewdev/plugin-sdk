@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -788,49 +789,50 @@ func TestCommitSettings_NotificationCanMutateProvider(t *testing.T) {
 func TestCommitSettings_SerializesOtherMutationsUntilPublication(t *testing.T) {
 	for _, mutation := range []string{"value", "definition"} {
 		t.Run(mutation, func(t *testing.T) {
-			p := newTestProvider(t, testCategory())
-			persisting := make(chan struct{})
-			release := make(chan struct{})
-			commitDone := make(chan error, 1)
-			go func() {
-				values := map[string]any{"test.name": "committed"}
-				_, err := p.CommitSettings(context.Background(), values, func(map[string]any) error {
-					close(persisting)
-					<-release
-					return nil
-				})
-				commitDone <- err
-			}()
-			<-persisting
-			started := make(chan struct{})
-			mutationDone := make(chan error, 1)
-			go func() {
-				close(started)
-				if mutation == "value" {
-					mutationDone <- p.SetSetting("test.name", "later")
-					return
+			synctest.Test(t, func(t *testing.T) {
+				p := newTestProvider(t, testCategory())
+				persisting := make(chan struct{})
+				release := make(chan struct{})
+				commitDone := make(chan error, 1)
+				go func() {
+					values := map[string]any{"test.name": "committed"}
+					_, err := p.CommitSettings(context.Background(), values, func(map[string]any) error {
+						close(persisting)
+						<-release
+						return nil
+					})
+					commitDone <- err
+				}()
+				<-persisting
+				mutationDone := make(chan error, 1)
+				go func() {
+					if mutation == "value" {
+						mutationDone <- p.SetSetting("test.name", "later")
+						return
+					}
+					mutationDone <- p.RegisterSetting("test", Setting{ID: "name", Label: "Updated", Type: Text, Default: "new default"})
+				}()
+				// Wait until the mutation blocks on serialization, or completes if broken.
+				synctest.Wait()
+				select {
+				case err := <-mutationDone:
+					close(release)
+					<-commitDone
+					t.Fatalf("mutation completed before persistence: %v", err)
+				default:
 				}
-				mutationDone <- p.RegisterSetting("test", Setting{ID: "name", Label: "Updated", Type: Text, Default: "new default"})
-			}()
-			<-started
-			select {
-			case err := <-mutationDone:
 				close(release)
-				<-commitDone
-				t.Fatalf("mutation completed before persistence: %v", err)
-			default:
-			}
-			close(release)
-			require.NoError(t, <-commitDone)
-			require.NoError(t, <-mutationDone)
-			setting, err := p.GetSetting("test.name")
-			require.NoError(t, err)
-			if mutation == "value" {
-				assert.Equal(t, "later", setting.Value)
-			} else {
-				assert.Equal(t, "committed", setting.Value)
-				assert.Equal(t, "Updated", setting.Label)
-			}
+				require.NoError(t, <-commitDone)
+				require.NoError(t, <-mutationDone)
+				setting, err := p.GetSetting("test.name")
+				require.NoError(t, err)
+				if mutation == "value" {
+					assert.Equal(t, "later", setting.Value)
+				} else {
+					assert.Equal(t, "committed", setting.Value)
+					assert.Equal(t, "Updated", setting.Label)
+				}
+			})
 		})
 	}
 }

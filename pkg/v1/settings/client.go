@@ -58,6 +58,7 @@ func (c *Client) GetSettingValue(id string) (any, error) {
 }
 
 // CommitSettings persists normalized remote values before acknowledging publication.
+// Keys remain opaque plugin setting IDs, matching ListSettings and hydration.
 // A lost response after persistence is durable success with uncertain application.
 func (c *Client) CommitSettings(
 	ctx context.Context,

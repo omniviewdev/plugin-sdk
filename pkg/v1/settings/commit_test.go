@@ -94,6 +94,69 @@ func TestCommitPersistsBeforePublishAndValidatesOnce(t *testing.T) {
 	require.True(t, result.Applied)
 }
 
+func TestBaseCommitPersistenceResolvesScopedIDs(t *testing.T) {
+	for _, plugin := range []bool{false, true} {
+		id := "plugin.name"
+		opts := base.ProviderOpts{
+			PluginSettings: []base.Category{{
+				ID: "plugin", Settings: map[string]base.Setting{
+					"name": {ID: "name", Type: base.Text, Default: "old"},
+				},
+			}},
+		}
+		if plugin {
+			opts.PluginID = "fixture"
+			id = "name"
+		}
+		t.Run(id, func(t *testing.T) {
+			provider := base.NewProvider(opts)
+			var saved map[string]any
+			result, err := provider.CommitSettings(context.Background(), map[string]any{id: "saved"}, func(values map[string]any) error {
+				saved = values
+				return nil
+			})
+			require.NoError(t, err)
+			require.True(t, result.Applied)
+			require.Equal(t, map[string]any{"plugin.name": "saved"}, saved)
+			// Scoped storage can hydrate a fresh core provider without changing keys.
+			opts.PluginID = ""
+			restarted := base.NewProvider(opts)
+			require.NoError(t, restarted.SetSettings(saved))
+			value, err := restarted.GetString("plugin.name")
+			require.NoError(t, err)
+			require.Equal(t, "saved", value)
+		})
+	}
+}
+
+func TestPluginCommitPersistencePreservesOpaqueIDsForHydration(t *testing.T) {
+	for _, id := range []string{"name", "limits.count", "plugin.name"} {
+		t.Run(id, func(t *testing.T) {
+			definition := base.Setting{ID: id, Type: base.Text, Default: "old"}
+			provider := commitProvider(definition)
+			client, _ := commitClient(t, &settings.SettingsPluginServer{Impl: settings.NewProviderWrapper(provider)})
+			var saved map[string]any
+			result, err := client.CommitSettings(context.Background(), map[string]any{id: "saved"}, func(values map[string]any) error {
+				saved = values
+				return nil
+			})
+			require.NoError(t, err)
+			require.True(t, result.Applied)
+			require.Equal(t, map[string]any{id: "saved"}, saved)
+			require.Contains(t, client.ListSettings(), id)
+
+			restarted := commitProvider(definition)
+			restartedClient, _ := commitClient(t, &settings.SettingsPluginServer{Impl: settings.NewProviderWrapper(restarted)})
+			result, err = restartedClient.CommitSettings(context.Background(), saved, nil)
+			require.NoError(t, err)
+			require.True(t, result.Applied)
+			value, err := restartedClient.GetSettingValue(id)
+			require.NoError(t, err)
+			require.Equal(t, "saved", value)
+		})
+	}
+}
+
 type disconnectCommitServer struct {
 	settingspb.UnimplementedSettingsPluginServer
 }

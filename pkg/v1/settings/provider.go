@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"strings"
 
 	"github.com/omniviewdev/plugin-sdk/settings"
 )
@@ -21,6 +22,8 @@ type Provider interface {
 	ValidateSetting(id string, value any) (settings.ValidationResult, error)
 
 	// CommitSettings validates once and publishes only after persistence succeeds.
+	// Unlike the base provider, persistence keys are opaque plugin setting IDs,
+	// matching ListSettings and the host's stored values used for hydration.
 	CommitSettings(ctx context.Context, values map[string]any, persist settings.PersistFunc) (settings.CommitResult, error)
 }
 
@@ -61,7 +64,17 @@ func (p *provider) CommitSettings(
 	values map[string]any,
 	persist settings.PersistFunc,
 ) (settings.CommitResult, error) {
-	return p.base.CommitSettings(ctx, values, persist)
+	var save settings.PersistFunc
+	if persist != nil {
+		save = func(normalized map[string]any) error {
+			opaqueValues := make(map[string]any, len(normalized))
+			for id, value := range normalized {
+				opaqueValues[strings.TrimPrefix(id, "plugin.")] = value
+			}
+			return persist(opaqueValues)
+		}
+	}
+	return p.base.CommitSettings(ctx, values, save)
 }
 
 func (p *provider) ValidateSetting(id string, value any) (settings.ValidationResult, error) {

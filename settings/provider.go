@@ -97,7 +97,9 @@ type ValidationError struct {
 func (e *ValidationError) Error() string { return e.Err.Error() }
 func (e *ValidationError) Unwrap() error { return e.Err }
 
-// PersistFunc durably saves normalized changes with scoped IDs.
+// PersistFunc durably saves normalized changes. The base Provider supplies resolved
+// category.setting IDs, including plugin.name for an unscoped plugin setting name.
+// Transport adapters may map these IDs to their public namespace.
 // It may read the provider but must not mutate it.
 type PersistFunc func(map[string]any) error
 
@@ -428,7 +430,7 @@ func (p *provider) commitSettings(
 		if err := entry.setting.SetValue(values[entry.id]); err != nil {
 			return CommitResult{}, nil, &ValidationError{Err: err}
 		}
-		normalized[entry.id] = CloneValue(entry.setting.Value)
+		normalized[entry.category+"."+entry.key] = CloneValue(entry.setting.Value)
 	}
 	if err := ctx.Err(); err != nil {
 		return CommitResult{}, nil, err
