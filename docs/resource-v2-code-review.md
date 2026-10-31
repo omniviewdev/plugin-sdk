@@ -300,3 +300,11 @@ Existing suites passed despite these uncovered behaviors. No fixes were applied 
 - [Host review](https://github.com/omniviewdev/omniview/pull/192#pullrequestreview-5706086527): focused organization and integration guidance, without speculative bug annotations.
 
 These reviews were posted as comments, not approval or formal change-request events. The historical recommendation was to hold merge. Temporary reproduction programs were removed after their observations were recorded. Subsequent SDK direction acceptance does not itself authorize merge or release.
+
+## Premerge native path failure
+
+A fresh native workspace exposed a panic outside the resource admission model: `utils.DeexpandTilde` sliced every path at HOME's length without checking the prefix. A private kubeconfig path shorter than the isolated HOME caused finite discovery to return `INTERNAL`; the same conversion in the connection watcher crashed the plugin.
+
+The utility now compacts only HOME itself or a matching path-component prefix. Outside, shorter, and sibling-prefix paths remain unchanged. Matching is lexical: it does not resolve symlinks or establish filesystem authority. `ExpandTilde` retains its `"~/"` behavior while leaving empty, one-character, and bare `"~"` inputs unchanged instead of slicing past their bounds.
+
+The focused shorter-path regression failed before the fix with the same bounds panic. Home-boundary, trailing-separator, filesystem-root, expansion, and absent-HOME regressions pass afterward. A real path round-trip using the isolated native HOME and private kubeconfig also passed without reading credential contents. Kubernetes keeps the expanded authoritative client path in connection data; the compact form is only a label. No second registry, compatibility path, or Kubernetes-specific SDK rule was added.
