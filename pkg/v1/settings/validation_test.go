@@ -9,7 +9,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
 	settingspb "github.com/omniviewdev/plugin-sdk/proto/v1/settings"
@@ -84,7 +86,9 @@ func TestValidationRPCExecutesRegisteredCallbacksWithoutMutation(t *testing.T) {
 	require.False(t, result.Valid)
 	require.Equal(t, "tool_failed", result.Code)
 	require.Equal(t, "Value did not pass validation.", result.Message)
-	require.ErrorContains(t, client.SetSettings(map[string]any{"tool": "empty-message"}), result.Message)
+	_, err = client.CommitSettings(context.Background(), map[string]any{"tool": "empty-message"}, nil)
+	require.ErrorContains(t, err, result.Message)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
 	value, err := provider.GetString("tool")
 	require.NoError(t, err)
 	require.Equal(t, "saved", value)
@@ -93,7 +97,8 @@ func TestValidationRPCExecutesRegisteredCallbacksWithoutMutation(t *testing.T) {
 	require.False(t, result.Valid)
 	require.NotContains(t, result.Message, "private-input")
 	require.NotEqual(t, "private", result.Code)
-	require.Error(t, client.SetSettings(map[string]any{"tool": "bad"}))
+	_, err = client.CommitSettings(context.Background(), map[string]any{"tool": "bad"}, nil)
+	require.Error(t, err)
 	value, err = provider.GetString("tool")
 	require.NoError(t, err)
 	require.Equal(t, "saved", value)

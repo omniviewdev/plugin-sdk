@@ -148,16 +148,18 @@ func ToProtoSetting(s settings.Setting) *settingspb.Setting {
 	}
 
 	return &settingspb.Setting{
-		Id:            s.ID,
-		Label:         s.Label,
-		Description:   s.Description,
-		Type:          SettingTypeToProtoType(s.Type),
-		Value:         value,
-		Default:       defaultValue,
-		Options:       options,
-		FileSelection: ToProtoSettingFileSelection(s.FileSelection),
-		DevOnly:       s.DevOnly,
-		Sensitive:     grpcproto.Bool(s.Sensitive || s.Type == settings.Password),
+		Id:              s.ID,
+		Label:           s.Label,
+		Description:     s.Description,
+		Type:            SettingTypeToProtoType(s.Type),
+		Value:           value,
+		Default:         defaultValue,
+		Options:         options,
+		FileSelection:   ToProtoSettingFileSelection(s.FileSelection),
+		DevOnly:         s.DevOnly,
+		Sensitive:       grpcproto.Bool(s.Sensitive || s.Type == settings.Password),
+		RequiresRestart: s.RequiresRestart,
+		PendingRestart:  s.PendingRestart,
 	}
 }
 
@@ -188,17 +190,43 @@ func FromProtoSetting(s *settingspb.Setting) settings.Setting {
 		}
 	}
 	return settings.Setting{
-		ID:            s.GetId(),
-		Label:         s.GetLabel(),
-		Description:   s.GetDescription(),
-		Type:          ProtoTypeToSettingType(s.GetType()),
-		Value:         value,
-		Default:       defaultValue,
-		Options:       options,
-		FileSelection: FromProtoSettingFileSelection(s.GetFileSelection()),
-		DevOnly:       s.GetDevOnly(),
+		ID:              s.GetId(),
+		Label:           s.GetLabel(),
+		Description:     s.GetDescription(),
+		Type:            ProtoTypeToSettingType(s.GetType()),
+		Value:           value,
+		Default:         defaultValue,
+		Options:         options,
+		FileSelection:   FromProtoSettingFileSelection(s.GetFileSelection()),
+		DevOnly:         s.GetDevOnly(),
+		RequiresRestart: s.GetRequiresRestart(),
+		PendingRestart:  s.GetPendingRestart(),
 		// Missing sensitivity metadata is legacy/unknown, never explicit public.
 		Sensitive: s.Sensitive == nil || s.GetSensitive() ||
 			s.GetType() == settingspb.SettingType_SETTING_TYPE_PASSWORD,
 	}
+}
+
+func encodeValues(values map[string]any) (*settingspb.SettingsValues, error) {
+	encoded := &settingspb.SettingsValues{Values: make(map[string]*anypb.Any, len(values))}
+	for id, value := range values {
+		wire, err := ConvertInterfaceToAny(value)
+		if err != nil {
+			return nil, err
+		}
+		encoded.Values[id] = wire
+	}
+	return encoded, nil
+}
+
+func decodeValues(encoded *settingspb.SettingsValues) (map[string]any, error) {
+	values := make(map[string]any, len(encoded.GetValues()))
+	for id, wire := range encoded.GetValues() {
+		value, err := ConvertAnyToInterface(wire)
+		if err != nil {
+			return nil, err
+		}
+		values[id] = value
+	}
+	return values, nil
 }

@@ -1,6 +1,10 @@
 package settings
 
-import "github.com/omniviewdev/plugin-sdk/settings"
+import (
+	"context"
+
+	"github.com/omniviewdev/plugin-sdk/settings"
+)
 
 // Provider is the interface that must be implemented by the settings provider
 // plugin implementations on either side of the RPC.
@@ -16,11 +20,8 @@ type Provider interface {
 	GetSettingValue(id string) (any, error)
 	ValidateSetting(id string, value any) (settings.ValidationResult, error)
 
-	// SetSetting sets the value of the setting by ID
-	SetSetting(id string, value any) error
-
-	// SetSettings sets multiple settings at once
-	SetSettings(settings map[string]any) error
+	// CommitSettings validates once and publishes only after persistence succeeds.
+	CommitSettings(ctx context.Context, values map[string]any, persist settings.PersistFunc) (settings.CommitResult, error)
 }
 
 type provider struct {
@@ -55,12 +56,12 @@ func (p *provider) GetSettingValue(id string) (any, error) {
 	return p.base.GetSettingValue(id)
 }
 
-func (p *provider) SetSetting(id string, value any) error {
-	return p.base.SetSetting(id, value)
-}
-
-func (p *provider) SetSettings(settings map[string]any) error {
-	return p.base.SetSettings(settings)
+func (p *provider) CommitSettings(
+	ctx context.Context,
+	values map[string]any,
+	persist settings.PersistFunc,
+) (settings.CommitResult, error) {
+	return p.base.CommitSettings(ctx, values, persist)
 }
 
 func (p *provider) ValidateSetting(id string, value any) (settings.ValidationResult, error) {

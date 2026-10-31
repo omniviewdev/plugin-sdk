@@ -24,8 +24,7 @@ const (
 	SettingsPlugin_GetSetting_FullMethodName      = "/omniview.sdk.settings.v1.SettingsPlugin/GetSetting"
 	SettingsPlugin_GetSettingValue_FullMethodName = "/omniview.sdk.settings.v1.SettingsPlugin/GetSettingValue"
 	SettingsPlugin_ValidateSetting_FullMethodName = "/omniview.sdk.settings.v1.SettingsPlugin/ValidateSetting"
-	SettingsPlugin_SetSetting_FullMethodName      = "/omniview.sdk.settings.v1.SettingsPlugin/SetSetting"
-	SettingsPlugin_SetSettings_FullMethodName     = "/omniview.sdk.settings.v1.SettingsPlugin/SetSettings"
+	SettingsPlugin_CommitSettings_FullMethodName  = "/omniview.sdk.settings.v1.SettingsPlugin/CommitSettings"
 )
 
 // SettingsPluginClient is the client API for SettingsPlugin service.
@@ -36,8 +35,7 @@ type SettingsPluginClient interface {
 	GetSetting(ctx context.Context, in *GetSettingRequest, opts ...grpc.CallOption) (*Setting, error)
 	GetSettingValue(ctx context.Context, in *GetSettingValueRequest, opts ...grpc.CallOption) (*GetSettingValueResponse, error)
 	ValidateSetting(ctx context.Context, in *ValidateSettingRequest, opts ...grpc.CallOption) (*ValidateSettingResponse, error)
-	SetSetting(ctx context.Context, in *SetSettingRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	SetSettings(ctx context.Context, in *SetSettingsRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	CommitSettings(ctx context.Context, opts ...grpc.CallOption) (SettingsPlugin_CommitSettingsClient, error)
 }
 
 type settingsPluginClient struct {
@@ -84,22 +82,35 @@ func (c *settingsPluginClient) ValidateSetting(ctx context.Context, in *Validate
 	return out, nil
 }
 
-func (c *settingsPluginClient) SetSetting(ctx context.Context, in *SetSettingRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, SettingsPlugin_SetSetting_FullMethodName, in, out, opts...)
+func (c *settingsPluginClient) CommitSettings(ctx context.Context, opts ...grpc.CallOption) (SettingsPlugin_CommitSettingsClient, error) {
+	stream, err := c.cc.NewStream(ctx, &SettingsPlugin_ServiceDesc.Streams[0], SettingsPlugin_CommitSettings_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &settingsPluginCommitSettingsClient{stream}
+	return x, nil
 }
 
-func (c *settingsPluginClient) SetSettings(ctx context.Context, in *SetSettingsRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, SettingsPlugin_SetSettings_FullMethodName, in, out, opts...)
-	if err != nil {
+type SettingsPlugin_CommitSettingsClient interface {
+	Send(*CommitSettingsRequest) error
+	Recv() (*CommitSettingsResponse, error)
+	grpc.ClientStream
+}
+
+type settingsPluginCommitSettingsClient struct {
+	grpc.ClientStream
+}
+
+func (x *settingsPluginCommitSettingsClient) Send(m *CommitSettingsRequest) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *settingsPluginCommitSettingsClient) Recv() (*CommitSettingsResponse, error) {
+	m := new(CommitSettingsResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return m, nil
 }
 
 // SettingsPluginServer is the server API for SettingsPlugin service.
@@ -110,8 +121,7 @@ type SettingsPluginServer interface {
 	GetSetting(context.Context, *GetSettingRequest) (*Setting, error)
 	GetSettingValue(context.Context, *GetSettingValueRequest) (*GetSettingValueResponse, error)
 	ValidateSetting(context.Context, *ValidateSettingRequest) (*ValidateSettingResponse, error)
-	SetSetting(context.Context, *SetSettingRequest) (*emptypb.Empty, error)
-	SetSettings(context.Context, *SetSettingsRequest) (*emptypb.Empty, error)
+	CommitSettings(SettingsPlugin_CommitSettingsServer) error
 }
 
 // UnimplementedSettingsPluginServer should be embedded to have forward compatible implementations.
@@ -130,11 +140,8 @@ func (UnimplementedSettingsPluginServer) GetSettingValue(context.Context, *GetSe
 func (UnimplementedSettingsPluginServer) ValidateSetting(context.Context, *ValidateSettingRequest) (*ValidateSettingResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ValidateSetting not implemented")
 }
-func (UnimplementedSettingsPluginServer) SetSetting(context.Context, *SetSettingRequest) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SetSetting not implemented")
-}
-func (UnimplementedSettingsPluginServer) SetSettings(context.Context, *SetSettingsRequest) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SetSettings not implemented")
+func (UnimplementedSettingsPluginServer) CommitSettings(SettingsPlugin_CommitSettingsServer) error {
+	return status.Errorf(codes.Unimplemented, "method CommitSettings not implemented")
 }
 
 // UnsafeSettingsPluginServer may be embedded to opt out of forward compatibility for this service.
@@ -220,40 +227,30 @@ func _SettingsPlugin_ValidateSetting_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SettingsPlugin_SetSetting_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetSettingRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(SettingsPluginServer).SetSetting(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: SettingsPlugin_SetSetting_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SettingsPluginServer).SetSetting(ctx, req.(*SetSettingRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+func _SettingsPlugin_CommitSettings_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(SettingsPluginServer).CommitSettings(&settingsPluginCommitSettingsServer{stream})
 }
 
-func _SettingsPlugin_SetSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetSettingsRequest)
-	if err := dec(in); err != nil {
+type SettingsPlugin_CommitSettingsServer interface {
+	Send(*CommitSettingsResponse) error
+	Recv() (*CommitSettingsRequest, error)
+	grpc.ServerStream
+}
+
+type settingsPluginCommitSettingsServer struct {
+	grpc.ServerStream
+}
+
+func (x *settingsPluginCommitSettingsServer) Send(m *CommitSettingsResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *settingsPluginCommitSettingsServer) Recv() (*CommitSettingsRequest, error) {
+	m := new(CommitSettingsRequest)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
-	if interceptor == nil {
-		return srv.(SettingsPluginServer).SetSettings(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: SettingsPlugin_SetSettings_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SettingsPluginServer).SetSettings(ctx, req.(*SetSettingsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return m, nil
 }
 
 // SettingsPlugin_ServiceDesc is the grpc.ServiceDesc for SettingsPlugin service.
@@ -279,15 +276,14 @@ var SettingsPlugin_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "ValidateSetting",
 			Handler:    _SettingsPlugin_ValidateSetting_Handler,
 		},
+	},
+	Streams: []grpc.StreamDesc{
 		{
-			MethodName: "SetSetting",
-			Handler:    _SettingsPlugin_SetSetting_Handler,
-		},
-		{
-			MethodName: "SetSettings",
-			Handler:    _SettingsPlugin_SetSettings_Handler,
+			StreamName:    "CommitSettings",
+			Handler:       _SettingsPlugin_CommitSettings_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
 	Metadata: "proto/v1/settings/settings.proto",
 }

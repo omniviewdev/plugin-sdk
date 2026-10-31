@@ -2,16 +2,18 @@ package settings
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	settingspb "github.com/omniviewdev/plugin-sdk/proto/v1/settings"
+	"github.com/omniviewdev/plugin-sdk/settings"
 )
 
 // SettingsPluginServer exposes a provider through the settings RPC service.
-// The provider owns synchronization; RPC cancellation does not cancel provider methods.
+// Cancellation releases the persistence callback waiting for acknowledgement.
 type SettingsPluginServer struct {
 	// This is the real implementation
 	Impl Provider
@@ -71,48 +73,58 @@ func (s *SettingsPluginServer) GetSettingValue(
 	}, nil
 }
 
-// SetSetting decodes and validates one update through the provider.
-func (s *SettingsPluginServer) SetSetting(
-	_ context.Context,
-	in *settingspb.SetSettingRequest,
-) (*emptypb.Empty, error) {
-	value, err := ConvertAnyToInterface(in.GetValue())
+// CommitSettings keeps validation, persistence and publication in one provider transaction.
+func (s *SettingsPluginServer) CommitSettings(stream settingspb.SettingsPlugin_CommitSettingsServer) error {
+	request, err := stream.Recv()
 	if err != nil {
-		return nil, status.Errorf(
-			codes.Internal,
-			"failed to convert setting value: %s",
-			err.Error(),
-		)
+		return err
 	}
-
-	if err = s.Impl.SetSetting(in.GetId(), value); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to set setting: %s", err.Error())
+	if request.GetProposal() == nil {
+		return status.Error(codes.InvalidArgument, "settings proposal required")
 	}
-	return &emptypb.Empty{}, nil
-}
-
-// SetSettings decodes every input before calling the provider's bulk update method.
-func (s *SettingsPluginServer) SetSettings(
-	_ context.Context,
-	in *settingspb.SetSettingsRequest,
-) (*emptypb.Empty, error) {
-	values := make(map[string]any)
-	for k, v := range in.GetSettings() {
-		value, err := ConvertAnyToInterface(v)
-		if err != nil {
-			return nil, status.Errorf(
-				codes.Internal,
-				"failed to convert setting value: %s",
-				err.Error(),
-			)
+	values, err := decodeValues(request.GetProposal())
+	if err != nil {
+		return status.Error(codes.InvalidArgument, "invalid settings proposal")
+	}
+	result, err := s.Impl.CommitSettings(stream.Context(), values, func(normalized map[string]any) error {
+		if contextErr := stream.Context().Err(); contextErr != nil {
+			return contextErr
 		}
-		values[k] = value
+		prepared, encodeErr := encodeValues(normalized)
+		if encodeErr != nil {
+			return encodeErr
+		}
+		response := &settingspb.CommitSettingsResponse{
+			Phase: &settingspb.CommitSettingsResponse_Prepared{Prepared: prepared},
+		}
+		if sendErr := stream.Send(response); sendErr != nil {
+			return sendErr
+		}
+		ack, receiveErr := stream.Recv()
+		if receiveErr != nil {
+			return receiveErr
+		}
+		if _, ok := ack.GetPhase().(*settingspb.CommitSettingsRequest_Persisted); !ok || !ack.GetPersisted() {
+			return status.Error(codes.Aborted, "settings persistence aborted")
+		}
+		return nil
+	})
+	if err != nil {
+		var validationErr *settings.ValidationError
+		if errors.As(err, &validationErr) {
+			return status.Errorf(codes.InvalidArgument, "settings commit rejected: %s", err)
+		}
+		return status.Errorf(codes.FailedPrecondition, "settings commit rejected: %s", err)
 	}
-
-	if err := s.Impl.SetSettings(values); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to set settings: %s", err.Error())
-	}
-	return &emptypb.Empty{}, nil
+	return stream.Send(&settingspb.CommitSettingsResponse{
+		Phase: &settingspb.CommitSettingsResponse_Result{
+			Result: &settingspb.CommitSettingsResult{
+				Committed: result.Committed,
+				Applied:   result.Applied,
+				Uncertain: result.Uncertain,
+			},
+		},
+	})
 }
 
 // ValidateSetting executes registered callbacks in the plugin, without mutating values.

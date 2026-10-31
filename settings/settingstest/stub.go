@@ -2,6 +2,7 @@
 package settingstest
 
 import (
+	"context"
 	"sync"
 
 	"github.com/omniviewdev/plugin-sdk/settings"
@@ -11,8 +12,8 @@ import (
 var _ settings.Provider = (*StubProvider)(nil)
 
 // StubProvider implements settings.Provider with canned return values.
-// All methods return zero values by default. Populate the map fields
-// to make specific getters return data.
+// Getters return zero values by default. Populate the map fields
+// to make specific getters return data. Commits invoke persistence and report success.
 //
 // Usage:
 //
@@ -48,11 +49,44 @@ func (s *StubProvider) GetSettingValue(_ string) (any, error) {
 	return nil, nil
 }
 
+// GetCategoryValues returns a detached copy of the configured unscoped values.
+func (s *StubProvider) GetCategoryValues(_ string) (map[string]any, error) {
+	values := make(map[string]any, len(s.Values_))
+	for id, value := range s.Values_ {
+		values[id] = settings.CloneValue(value)
+	}
+	return values, nil
+}
+
+// CommitSettings invokes persistence with detached values without retaining updates.
+func (s *StubProvider) CommitSettings(
+	ctx context.Context, values map[string]any, persist settings.PersistFunc,
+) (settings.CommitResult, error) {
+	if err := ctx.Err(); err != nil {
+		return settings.CommitResult{}, err
+	}
+	if persist != nil {
+		detached := make(map[string]any, len(values))
+		for id, value := range values {
+			detached[id] = settings.CloneValue(value)
+		}
+		if err := persist(detached); err != nil {
+			return settings.CommitResult{}, err
+		}
+	}
+	return settings.CommitResult{Committed: true, Applied: true}, nil
+}
+
 // SetSetting accepts updates without retaining them.
-func (s *StubProvider) SetSetting(_ string, _ any) error { return nil }
+func (s *StubProvider) SetSetting(id string, value any) error {
+	return s.SetSettings(map[string]any{id: value})
+}
 
 // SetSettings accepts bulk updates without retaining them.
-func (s *StubProvider) SetSettings(_ map[string]any) error { return nil }
+func (s *StubProvider) SetSettings(values map[string]any) error {
+	_, err := s.CommitSettings(context.Background(), values, nil)
+	return err
+}
 
 // RegisterSetting accepts metadata without retaining it.
 func (s *StubProvider) RegisterSetting(_ string, _ settings.Setting) error { return nil }
