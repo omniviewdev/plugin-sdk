@@ -1,6 +1,6 @@
 # MCP integration with resource v2
 
-**Status: SDK direction accepted; MCP alignment implementation in progress.**
+**Status: SDK direction accepted; coordinated merge and release authorized.**
 
 The MCP relay should consume the same host resource services as the UI. Plugins should not implement a second resource engine for agents. Custom SDK tools remain an extension lane for non-resource work.
 
@@ -9,7 +9,7 @@ This catalog follows [Alex Mononen’s PR21 comment][alex], [SDK issue25][sdk-is
 **Coverage:** 33 issue sections/feature rows, 16 inline review findings, and three additional review notes. These are **52 source items**, not 52 independent defects. Overlapping reports share work packages below.
 
 > [!IMPORTANT]
-> The user accepted the SDK direction and authorized MCP alignment implementation. This removes the direction-review hold, not the remaining implementation and integration gates. No merge, ready transition, API freeze, tag, release, or managed replacement change is authorized.
+> The user authorized the coordinated SDK, host, MCP and Kubernetes merge/release sequence. Publication still requires matching released dependencies, release checks and final live-product verification. Administrative merge bypass is explicitly authorized where needed; repository rules remain unchanged. Historical implementation-wave receipts below retain the authorization and acceptance state at the time they were recorded.
 
 ## Read this plan
 

@@ -3,7 +3,7 @@
 [Docs home](README.md) · [Quickstart](quickstart.md) · [API reference](resource-v2-api.md)
 
 > [!IMPORTANT]
-> Resource v2 is an API candidate. This guide describes the current implementation.
+> Resource v2 is the SDK v0.9 resource API. This guide describes its implemented provider contract.
 
 Start with the [runnable notes plugin](../examples/resource-plugin). It advertises one type and implements only point reads. Add another operation only when your backend can honor its contract.
 

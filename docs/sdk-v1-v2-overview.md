@@ -3,7 +3,7 @@
 [Docs home](README.md) · [Quickstart](quickstart.md) · [API reference](resource-v2-api.md)
 
 > [!IMPORTANT]
-> Resource v2 is an API candidate, not a released compatibility layer. Rebuild and migrate host/plugin consumers together; do not freeze the API from this guide.
+> Resource v2 is the SDK v0.9 resource API, not a compatibility layer. Rebuild and migrate host/plugin consumers together using the coordinated release versions.
 
 This guide covers the two removed resource stacks: `pkg/resource` and `pkg/v1/resource`. Utility packages such as `pkg/v1/exec` and `pkg/v1/metric` remain current.
 

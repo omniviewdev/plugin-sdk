@@ -3,7 +3,7 @@
 Use the Go SDK to expose resources, terminals, logs, metrics, forwarding, and tools from your backend.
 
 > [!IMPORTANT]
-> The SDK direction is accepted, and the guides describe the implemented candidate contracts. This is not merge, release, tag, coordinated publication, API-freeze, or SDK-completion approval.
+> These guides describe the resource-v2 contract for SDK v0.9. Adopt it with the coordinated Omniview v0.11 and rebuilt plugin releases. This is a breaking resource migration, not a compatibility layer for resource-v1 plugins.
 
 ## Start here
 

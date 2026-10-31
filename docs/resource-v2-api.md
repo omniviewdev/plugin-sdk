@@ -1,10 +1,10 @@
 # Resource v2 API reference
 
-**API status:** implementation candidate, not an approved public contract. This page describes current source behavior.
+**API status:** resource-v2 contract for SDK v0.9. This page describes the implemented behavior used by the coordinated host/plugin release.
 
 [Documentation home](README.md) · [Quickstart](quickstart.md) · [Resource tasks](resources.md) · [Connections](connections.md) · [Migration](sdk-v1-v2-overview.md)
 
-Use this page to find the implemented candidate interfaces, request fields, capabilities, values, and errors. SDK direction acceptance does not authorize merge, release, tag, or API freeze. Use [advanced contracts](resource-v2-contracts.md) for admission edge cases, ownership, limits, and historical design rationale.
+Use this page to find interfaces, request fields, capabilities, values, and errors. Migrate and rebuild resource consumers together; no legacy resource-method fallback is provided. Use [advanced contracts](resource-v2-contracts.md) for admission edge cases, ownership, limits, and historical design rationale.
 
 ## Responsibilities and source map
 
