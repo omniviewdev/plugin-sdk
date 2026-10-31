@@ -15,6 +15,28 @@ eight reproduced defects, and review admission/lifecycle/transport choices.
 Keep the dated evidence and original recommendations distinct from the current
 contracts recorded in [the specification review](resource-v2-spec-review.md#implemented-candidate-contract-choices).
 
+## Premerge audit follow-up: failure-safe tool test teardown
+
+Review of the deferred test-isolation findings found a failure-path deadlock in
+`TestToolLeaseRejectsLateSuccess`. An assertion could abort while the handler
+still held its connection lease and waited for the test's release channel.
+Controller cleanup then waited indefinitely for that lease.
+
+The test now registers idempotent release cleanup after controller cleanup is
+registered, so LIFO cleanup releases the handler first. Normal-path assertions,
+generation retirement, and late-success rejection remain unchanged.
+
+An isolated Go overlay injected a fatal assertion immediately after actual
+handler admission. The original test reached its timeout; the corrected test
+returned the intentional assertion failure without timing out. The full normal
+and race suites then passed: 23 tested packages and 18 packages without tests in
+each run.
+
+This correction changes test failure cleanup, not the public API or production
+controller lifetime. The five deferred lint rules remain informational; static
+review of getter and named-return findings found no additional defect requiring
+promotion. Test-isolation review was targeted, not exhaustive.
+
 ## Scope and evidence
 
 Reviewed candidates:
