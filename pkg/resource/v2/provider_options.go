@@ -23,6 +23,9 @@ type Config[ClientT any] struct {
 	Catalog       func(context.Context, CatalogRequest) (Catalog, error)
 	Registrations []Registration[ClientT]
 	Lifecycle     *Lifecycle[ClientT]
+	// ConnectionMetadata observes public server facts using an already-started
+	// leased client. It must honor cancellation and never return secrets.
+	ConnectionMetadata func(context.Context, types.Connection, *ClientT) (ConnectionMetadataUpdate, error)
 	// ResolveRegistration optionally supplements static registrations for each
 	// discovered type. It must return that exact Type and may restrict Connection
 	// to the requested route, never another route. It may run repeatedly and

@@ -36,6 +36,7 @@ type Config[ClientT any] struct {
 	Catalog       func(context.Context, CatalogRequest) (Catalog, error)
 	Registrations []Registration[ClientT]
 	Lifecycle     *Lifecycle[ClientT]
+	ConnectionMetadata func(context.Context, types.Connection, *ClientT) (ConnectionMetadataUpdate, error)
 	ResolveRegistration func(context.Context, AccessRoute, string) (Registration[ClientT], error)
 	DynamicUpdates bool
 	ErrorClassifier ErrorClassifier
@@ -118,6 +119,43 @@ Neither helper starts a connection, probes health, selects a default, or authori
 | `Close` | Cancel and retire provider-owned lifetime state | Substitute for per-request cancellation |
 
 Unknown profile IDs return `NOT_FOUND`. Lifecycle methods are unsupported when no lifecycle is configured.
+
+## Publish connection/server facts
+
+Set `Config.ConnectionMetadata` to negotiate the optional `connectionMetadata` trait. The callback receives the configured profile and an already-started, lease-bound client. It must return public server/service observations, not modify `Connection.Data` or return resource inventory.
+
+Inside the callback, after acquiring `version` and its UTC `observedAt`, construct an update:
+
+```go
+return resourcev2.ConnectionMetadataUpdate{
+	Set: map[string]resourcev2.ConnectionMetadataObservation{
+		"kubernetes.server_version": {
+			State:      "success",
+			Value:      version,
+			ObservedAt: observedAt,
+		},
+	},
+}, nil
+```
+
+Use namespaced keys such as `aws.region` and `kubernetes.server_version`. Dots are literal map-key characters. Keep each key's meaning and JSON type stable; use a new key for incompatible changes. Unknown keys remain extensible without a registry.
+
+| Provider result | SDK behavior |
+| --- | --- |
+| Successful key in `Set` | Store its value and observation timestamp as current |
+| Unavailable key in `Set` | Keep its previous value stale, or report unavailable if none exists |
+| Key in `Remove` | Delete it |
+| Omitted key | Preserve its value and freshness |
+| Overall callback error | Mark retained values stale and expose a safe refresh error |
+
+An attempted key must produce success or unavailable. An update is atomic; overlapping set/remove keys and invalid or oversized JSON reject the result. Explicit null, false, zero, and empty string remain values. Use strings for large integers, IDs, and versions that cannot round-trip through JavaScript numbers.
+
+`ConnectionMetadataProvider` exposes `GetConnectionMetadata`, `RefreshConnectionMetadata`, and `WatchConnectionMetadata`. Get never acquires. Refresh never starts a connection. Start schedules observation; concurrent refreshes coalesce. `InvalidateConnectionMetadata` queues a serialized refresh when server discovery changes. Reuse cached facts only when cache updates share that acquisition ordering.
+
+Stop revokes publication before cancellation and retains observations as stale. Reconnect creates a new generation; configuration changes and removal clear old facts. Revisions remain monotonic within the provider lifetime, including removal tombstones. Watch replays current snapshots/tombstones and returns `RESET_REQUIRED` when a slow consumer must resynchronize.
+
+Current means generation-valid, not a recency guarantee. Metadata grants neither resource capabilities nor authorization. Never publish credentials, raw native errors, or resource counts. Sanitize endpoint userinfo, query strings, and fragments before returning values. Metadata remains in memory and never becomes desired profile configuration.
+
 
 ## Follow the state transitions
 
