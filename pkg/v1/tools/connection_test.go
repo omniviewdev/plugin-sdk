@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -155,6 +156,8 @@ func TestToolLeaseRejectsLateSuccess(t *testing.T) {
 			destroyed := make(chan struct{})
 			controller := toolRegistry(t, func(context.Context, *string) error { close(destroyed); return nil })
 			entered, canceled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			releaseHandler := sync.OnceFunc(func() { close(release) })
+			t.Cleanup(releaseHandler)
 			tool := validTool("scoped", ScopeConnection)
 			tool.Handler = func(pc *types.PluginContext, _ json.RawMessage) (*Result, error) {
 				close(entered)
@@ -197,7 +200,7 @@ func TestToolLeaseRejectsLateSuccess(t *testing.T) {
 				t.Fatal("native client destroyed before handler released")
 			default:
 			}
-			close(release)
+			releaseHandler()
 			select {
 			case got := <-done:
 				require.Nil(t, got.result)
