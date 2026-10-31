@@ -47,11 +47,13 @@ type Controller[ClientT any] struct {
 	clients           map[string]*clientSlot[ClientT]
 	// failedStarts retains only safe lifecycle outcome, never clients or errors.
 	// Entries are bounded by configured IDs and survive failed-client cleanup.
-	failedStarts map[string]bool
-	closeOnce    sync.Once
-	closeErr     error
-	updates      *updateManager[ClientT]
-	catalogNonce [32]byte
+	failedStarts     map[string]bool
+	closeOnce        sync.Once
+	closeErr         error
+	updates          *updateManager[ClientT]
+	catalogNonce     [32]byte
+	metadata         map[string]*connectionMetadataState[ClientT]
+	metadataWatchers map[*metadataWatcher]struct{}
 }
 
 type clientSlot[T any] struct {
@@ -84,6 +86,9 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 	if cfg.Lifecycle != nil &&
 		(cfg.Lifecycle.LoadConnections == nil || cfg.Lifecycle.CreateClient == nil || cfg.Lifecycle.DestroyClient == nil) {
 		return nil, NewError("INVALID_REQUEST", "Lifecycle requires load, create, and destroy handlers.")
+	}
+	if cfg.ConnectionMetadata != nil && cfg.Lifecycle == nil {
+		return nil, NewError("INVALID_REQUEST", "Connection metadata requires client lifecycle.")
 	}
 	if cfg.DynamicUpdates && cfg.ResolveRegistration == nil {
 		return nil, NewError("INVALID_REQUEST", "Dynamic updates require an exact registration resolver.")
@@ -118,6 +123,8 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 		changing:          make(map[string]bool),
 		clients:           make(map[string]*clientSlot[T]),
 		failedStarts:      make(map[string]bool),
+		metadata:          make(map[string]*connectionMetadataState[T]),
+		metadataWatchers:  make(map[*metadataWatcher]struct{}),
 	}
 	// Close owns cancellation after construction; the controller outlives this call.
 	//nolint:gosec // G118: Close cancels the owned controller lifetime.
@@ -192,6 +199,9 @@ func (c *Controller[T]) Features(ctx context.Context) (FeatureSet, error) {
 			FeatureConnectionReadiness,
 			FeatureConnectionOverlay,
 		)
+	}
+	if c.cfg.ConnectionMetadata != nil {
+		features.Traits = append(features.Traits, FeatureConnectionMetadata)
 	}
 	actionCatalog := c.cfg.ResolveRegistration != nil
 	for _, registration := range c.cfg.Registrations {

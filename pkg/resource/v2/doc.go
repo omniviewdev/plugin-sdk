@@ -39,6 +39,24 @@
 // callback containers for later mutation. Watch targets and connection snapshots
 // have independent ownership; native opaque handles do not become copyable.
 //
+// # Public connection facts
+//
+// Config.ConnectionMetadata optionally observes public server facts with an
+// already-started client. Use namespaced keys such as "example.server_version".
+// Return success observations with UTC timestamps, unavailable observations with
+// safe errors, and explicit removals. Omitted keys retain their previous state.
+// Never publish credentials, raw native errors, connection configuration, resource
+// inventory, or derived summaries. Sanitize endpoint userinfo, queries, and fragments.
+// The SDK detaches values, validates the complete atomic update, and owns revisions,
+// freshness, generation fences, and bounded snapshot streams. Get never acquires;
+// Refresh never connects. Discovery invalidations must use
+// Controller.InvalidateConnectionMetadata rather than independently publish cache
+// observations. Concurrent refreshes share work, while invalidations coalesce one
+// follow-up pass. Stop cancels acquisition and revokes publication before teardown.
+// Consumers negotiate FeatureConnectionMetadata, subscribe before fetching, compare
+// revisions numerically within a provider registration, and treat transport loss
+// as unknown rather than current proof. Metadata does not grant authorization.
+//
 // # Honest results
 //
 // SourcePage is a finite acquisition page, not a final host query page. Unknown
