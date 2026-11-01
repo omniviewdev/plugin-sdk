@@ -121,6 +121,10 @@ is replaced by the configured connection snapshot. The callback must revalidate
 authoritative resource identity/incarnation; caller `ResourceData` is input, not
 authorization. Unsupported authentication or identity checks must fail closed.
 
+The gRPC planning client preserves caller deadlines and cancellation. When the
+caller supplies no deadline, it applies a 30-second timeout; planning callbacks
+must honor their request context.
+
 Plans must not embed passwords, tokens, private keys, or other secrets in any
 field, including argv and environment values. Only inherited local
 authentication or reusable local credential references are supported. Validation

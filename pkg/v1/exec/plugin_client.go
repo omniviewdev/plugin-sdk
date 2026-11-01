@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -18,6 +19,8 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
+
+const nativeCommandPlanningTimeout = 30 * time.Second
 
 // PluginClient forwards exec operations to a remote plugin; the server owns sessions.
 type PluginClient struct {
@@ -152,6 +155,7 @@ func (c *PluginClient) CreateResourceSession(ctx *types.PluginContext, opts Sess
 
 // PlanNativeCommand requests a fresh command plan without creating a session.
 // The response is not an authorization grant for a later launch.
+// Calls without a caller deadline have a 30-second timeout.
 func (c *PluginClient) PlanNativeCommand(ctx *types.PluginContext, opts SessionOptions) (*NativeCommand, error) {
 	if err := ValidateNativeCommandOptions(opts); err != nil {
 		return nil, err
@@ -163,6 +167,11 @@ func (c *PluginClient) PlanNativeCommand(ctx *types.PluginContext, opts SessionO
 	base := context.Background()
 	if ctx != nil && ctx.Context != nil {
 		base = ctx.Context
+	}
+	if _, hasDeadline := base.Deadline(); !hasDeadline {
+		bounded, cancel := context.WithTimeout(base, nativeCommandPlanningTimeout)
+		defer cancel()
+		base = bounded
 	}
 	rpcContext, err := resourceplugin.OutgoingSessionContext(base)
 	if err != nil {

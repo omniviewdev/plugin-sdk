@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/interceptors"
@@ -243,6 +246,106 @@ func TestNativeCommandRawResponsesFailClosed(t *testing.T) {
 			out, err := client.PlanNativeCommand(&types.PluginContext{}, nativeCommandTransportOptions())
 			if err == nil || out != nil {
 				t.Fatalf("bad response materialized: %#v %v", out, err)
+			}
+		})
+	}
+}
+
+type nativeCommandContextFixture struct {
+	Provider
+	handler NativeCommandHandler
+}
+
+func (p *nativeCommandContextFixture) PlanNativeCommand(pc *types.PluginContext, opts SessionOptions) (*NativeCommand, error) {
+	return p.handler(pc, opts)
+}
+
+func TestNativeCommandActualGRPCRequestDeadlines(t *testing.T) {
+	for _, name := range []string{"no caller deadline", "short caller deadline", "long caller deadline"} {
+		t.Run(name, func(t *testing.T) {
+			caller := context.Background()
+			var callerDeadline time.Time
+			if name != "no caller deadline" {
+				duration := 10 * time.Second
+				if name == "long caller deadline" {
+					duration = 2 * time.Minute
+				}
+				var cancel context.CancelFunc
+				caller, cancel = context.WithTimeout(caller, duration)
+				defer cancel()
+				callerDeadline, _ = caller.Deadline()
+			}
+			observed := make(chan context.Context, 1)
+			provider := &nativeCommandContextFixture{handler: func(pc *types.PluginContext, _ SessionOptions) (*NativeCommand, error) {
+				observed <- pc.Context
+				return nativeCommandTransportPlan(), nil
+			}}
+			client := nativeCommandTransportClient(t, provider)
+			before := time.Now()
+			out, err := client.PlanNativeCommand(&types.PluginContext{Context: caller}, nativeCommandTransportOptions())
+			after := time.Now()
+			if err != nil || out == nil {
+				t.Fatalf("planning failed: %#v %v", out, err)
+			}
+			deadline, bounded := (<-observed).Deadline()
+			if !bounded {
+				t.Fatal("planner received an unbounded request context")
+			}
+			if callerDeadline.IsZero() {
+				if deadline.Before(before.Add(30*time.Second-time.Second)) || deadline.After(after.Add(30*time.Second)) {
+					t.Fatalf("default deadline is not 30 seconds: before=%v after=%v deadline=%v", before, after, deadline)
+				}
+			} else if deadline.After(callerDeadline.Add(time.Second)) || deadline.Before(callerDeadline.Add(-time.Second)) {
+				t.Fatalf("caller deadline changed: caller=%v handler=%v", callerDeadline, deadline)
+			}
+		})
+	}
+}
+
+func TestNativeCommandActualGRPCStalledPlannerHonorsCallerContext(t *testing.T) {
+	for _, name := range []string{"cancel", "deadline"} {
+		t.Run(name, func(t *testing.T) {
+			caller, cancel := context.WithCancel(context.Background())
+			wantCode := codes.Canceled
+			if name == "deadline" {
+				cancel()
+				caller, cancel = context.WithTimeout(context.Background(), time.Second)
+				wantCode = codes.DeadlineExceeded
+			}
+			defer cancel()
+			started, stopped := make(chan struct{}), make(chan struct{})
+			provider := &nativeCommandContextFixture{handler: func(pc *types.PluginContext, _ SessionOptions) (*NativeCommand, error) {
+				close(started)
+				<-pc.Context.Done()
+				close(stopped)
+				return nil, pc.Context.Err()
+			}}
+			client := nativeCommandTransportClient(t, provider)
+			result := make(chan error, 1)
+			go func() {
+				_, err := client.PlanNativeCommand(&types.PluginContext{Context: caller}, nativeCommandTransportOptions())
+				result <- err
+			}()
+			select {
+			case <-started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("planner did not start")
+			}
+			if name == "cancel" {
+				cancel()
+			}
+			select {
+			case err := <-result:
+				if status.Code(err) != wantCode {
+					t.Fatalf("caller context class lost: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("stalled planning ignored caller context")
+			}
+			select {
+			case <-stopped:
+			case <-time.After(5 * time.Second):
+				t.Fatal("planner context was not canceled")
 			}
 		})
 	}
