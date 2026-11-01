@@ -216,17 +216,19 @@ Relationship bindings may include an explicit `any` query-only dimension absent 
 | Value | Valid form |
 | --- | --- |
 | Complete coverage | `Coverage{Kind: "complete"}`; no paths or reason |
-| Partial / unknown coverage | `Kind: "partial"` or `"unknown"`; public-safe `Reason` required; preserve path limitations |
+| Partial / unknown coverage | `Kind: "partial"` or `"unknown"`; public-safe `Reason` required; each `Paths` entry is an RFC6901 JSON pointer starting with `/` naming a limited body subtree; empty `Paths` means the limitation is not localized |
 | Unknown count | `Count{Kind: "unknown"}`; nil value, not zero |
 | Exact / estimated count | `Kind: "exact"` or `"estimate"`; pointer to canonical unsigned decimal string |
 | Page consistency | `"bestEffort"` or `"pointInTime"`; neither promises snapshot/live handoff |
 | Cursor | Opaque source continuation; never reuse across changed target or generation |
-| Available schema | Revision, dialect, exactly one inline document or document reference |
+| Available schema | Revision, non-empty dialect, exactly one inline document or document reference; `DialectJSONSchema202012`, `DialectJSONSchemaDraft07`, `DialectOpenAPI30` name the dialects the host catalog normalizes |
 | Absent schema | No document binding; absence is not acquisition failure |
 | Unavailable schema | No inline document; optional reviewed error code, never raw diagnostics |
-| Schema validation | `full`: available, no unvalidated constraints; `reduced`: available, explicit unvalidated constraints; `none`: no constraint claims |
+| Auxiliary editor schema | `EditorSchema{Type, Key, Language, Binding}`: non-empty `Type`; `Key` 1–256 UTF-8 bytes without control characters; `Language` `yaml` or `json`; `(Type, Key)` unique per list |
 
-Schema roots are local RFC6901 URI-fragment pointers. Empty root selects the whole document. No implicit external loading or normalization occurs.
+Schema roots are local RFC6901 URI-fragment pointers. For JSON Schema dialects an empty root selects the whole document. For `DialectOpenAPI30` the root MUST name a `#/components/schemas/<name>` entry. No implicit external loading or normalization occurs. Bindings carry no validation claims: the host schema catalog is the only normalizer and validation authority, and JSON bindings with `validation` or `unvalidated` members are rejected as unknown fields.
+
+`EditorSchema` is only for auxiliary documents that are not catalog representations, such as Helm values. The host derives editor associations, file matches, and model URIs from the catalog; providers never supply them. Duplicate `(Type, Key)` pairs fail with `INVALID_REQUEST` on both plugin server and client paths.
 
 `SourcePage` is bounded source acquisition, not a host query/history engine. Failed discovery is an error, not empty complete coverage. On error, callers discard the accompanying result.
 
@@ -327,7 +329,7 @@ Negotiate remote features through [`FeatureNegotiator`](../pkg/resource/v2/featu
 | Show connection inventory UI | `ConnectionBrowser` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Discovery does not start clients |
 | Discover dimension values | `ScopeValuesProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Values do not grant or constrain acquisition |
 | Add display metadata | `PresentationProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Does not replace catalog capability declarations |
-| Supply editor/schema documents | `EditorSchemaProvider`, `SchemaDocumentProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Preserve absence, failure, and validation states |
+| Supply auxiliary editor schemas and schema documents | `EditorSchemaProvider`, `SchemaDocumentProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Preserve absence and failure states; unique `(Type, Key)` per auxiliary schema |
 | Resolve native links | `RelationshipProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Explicit target routes, authorities, scopes, and observations |
 | Report resource health/events | `HealthProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Resource health is not connection health |
 | Describe/stream actions | `ActionCatalog`, `StreamingActioner` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Exactly one `ready` after native establishment, before output |
