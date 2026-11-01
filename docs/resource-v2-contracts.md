@@ -101,6 +101,19 @@ The startup creator's request cancellation cancels startup until construction co
 
 Inventory application stages changed routes, blocks new starts there, cancels/drains old generations, then publishes effective inventory together. Failed teardown or canceled application keeps previous desired inventory, but already retired clients stay retired. Reapplying an earlier overlay does not resurrect old clients or epochs. Display-only changes preserve active clients; ID/UID/data/private client configuration changes retire them. Nil private override data can inherit source-owned credentials only when public client configuration remains unchanged; explicit empty private data clears it. Hosts must not persist native private credentials.
 
+The v2 gRPC overlay request carries private client configuration in an optional
+`sensitiveData` field beside each upsert's public connection fields. The client
+reads `GetSensitiveData`; the server restores it with `SetSensitiveData` only
+after bounded, strict admission. Omission and an explicit empty object retain
+their distinct inheritance/clear semantics across the wire. This request-only
+field does not change public `Connection` JSON: inventory, status, and watch
+serialization still exclude private values. Never copy credentials into `Data`.
+
+Hosts and plugins must both use the private-overlay transport fix. The tagged
+v0.12.0 client drops private values during JSON encoding; rebuilding only the
+plugin cannot repair that client. A fixed client sending private data to an
+older strict server fails admission instead of silently accepting the edit.
+
 ## Concurrency and ownership
 
 Controller serializes inventory changes with `configMu`; nested acquisition order is `configMu` then registry `mu`, never the reverse. Registry `mu` protects slot publication, lease admission and retirement. Teardown waits and provider callbacks run outside `mu`. Inventory teardown still holds `configMu` across callbacks: callbacks must not synchronously reenter inventory mutation/refresh. Do not synchronously Stop/Close/reconfigure the same generation from a callback holding its lease: retirement waits for that callback.

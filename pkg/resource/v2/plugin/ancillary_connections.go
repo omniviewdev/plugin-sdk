@@ -52,9 +52,18 @@ func (s *ancillaryServer) applyOverlay(
 	if !ok {
 		return nil, unsupported("connection overlays unsupported")
 	}
-	var overlay resourcev2.ConnectionOverlay
-	if err := decodeConnection(r.ConnectionJson, &overlay); err != nil {
+	var wire connectionOverlayWire
+	if err := decodeConnection(r.ConnectionJson, &wire); err != nil {
 		return nil, err
+	}
+	overlay := resourcev2.ConnectionOverlay{
+		Upserts: make([]types.Connection, len(wire.Upserts)), DisabledIDs: wire.DisabledIDs,
+	}
+	for i := range wire.Upserts {
+		overlay.Upserts[i] = wire.Upserts[i].Connection
+		if wire.Upserts[i].SensitiveData != nil {
+			overlay.Upserts[i].SetSensitiveData(*wire.Upserts[i].SensitiveData)
+		}
 	}
 	if err := resourcev2.ValidateConnectionOverlay(overlay); err != nil {
 		return nil, err
