@@ -999,8 +999,6 @@ type SchemaBinding struct {
 	Revision          *string                  `protobuf:"bytes,2,opt,name=revision,proto3,oneof" json:"revision,omitempty"`
 	Dialect           string                   `protobuf:"bytes,3,opt,name=dialect,proto3" json:"dialect,omitempty"`
 	Document          []byte                   `protobuf:"bytes,4,opt,name=document,proto3" json:"document,omitempty"`
-	Validation        string                   `protobuf:"bytes,5,opt,name=validation,proto3" json:"validation,omitempty"`
-	Unvalidated       []string                 `protobuf:"bytes,6,rep,name=unvalidated,proto3" json:"unvalidated,omitempty"`
 	DocumentRef       *SchemaDocumentReference `protobuf:"bytes,7,opt,name=document_ref,json=documentRef,proto3" json:"document_ref,omitempty"`
 	Root              string                   `protobuf:"bytes,8,opt,name=root,proto3" json:"root,omitempty"`
 	UnavailableReason *string                  `protobuf:"bytes,9,opt,name=unavailable_reason,json=unavailableReason,proto3,oneof" json:"unavailable_reason,omitempty"`
@@ -1062,20 +1060,6 @@ func (x *SchemaBinding) GetDialect() string {
 func (x *SchemaBinding) GetDocument() []byte {
 	if x != nil {
 		return x.Document
-	}
-	return nil
-}
-
-func (x *SchemaBinding) GetValidation() string {
-	if x != nil {
-		return x.Validation
-	}
-	return ""
-}
-
-func (x *SchemaBinding) GetUnvalidated() []string {
-	if x != nil {
-		return x.Unvalidated
 	}
 	return nil
 }
@@ -2959,21 +2943,18 @@ const file_proto_resource_v2_domain_proto_rawDesc = "" +
 	"\x0eSchemaDocument\x12K\n" +
 	"\treference\x18\x01 \x01(\v2-.omniview.resource.v2.SchemaDocumentReferenceR\treference\x12\x18\n" +
 	"\adialect\x18\x02 \x01(\tR\adialect\x12\x1a\n" +
-	"\bdocument\x18\x03 \x01(\fR\bdocument\"\xfc\x02\n" +
+	"\bdocument\x18\x03 \x01(\fR\bdocument\"\xdf\x02\n" +
 	"\rSchemaBinding\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12\x1f\n" +
 	"\brevision\x18\x02 \x01(\tH\x00R\brevision\x88\x01\x01\x12\x18\n" +
 	"\adialect\x18\x03 \x01(\tR\adialect\x12\x1a\n" +
-	"\bdocument\x18\x04 \x01(\fR\bdocument\x12\x1e\n" +
-	"\n" +
-	"validation\x18\x05 \x01(\tR\n" +
-	"validation\x12 \n" +
-	"\vunvalidated\x18\x06 \x03(\tR\vunvalidated\x12P\n" +
+	"\bdocument\x18\x04 \x01(\fR\bdocument\x12P\n" +
 	"\fdocument_ref\x18\a \x01(\v2-.omniview.resource.v2.SchemaDocumentReferenceR\vdocumentRef\x12\x12\n" +
 	"\x04root\x18\b \x01(\tR\x04root\x122\n" +
 	"\x12unavailable_reason\x18\t \x01(\tH\x01R\x11unavailableReason\x88\x01\x01B\v\n" +
 	"\t_revisionB\x15\n" +
-	"\x13_unavailable_reason\"y\n" +
+	"\x13_unavailable_reasonJ\x04\b\x05\x10\x06J\x04\b\x06\x10\aR\n" +
+	"validationR\vunvalidated\"y\n" +
 	"\x0eRepresentation\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\tR\brevision\x12;\n" +
