@@ -71,7 +71,9 @@ func (t *FakeTerminal) Close() error {
 		return nil
 	}
 	t.closed = true
-	return errors.Join(t.masterR.Close(), t.masterW.Close(), t.slaveR.Close(), t.slaveW.Close())
+	// Close writers first so blocked reads reach EOF before Windows waits for
+	// those reads while closing their handles.
+	return errors.Join(t.masterW.Close(), t.slaveW.Close(), t.masterR.Close(), t.slaveR.Close())
 }
 
 // InjectOutput writes data to the master write end, simulating PTY output
