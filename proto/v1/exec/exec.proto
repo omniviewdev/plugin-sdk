@@ -37,11 +37,26 @@ message ResourceSessionResponse {
   Session session = 2;
 }
 
+// NativeCommand is a structured local command plan, never a shell expression.
+// Plans must not contain secrets; use inherited auth or reusable local references.
+message NativeCommand {
+  string executable = 1;
+  repeated string args = 2;
+  map<string, string> env = 3;
+  string cwd = 4;
+}
+
+message PlanNativeCommandResponse {
+  uint32 resource_wire_version = 1;
+  NativeCommand command = 2;
+}
+
 message ExecHandler {
   string plugin = 1;
   string resource = 2;
   omniview.sdk.common.v1.ActionTargetBuilder target_builder = 3;
   repeated string default_command = 4;
+  bool supports_native_command = 5;
 }
 
 // ===================== REQUESTS/RESPONSES ===================== //
@@ -157,6 +172,8 @@ service ExecPlugin {
   rpc ListSessions(google.protobuf.Empty) returns (ListSessionsResponse);
   rpc CreateSession(SessionOptions) returns (CreateSessionResponse);
   rpc CreateResourceSession(SessionOptions) returns (ResourceSessionResponse);
+  // Plans a fresh native command without creating a session or launching it.
+  rpc PlanNativeCommand(SessionOptions) returns (PlanNativeCommandResponse);
   rpc AttachSession(AttachSessionRequest) returns (AttachSessionResponse);
   rpc DetachSession(AttachSessionRequest) returns (AttachSessionResponse);
   rpc CloseSession(CloseSessionRequest) returns (CloseSessionResponse);

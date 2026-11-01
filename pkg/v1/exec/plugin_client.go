@@ -26,6 +26,7 @@ type PluginClient struct {
 }
 
 var _ Provider = (*PluginClient)(nil)
+var _ NativeCommandProvider = (*PluginClient)(nil)
 
 // GetSupportedResources returns remote handler metadata, or nil if discovery fails.
 func (c *PluginClient) GetSupportedResources(ctx *types.PluginContext) []Handler {
@@ -147,6 +148,57 @@ func (c *PluginClient) CreateResourceSession(ctx *types.PluginContext, opts Sess
 		return nil, err
 	}
 	return session, nil
+}
+
+// PlanNativeCommand requests a fresh command plan without creating a session.
+// The response is not an authorization grant for a later launch.
+func (c *PluginClient) PlanNativeCommand(ctx *types.PluginContext, opts SessionOptions) (*NativeCommand, error) {
+	if err := ValidateNativeCommandOptions(opts); err != nil {
+		return nil, err
+	}
+	request, err := opts.ToProto()
+	if err != nil {
+		return nil, err
+	}
+	base := context.Background()
+	if ctx != nil && ctx.Context != nil {
+		base = ctx.Context
+	}
+	rpcContext, err := resourceplugin.OutgoingSessionContext(base)
+	if err != nil {
+		return nil, err
+	}
+	admission, admissionError := resourceplugin.ResponseAdmission()
+	response, err := c.client.PlanNativeCommand(
+		types.WithPluginContext(rpcContext, ctx),
+		request,
+		grpc.MaxCallSendMsgSize(resourceplugin.MaxWireBytes),
+		grpc.MaxCallRecvMsgSize(resourceplugin.MaxWireBytes),
+		admission,
+	)
+	if err != nil {
+		decoded := resourceplugin.ResourceDomainError(err)
+		if status.Code(err) == codes.Unimplemented && resourcev2.ErrorCode(decoded) == "INTERNAL" {
+			return nil, resourcev2.NewError("UNSUPPORTED", "native command planning RPC unavailable")
+		}
+		return nil, decoded
+	}
+	if err := admissionError(); err != nil {
+		return nil, err
+	}
+	if response == nil || response.ResourceWireVersion != ResourceSessionWireVersion || response.Command == nil {
+		return nil, resourcev2.NewError("INVALID_REQUEST", "invalid native command response")
+	}
+	command := &NativeCommand{
+		Executable: response.Command.Executable,
+		Args:       response.Command.Args,
+		Env:        response.Command.Env,
+		Cwd:        response.Command.Cwd,
+	}
+	if err := ValidateNativeCommand(command); err != nil {
+		return nil, err
+	}
+	return command, nil
 }
 
 // AttachSession attaches remotely and returns the buffered output snapshot.

@@ -329,7 +329,11 @@ func TestExecSessionHandlerRejectsInvalidDynamicTypes(t *testing.T) {
 				return handler(ctx, "not session options")
 			}
 			decode := func(any) error { return nil }
-			handler := execSessionHandler(resource)
+			method := "CreateSession"
+			if resource {
+				method = "CreateResourceSession"
+			}
+			handler := execSessionHandler(method)
 			_, serverErr := handler(struct{}{}, context.Background(), decode, nil)
 			if status.Code(serverErr) != codes.Internal {
 				t.Fatalf("invalid server: got %v, want Internal", serverErr)

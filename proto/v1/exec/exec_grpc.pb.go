@@ -25,6 +25,7 @@ const (
 	ExecPlugin_ListSessions_FullMethodName          = "/omniview.sdk.exec.v1.ExecPlugin/ListSessions"
 	ExecPlugin_CreateSession_FullMethodName         = "/omniview.sdk.exec.v1.ExecPlugin/CreateSession"
 	ExecPlugin_CreateResourceSession_FullMethodName = "/omniview.sdk.exec.v1.ExecPlugin/CreateResourceSession"
+	ExecPlugin_PlanNativeCommand_FullMethodName     = "/omniview.sdk.exec.v1.ExecPlugin/PlanNativeCommand"
 	ExecPlugin_AttachSession_FullMethodName         = "/omniview.sdk.exec.v1.ExecPlugin/AttachSession"
 	ExecPlugin_DetachSession_FullMethodName         = "/omniview.sdk.exec.v1.ExecPlugin/DetachSession"
 	ExecPlugin_CloseSession_FullMethodName          = "/omniview.sdk.exec.v1.ExecPlugin/CloseSession"
@@ -41,6 +42,8 @@ type ExecPluginClient interface {
 	ListSessions(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListSessionsResponse, error)
 	CreateSession(ctx context.Context, in *SessionOptions, opts ...grpc.CallOption) (*CreateSessionResponse, error)
 	CreateResourceSession(ctx context.Context, in *SessionOptions, opts ...grpc.CallOption) (*ResourceSessionResponse, error)
+	// Plans a fresh native command without creating a session or launching it.
+	PlanNativeCommand(ctx context.Context, in *SessionOptions, opts ...grpc.CallOption) (*PlanNativeCommandResponse, error)
 	AttachSession(ctx context.Context, in *AttachSessionRequest, opts ...grpc.CallOption) (*AttachSessionResponse, error)
 	DetachSession(ctx context.Context, in *AttachSessionRequest, opts ...grpc.CallOption) (*AttachSessionResponse, error)
 	CloseSession(ctx context.Context, in *CloseSessionRequest, opts ...grpc.CallOption) (*CloseSessionResponse, error)
@@ -96,6 +99,15 @@ func (c *execPluginClient) CreateSession(ctx context.Context, in *SessionOptions
 func (c *execPluginClient) CreateResourceSession(ctx context.Context, in *SessionOptions, opts ...grpc.CallOption) (*ResourceSessionResponse, error) {
 	out := new(ResourceSessionResponse)
 	err := c.cc.Invoke(ctx, ExecPlugin_CreateResourceSession_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *execPluginClient) PlanNativeCommand(ctx context.Context, in *SessionOptions, opts ...grpc.CallOption) (*PlanNativeCommandResponse, error) {
+	out := new(PlanNativeCommandResponse)
+	err := c.cc.Invoke(ctx, ExecPlugin_PlanNativeCommand_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -178,6 +190,8 @@ type ExecPluginServer interface {
 	ListSessions(context.Context, *emptypb.Empty) (*ListSessionsResponse, error)
 	CreateSession(context.Context, *SessionOptions) (*CreateSessionResponse, error)
 	CreateResourceSession(context.Context, *SessionOptions) (*ResourceSessionResponse, error)
+	// Plans a fresh native command without creating a session or launching it.
+	PlanNativeCommand(context.Context, *SessionOptions) (*PlanNativeCommandResponse, error)
 	AttachSession(context.Context, *AttachSessionRequest) (*AttachSessionResponse, error)
 	DetachSession(context.Context, *AttachSessionRequest) (*AttachSessionResponse, error)
 	CloseSession(context.Context, *CloseSessionRequest) (*CloseSessionResponse, error)
@@ -204,6 +218,9 @@ func (UnimplementedExecPluginServer) CreateSession(context.Context, *SessionOpti
 }
 func (UnimplementedExecPluginServer) CreateResourceSession(context.Context, *SessionOptions) (*ResourceSessionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateResourceSession not implemented")
+}
+func (UnimplementedExecPluginServer) PlanNativeCommand(context.Context, *SessionOptions) (*PlanNativeCommandResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PlanNativeCommand not implemented")
 }
 func (UnimplementedExecPluginServer) AttachSession(context.Context, *AttachSessionRequest) (*AttachSessionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AttachSession not implemented")
@@ -318,6 +335,24 @@ func _ExecPlugin_CreateResourceSession_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ExecPluginServer).CreateResourceSession(ctx, req.(*SessionOptions))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ExecPlugin_PlanNativeCommand_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionOptions)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExecPluginServer).PlanNativeCommand(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExecPlugin_PlanNativeCommand_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExecPluginServer).PlanNativeCommand(ctx, req.(*SessionOptions))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -446,6 +481,10 @@ var ExecPlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateResourceSession",
 			Handler:    _ExecPlugin_CreateResourceSession_Handler,
+		},
+		{
+			MethodName: "PlanNativeCommand",
+			Handler:    _ExecPlugin_PlanNativeCommand_Handler,
 		},
 		{
 			MethodName: "AttachSession",
