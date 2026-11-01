@@ -2,6 +2,7 @@
 package settings
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -51,10 +52,9 @@ func (c Category) clone() Category {
 	return cp
 }
 
-// cloneValue returns a deep copy of slice/map-typed values so callers cannot
-// mutate the store. Primitives (string, int, float64, bool, etc.) are returned
-// as-is because they are inherently immutable.
-func cloneValue(v any) any {
+// CloneValue copies JSON maps/arrays and typed string, int, float64, and bool
+// slices. Scalars are immutable. Unsupported arbitrary Go objects pass through.
+func CloneValue(v any) any {
 	switch val := v.(type) {
 	case []string:
 		cp := make([]string, len(val))
@@ -68,21 +68,46 @@ func cloneValue(v any) any {
 		cp := make([]float64, len(val))
 		copy(cp, val)
 		return cp
+	case []bool:
+		cp := make([]bool, len(val))
+		copy(cp, val)
+		return cp
 	case []any:
 		cp := make([]any, len(val))
 		for i, elem := range val {
-			cp[i] = cloneValue(elem)
+			cp[i] = CloneValue(elem)
 		}
 		return cp
 	case map[string]any:
 		cp := make(map[string]any, len(val))
 		for k, v := range val {
-			cp[k] = cloneValue(v)
+			cp[k] = CloneValue(v)
 		}
 		return cp
 	default:
 		return v // primitives are safe
 	}
+}
+
+// ValidationError rejects a proposed transaction before persistence.
+type ValidationError struct {
+	Err error
+}
+
+func (e *ValidationError) Error() string { return e.Err.Error() }
+func (e *ValidationError) Unwrap() error { return e.Err }
+
+// PersistFunc durably saves normalized changes. The base Provider supplies resolved
+// category.setting IDs, including plugin.name for an unscoped plugin setting name.
+// Transport adapters may map these IDs to their public namespace.
+// It may read the provider but must not mutate it.
+type PersistFunc func(map[string]any) error
+
+// CommitResult distinguishes durable storage from application.
+type CommitResult struct {
+	Committed bool `json:"committed"`
+	Applied   bool `json:"applied"`
+	Uncertain bool `json:"uncertain"`
 }
 
 // Provider manages the settings for the application as a pure in-memory store.
@@ -102,6 +127,9 @@ type Provider interface {
 
 	// GetSettingValue returns the value of the setting by ID
 	GetSettingValue(id string) (any, error)
+
+	// GetCategoryValues returns detached, unredacted values for trusted consumers.
+	GetCategoryValues(category string) (map[string]any, error)
 
 	// GetString returns the value of the setting by ID as a string.
 	GetString(id string) (string, error)
@@ -130,6 +158,10 @@ type Provider interface {
 	// SetSettings sets multiple settings at once
 	SetSettings(settings map[string]any) error
 
+	// CommitSettings validates once, persists normalized changes, then publishes.
+	// Validators and persist may read the provider but must not mutate it.
+	CommitSettings(ctx context.Context, values map[string]any, persist PersistFunc) (CommitResult, error)
+
 	// RegisterChangeHandler registers a callback that fires after settings in the
 	// given category are saved. Only one handler per category.
 	RegisterChangeHandler(categoryID string, fn CategoryChangeFunc)
@@ -150,7 +182,7 @@ type ProviderOpts struct {
 }
 
 // NewProvider creates an independent in-memory store. A nil logger disables logging.
-// Validators and change handlers run outside store locks and may call provider methods.
+// Validators may read the provider. Change handlers may read and mutate it.
 func NewProvider(opts ProviderOpts) Provider {
 	p := &provider{
 		logger:         opts.Logger,
@@ -169,11 +201,39 @@ func NewProvider(opts ProviderOpts) Provider {
 type provider struct {
 	pluginID         string
 	logger           *zap.SugaredLogger
+	writeMu          cancelableMutex
 	storeMu          sync.RWMutex
 	store            Store
 	changeHandlersMu sync.RWMutex
 	changeHandlers   map[string]CategoryChangeFunc
 }
+
+// cancelableMutex serializes mutations without retaining canceled queued callers.
+// Its zero value is ready for use, including providers built directly in tests.
+type cancelableMutex struct {
+	once sync.Once
+	gate chan struct{}
+}
+
+func (m *cancelableMutex) lock(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.once.Do(func() { m.gate = make(chan struct{}, 1) })
+	select {
+	case m.gate <- struct{}{}:
+		if err := ctx.Err(); err != nil {
+			m.Unlock()
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (m *cancelableMutex) Lock()   { _ = m.lock(context.Background()) }
+func (m *cancelableMutex) Unlock() { <-m.gate }
 
 // define custom merge behavior to make sure we don't overwrite any existing settings,
 // but update the values of any settings that already exist
@@ -182,6 +242,8 @@ type provider struct {
 // the new setting will overwrite the existing setting. We should probably throw an error
 // if this happens.
 func (p *provider) mergeSettings(categories ...Category) {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
 	p.storeMu.Lock()
 	defer p.storeMu.Unlock()
 	p.mergeSettingsLocked(categories...)
@@ -200,7 +262,7 @@ func (p *provider) mergeSettingsLocked(categories ...Category) {
 			for key := range category.Settings {
 				setting := category.Settings[key]
 				setting.Value = setting.Default
-				newSettings[setting.ID] = setting
+				newSettings[setting.ID] = setting.clone()
 			}
 			category.Settings = newSettings
 			p.store[category.ID] = category
@@ -220,7 +282,7 @@ func (p *provider) mergeSettingsLocked(categories ...Category) {
 				// we don't have this setting, go ahead and full assign it with a default
 				// and move on
 				setting.Value = setting.Default
-				currentCategory.Settings[id] = setting
+				currentCategory.Settings[id] = setting.clone()
 				continue
 			}
 
@@ -250,9 +312,10 @@ func (p *provider) mergeSettingMetadata(id string, current, incoming *Setting) {
 	}
 	current.Label = incoming.Label
 	current.Description = incoming.Description
-	current.Default = incoming.Default
+	current.Default = CloneValue(incoming.Default)
 	current.Validator = incoming.Validator
-	current.Options = incoming.Options
+	current.Options = incoming.clone().Options
+	current.RequiresRestart = incoming.RequiresRestart
 }
 
 func (p *provider) ListSettings() Store {
@@ -277,7 +340,7 @@ func (p *provider) valuesLocked() map[string]any {
 	m := make(map[string]any, len(p.store))
 	for categoryID, category := range p.store {
 		for settingID := range category.Settings {
-			m[fmt.Sprintf("%s.%s", categoryID, settingID)] = cloneValue(category.Settings[settingID].Value)
+			m[fmt.Sprintf("%s.%s", categoryID, settingID)] = CloneValue(category.Settings[settingID].Value)
 		}
 	}
 
@@ -312,100 +375,104 @@ func (p *provider) GetSettingValue(id string) (any, error) {
 	return setting.Value, nil
 }
 
-func (p *provider) SetSettings(settings map[string]any) error {
-	// Phase 1: collect copies of the settings we need to validate (read lock).
-	type toValidate struct {
-		category  string
-		settingID string
-		setting   Setting
-		newValue  any
-	}
-
-	p.storeMu.RLock()
-	entries := make([]toValidate, 0, len(settings))
-	for id, value := range settings {
-		s, err := p.getSettingLocked(id)
-		if err != nil {
-			p.storeMu.RUnlock()
-			return err
-		}
-		cat, sid, err := p.parseSettingIDLocked(id)
-		if err != nil {
-			p.storeMu.RUnlock()
-			return err
-		}
-		entries = append(entries, toValidate{category: cat, settingID: sid, setting: s, newValue: value})
-	}
-	p.storeMu.RUnlock()
-
-	// Phase 2: run validation outside the lock so validators can call Get*/Set*.
-	for i := range entries {
-		if err := entries[i].setting.SetValue(entries[i].newValue); err != nil {
-			return err
-		}
-	}
-
-	// Phase 3: commit validated values (write lock).
-	changedCategories := make(map[string]struct{}, len(entries))
-	p.storeMu.Lock()
-	for i := range entries {
-		e := &entries[i]
-		p.store[e.category].Settings[e.settingID] = e.setting
-		changedCategories[e.category] = struct{}{}
-	}
-	p.storeMu.Unlock()
-
-	p.notifyChangeHandlers(changedCategories)
-	return nil
+func (p *provider) SetSettings(values map[string]any) error {
+	_, err := p.CommitSettings(context.Background(), values, nil)
+	return err
 }
 
 func (p *provider) SetSetting(id string, value any) error {
-	// Phase 1: read-lock to get a copy of the setting.
-	p.storeMu.RLock()
-	setting, err := p.getSettingLocked(id)
-	if err != nil {
-		p.storeMu.RUnlock()
-		return err
+	return p.SetSettings(map[string]any{id: value})
+}
+
+func (p *provider) CommitSettings(
+	ctx context.Context, values map[string]any, persist PersistFunc,
+) (CommitResult, error) {
+	if err := p.writeMu.lock(ctx); err != nil {
+		return CommitResult{}, err
 	}
-	cat, sid, err := p.parseSettingIDLocked(id)
-	if err != nil {
-		p.storeMu.RUnlock()
-		return err
+	result, changed, err := p.commitSettings(ctx, values, persist)
+	p.writeMu.Unlock()
+	if err == nil {
+		p.notifyChangeHandlers(changed)
+	}
+	return result, err
+}
+
+// commitSettings runs under writeMu, leaving storeMu free during callbacks.
+func (p *provider) commitSettings(
+	ctx context.Context, values map[string]any, persist PersistFunc,
+) (CommitResult, map[string]struct{}, error) {
+	type preparedSetting struct {
+		id       string
+		category string
+		key      string
+		setting  Setting
+	}
+	entries := make([]preparedSetting, 0, len(values))
+	p.storeMu.RLock()
+	for id := range values {
+		setting, err := p.getSettingLocked(id)
+		if err != nil {
+			p.storeMu.RUnlock()
+			return CommitResult{}, nil, &ValidationError{Err: err}
+		}
+		category, key, err := p.parseSettingIDLocked(id)
+		if err != nil {
+			p.storeMu.RUnlock()
+			return CommitResult{}, nil, &ValidationError{Err: err}
+		}
+		entries = append(entries, preparedSetting{id, category, key, setting})
 	}
 	p.storeMu.RUnlock()
-
-	// Phase 2: validate outside the lock.
-	if err = setting.SetValue(value); err != nil {
-		return err
+	normalized := make(map[string]any, len(entries))
+	for i := range entries {
+		entry := &entries[i]
+		if err := entry.setting.SetValue(values[entry.id]); err != nil {
+			return CommitResult{}, nil, &ValidationError{Err: err}
+		}
+		normalized[entry.category+"."+entry.key] = CloneValue(entry.setting.Value)
 	}
-
-	// Phase 3: commit (write lock).
+	if err := ctx.Err(); err != nil {
+		return CommitResult{}, nil, err
+	}
+	if persist != nil {
+		if err := persist(normalized); err != nil {
+			return CommitResult{}, nil, err
+		}
+	}
+	changed := make(map[string]struct{}, len(entries))
 	p.storeMu.Lock()
-	p.store[cat].Settings[sid] = setting
+	for i := range entries {
+		entry := &entries[i]
+		p.store[entry.category].Settings[entry.key] = entry.setting
+		changed[entry.category] = struct{}{}
+	}
 	p.storeMu.Unlock()
-
-	p.notifyChangeHandlers(map[string]struct{}{cat: {}})
-	return nil
+	return CommitResult{Committed: true, Applied: true}, changed, nil
 }
 
 // ResetSetting resets the value of the setting by ID to the default value.
 // Available on the concrete *provider via type assertion.
 func (p *provider) ResetSetting(id string) error {
+	p.writeMu.Lock()
 	p.storeMu.Lock()
 	category, settingKey, err := p.parseSettingIDLocked(id)
 	if err != nil {
 		p.storeMu.Unlock()
+		p.writeMu.Unlock()
 		return err
 	}
 
 	setting, ok := p.store[category].Settings[settingKey]
 	if !ok {
 		p.storeMu.Unlock()
+		p.writeMu.Unlock()
 		return ErrSettingNotFound
 	}
 	setting.ResetValue()
 	p.store[category].Settings[settingKey] = setting
 	p.storeMu.Unlock()
+	p.writeMu.Unlock()
 
 	p.notifyChangeHandlers(map[string]struct{}{category: {}})
 	return nil
@@ -419,6 +486,8 @@ func (p *provider) HasSetting(id string) bool {
 }
 
 func (p *provider) RegisterSetting(category string, setting Setting) error {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
 	p.storeMu.Lock()
 	defer p.storeMu.Unlock()
 	if p.store == nil {
@@ -440,12 +509,14 @@ func (p *provider) RegisterSetting(category string, setting Setting) error {
 	} else {
 		setting.Value = existing.Value
 	}
-	found.Settings[setting.ID] = setting
+	found.Settings[setting.ID] = setting.clone()
 	p.store[category] = found
 	return nil
 }
 
 func (p *provider) RegisterSettings(category string, settings ...Setting) error {
+	p.writeMu.Lock()
+	defer p.writeMu.Unlock()
 	p.storeMu.Lock()
 	defer p.storeMu.Unlock()
 	if p.store == nil {
@@ -469,7 +540,7 @@ func (p *provider) RegisterSettings(category string, settings ...Setting) error 
 		} else {
 			setting.Value = existing.Value
 		}
-		found.Settings[setting.ID] = setting
+		found.Settings[setting.ID] = setting.clone()
 	}
 	p.store[category] = found
 	return nil
@@ -663,6 +734,9 @@ func (p *provider) GetIntSlice(id string) ([]int, error) {
 		return nil, ErrSettingTypeMismatch
 	}
 
+	if values, ok := setting.Value.([]int); ok {
+		return values, nil
+	}
 	var vals []int
 	if slice, ok := setting.Value.([]any); ok {
 		for _, item := range slice {
@@ -724,6 +798,9 @@ func (p *provider) GetFloatSlice(id string) ([]float64, error) {
 		return nil, ErrSettingTypeMismatch
 	}
 
+	if values, ok := setting.Value.([]float64); ok {
+		return values, nil
+	}
 	var vals []float64
 	if slice, ok := setting.Value.([]any); ok {
 		for _, item := range slice {

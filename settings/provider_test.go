@@ -1,7 +1,11 @@
 package settings
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -685,4 +689,225 @@ func TestMergeSettings_TypeMismatch(t *testing.T) {
 
 	s := p.ListSettings()["typed"].Settings["val"]
 	assert.Equal(t, "hello", s.Value, "old value should be preserved on type mismatch")
+}
+
+func TestCommitSettings_PersistsBeforePublishAndNotification(t *testing.T) {
+	p := newTestProvider(t, testCategory())
+	var events []string
+	p.RegisterChangeHandler("test", func(values map[string]any) {
+		events = append(events, "notify")
+		assert.Equal(t, "changed", values["name"])
+		value, err := p.GetString("test.name")
+		require.NoError(t, err)
+		assert.Equal(t, "changed", value)
+	})
+	proposed := map[string]any{"test.name": "changed"}
+	result, err := p.CommitSettings(context.Background(), proposed, func(values map[string]any) error {
+		events = append(events, "persist")
+		assert.Equal(t, map[string]any{"test.name": "changed"}, values)
+		value, readErr := p.GetString("test.name")
+		require.NoError(t, readErr)
+		assert.Equal(t, "default", value)
+		assert.Equal(t, []string{"persist"}, events)
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, CommitResult{Committed: true, Applied: true}, result)
+	assert.Equal(t, []string{"persist", "notify"}, events)
+}
+
+func TestCommitSettings_PersistFailureDoesNotPublish(t *testing.T) {
+	p := newTestProvider(t, testCategory())
+	notified := false
+	p.RegisterChangeHandler("test", func(map[string]any) { notified = true })
+	wantErr := errors.New("storage unavailable")
+	result, err := p.CommitSettings(context.Background(), map[string]any{
+		"test.enabled": true,
+		"test.name":    "changed",
+	}, func(map[string]any) error { return wantErr })
+	require.ErrorIs(t, err, wantErr)
+	assert.Equal(t, CommitResult{}, result)
+	assert.False(t, notified)
+	name, err := p.GetString("test.name")
+	require.NoError(t, err)
+	assert.Equal(t, "default", name)
+	enabled, err := p.GetBool("test.enabled")
+	require.NoError(t, err)
+	assert.False(t, enabled)
+}
+
+func TestCommitSettings_NormalizedDetachedPersistedValues(t *testing.T) {
+	p := newTestProvider(t, Category{ID: "test", Settings: map[string]Setting{
+		"count": {ID: "count", Type: Integer, Default: 1},
+		"names": {ID: "names", Type: Text, Default: []string{"default"}},
+	}})
+	names := []string{"saved"}
+	input := map[string]any{"test.count": float64(42), "test.names": names}
+	var persisted map[string]any
+	result, err := p.CommitSettings(context.Background(), input, func(values map[string]any) error {
+		persisted = values
+		assert.Equal(t, 42, values["test.count"])
+		assert.Equal(t, []string{"saved"}, values["test.names"])
+		persistedNames, ok := values["test.names"].([]string)
+		require.True(t, ok)
+		persistedNames[0] = "callback mutation"
+		values["test.count"] = 99
+		names[0] = "caller mutation"
+		return nil
+	})
+	require.NoError(t, err)
+	assert.True(t, result.Applied)
+	persistedNames, ok := persisted["test.names"].([]string)
+	require.True(t, ok)
+	persistedNames[0] = "retained mutation"
+	count, err := p.GetInt("test.count")
+	require.NoError(t, err)
+	assert.Equal(t, 42, count)
+	gotNames, err := p.GetStringSlice("test.names")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"saved"}, gotNames)
+}
+
+func TestCommitSettings_NotificationCanMutateProvider(t *testing.T) {
+	p := newTestProvider(t, testCategory())
+	calls := 0
+	p.RegisterChangeHandler("test", func(values map[string]any) {
+		calls++
+		if values["name"] == "first" {
+			require.NoError(t, p.SetSetting("test.name", "second"))
+		}
+	})
+	result, err := p.CommitSettings(context.Background(), map[string]any{"test.name": "first"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, CommitResult{Committed: true, Applied: true}, result)
+	assert.Equal(t, 2, calls)
+	value, err := p.GetString("test.name")
+	require.NoError(t, err)
+	assert.Equal(t, "second", value)
+}
+
+func TestCommitSettings_SerializesOtherMutationsUntilPublication(t *testing.T) {
+	for _, mutation := range []string{"value", "definition"} {
+		t.Run(mutation, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				p := newTestProvider(t, testCategory())
+				persisting := make(chan struct{})
+				release := make(chan struct{})
+				commitDone := make(chan error, 1)
+				go func() {
+					values := map[string]any{"test.name": "committed"}
+					_, err := p.CommitSettings(context.Background(), values, func(map[string]any) error {
+						close(persisting)
+						<-release
+						return nil
+					})
+					commitDone <- err
+				}()
+				<-persisting
+				mutationDone := make(chan error, 1)
+				go func() {
+					if mutation == "value" {
+						mutationDone <- p.SetSetting("test.name", "later")
+						return
+					}
+					mutationDone <- p.RegisterSetting("test", Setting{
+						ID: "name", Label: "Updated", Type: Text, Default: "new default",
+					})
+				}()
+				// Wait until the mutation blocks on serialization, or completes if broken.
+				synctest.Wait()
+				select {
+				case err := <-mutationDone:
+					close(release)
+					<-commitDone
+					t.Fatalf("mutation completed before persistence: %v", err)
+				default:
+				}
+				close(release)
+				require.NoError(t, <-commitDone)
+				require.NoError(t, <-mutationDone)
+				setting, err := p.GetSetting("test.name")
+				require.NoError(t, err)
+				if mutation == "value" {
+					assert.Equal(t, "later", setting.Value)
+				} else {
+					assert.Equal(t, "committed", setting.Value)
+					assert.Equal(t, "Updated", setting.Label)
+				}
+			})
+		})
+	}
+}
+
+func TestCommitSettings_CanceledQueuedCommitExitsBeforeActivePersistence(t *testing.T) {
+	p := newTestProvider(t, testCategory())
+	validationCalls := 0
+	require.NoError(t, p.RegisterSetting("test", Setting{
+		ID: "name", Type: Text, Default: "default",
+		Validator: func(any) ValidationResult {
+			validationCalls++
+			return ValidationResult{Valid: true}
+		},
+	}))
+	persisting := make(chan struct{})
+	release := make(chan struct{})
+	activeDone := make(chan error, 1)
+	go func() {
+		_, err := p.CommitSettings(context.Background(), map[string]any{"test.name": "active"}, func(map[string]any) error {
+			close(persisting)
+			<-release
+			return nil
+		})
+		activeDone <- err
+	}()
+	<-persisting
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	queuedDone := make(chan error, 1)
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		_, err := p.CommitSettings(ctx, map[string]any{"test.name": "canceled"}, func(map[string]any) error {
+			t.Error("canceled queued commit reached persistence")
+			return nil
+		})
+		queuedDone <- err
+	}()
+	<-started
+	cancel()
+	select {
+	case err := <-queuedDone:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		close(release)
+		<-activeDone
+		t.Fatal("queued cancellation waited for active persistence")
+	}
+	assert.Equal(t, 1, validationCalls, "canceled queued commit must not validate")
+	value, err := p.GetString("test.name")
+	require.NoError(t, err)
+	assert.Equal(t, "default", value)
+	close(release)
+	require.NoError(t, <-activeDone)
+	value, err = p.GetString("test.name")
+	require.NoError(t, err)
+	assert.Equal(t, "active", value)
+}
+
+func TestCommitSettings_CancellationAfterPersistenceStillPublishes(t *testing.T) {
+	p := newTestProvider(t, testCategory())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	notified := false
+	p.RegisterChangeHandler("test", func(map[string]any) { notified = true })
+	result, err := p.CommitSettings(ctx, map[string]any{"test.name": "durable"}, func(map[string]any) error {
+		cancel()
+		return nil
+	})
+	require.NoError(t, err)
+	assert.Equal(t, CommitResult{Committed: true, Applied: true}, result)
+	assert.True(t, notified)
+	value, err := p.GetString("test.name")
+	require.NoError(t, err)
+	assert.Equal(t, "durable", value)
 }

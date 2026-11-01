@@ -20,8 +20,8 @@ See [docs/internal-logging.md](docs/internal-logging.md).
 Register `settings.Setting.Validator` with a
 `func(interface{}) settings.ValidationResult` to return contextual validation
 feedback. Set `Valid` for accepted values and provide a stable `Code` plus a
-user-safe `Message`. Validators must not mutate settings and should bound external
-work.
+user-safe `Message`. Validators may read provider state, but must not mutate
+provider values, definitions, or handlers. Bound any external work.
 
 This is a breaking source migration: replace error-returning `Validator` callbacks
 with callbacks returning `settings.ValidationResult`, then rebuild plugins.
@@ -34,6 +34,47 @@ Invalid structured results with an empty message receive generic user-safe feedb
 nonempty contextual messages remain unchanged. `Setting.Validate` enforces writes
 by calling the same `Setting.Validation` evaluation and returning rejection messages
 as errors.
+
+`Provider.CommitSettings(ctx, values, persist)` normalizes and validates each proposed
+value exactly once, then passes only the normalized changed values to `persist`.
+The callback receives scoped setting IDs and detached values. Persistence runs
+before publication; returning an error leaves all values unchanged and sends no
+notifications. After persistence succeeds, the provider publishes the prepared
+values without validating again. A nil callback performs an in-memory commit.
+Root `SetSetting` and `SetSettings` use this same transaction path.
+
+Validators and persistence callbacks may read the previously published provider
+state. They must not call provider mutation methods or wait for another mutation:
+transactions serialize value and definition writes. Change notifications run
+after publication, outside transaction serialization, and may read or mutate the
+provider, including starting another commit.
+
+Waiting transactions honor context cancellation before validation or persistence.
+Once persistence succeeds, the provider publishes even if cancellation follows:
+durable success must not become a rejected commit. Root setters use
+`context.Background()`. The v1 client caps commits at 30 seconds while honoring
+earlier caller deadlines.
+
+`settings.CommitResult` reports `Committed`, `Applied`, and `Uncertain`. The plugin
+RPC uses a bidirectional commit stream: the plugin prepares values, the host
+persists and acknowledges them, and the plugin publishes. If host persistence
+succeeds but the final RPC response is lost, the client returns durable success
+with `Committed: true`, `Applied: false`, and `Uncertain: true`; do not retry as
+though persistence failed. Rebuild both host and plugins for this breaking RPC
+cutover; the old RPC write endpoints are removed.
+
+`Setting.RequiresRestart` is definition metadata. `Setting.PendingRestart` is a
+host snapshot projection, not provider-owned restart state. `settings.CloneValue`
+detaches supported JSON values and typed setting slices; it is not an arbitrary
+Go object copier. `Provider.GetCategoryValues` returns detached category values
+for trusted internal consumers, including sensitive values; do not expose that
+accessor as an authorized public snapshot.
+
+Draft validation and commits share schema-driven normalization before the custom
+validator runs. JSON arrays become native `[]string`, `[]int`, or `[]float64`
+according to the definition. Booleans accept only booleans. Integers reject
+fractional and out-of-range numbers; floats reject NaN and infinity. Validators
+receive canonical values for both drafts and writes.
 
 The settings capability exposes draft validation through gRPC using a dedicated
 `ValidateSettingRequest`, executing callbacks inside the plugin rather than on

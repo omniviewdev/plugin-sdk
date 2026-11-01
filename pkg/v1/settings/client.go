@@ -3,18 +3,17 @@ package settings
 
 import (
 	"context"
+	"errors"
 	"time"
 
-	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/omniviewdev/plugin-sdk/settings"
-
 	settingspb "github.com/omniviewdev/plugin-sdk/proto/v1/settings"
+	"github.com/omniviewdev/plugin-sdk/settings"
 )
 
 // Client forwards settings operations over an existing gRPC connection.
-// Callers own the connection; methods other than validation use a background context.
+// Callers own the connection; commits honor caller cancellation and a bounded deadline.
 type Client struct {
 	client settingspb.SettingsPluginClient
 }
@@ -58,31 +57,70 @@ func (c *Client) GetSettingValue(id string) (any, error) {
 	return ConvertAnyToInterface(resp.GetValue())
 }
 
-// SetSetting encodes one value before asking the remote provider to update it.
-func (c *Client) SetSetting(id string, value any) error {
-	val, err := ConvertInterfaceToAny(value)
+// CommitSettings persists normalized remote values before acknowledging publication.
+// Keys remain opaque plugin setting IDs, matching ListSettings and hydration.
+// A lost response after persistence is durable success with uncertain application.
+func (c *Client) CommitSettings(
+	ctx context.Context,
+	values map[string]any,
+	persist settings.PersistFunc,
+) (settings.CommitResult, error) {
+	const commitTimeout = 30 * time.Second
+	ctx, cancel := context.WithTimeout(ctx, commitTimeout)
+	defer cancel()
+	encoded, err := encodeValues(values)
 	if err != nil {
-		return err
+		return settings.CommitResult{}, err
 	}
-	_, err = c.client.SetSetting(context.Background(), &settingspb.SetSettingRequest{Id: id, Value: val})
-	return err
-}
-
-// SetSettings encodes all values before submitting a single bulk update.
-func (c *Client) SetSettings(settings map[string]any) error {
-	req := &settingspb.SetSettingsRequest{
-		Settings: make(map[string]*anypb.Any),
+	stream, err := c.client.CommitSettings(ctx)
+	if err != nil {
+		return settings.CommitResult{}, err
 	}
-
-	for k, v := range settings {
-		val, err := ConvertInterfaceToAny(v)
-		if err != nil {
-			return err
+	proposal := &settingspb.CommitSettingsRequest{
+		Phase: &settingspb.CommitSettingsRequest_Proposal{Proposal: encoded},
+	}
+	if err = stream.Send(proposal); err != nil {
+		return settings.CommitResult{}, err
+	}
+	response, err := stream.Recv()
+	if err != nil {
+		return settings.CommitResult{}, err
+	}
+	if response.GetPrepared() == nil {
+		return settings.CommitResult{}, errors.New("settings commit did not prepare values")
+	}
+	normalized, err := decodeValues(response.GetPrepared())
+	if err != nil {
+		return settings.CommitResult{}, err
+	}
+	if persist != nil {
+		if err = persist(normalized); err != nil {
+			_ = stream.Send(&settingspb.CommitSettingsRequest{
+				Phase: &settingspb.CommitSettingsRequest_Persisted{Persisted: false},
+			})
+			return settings.CommitResult{}, err
 		}
-		req.Settings[k] = val
 	}
-	_, err := c.client.SetSettings(context.Background(), req)
-	return err
+	uncertain := settings.CommitResult{Committed: true, Uncertain: true}
+	ack := &settingspb.CommitSettingsRequest{
+		Phase: &settingspb.CommitSettingsRequest_Persisted{Persisted: true},
+	}
+	if err = stream.Send(ack); err != nil {
+		return uncertain, nil
+	}
+	response, err = stream.Recv()
+	if err != nil || response.GetResult() == nil {
+		return uncertain, nil
+	}
+	result := response.GetResult()
+	if !result.GetCommitted() {
+		return uncertain, nil
+	}
+	return settings.CommitResult{
+		Committed: true,
+		Applied:   result.GetApplied(),
+		Uncertain: result.GetUncertain(),
+	}, nil
 }
 
 // ValidateSetting runs remote validation without mutation and bounds the RPC lifetime.

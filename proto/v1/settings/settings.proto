@@ -39,6 +39,8 @@ message Setting {
   // Presence is required: absent legacy metadata is not evidence of public data.
   // Password settings remain sensitive even when a sender explicitly sends false.
   optional bool sensitive = 10;
+  bool requires_restart = 11;
+  bool pending_restart = 12;
 }
 
 message SettingOption {
@@ -68,13 +70,29 @@ message GetSettingValueResponse {
   google.protobuf.Any value = 1;
 }
 
-message SetSettingRequest {
-  string id = 1;
-  google.protobuf.Any value = 2;
+// First request proposes values; second request acknowledges durable persistence.
+message CommitSettingsRequest {
+  oneof phase {
+    SettingsValues proposal = 1;
+    bool persisted = 2;
+  }
 }
 
-message SetSettingsRequest {
-  map<string, google.protobuf.Any> settings = 1;
+message SettingsValues {
+  map<string, google.protobuf.Any> values = 1;
+}
+
+message CommitSettingsResponse {
+  oneof phase {
+    SettingsValues prepared = 1;
+    CommitSettingsResult result = 2;
+  }
+}
+
+message CommitSettingsResult {
+  bool committed = 1;
+  bool applied = 2;
+  bool uncertain = 3;
 }
 
 message ListSettingsResponse {
@@ -125,6 +143,5 @@ service SettingsPlugin {
   rpc GetSetting(GetSettingRequest) returns (Setting);
   rpc GetSettingValue(GetSettingValueRequest) returns (GetSettingValueResponse);
   rpc ValidateSetting(ValidateSettingRequest) returns (ValidateSettingResponse);
-  rpc SetSetting(SetSettingRequest) returns (google.protobuf.Empty);
-  rpc SetSettings(SetSettingsRequest) returns (google.protobuf.Empty);
+  rpc CommitSettings(stream CommitSettingsRequest) returns (stream CommitSettingsResponse);
 }
