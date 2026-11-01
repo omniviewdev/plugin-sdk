@@ -53,6 +53,11 @@ type Handler struct {
 	DefaultCommand []string            `json:"default_command"`
 	TTYHandler     TTYHandlerFunc      `json:"-"`
 	CommandHandler CommandHandler      `json:"-"`
+	// NativeCommandHandler optionally plans a fresh process without a TTY callback.
+	NativeCommandHandler NativeCommandHandler `json:"-"`
+	// SupportsNativeCommand advertises planning support in remote metadata.
+	// Local support is determined by NativeCommandHandler, not this flag.
+	SupportsNativeCommand bool `json:"supports_native_command"`
 	// HandlesResize: if true, resize events are sent through the channel
 	// instead of via terminal.Resize().
 	HandlesResize bool `json:"-"`
@@ -61,10 +66,11 @@ type Handler struct {
 // ToProto exports handler metadata without serializing executable callbacks.
 func (h Handler) ToProto() *execpb.ExecHandler {
 	return &execpb.ExecHandler{
-		Plugin:         h.Plugin,
-		Resource:       h.Resource,
-		TargetBuilder:  h.TargetBuilder.ToProto(),
-		DefaultCommand: h.DefaultCommand,
+		Plugin:                h.Plugin,
+		Resource:              h.Resource,
+		TargetBuilder:         h.TargetBuilder.ToProto(),
+		DefaultCommand:        h.DefaultCommand,
+		SupportsNativeCommand: h.NativeCommandHandler != nil || h.SupportsNativeCommand,
 	}
 }
 
@@ -74,10 +80,11 @@ func HandlerFromProto(p *execpb.ExecHandler) Handler {
 		return Handler{}
 	}
 	return Handler{
-		Plugin:         p.GetPlugin(),
-		Resource:       p.GetResource(),
-		TargetBuilder:  ActionTargetBuilderFromProto(p.GetTargetBuilder()),
-		DefaultCommand: p.GetDefaultCommand(),
+		Plugin:                p.GetPlugin(),
+		Resource:              p.GetResource(),
+		TargetBuilder:         ActionTargetBuilderFromProto(p.GetTargetBuilder()),
+		DefaultCommand:        p.GetDefaultCommand(),
+		SupportsNativeCommand: p.GetSupportsNativeCommand(),
 	}
 }
 

@@ -94,6 +94,49 @@ Cancellation and deadline failures retain transport error semantics rather than
 becoming successful RPCs containing tool failures. Reviewed unavailable and
 permission-denied handler errors retain their safe classification.
 
+## Native exec command planning
+
+Exec handlers can optionally set `NativeCommandHandler` to plan a **fresh**
+local process. This callback does not require `TTYHandler`. The separate
+`exec.NativeCommandProvider` interface adds
+`PlanNativeCommand(*types.PluginContext, exec.SessionOptions) (*exec.NativeCommand, error)`
+without changing the existing `exec.Provider` interface. Discovery exposes
+`SupportsNativeCommand`; metadata does not contain executable callbacks.
+Missing callbacks and older plugins without the RPC return typed `UNSUPPORTED`.
+
+`NativeCommand` contains `Executable string`, `Args []string`,
+`Env map[string]string`, and `Cwd string`. Arguments are literal argv entries,
+not a command-line string: never join, quote, or interpolate them through a
+shell. Shell metacharacters remain literal. An empty executable, NUL in any
+field, empty environment names, and `=` in environment names are rejected.
+Empty arguments and empty environment values are valid. The existing resource-v2
+metadata bounds also apply. Validation does not resolve executables or inspect
+local paths.
+
+Planning requires an explicit canonical resource `Reference` and `Route`, plus
+matching selected connection metadata and the current admitted catalog revision.
+The manager normalizes selectors, leases the sole started connection registry,
+and checks catalog admission before and after the callback. Caller profile data
+is replaced by the configured connection snapshot. The callback must revalidate
+authoritative resource identity/incarnation; caller `ResourceData` is input, not
+authorization. Unsupported authentication or identity checks must fail closed.
+
+The gRPC planning client preserves caller deadlines and cancellation. When the
+caller supplies no deadline, it applies a 30-second timeout; planning callbacks
+must honor their request context.
+
+Plans must not embed passwords, tokens, private keys, or other secrets in any
+field, including argv and environment values. Only inherited local
+authentication or reusable local credential references are supported. Validation
+cannot detect secrets; enforcing this requirement is the provider's duty.
+
+Planning never launches a process, allocates a PTY, or creates/modifies a session.
+It does not transfer an existing PTY, remote working directory, shell history,
+environment, or running process. The connection lease ends when planning returns.
+Hosts must request a new plan immediately before a later launch, not cache plans
+as authorization grants. Resource state can still change between planning and
+launch. This SDK contract does not implement terminal application launch or UI.
+
 ## Register a resource provider
 
 From [`main.go`](../examples/resource-plugin/main.go), after constructing the example's provider:

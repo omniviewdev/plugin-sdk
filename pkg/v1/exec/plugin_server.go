@@ -198,6 +198,61 @@ func (s *PluginServer) CreateResourceSession(
 	return response, nil
 }
 
+// PlanNativeCommand validates resource admission and returns a plan, never a session.
+func (s *PluginServer) PlanNativeCommand(
+	ctx context.Context,
+	in *execpb.SessionOptions,
+) (*execpb.PlanNativeCommandResponse, error) {
+	ctx, err := resourceplugin.IncomingSessionContext(ctx)
+	if err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	if in == nil || in.ResourceWireVersion != ResourceSessionWireVersion {
+		return nil, resourceplugin.ResourceRPCError(
+			resourcev2.NewError("UNSUPPORTED", "native command resource wire version must be 2"),
+		)
+	}
+	opts, err := NewSessionOptionsFromProto(in)
+	if err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	if err := ValidateNativeCommandOptions(*opts); err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	provider, ok := s.Impl.(NativeCommandProvider)
+	if !ok {
+		return nil, resourceplugin.ResourceRPCError(
+			resourcev2.NewError("UNSUPPORTED", "native command provider unavailable"),
+		)
+	}
+	pc := types.PluginContextFromContext(ctx)
+	if pc == nil {
+		pc = &types.PluginContext{Context: ctx}
+	}
+	command, err := provider.PlanNativeCommand(pc, *opts)
+	if err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	if err := ValidateNativeCommand(command); err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	response := &execpb.PlanNativeCommandResponse{
+		ResourceWireVersion: ResourceSessionWireVersion,
+		Command: &execpb.NativeCommand{
+			Executable: command.Executable,
+			Args:       command.Args,
+			Env:        command.Env,
+			Cwd:        command.Cwd,
+		},
+	}
+	if proto.Size(response) > resourcev2.MaxMessageBytes {
+		return nil, resourceplugin.ResourceRPCError(
+			resourcev2.NewError("RESOURCE_LIMIT", "Native command response exceeds wire limit."),
+		)
+	}
+	return response, nil
+}
+
 // AttachSession attaches the session and returns its buffered output.
 func (s *PluginServer) AttachSession(
 	ctx context.Context,

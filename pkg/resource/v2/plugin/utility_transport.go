@@ -92,7 +92,7 @@ func strictUtilityRoot(d protoreflect.MessageDescriptor) bool {
 		return false
 	}
 	switch d.Name() {
-	case "SessionOptions", "ResourceSessionResponse",
+	case "SessionOptions", "ResourceSessionResponse", "PlanNativeCommandResponse",
 		"CreateLogSessionRequest", "ResourceLogSessionResponse",
 		"QueryMetricsRequest", utilityMetricStreamInputName,
 		"ResourceQueryMetricsResponse", "ResourceMetricStreamOutput",
