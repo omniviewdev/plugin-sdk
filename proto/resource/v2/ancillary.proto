@@ -54,11 +54,12 @@ message AncillaryResponse {
 }
 
 message EditorSchema {
+  reserved 2, 3;
+  reserved "file_match", "uri";
   string type = 1;
-  string file_match = 2;
-  string uri = 3;
   string language = 4;
   SchemaBinding binding = 5;
+  string key = 6;
 }
 
 message EditorSchemas {

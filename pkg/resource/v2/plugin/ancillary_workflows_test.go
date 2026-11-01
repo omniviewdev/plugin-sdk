@@ -49,18 +49,15 @@ func (*ancillaryFixtureProvider) GetEditorSchemas(
 	revision := "schema-1"
 	return []resourcev2.EditorSchema{
 		{
-			Type:      "opaque/type",
-			FileMatch: "*.yaml",
-			URI:       "schema://document",
-			Language:  "yaml",
+			Type:     "opaque/type",
+			Key:      "default",
+			Language: "yaml",
 			Binding: resourcev2.SchemaBinding{
 				State:       "available",
 				Revision:    &revision,
 				Dialect:     "json-schema",
 				DocumentRef: &resourcev2.SchemaDocumentReference{ID: "shared-document", Revision: "document-1"},
 				Root:        "#/definitions/Thing",
-				Validation:  "none",
-				Unvalidated: []string{},
 			},
 		},
 	}, nil

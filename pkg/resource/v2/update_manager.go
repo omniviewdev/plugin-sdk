@@ -267,7 +267,6 @@ func copyUpdateRepresentation(representation Representation) Representation {
 	schema.Revision = copyToken(schema.Revision)
 	schema.UnavailableReason = copyToken(schema.UnavailableReason)
 	schema.Document = append(schema.Document[:0:0], schema.Document...)
-	schema.Unvalidated = copyStrings(schema.Unvalidated)
 	if schema.DocumentRef != nil {
 		ref := *schema.DocumentRef
 		schema.DocumentRef = &ref

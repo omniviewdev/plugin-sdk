@@ -31,7 +31,7 @@ func nativeRepresentation() resourcev2.Representation {
 	return resourcev2.Representation{
 		ID:       representationID,
 		Revision: "1",
-		Schema:   resourcev2.SchemaBinding{State: "absent", Validation: "none"},
+		Schema:   resourcev2.SchemaBinding{State: "absent"},
 	}
 }
 

@@ -48,10 +48,9 @@ type PresentationProvider interface {
 	GetResourceDefinition(context.Context, AccessRoute, string) (ResourceDefinition, error)
 }
 
-// EditorSchemaProvider lists optional editor bindings for an explicit route.
-// Schema absence, acquisition failure, and reduced validation are distinct states
-// in EditorSchema; an empty list does not make a validation claim. Nil slices
-// mean no bindings. Calls may run concurrently: honor cancellation, synchronize
+// EditorSchemaProvider lists auxiliary editor schemas (documents that are not
+// catalog representations) for an explicit route. Absence and acquisition
+// failure are distinct binding states; nil means none. Calls may run concurrently: honor cancellation, synchronize
 // shared state, and keep returned containers stable during SDK use.
 // Implementing this interface does not grant create or update capability.
 type EditorSchemaProvider interface {

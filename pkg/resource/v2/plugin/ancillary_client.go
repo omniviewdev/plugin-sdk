@@ -173,6 +173,9 @@ func (c *Client) GetEditorSchemas(
 		}
 		out = append(out, schema)
 	}
+	if err = resourcev2.ValidateEditorSchemaList(out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 

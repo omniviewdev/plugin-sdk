@@ -3,7 +3,10 @@ package resourcev2
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
@@ -453,21 +456,42 @@ func validateEditorSchema(v EditorSchema) error {
 	if err := admission(v); err != nil {
 		return err
 	}
-	for _, s := range []string{v.Type, v.FileMatch, v.URI, v.Language} {
-		if err := text(s, true); err != nil {
-			return err
-		}
+	if err := text(v.Type, true); err != nil {
+		return err
+	}
+	if len(v.Key) == 0 || len(v.Key) > maxEditorSchemaKeyBytes || !utf8.ValidString(v.Key) ||
+		strings.IndexFunc(v.Key, unicode.IsControl) >= 0 {
+		return invalid("editor schema key must be 1-256 UTF-8 bytes without control characters")
+	}
+	if v.Language != "yaml" && v.Language != "json" {
+		return invalid("editor schema language must be yaml or json")
 	}
 	return validateSchema(v.Binding)
 }
 
+// maxEditorSchemaKeyBytes bounds auxiliary editor schema keys.
+const maxEditorSchemaKeyBytes = 256
+
+// ValidateEditorSchemaList rejects duplicate auxiliary (Type, Key) pairs. Item
+// validation stays with ToProtoEditorSchema and FromProtoEditorSchema.
+func ValidateEditorSchemaList(schemas []EditorSchema) error {
+	seen := make(map[[2]string]struct{}, len(schemas))
+	for _, schema := range schemas {
+		key := [2]string{schema.Type, schema.Key}
+		if _, ok := seen[key]; ok {
+			return invalid("duplicate auxiliary editor schema")
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+
 func toEditorSchema(v EditorSchema) *resourcepb.EditorSchema {
 	return &resourcepb.EditorSchema{
-		Type:      v.Type,
-		FileMatch: v.FileMatch,
-		Uri:       v.URI,
-		Language:  v.Language,
-		Binding:   toSchemaBinding(v.Binding),
+		Type:     v.Type,
+		Key:      v.Key,
+		Language: v.Language,
+		Binding:  toSchemaBinding(v.Binding),
 	}
 }
 
@@ -477,11 +501,10 @@ func (d *adapterDecoder) editorSchema(p *resourcepb.EditorSchema) EditorSchema {
 		return EditorSchema{}
 	}
 	return EditorSchema{
-		Type:      p.Type,
-		FileMatch: p.FileMatch,
-		URI:       p.Uri,
-		Language:  p.Language,
-		Binding:   d.schema(p.Binding),
+		Type:     p.GetType(),
+		Key:      p.GetKey(),
+		Language: p.GetLanguage(),
+		Binding:  d.schema(p.GetBinding()),
 	}
 }
 

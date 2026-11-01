@@ -113,8 +113,6 @@ func toSchemaBinding(v SchemaBinding) *resourcepb.SchemaBinding {
 		Dialect:           v.Dialect,
 		Root:              v.Root,
 		Document:          append([]byte(nil), v.Document...),
-		Validation:        v.Validation,
-		Unvalidated:       copyStrings(v.Unvalidated),
 		UnavailableReason: copyToken(v.UnavailableReason),
 	}
 	if v.DocumentRef != nil {
@@ -392,8 +390,6 @@ func (d *adapterDecoder) schema(p *resourcepb.SchemaBinding) SchemaBinding {
 		Dialect:           p.Dialect,
 		Root:              p.Root,
 		Document:          append([]byte(nil), p.Document...),
-		Validation:        p.Validation,
-		Unvalidated:       copyStrings(p.Unvalidated),
 		UnavailableReason: copyToken(p.UnavailableReason),
 	}
 	if p.DocumentRef != nil {

@@ -1,6 +1,8 @@
 package resourcev2
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -114,15 +116,13 @@ func TestSchemaDocumentBindingAndLocalRoot(t *testing.T) {
 		Dialect:     "json-schema",
 		DocumentRef: &ref,
 		Root:        "#/$defs/a~1b/%E9%9B%AA",
-		Validation:  "none",
 	}
 	if _, err := ToProtoEditorSchema(
 		EditorSchema{
-			Type:      "resource/type",
-			FileMatch: "*.json",
-			URI:       "omniview://schema",
-			Language:  "json",
-			Binding:   binding,
+			Type:     "resource/type",
+			Key:      "default",
+			Language: "json",
+			Binding:  binding,
 		},
 	); err != nil {
 		t.Fatal(err)
@@ -132,11 +132,10 @@ func TestSchemaDocumentBindingAndLocalRoot(t *testing.T) {
 		b.Root = root
 		if _, err := ToProtoEditorSchema(
 			EditorSchema{
-				Type:      "resource/type",
-				FileMatch: "*.json",
-				URI:       "omniview://schema",
-				Language:  "json",
-				Binding:   b,
+				Type:     "resource/type",
+				Key:      "default",
+				Language: "json",
+				Binding:  b,
 			},
 		); ErrorCode(
 			err,
@@ -148,11 +147,10 @@ func TestSchemaDocumentBindingAndLocalRoot(t *testing.T) {
 	both.Document = []byte(`{}`)
 	if _, err := ToProtoEditorSchema(
 		EditorSchema{
-			Type:      "resource/type",
-			FileMatch: "*.json",
-			URI:       "omniview://schema",
-			Language:  "json",
-			Binding:   both,
+			Type:     "resource/type",
+			Key:      "default",
+			Language: "json",
+			Binding:  both,
 		},
 	); ErrorCode(
 		err,
@@ -163,11 +161,10 @@ func TestSchemaDocumentBindingAndLocalRoot(t *testing.T) {
 	missing.DocumentRef = nil
 	if _, err := ToProtoEditorSchema(
 		EditorSchema{
-			Type:      "resource/type",
-			FileMatch: "*.json",
-			URI:       "omniview://schema",
-			Language:  "json",
-			Binding:   missing,
+			Type:     "resource/type",
+			Key:      "default",
+			Language: "json",
+			Binding:  missing,
 		},
 	); ErrorCode(
 		err,
@@ -179,58 +176,87 @@ func TestSchemaDocumentBindingAndLocalRoot(t *testing.T) {
 	inline.Document = []byte(`{"x":1,"x":2}`)
 	if _, err := ToProtoEditorSchema(
 		EditorSchema{
-			Type:      "resource/type",
-			FileMatch: "*.json",
-			URI:       "omniview://schema",
-			Language:  "json",
-			Binding:   inline,
+			Type:     "resource/type",
+			Key:      "default",
+			Language: "json",
+			Binding:  inline,
 		},
 	); ErrorCode(
 		err,
 	) != "INVALID_REQUEST" {
 		t.Fatalf("duplicate schema JSON: %v", err)
 	}
-	reduced := binding
-	reduced.Validation = "reduced"
-	if _, err := ToProtoEditorSchema(
-		EditorSchema{
-			Type:      "resource/type",
-			FileMatch: "*.json",
-			URI:       "omniview://schema",
-			Language:  "json",
-			Binding:   reduced,
-		},
-	); ErrorCode(
-		err,
-	) != "INVALID_REQUEST" {
-		t.Fatalf("reduced validation lacks claims: %v", err)
+}
+
+func TestEditorSchemaKeyLanguageAndDuplicateRules(t *testing.T) {
+	base := EditorSchema{
+		Type: "helm/release", Key: "default/web", Language: "yaml", Binding: SchemaBinding{State: "absent"},
 	}
-	reduced.Unvalidated = []string{"external-ref"}
-	if _, err := ToProtoEditorSchema(
-		EditorSchema{
-			Type:      "resource/type",
-			FileMatch: "*.json",
-			URI:       "omniview://schema",
-			Language:  "json",
-			Binding:   reduced,
-		},
-	); err != nil {
+	if _, err := ToProtoEditorSchema(base); err != nil {
 		t.Fatal(err)
 	}
-	full := reduced
-	full.Validation = "full"
-	if _, err := ToProtoEditorSchema(
-		EditorSchema{
-			Type:      "resource/type",
-			FileMatch: "*.json",
-			URI:       "omniview://schema",
-			Language:  "json",
-			Binding:   full,
-		},
-	); ErrorCode(
-		err,
-	) != "INVALID_REQUEST" {
-		t.Fatalf("full validation hides limitations: %v", err)
+	maximal := base
+	maximal.Key = strings.Repeat("k", 256)
+	if _, err := ToProtoEditorSchema(maximal); err != nil {
+		t.Fatalf("256-byte key rejected: %v", err)
+	}
+	for name, mutate := range map[string]func(*EditorSchema){
+		"empty type":       func(s *EditorSchema) { s.Type = "" },
+		"empty key":        func(s *EditorSchema) { s.Key = "" },
+		"key over 256":     func(s *EditorSchema) { s.Key = strings.Repeat("k", 257) },
+		"control in key":   func(s *EditorSchema) { s.Key = "a\nb" },
+		"invalid utf8 key": func(s *EditorSchema) { s.Key = "\xff" },
+		"language xml":     func(s *EditorSchema) { s.Language = "xml" },
+		"invalid binding":  func(s *EditorSchema) { s.Binding = SchemaBinding{State: "known"} },
+	} {
+		schema := base
+		mutate(&schema)
+		if _, err := ToProtoEditorSchema(schema); ErrorCode(err) != "INVALID_REQUEST" {
+			t.Fatalf("%s admitted: %v", name, err)
+		}
+	}
+	other := base
+	other.Key = "default/api"
+	if err := ValidateEditorSchemaList([]EditorSchema{base, other}); err != nil {
+		t.Fatal(err)
+	}
+	err := ValidateEditorSchemaList([]EditorSchema{base, other, base})
+	if ErrorCode(err) != "INVALID_REQUEST" || !strings.Contains(err.Error(), "duplicate auxiliary editor schema") {
+		t.Fatalf("duplicate (type, key) admitted: %v", err)
+	}
+}
+
+func TestSchemaBindingJSONRejectsRemovedValidationClaims(t *testing.T) {
+	for _, document := range []string{
+		`{"state":"absent","validation":"none"}`,
+		`{"state":"absent","unvalidated":[]}`,
+	} {
+		var binding SchemaBinding
+		if err := json.Unmarshal([]byte(document), &binding); ErrorCode(err) != "INVALID_REQUEST" {
+			t.Fatalf("removed claim admitted %s: %v", document, err)
+		}
+	}
+	var binding SchemaBinding
+	if err := json.Unmarshal([]byte(`{"state":"absent"}`), &binding); err != nil || binding.State != "absent" {
+		t.Fatalf("state-only binding rejected: %+v %v", binding, err)
+	}
+	output, err := json.Marshal(binding)
+	if err != nil || string(output) != `{"state":"absent"}` {
+		t.Fatalf("binding JSON = %s %v", output, err)
+	}
+}
+
+func TestCoveragePathsAreLimitedSubtreePointers(t *testing.T) {
+	for _, paths := range [][]string{{"/spec"}, {"/metadata/annotations/a~1b", "/status/conditions/0"}, {"/"}} {
+		if err := validateCoverage(Coverage{Kind: "partial", Reason: "redacted", Paths: paths}); err != nil {
+			t.Fatalf("pointer paths %q rejected: %v", paths, err)
+		}
+	}
+	for _, path := range []string{"", "spec", "spec.containers", "#/spec", "/bad~2escape", "/trailing~", "/\xff"} {
+		err := validateCoverage(Coverage{Kind: "unknown", Reason: "redacted", Paths: []string{path}})
+		if ErrorCode(err) != "INVALID_REQUEST" {
+			t.Fatalf("non-pointer coverage path %q admitted: %v", path, err)
+		}
 	}
 }
 
@@ -287,16 +313,14 @@ func TestUnavailableSchemaKeepsKnownProvenance(t *testing.T) {
 		Dialect:     "known-dialect",
 		Root:        "#/known~1root",
 		DocumentRef: &SchemaDocumentReference{ID: "document", Revision: "known-document-revision"},
-		Validation:  "none",
 	}
 	adapterRoundTrip(
 		t,
 		EditorSchema{
-			Type:      "resource/type",
-			FileMatch: "*.json",
-			URI:       "omniview://schema",
-			Language:  "json",
-			Binding:   binding,
+			Type:     "resource/type",
+			Key:      "default",
+			Language: "json",
+			Binding:  binding,
 		},
 		ToProtoEditorSchema,
 		FromProtoEditorSchema,
@@ -304,11 +328,10 @@ func TestUnavailableSchemaKeepsKnownProvenance(t *testing.T) {
 	binding.Document = []byte(`{}`)
 	if _, err := ToProtoEditorSchema(
 		EditorSchema{
-			Type:      "resource/type",
-			FileMatch: "*.json",
-			URI:       "omniview://schema",
-			Language:  "json",
-			Binding:   binding,
+			Type:     "resource/type",
+			Key:      "default",
+			Language: "json",
+			Binding:  binding,
 		},
 	); ErrorCode(
 		err,
@@ -319,11 +342,10 @@ func TestUnavailableSchemaKeepsKnownProvenance(t *testing.T) {
 	binding.State = "absent"
 	if _, err := ToProtoEditorSchema(
 		EditorSchema{
-			Type:      "resource/type",
-			FileMatch: "*.json",
-			URI:       "omniview://schema",
-			Language:  "json",
-			Binding:   binding,
+			Type:     "resource/type",
+			Key:      "default",
+			Language: "json",
+			Binding:  binding,
 		},
 	); ErrorCode(
 		err,

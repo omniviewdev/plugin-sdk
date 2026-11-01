@@ -159,6 +159,9 @@ func (s *ancillaryServer) editorSchemas(
 	if err != nil {
 		return nil, err
 	}
+	if err = resourcev2.ValidateEditorSchemaList(v); err != nil {
+		return nil, err
+	}
 	result := &resourcepb.EditorSchemas{}
 	for i := range v {
 		schema, err := resourcev2.ToProtoEditorSchema(v[i])

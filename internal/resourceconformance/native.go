@@ -19,6 +19,13 @@ const (
 	recordVMB               = "vm-b"
 	recordDiskA             = "disk-a"
 	recordDiskB             = "disk-b"
+	recordVMOpenAPIA        = "vm-openapi-a"
+	recordVMOpenAPIB        = "vm-openapi-b"
+	recordVMOpenAPIC        = "vm-openapi-c"
+
+	// schemaDialectOpenAPI30 is the SDK DialectOpenAPI30 identifier, spelled
+	// here because this data package stays free of SDK transport dependencies.
+	schemaDialectOpenAPI30 = "openapi-3.0"
 
 	providerCloud       = "cloud"
 	providerContainer   = "container"
@@ -57,6 +64,7 @@ func NativeCorpus() Corpus {
 		nativeContainerScenarios(),
 		nativeHypervisorScenarios(),
 		nativeScopeCollisionScenarios(),
+		nativeSchemaCatalogScenarios(),
 	)
 	c.IdentityCases = []IdentityCase{
 		{Name: "opaque-address-stable-across-access", Left: recordCloudARN, Right: "cloud-second-route", Equal: true},
@@ -211,6 +219,48 @@ func nativeHypervisorRecords() []Record {
 			Revision:  "snapshot:opaque/A",
 			Body: json.RawMessage(
 				`{"vmid":101,"node":"node/b::1","host":"node/b::1","disks":[7],"name":"worker"}`,
+			),
+		},
+		{
+			// Exercises a nullable null, the anyOf storage shape, an int-or-string
+			// value, and preserved unknown fields.
+			Name:      recordVMOpenAPIA,
+			Provider:  providerHypervisor,
+			Authority: authorityHypervisor,
+			Type:      "vm",
+			Scope:     map[string]string{scopeNode: nodeA},
+			ID:        "201",
+			Body: json.RawMessage(
+				`{"vmid":201,"node":"node/a::1","description":null,"placement":{"pool":"ssd","sizeGiB":64},` +
+					`"console":"vnc","network":{"bridge":"vmbr0","mode":"bridged"},"tags":{"env":"prod"},` +
+					`"nics":[{"model":"virtio","mac":"52:54:00:00:02:01"}],"cpuLimit":4,"extra":{"vendor":{"opaque":true}}}`,
+			),
+		},
+		{
+			// Exercises a placement valid for both anyOf branches.
+			Name:      recordVMOpenAPIC,
+			Provider:  providerHypervisor,
+			Authority: authorityHypervisor,
+			Type:      "vm",
+			Scope:     map[string]string{scopeNode: nodeA},
+			ID:        "203",
+			Body: json.RawMessage(
+				`{"vmid":203,"node":"node/a::1","placement":{"pool":"nvme"},"console":"serial",` +
+					`"network":{"bridge":"vmbr0"},"tags":{},"nics":[],"cpuLimit":2,"extra":{}}`,
+			),
+		},
+		{
+			// Exercises the anyOf compute shape and the alternate oneOf and
+			// int-or-string branches.
+			Name:      recordVMOpenAPIB,
+			Provider:  providerHypervisor,
+			Authority: authorityHypervisor,
+			Type:      "vm",
+			Scope:     map[string]string{scopeNode: nodeB},
+			ID:        "202",
+			Body: json.RawMessage(
+				`{"vmid":202,"node":"node/b::1","description":"worker","placement":{"pool":"hdd","cores":8},` +
+					`"console":5900,"network":{"bridge":"vmbr1"},"tags":{},"nics":[],"cpuLimit":"500m","extra":{}}`,
 			),
 		},
 		{
@@ -446,6 +496,73 @@ func nativeScopeCollisionScenarios() []Scenario {
 			Type:      "vm",
 			Selection: map[string][]string{scopeNode: {nodeB}},
 			Pages:     []Page{{Records: []string{recordVMB}}},
+			Coverage:  nativeBestEffortCoverage(),
+			Freshness: freshnessSnapshot,
+		},
+	}
+}
+
+// hypervisorOpenAPIVMSchema is an OpenAPI 3.0 components.schemas set rooted at
+// #/components/schemas/VM. It covers nullable, an overlapping anyOf, an
+// exclusive oneOf, allOf with $ref, maps, arrays of objects, and the
+// x-kubernetes-int-or-string, -preserve-unknown-fields and -validations keywords.
+const hypervisorOpenAPIVMSchema = `{"openapi":"3.0.3","info":{"title":"fixture hypervisor","version":"1"},` +
+	`"paths":{},"components":{"schemas":{` +
+	`"VM":{"type":"object","required":["vmid","node"],"properties":{` +
+	`"vmid":{"type":"integer","format":"int64"},` +
+	`"node":{"type":"string"},` +
+	`"description":{"type":"string","nullable":true},` +
+	`"placement":{"anyOf":[` +
+	`{"type":"object","required":["pool"],"additionalProperties":false,` +
+	`"properties":{"pool":{"type":"string"},"sizeGiB":{"type":"integer"}}},` +
+	`{"type":"object","required":["pool"],"additionalProperties":false,` +
+	`"properties":{"pool":{"type":"string"},"cores":{"type":"integer"}}}]},` +
+	`"console":{"oneOf":[{"type":"string"},{"type":"integer"}]},` +
+	`"network":{"allOf":[{"$ref":"#/components/schemas/Network"}]},` +
+	`"tags":{"type":"object","additionalProperties":{"type":"string"}},` +
+	`"nics":{"type":"array","items":{"$ref":"#/components/schemas/NIC"}},` +
+	`"cpuLimit":{"x-kubernetes-int-or-string":true},` +
+	`"extra":{"type":"object","x-kubernetes-preserve-unknown-fields":true}},` +
+	`"x-kubernetes-validations":[{"rule":"self.vmid > 0","message":"vmid must be positive"}]},` +
+	`"Network":{"type":"object","required":["bridge"],` +
+	`"properties":{"bridge":{"type":"string"},"mode":{"type":"string","enum":["bridged","routed"]}}},` +
+	`"NIC":{"type":"object","required":["model"],` +
+	`"properties":{"model":{"type":"string"},"mac":{"type":"string"}}}}}}`
+
+// nativeSchemaCatalogScenarios cover schema delivery, availability and dialect
+// variants consumed by the host schema catalog. Each reuses the records and
+// pages shape of the nearest same-profile scenario.
+func nativeSchemaCatalogScenarios() []Scenario {
+	cloud := nativeCloudScenarios()[0]
+	discovered := cloud
+	discovered.Name = "cloud-discovered-schema"
+	discovered.SchemaDelivery = SchemaDeliveryReference
+	unavailable := nativeCloudScenarios()[1]
+	unavailable.Name = "cloud-unavailable-schema"
+	unavailable.SchemaUnavailable = "FORBIDDEN"
+	unsupported := nativeContainerScenarios()[1]
+	unsupported.Name = "container-unsupported-dialect"
+	unsupported.SchemaDialect = "https://json-schema.org/draft/2019-09/schema"
+	unsupported.Schema = json.RawMessage(
+		`{"$schema":"https://json-schema.org/draft/2019-09/schema","type":"object","properties":{"id":{"type":"string"}}}`,
+	)
+	return []Scenario{
+		discovered,
+		unavailable,
+		unsupported,
+		{
+			Name:           "hypervisor-openapi-vms",
+			Profile:        providerHypervisor,
+			Type:           "vm",
+			Selection:      map[string][]string{scopeNode: {nodeA, nodeB}},
+			Schema:         json.RawMessage(hypervisorOpenAPIVMSchema),
+			SchemaDialect:  schemaDialectOpenAPI30,
+			SchemaRoot:     "#/components/schemas/VM",
+			SchemaDelivery: SchemaDeliveryInline,
+			Pages: []Page{
+				{Next: "node-page::2/", Records: []string{recordVMOpenAPIA, recordVMOpenAPIC}},
+				{Cursor: "node-page::2/", Records: []string{recordVMOpenAPIB}},
+			},
 			Coverage:  nativeBestEffortCoverage(),
 			Freshness: freshnessSnapshot,
 		},
