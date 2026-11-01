@@ -43,3 +43,11 @@ func (c *Client) HealthCheck(ctx context.Context) (*lifecyclepb.HealthCheckRespo
 	}
 	return c.client.HealthCheck(ctx, &emptypb.Empty{})
 }
+
+// GetProfilingStatus queries the profiler owned by the plugin process.
+func (c *Client) GetProfilingStatus(ctx context.Context) (*lifecyclepb.ProfilingStatusResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, errors.New("lifecycle client not initialized")
+	}
+	return c.client.GetProfilingStatus(ctx, &emptypb.Empty{})
+}
