@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"math"
+	"os"
 	"slices"
 
 	"github.com/hashicorp/go-plugin"
@@ -14,6 +15,7 @@ import (
 	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
+	"github.com/omniviewdev/plugin-sdk/pkg/profiling"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	rp "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/state"
@@ -51,6 +53,7 @@ type Plugin struct {
 	Log            logging.Logger
 	LogLevel       *logging.LevelController
 	runtimeBackend *logging.HCLBackend
+	profiler       *profiling.Service
 	// meta holds metadata for the plugin, found inside of the plugin.yaml
 	// file in the same directory as the plugin.
 	meta config.PluginMeta
@@ -232,6 +235,9 @@ func (p *Plugin) SetLogLevel(level logging.Level) {
 // lifecycle wire range, rather than advertising a wrapped version. Nonpositive
 // manifest versions continue to use CurrentProtocolVersion.
 func (p *Plugin) Serve() {
+	p.profiler = p.startProfiling()
+	defer p.profiler.Close()
+
 	telemetryProvider, err := telemetry.InitFromEnv()
 	if err != nil {
 		p.Log.Warn(context.Background(), "telemetry init failed, continuing without",
@@ -272,6 +278,7 @@ func (p *Plugin) registerLifecycle() {
 			Version:            p.meta.Version,
 			SDKProtocolVersion: int32(version),
 			Capabilities:       caps,
+			ProfilingStatus:    p.profilingStatus,
 		},
 	}
 }
@@ -287,4 +294,23 @@ func RegisterResourcePlugin(p *Plugin, provider resourcev2.Provider) {
 		Impl:             provider,
 		SettingsProvider: p.SettingsProvider,
 	})
+}
+
+// startProfiling requires an explicit host opt-in and always chooses a fresh port.
+func (p *Plugin) startProfiling() *profiling.Service {
+	service := profiling.New(profiling.Config{
+		Enabled: os.Getenv("OMNIVIEW_PLUGIN_PPROF_ENABLED") == "true",
+		Port:    0,
+	}, "environment")
+	if err := service.Start(); err != nil {
+		p.Log.Warn(context.Background(), "profiling init failed, continuing without", logging.Error(err))
+	}
+	return service
+}
+
+func (p *Plugin) profilingStatus() profiling.Status {
+	if p.profiler == nil {
+		return profiling.Status{}
+	}
+	return p.profiler.GetStatus()
 }

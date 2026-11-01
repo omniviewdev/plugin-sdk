@@ -142,6 +142,15 @@ records. The removed standalone runner/discovery APIs have no compatibility shim
 Legacy `.devinfo*` files remain excluded from baseline exports and are not proof
 of attachment/readiness or permission to start an imported executable.
 
+### Plugin process profiling
+
+`sdk.Plugin.Serve()` starts an optional local pprof listener when the host explicitly supplies `OMNIVIEW_PLUGIN_PPROF_ENABLED=true`. The default, missing, and other values leave it disabled. Each enabled process binds an automatically allocated IPv4 loopback port and closes its listener when serving ends. Plugin authors do not register a profiling capability or add startup code; existing binaries must be rebuilt with the profiling-capable SDK.
+
+The lifecycle service exposes `GetProfilingStatus` with the process PID, actual listener URL, running state, and any listener error. A listener failure does not stop plugin startup. The host uses this RPC to display process endpoints; it does not infer runtime state from saved preferences.
+
+The shared `pkg/profiling` package also serves host pprof. Requests require the exact numeric loopback Host and no Origin header. CPU and trace captures accept GET only and cap explicit durations at 120 and 15 seconds. Captures are unauthenticated and may contain sensitive data: never publish or forward these ports. Continuous Pyroscope and pprof cannot own the same process's CPU profiler simultaneously; coordination remains manual.
+
+
 ### Pre-launch artifact compatibility
 
 `config.PluginMeta.StateIsolation` is optional, additive YAML/JSON metadata under

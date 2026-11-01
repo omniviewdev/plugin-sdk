@@ -20,9 +20,10 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	PluginLifecycle_GetInfo_FullMethodName         = "/omniview.sdk.lifecycle.v1.PluginLifecycle/GetInfo"
-	PluginLifecycle_GetCapabilities_FullMethodName = "/omniview.sdk.lifecycle.v1.PluginLifecycle/GetCapabilities"
-	PluginLifecycle_HealthCheck_FullMethodName     = "/omniview.sdk.lifecycle.v1.PluginLifecycle/HealthCheck"
+	PluginLifecycle_GetInfo_FullMethodName            = "/omniview.sdk.lifecycle.v1.PluginLifecycle/GetInfo"
+	PluginLifecycle_GetCapabilities_FullMethodName    = "/omniview.sdk.lifecycle.v1.PluginLifecycle/GetCapabilities"
+	PluginLifecycle_HealthCheck_FullMethodName        = "/omniview.sdk.lifecycle.v1.PluginLifecycle/HealthCheck"
+	PluginLifecycle_GetProfilingStatus_FullMethodName = "/omniview.sdk.lifecycle.v1.PluginLifecycle/GetProfilingStatus"
 )
 
 // PluginLifecycleClient is the client API for PluginLifecycle service.
@@ -36,6 +37,8 @@ type PluginLifecycleClient interface {
 	GetCapabilities(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetCapabilitiesResponse, error)
 	// HealthCheck returns the current health status of the plugin process.
 	HealthCheck(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HealthCheckResponse, error)
+	// GetProfilingStatus reports the optional profiler owned by this process.
+	GetProfilingStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ProfilingStatusResponse, error)
 }
 
 type pluginLifecycleClient struct {
@@ -73,6 +76,15 @@ func (c *pluginLifecycleClient) HealthCheck(ctx context.Context, in *emptypb.Emp
 	return out, nil
 }
 
+func (c *pluginLifecycleClient) GetProfilingStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ProfilingStatusResponse, error) {
+	out := new(ProfilingStatusResponse)
+	err := c.cc.Invoke(ctx, PluginLifecycle_GetProfilingStatus_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PluginLifecycleServer is the server API for PluginLifecycle service.
 // All implementations should embed UnimplementedPluginLifecycleServer
 // for forward compatibility
@@ -84,6 +96,8 @@ type PluginLifecycleServer interface {
 	GetCapabilities(context.Context, *emptypb.Empty) (*GetCapabilitiesResponse, error)
 	// HealthCheck returns the current health status of the plugin process.
 	HealthCheck(context.Context, *emptypb.Empty) (*HealthCheckResponse, error)
+	// GetProfilingStatus reports the optional profiler owned by this process.
+	GetProfilingStatus(context.Context, *emptypb.Empty) (*ProfilingStatusResponse, error)
 }
 
 // UnimplementedPluginLifecycleServer should be embedded to have forward compatible implementations.
@@ -98,6 +112,9 @@ func (UnimplementedPluginLifecycleServer) GetCapabilities(context.Context, *empt
 }
 func (UnimplementedPluginLifecycleServer) HealthCheck(context.Context, *emptypb.Empty) (*HealthCheckResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HealthCheck not implemented")
+}
+func (UnimplementedPluginLifecycleServer) GetProfilingStatus(context.Context, *emptypb.Empty) (*ProfilingStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetProfilingStatus not implemented")
 }
 
 // UnsafePluginLifecycleServer may be embedded to opt out of forward compatibility for this service.
@@ -165,6 +182,24 @@ func _PluginLifecycle_HealthCheck_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PluginLifecycle_GetProfilingStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginLifecycleServer).GetProfilingStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginLifecycle_GetProfilingStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginLifecycleServer).GetProfilingStatus(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PluginLifecycle_ServiceDesc is the grpc.ServiceDesc for PluginLifecycle service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -183,6 +218,10 @@ var PluginLifecycle_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "HealthCheck",
 			Handler:    _PluginLifecycle_HealthCheck_Handler,
+		},
+		{
+			MethodName: "GetProfilingStatus",
+			Handler:    _PluginLifecycle_GetProfilingStatus_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

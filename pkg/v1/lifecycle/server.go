@@ -2,6 +2,9 @@ package lifecycle
 
 import (
 	"context"
+	"os"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/profiling"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -17,6 +20,7 @@ type Server struct {
 	Version            string
 	SDKProtocolVersion int32
 	Capabilities       []string
+	ProfilingStatus    func() profiling.Status
 }
 
 // GetInfo returns the process metadata captured at lifecycle registration.
@@ -39,5 +43,19 @@ func (s *Server) GetCapabilities(_ context.Context, _ *emptypb.Empty) (*lifecycl
 func (s *Server) HealthCheck(_ context.Context, _ *emptypb.Empty) (*lifecyclepb.HealthCheckResponse, error) {
 	return &lifecyclepb.HealthCheckResponse{
 		Status: lifecyclepb.ServingStatus_SERVING_STATUS_SERVING,
+	}, nil
+}
+
+// GetProfilingStatus reports current listener facts and this process's PID.
+func (s *Server) GetProfilingStatus(_ context.Context, _ *emptypb.Empty) (*lifecyclepb.ProfilingStatusResponse, error) {
+	var status profiling.Status
+	if s.ProfilingStatus != nil {
+		status = s.ProfilingStatus()
+	}
+	return &lifecyclepb.ProfilingStatusResponse{
+		Running: status.Running,
+		Url:     status.URL,
+		Error:   status.Error,
+		Pid:     int64(os.Getpid()),
 	}, nil
 }

@@ -18,6 +18,9 @@ service PluginLifecycle {
 
   // HealthCheck returns the current health status of the plugin process.
   rpc HealthCheck(google.protobuf.Empty) returns (HealthCheckResponse);
+
+  // GetProfilingStatus reports the optional profiler owned by this process.
+  rpc GetProfilingStatus(google.protobuf.Empty) returns (ProfilingStatusResponse);
 }
 
 message GetInfoResponse {
@@ -38,4 +41,11 @@ enum ServingStatus {
 
 message HealthCheckResponse {
   ServingStatus status = 1;
+}
+
+message ProfilingStatusResponse {
+  bool running = 1;
+  string url = 2;
+  string error = 3;
+  int64 pid = 4;
 }
