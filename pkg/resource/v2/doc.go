@@ -40,6 +40,14 @@
 // callback containers for later mutation. Watch targets and connection snapshots
 // have independent ownership; native opaque handles do not become copyable.
 //
+// Providers may opt into a shared acquisition-timeout preference by registering
+// ConnectionAcquisitionTimeoutSetting and resolving ConnectionAcquisitionTimeout
+// once at each initial acquisition or catalog refresh. Apply the duration with
+// context.WithTimeout to that work, not the retained client's generation context.
+// The setting accepts 1-300 whole seconds, defaults to 10, and takes effect on
+// the next acquisition. Earlier caller cancellation/deadlines still win.
+// This policy does not schedule requests or know any provider's protocol.
+//
 // # Public connection facts
 //
 // Config.ConnectionMetadata optionally observes public server facts with an
