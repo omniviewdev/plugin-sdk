@@ -32,7 +32,7 @@ func TestActualGRPCQualifiedSourcePinPrecedence(t *testing.T) {
 		{name: "wrong-provider", qualifiedPin: "cat-1", provider: "other-provider", connection: "explicit"},
 		{name: "missing-all"},
 	}
-	for _, operation := range []string{"Get", "StartConnectionWatch"} {
+	for _, operation := range []string{"Get", "OpenSource"} {
 		for _, tc := range cases {
 			t.Run(operation+"/"+tc.name, func(t *testing.T) {
 				runQualifiedSourcePinScenario(t, operation, tc)
@@ -49,10 +49,7 @@ type sourcePinCase struct {
 // runQualifiedSourcePinScenario checks both admission and native dispatch counts.
 func runQualifiedSourcePinScenario(t *testing.T, operation string, tc sourcePinCase) {
 	t.Helper()
-	provider := &updateProvider{
-		qualifiedProvider: qualifiedProvider{allowed: true},
-		trigger:           make(chan struct{}, 1),
-	}
+	provider := &sourcePinProvider{qualifiedProvider: qualifiedProvider{allowed: true}}
 	server := grpc.NewServer()
 	RegisterServer(server, provider)
 	client := NewClient(pipe(t, server))
@@ -61,7 +58,25 @@ func runQualifiedSourcePinScenario(t *testing.T, operation string, tc sourcePinC
 	if operation == "Get" {
 		_, err = client.Get(ctx, testGet())
 	} else {
-		err = client.StartConnectionWatch(ctx, []resourcev2.ReadTarget{updateTarget()})
+		var stream resourcev2.SourceStream
+		stream, err = client.OpenSourceStream(ctx, sourcePinRequest())
+		if err == nil {
+			defer stream.Close()
+			for {
+				var frame resourcev2.SourceFrame
+				frame, err = stream.Recv()
+				if err != nil {
+					break
+				}
+				if frame.Failed != nil {
+					err = resourcev2.NewError(frame.Failed.Code, frame.Failed.Message)
+					break
+				}
+				if frame.SnapshotEnd != nil {
+					break
+				}
+			}
+		}
 	}
 	calls := provider.calls.Load() + provider.starts.Load()
 	if tc.accepted {

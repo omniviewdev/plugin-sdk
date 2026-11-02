@@ -156,16 +156,16 @@ const (
 	OperationGet Operation = "get"
 	// OperationNativeQuery advertises provider-native query execution.
 	OperationNativeQuery Operation = "nativeQuery"
-	// OperationUpdate describes advisory watch delivery, not mutation.
-	OperationUpdate Operation = "update"
 	// OperationCreate admits only the create mutation verb.
 	OperationCreate Operation = "create"
-	// OperationMutationUpdate admits only the update mutation verb, never advisory delivery.
+	// OperationMutationUpdate admits only the update mutation verb.
 	OperationMutationUpdate Operation = "mutationUpdate"
 	// OperationDelete admits only the delete mutation verb.
 	OperationDelete Operation = "delete"
 	// OperationAction advertises action dispatch; action descriptors define available actions.
 	OperationAction Operation = "action"
+	// OperationSourceUpdates advertises a source session that follows changes after its snapshot.
+	OperationSourceUpdates Operation = "sourceUpdates"
 )
 
 // Capability advertises one operation over an explicit query scope. Supporting
@@ -173,8 +173,7 @@ const (
 type Capability struct {
 	Operation Operation  `json:"operation"`
 	Scope     QueryScope `json:"scope"`
-	// Guarantee labels advisory update semantics; finite operations leave it
-	// empty. BestEffortGuarantee does not promise replay or source continuity.
+	// Guarantee declares source update continuity; finite operations leave it empty.
 	Guarantee string `json:"guarantee,omitempty"`
 }
 
@@ -203,6 +202,7 @@ type ResourceType struct {
 	NativeQueries       []NativeQueryDescriptor `json:"nativeQueries,omitempty"`
 	Capabilities        []Capability            `json:"capabilities"`
 	NativeAuthorityHint *NativeAuthorityHint    `json:"nativeAuthorityHint,omitempty"`
+	AcquireOnConnect    bool                    `json:"acquireOnConnect"`
 }
 
 // CatalogRequest discovers support through one explicit access route. Discovery
@@ -325,7 +325,7 @@ type SourcePage struct {
 }
 
 // MutationRequest selects create, update, or delete. Catalog admission maps
-// update to OperationMutationUpdate, never to the advisory OperationUpdate.
+// update to OperationMutationUpdate.
 // Its mutable input is borrowed for the call, not transferred to the provider.
 type MutationRequest struct {
 	Route     AccessRoute       `json:"route"`

@@ -46,11 +46,9 @@ The child receives temporary HOME, USERPROFILE, XDG, state and short Unix socket
 
 This is credential/profile isolation, not hostile-plugin sandboxing or network isolation. Temporary plugin metadata and waiting/cancelled/closed receipts are test artifacts, not production state.
 
-## Best-effort updates and P05 scope
+## Historical best-effort update receipt
 
-The retained native container update changes `running` to `paused` and revision `event:z9` to `event:a1`. The optional `BestEffortUpdateProvider` fixture traverses the actual new-major child gRPC update transport. The probe waits for listener readiness before starting the native source, waits for its advisory Synced state, then releases the finite native change through a test-side file barrier. It checks transported canonical references, exact engine scope, stable incarnation, tagged bodies, opaque source revisions and explicit `bestEffort` guarantees against `CheckChanges`. It stops the native watch and cancels the listener before source teardown.
-
-These probes passed in the normal and race SDK suites recorded below. No v1 import or fixture-specific event RPC remains. The approved advisory contract preserves useful live workflow without claiming atomic snapshot/event cutover, replay continuity, gap detection, gap-free ordering or reliable recreation removal. Synced means native readiness, not a point-in-time snapshot. P05 owns the separate stronger continuity contract; this receipt does not certify that contract.
+The 2026-10-28 probes below exercised the former advisory update transport. That transport has been replaced by source sessions, so this historical receipt does not certify source-session continuity.
 
 ## SDK verification receipt — 2026-10-28
 

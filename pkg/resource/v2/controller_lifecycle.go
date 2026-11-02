@@ -328,7 +328,6 @@ func (c *Controller[T]) stopSlot(s *clientSlot[T]) error {
 	c.mu.Unlock()
 	s.destroy.Do(func() {
 		<-s.ready
-		s.destroyErr = errors.Join(s.destroyErr, c.updates.stopRoute(s.connection.ID))
 		s.users.Wait()
 		if s.client != nil {
 			// Cleanup must not inherit the canceled client context.
@@ -495,7 +494,6 @@ func (c *Controller[T]) Close() error {
 			slots = append(slots, s)
 		}
 		c.mu.Unlock()
-		c.updates.stopAll()
 		for _, s := range slots {
 			c.closeErr = errors.Join(c.closeErr, c.stopSlot(s))
 		}

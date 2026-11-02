@@ -35,24 +35,6 @@ func (c *Controller[T]) Get(ctx context.Context, request GetRequest) (record Rec
 	if err != nil {
 		return record, err
 	}
-	scope, exact := queryScopeForIdentity(a, descriptor.QueryDimensions)
-	// Unknown selection-only dimensions must not turn an exact Get into an
-	// implicit unscoped watch or acquisition. An explicit query can start it.
-	if exact {
-		if err = c.ensureOnFirstQuery(
-			ctx,
-			ReadTarget{
-				Route:          request.Route,
-				Provider:       a.Provider,
-				Authority:      a.Authority,
-				Type:           a.Type,
-				Scope:          scope,
-				Representation: request.Representation,
-			},
-		); err != nil {
-			return record, err
-		}
-	}
 	record, err = r.Get(ctx, client, request)
 	if err == nil {
 		err = c.fenceCatalog(ctx, request.Route)
@@ -108,8 +90,8 @@ func (c *Controller[T]) NativeQuery(ctx context.Context, request NativeQueryRequ
 	)
 }
 
-// dispatchPage keeps admission, first-query startup, and postdispatch fences
-// identical for both finite page operations. The caller's guard classifies errors.
+// dispatchPage keeps admission and postdispatch fences identical for both
+// finite page operations. The caller's guard classifies errors.
 func (c *Controller[T]) dispatchPage(
 	ctx context.Context,
 	target ReadTarget,
@@ -128,9 +110,6 @@ func (c *Controller[T]) dispatchPage(
 	)
 	*registration = selected
 	if err != nil {
-		return SourcePage{}, err
-	}
-	if err = c.ensureOnFirstQuery(ctx, target); err != nil {
 		return SourcePage{}, err
 	}
 	page, err := invoke(ctx, client, selected, descriptor)

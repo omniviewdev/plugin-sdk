@@ -767,13 +767,20 @@ func validateResourceType(t *ResourceType) error {
 	if err := validateNativeQueryDescriptors(t.NativeQueries); err != nil {
 		return err
 	}
+	hasSourceUpdates := false
 	for _, capability := range t.Capabilities {
 		if err := validateCapability(capability); err != nil {
 			return err
 		}
+		if capability.Operation == OperationSourceUpdates {
+			hasSourceUpdates = true
+		}
 		if err := ValidateScope(capability.Scope, t.QueryDimensions); err != nil {
 			return err
 		}
+	}
+	if t.AcquireOnConnect && !hasSourceUpdates {
+		return invalid("acquire on connect requires source updates")
 	}
 	return nil
 }

@@ -62,7 +62,7 @@ func register(s *grpc.Server, p resourcev2.Provider, settings pkgsettings.Provid
 	owner := &server{impl: p, settings: settings}
 	s.RegisterService(&desc, owner)
 	registerAncillary(s, owner)
-	registerUpdates(s, owner)
+	registerSources(s, owner)
 }
 
 func callHandler(

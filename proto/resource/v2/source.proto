@@ -1,0 +1,43 @@
+syntax = "proto3";
+package omniview.resource.v2;
+option go_package = "github.com/omniviewdev/plugin-sdk/proto/resource/v2;resourcepb";
+import "proto/resource/v2/domain.proto";
+
+service ResourceSources {
+  rpc Open(SourceOpenRequest) returns (stream SourceFrame);
+}
+message SourceLimits { uint32 max_frame_bytes = 1; uint32 max_batch_items = 2; }
+message SourceEnumerate {}
+message SourceNativeQuery { string language = 1; Value query = 2; }
+message SourceAcquisition { oneof kind { SourceEnumerate enumerate = 1; SourceNativeQuery native_query = 2; } }
+message SourceOpenRequest {
+  uint32 version = 1;
+  string session_id = 2;
+  string generation = 3;
+  ReadTarget target = 4;
+  string mode = 5;
+  SourceAcquisition acquisition = 6;
+  SourceLimits limits = 7;
+}
+message LabelEntry { string key = 1; string value = 2; }
+message ResourceMetadata { repeated LabelEntry labels = 1; TimestampValue created_at = 2; }
+message SourceObservation { Record record = 1; ResourceMetadata metadata = 2; optional string display_name = 3; }
+message SourceCoverage { string enumeration = 1; string consistency = 2; repeated string limitations = 3; }
+message SourceBegin { string mode = 1; }
+message SourceSnapshot { repeated SourceObservation observations = 1; }
+message SourceSnapshotEnd { SourceCoverage coverage = 1; string continuity = 2; }
+message SourceRemove { ResourceReference reference = 1; optional string source_revision = 2; }
+message SourceChange { oneof change { SourceObservation upsert = 1; SourceRemove remove = 2; } }
+message SourceChanges { repeated SourceChange changes = 1; SourceCoverage coverage = 2; }
+message SourceReset { string reason = 1; string message = 2; }
+message SourceFailure { string code = 1; string message = 2; }
+message SourceFrame {
+  uint32 version = 1;
+  string session_id = 2;
+  string generation = 3;
+  uint64 sequence = 4;
+  oneof payload {
+    SourceBegin begin = 5; SourceSnapshot snapshot = 6; SourceSnapshotEnd snapshot_end = 7;
+    SourceChanges changes = 8; SourceReset reset = 9; SourceFailure failed = 10;
+  }
+}

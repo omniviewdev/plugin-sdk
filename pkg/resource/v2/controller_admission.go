@@ -21,9 +21,6 @@ func (c *Controller[T]) registrations(ctx context.Context, route AccessRoute, ty
 		if r.Type != typ || (r.Connection != "" && r.Connection != route.Connection) {
 			return nil, NewError("INTERNAL", "Dynamic registration changed the requested type or route.")
 		}
-		if r.SyncPolicy < SyncOnConnect || r.SyncPolicy > SyncNever {
-			return nil, NewError("INTERNAL", "Dynamic registration has an unknown sync policy.")
-		}
 		r.Actions = cloneActionDescriptors(r.Actions)
 		result = append(result, r)
 	}
@@ -42,8 +39,8 @@ func handles[T any](r Registration[T], op Operation) bool {
 		return r.Mutate != nil
 	case OperationAction:
 		return r.Action != nil
-	case OperationUpdate:
-		return r.Watch != nil && r.SyncPolicy != SyncNever
+	case OperationSourceUpdates:
+		return r.Source != nil
 	default:
 		return false
 	}
@@ -104,6 +101,18 @@ func scopeContains(outer, inner QueryScope) bool {
 		}
 	}
 	return true
+}
+
+// SourceGuaranteeForTarget returns the first source-updates guarantee whose
+// declared scope contains the target scope, matching operation admission.
+// It returns an empty string when no capability matches.
+func SourceGuaranteeForTarget(descriptor ResourceType, target ReadTarget) string {
+	for _, capability := range descriptor.Capabilities {
+		if capability.Operation == OperationSourceUpdates && scopeContains(capability.Scope, target.Scope) {
+			return capability.Guarantee
+		}
+	}
+	return ""
 }
 
 func scopeConstraint(scope QueryScope, dimension string) *ScopeConstraint {
@@ -415,7 +424,7 @@ func describeOperation(request any) (operationTarget, error) {
 			typ:            request.Type,
 			representation: request.Representation,
 			scope:          request.Scope,
-			operation:      OperationUpdate,
+			operation:      OperationSourceUpdates,
 		}, validationErr
 	default:
 		return operationTarget{}, NewError("UNSUPPORTED", "Unsupported finite resource operation.")
@@ -455,9 +464,8 @@ func AdmitOperation(ctx context.Context, provider Provider, request any) (descri
 		_, supported = provider.(Mutator)
 	case OperationAction:
 		_, supported = provider.(Actioner)
-	case OperationUpdate:
-		// Advisory targets use AdmitBestEffortTarget, not finite admission.
-		supported = false
+	case OperationSourceUpdates:
+		_, supported = provider.(SourceProvider)
 	}
 	if !supported {
 		return descriptor, NewError("UNSUPPORTED", "Operation handler is not implemented.")
@@ -723,7 +731,7 @@ func checkPage(page SourcePage, descriptor ResourceType, target ReadTarget, size
 }
 
 // AdmitCatalogOperation uses an already acquired catalog without another
-// discovery RPC. A ReadTarget requests advisory update capability admission.
+// discovery RPC. A ReadTarget requests source update capability admission.
 // It validates domain request values against declared support only; it neither
 // checks a provider's optional Go traits nor an accepted/current revision pair.
 // No native work, lasting lease, or access authorization occurs. Keep catalog
@@ -738,29 +746,4 @@ func AdmitCatalogOperation(catalog Catalog, request any) (ResourceType, error) {
 	}
 	descriptor, _, err := admitTarget(catalog, target)
 	return descriptor, err
-}
-
-// AdmitBestEffortTarget checks the independently optional advisory update
-// interface and its exact catalog scope. It makes no P05 continuity promise.
-// A nonnil provider/context and accepted route catalog observation are required.
-// It calls Catalog without starting a source or retaining a lease; callers must
-// separately fence native startup, retries, and delivery. It grants no authority.
-func AdmitBestEffortTarget(
-	ctx context.Context,
-	provider Provider,
-	target ReadTarget,
-) (descriptor ResourceType, err error) {
-	defer func() {
-		if recover() != nil {
-			err = NewError("INTERNAL", "Provider admission handler panicked.")
-		}
-	}()
-	operation, err := describeOperation(target)
-	if err != nil {
-		return descriptor, err
-	}
-	if _, ok := provider.(BestEffortUpdateProvider); !ok {
-		return descriptor, NewError("UNSUPPORTED", "Best-effort update handler is not implemented.")
-	}
-	return admitProviderTarget(ctx, provider, operation)
 }
