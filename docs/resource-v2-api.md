@@ -363,15 +363,19 @@ go mod tidy
 The host and Kubernetes plugin have independent module roots. An unchanged
 provider that uses SDK v0.10.0 can retain stock gRPC.
 
+For this SDK, compilation fails without the root replacement because stock
+gRPC does not provide the scoped receive APIs.
+
 The controls require native `grpc.Server.Serve`. Configured methods fail with
 `FailedPrecondition` under `ServeHTTP`; that transport cannot enforce these
 ingress bounds.
 
 A partial message has a five-second deadline. A healthy wait between complete
 messages has no partial-read timer. An ordinary message timeout cancels only its
-RPC. A physical HTTP/2 DATA frame has a separate absolute deadline; progress does
-not extend it. If that frame remains incomplete, the transport closes the broken
-connection because HTTP/2 cannot parse another frame through missing bytes.
+RPC. A physical HTTP/2 DATA frame has a separate absolute five-second deadline;
+progress does not extend it. If that frame remains incomplete, the transport
+closes the broken connection because HTTP/2 cannot parse another frame through
+missing bytes.
 
 Use `IsFatalSourceTransportError` from `pkg/resource/v2/plugin` to identify this
 local transport failure. Retire the unhealthy provider transport. Do not infer
