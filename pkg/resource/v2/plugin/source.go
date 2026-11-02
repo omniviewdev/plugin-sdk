@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -23,8 +24,9 @@ type sourceServer struct {
 }
 
 type sourceDelivery struct {
-	frame *resourcepb.SourceFrame
-	ack   chan error
+	frame    *resourcepb.SourceFrame
+	ack      chan error
+	terminal bool
 }
 
 type sourceEmitter struct {
@@ -49,15 +51,6 @@ func sourceAdmission(ctx context.Context, p resourcev2.Provider, r resourcev2.So
 		}
 	}
 	return resourcev2.ResourceType{}, nil
-}
-
-func sourceGuarantee(d resourcev2.ResourceType) string {
-	for _, c := range d.Capabilities {
-		if c.Operation == resourcev2.OperationSourceUpdates {
-			return c.Guarantee
-		}
-	}
-	return ""
 }
 
 func registerSources(s *grpc.Server, owner *server) {
@@ -103,7 +96,7 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
 		if err == nil {
 			err = s.owner.checkCatalogRoute(ctx, p.GetTarget().GetRoute())
 		}
-		e.tracker = resourcev2.NewSourcePhaseTracker(r, sourceGuarantee(descriptor))
+		e.tracker = resourcev2.NewSourcePhaseTracker(r, resourcev2.SourceGuaranteeForTarget(descriptor, r.Target))
 		if err == nil {
 			provider, ok := s.owner.impl.(resourcev2.SourceProvider)
 			if !ok {
@@ -143,6 +136,10 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
 					<-timer.C
 				}
 				d.ack <- err
+				if err == nil && d.terminal {
+					cancel()
+					return nil
+				}
 				if err != nil {
 					cancel()
 					return err
@@ -184,36 +181,32 @@ func (e *sourceEmitter) send(ctx context.Context, f resourcev2.SourceFrame) erro
 	f.SessionID, f.Generation, f.Sequence = e.request.SessionID, e.request.Generation, e.sequence+1
 	p, err := resourcev2.ToProtoSourceFrame(f)
 	if err != nil {
-		return err
+		return resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
 	}
-	if proto.Size(p) > int(e.request.Limits.MaxFrameBytes) {
-		return limited("source frame exceeds limit")
-	}
-	if err = e.tracker.Admit(f); err != nil {
+	return e.sendEncoded(f, p)
+}
+
+func (e *sourceEmitter) sendEncoded(f resourcev2.SourceFrame, p *resourcepb.SourceFrame) error {
+	if err := e.tracker.AdmitSized(f, proto.Size(p)); err != nil {
 		return err
 	}
 	e.sequence++
-	d := sourceDelivery{frame: p, ack: make(chan error, 1)}
+	d := sourceDelivery{frame: p, ack: make(chan error, 1), terminal: f.Reset != nil || f.Failed != nil || f.SnapshotEnd != nil && e.request.Mode == resourcev2.SourceModeSnapshot}
 	select {
 	case e.queue <- d:
-	case <-ctx.Done():
-		if e.ctx.Err() != nil {
-			return e.contextError()
-		}
-		return ctx.Err()
 	case <-e.ctx.Done():
 		return e.contextError()
 	}
 	select {
-	case err = <-d.ack:
+	case err := <-d.ack:
 		return err
-	case <-ctx.Done():
-		if e.ctx.Err() != nil {
+	case <-e.ctx.Done():
+		select {
+		case err := <-d.ack:
+			return err
+		default:
 			return e.contextError()
 		}
-		return ctx.Err()
-	case <-e.ctx.Done():
-		return e.contextError()
 	}
 }
 func (e *sourceEmitter) contextError() error {
@@ -254,22 +247,37 @@ func (e *sourceEmitter) Snapshot(ctx context.Context, observations []resourcev2.
 		return err
 	}
 	for len(observations) > 0 {
-		n := 0
-		for n < len(observations) && n < int(e.request.Limits.MaxBatchItems) {
-			f := resourcev2.SourceFrame{SessionID: e.request.SessionID, Generation: e.request.Generation, Sequence: e.sequence + 1, Snapshot: &resourcev2.SourceSnapshot{Observations: observations[:n+1]}}
-			p, err := resourcev2.ToProtoSourceFrame(f)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := e.ctx.Err(); err != nil {
+			return e.contextError()
+		}
+		f := resourcev2.SourceFrame{SessionID: e.request.SessionID, Generation: e.request.Generation, Sequence: e.sequence + 1}
+		p := &resourcepb.SourceFrame{Version: resourcev2.WireVersion, SessionId: f.SessionID, Generation: f.Generation, Sequence: f.Sequence}
+		headerSize := proto.Size(p)
+		snapshot := &resourcepb.SourceSnapshot{}
+		payloadSize := 0
+		for len(snapshot.Observations) < len(observations) && len(snapshot.Observations) < int(e.request.Limits.MaxBatchItems) {
+			observation, err := resourcev2.ToProtoSourceObservation(observations[len(snapshot.Observations)])
 			if err != nil {
-				return err
+				return resourcev2.NewError("PROVIDER_ERROR", "invalid source observation")
 			}
-			if proto.Size(p) > int(e.request.Limits.MaxFrameBytes) {
+			itemSize := proto.Size(observation)
+			nextSize := payloadSize + protowire.SizeTag(1) + protowire.SizeBytes(itemSize)
+			if headerSize+protowire.SizeTag(6)+protowire.SizeBytes(nextSize) > int(e.request.Limits.MaxFrameBytes) {
 				break
 			}
-			n++
+			snapshot.Observations = append(snapshot.Observations, observation)
+			payloadSize = nextSize
 		}
+		n := len(snapshot.Observations)
 		if n == 0 {
 			return limited("source observation exceeds frame limit")
 		}
-		if err := e.send(ctx, resourcev2.SourceFrame{Snapshot: &resourcev2.SourceSnapshot{Observations: observations[:n]}}); err != nil {
+		f.Snapshot = &resourcev2.SourceSnapshot{Observations: observations[:n]}
+		p.Payload = &resourcepb.SourceFrame_Snapshot{Snapshot: snapshot}
+		if err := e.sendEncoded(f, p); err != nil {
 			return err
 		}
 		observations = observations[n:]

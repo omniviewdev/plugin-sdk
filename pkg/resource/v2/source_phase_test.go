@@ -245,3 +245,20 @@ func TestSourceTermination(t *testing.T) {
 		}
 	}
 }
+
+func TestSourcePhaseAdmitSized(t *testing.T) {
+	r := phaseRequest(SourceModeSnapshot)
+	tracker := NewSourcePhaseTracker(r, "")
+	begin := phaseBegin(1, r.Mode)
+	phaseCode(t, tracker.AdmitSized(begin, int(r.Limits.MaxFrameBytes)+1), "RESOURCE_LIMIT")
+	if err := tracker.AdmitSized(begin, int(r.Limits.MaxFrameBytes)); err != nil {
+		t.Fatalf("retry after size rejection: %v", err)
+	}
+	end := phaseEnd(2, ContinuityNotApplicable)
+	end.SnapshotEnd.Coverage.Limitations = make([]string, MaxSourceLimitations+1)
+	phaseCode(t, tracker.AdmitSized(end, 1), "PROVIDER_ERROR")
+	end.SnapshotEnd.Coverage.Limitations = nil
+	if err := tracker.AdmitSized(end, 1); err != nil {
+		t.Fatalf("retry after invalid frame: %v", err)
+	}
+}

@@ -103,6 +103,18 @@ func scopeContains(outer, inner QueryScope) bool {
 	return true
 }
 
+// SourceGuaranteeForTarget returns the first source-updates guarantee whose
+// declared scope contains the target scope, matching operation admission.
+// It returns an empty string when no capability matches.
+func SourceGuaranteeForTarget(descriptor ResourceType, target ReadTarget) string {
+	for _, capability := range descriptor.Capabilities {
+		if capability.Operation == OperationSourceUpdates && scopeContains(capability.Scope, target.Scope) {
+			return capability.Guarantee
+		}
+	}
+	return ""
+}
+
 func scopeConstraint(scope QueryScope, dimension string) *ScopeConstraint {
 	for i := range scope {
 		if scope[i].Dimension == dimension {

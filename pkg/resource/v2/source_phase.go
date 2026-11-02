@@ -98,27 +98,7 @@ func sourceContainsReference(target ReadTarget, reference ResourceReference) boo
 	if target.Provider != a.Provider || target.Authority != a.Authority || target.Type != a.Type {
 		return false
 	}
-	for _, constraint := range target.Scope {
-		found := constraint.Match == ScopeAny
-		for _, entry := range a.Scope {
-			if entry.Dimension != constraint.Dimension {
-				continue
-			}
-			if constraint.Match == ScopeOneOf && constraint.Values != nil {
-				for _, value := range *constraint.Values {
-					if value == entry.Value {
-						found = true
-						break
-					}
-				}
-			}
-			break
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
+	return identityWithinQueryScope(a, target.Scope)
 }
 
 // ValidateSourceObservation validates a record and binds it to the requested target.
@@ -152,6 +132,16 @@ func sourceCoverageValid(c SourceCoverage) bool {
 
 // Admit validates one frame and advances the session only when it is valid.
 func (t *SourcePhaseTracker) Admit(f SourceFrame) error {
+	return t.admit(f, -1)
+}
+
+// AdmitSized validates a frame using its already encoded protobuf size.
+// The caller must supply the size of the exact frame being admitted.
+func (t *SourcePhaseTracker) AdmitSized(f SourceFrame, size int) error {
+	return t.admit(f, size)
+}
+
+func (t *SourcePhaseTracker) admit(f SourceFrame, size int) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed {
@@ -245,14 +235,14 @@ func (t *SourcePhaseTracker) Admit(f SourceFrame) error {
 		}
 		phase = 3
 	}
-	wire, err := ToProtoSourceFrame(f)
-	if err != nil {
-		if ErrorCode(err) == "RESOURCE_LIMIT" {
-			return err
+	if size < 0 {
+		wire, err := ToProtoSourceFrame(f)
+		if err != nil {
+			return bad()
 		}
-		return bad()
+		size = proto.Size(wire)
 	}
-	if proto.Size(wire) > int(t.request.Limits.MaxFrameBytes) {
+	if size > int(t.request.Limits.MaxFrameBytes) {
 		return NewError("RESOURCE_LIMIT", "source frame byte limit")
 	}
 	t.sequence = f.Sequence

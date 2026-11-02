@@ -2,7 +2,9 @@ package resourcev2
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
+	"time"
 	"unicode/utf8"
 )
 
@@ -35,7 +37,7 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 	}
 	sourceCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	fenced := &controllerSourceEmitter[T]{controller: c, route: target.Route, emitter: emitter, cancel: cancel, streamCtx: streamCtx}
+	fenced := &controllerSourceEmitter[T]{controller: c, route: target.Route, emitter: emitter, cancel: cancel, streamCtx: streamCtx, leaseCtx: ctx, updates: operation == OperationSourceUpdates, nextCatalogCheck: time.Now().Add(time.Second)}
 	if operation == OperationSourceUpdates {
 		var representation Representation
 		for _, candidate := range descriptor.Representations {
@@ -52,9 +54,11 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 			return fenced.bindingReset(streamCtx)
 		}
 		if err == nil {
-			if fenceErr := c.fenceCatalog(ctx, target.Route); fenceErr != nil {
-				return fenced.bindingReset(ctx)
+			err = fenced.checkCatalog(ctx)
+			if fenced.reset.Load() {
+				return nil
 			}
+			return err
 		}
 		return err
 	}
@@ -81,7 +85,10 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 		if err != nil {
 			return err
 		}
-		if err = c.fenceCatalog(ctx, target.Route); err != nil {
+		if err = fenced.checkCatalog(ctx); err != nil {
+			if fenced.reset.Load() {
+				return nil
+			}
 			return err
 		}
 		if err = checkPage(page, descriptor, target, size); err != nil {
@@ -142,12 +149,16 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 }
 
 type controllerSourceEmitter[T any] struct {
-	controller *Controller[T]
-	route      AccessRoute
-	emitter    SourceEmitter
-	reset      atomic.Bool
-	cancel     context.CancelFunc
-	streamCtx  context.Context
+	controller       *Controller[T]
+	route            AccessRoute
+	emitter          SourceEmitter
+	reset            atomic.Bool
+	cancel           context.CancelFunc
+	streamCtx        context.Context
+	leaseCtx         context.Context
+	updates          bool
+	mu               sync.Mutex
+	nextCatalogCheck time.Time
 }
 
 func (e *controllerSourceEmitter[T]) bindingReset(ctx context.Context) error {
@@ -156,14 +167,39 @@ func (e *controllerSourceEmitter[T]) bindingReset(ctx context.Context) error {
 	e.cancel()
 	return err
 }
-func (e *controllerSourceEmitter[T]) fence(ctx context.Context) error {
-	if err := e.controller.fenceCatalog(ctx, e.route); err != nil {
+func (e *controllerSourceEmitter[T]) checkCatalog(ctx context.Context) error {
+	catalog, err := e.controller.Catalog(ctx, CatalogRequest{Route: e.route})
+	if err != nil {
+		return err
+	}
+	if err = CheckCatalogRevisionForRoute(ctx, catalog, e.route); err != nil {
+		if ErrorCode(err) != "RESET_REQUIRED" {
+			return err
+		}
 		if resetErr := e.bindingReset(ctx); resetErr != nil {
 			return resetErr
 		}
 		return NewError("RESET_REQUIRED", "Source binding changed.")
 	}
 	return nil
+}
+func (e *controllerSourceEmitter[T]) fence(ctx context.Context) error {
+	if e.leaseCtx.Err() != nil && e.streamCtx.Err() == nil {
+		if err := e.bindingReset(ctx); err != nil {
+			return err
+		}
+		return NewError("RESET_REQUIRED", "Source binding changed.")
+	}
+	if !e.updates {
+		return ctx.Err()
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if time.Now().Before(e.nextCatalogCheck) {
+		return ctx.Err()
+	}
+	e.nextCatalogCheck = time.Now().Add(time.Second)
+	return e.checkCatalog(ctx)
 }
 func (e *controllerSourceEmitter[T]) Snapshot(ctx context.Context, observations []SourceObservation) error {
 	if err := e.fence(ctx); err != nil {

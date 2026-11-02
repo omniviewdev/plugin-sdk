@@ -2,21 +2,24 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
 type sourceClientStream struct {
-	stream  grpc.ClientStream
-	cancel  context.CancelFunc
-	tracker *resourcev2.SourcePhaseTracker
-	once    sync.Once
+	stream   grpc.ClientStream
+	cancel   context.CancelFunc
+	tracker  *resourcev2.SourcePhaseTracker
+	admitted bool
+	once     sync.Once
 }
 
 // OpenSourceStream opens a bounded, validated source session.
@@ -46,7 +49,7 @@ func (c *Client) OpenSourceStream(ctx context.Context, r resourcev2.SourceOpenRe
 		cancel()
 		return nil, domainError(err)
 	}
-	return &sourceClientStream{stream: stream, cancel: cancel, tracker: resourcev2.NewSourcePhaseTracker(r, sourceGuarantee(descriptor))}, nil
+	return &sourceClientStream{stream: stream, cancel: cancel, tracker: resourcev2.NewSourcePhaseTracker(r, resourcev2.SourceGuaranteeForTarget(descriptor, r.Target))}, nil
 }
 func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 	var zero resourcev2.SourceFrame
@@ -57,6 +60,11 @@ func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 		if status.Code(err) == codes.ResourceExhausted || resourcev2.ErrorCode(mapped) == "RESOURCE_LIMIT" {
 			s.Close()
 			return zero, resourcev2.NewError("RESOURCE_LIMIT", "source frame exceeds transport limit")
+		}
+		var typed *resourcev2.ResourceOperationError
+		if !s.admitted && errors.As(mapped, &typed) {
+			s.Close()
+			return zero, mapped
 		}
 		return zero, s.tracker.TransportError(err)
 	}
@@ -80,10 +88,11 @@ func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 		}
 		return zero, resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
 	}
-	if err = s.tracker.Admit(f); err != nil {
+	if err = s.tracker.AdmitSized(f, proto.Size(p)); err != nil {
 		s.Close()
 		return zero, err
 	}
+	s.admitted = true
 	return f, nil
 }
 func (s *sourceClientStream) Close() { s.once.Do(func() { s.tracker.Close(); s.cancel() }) }

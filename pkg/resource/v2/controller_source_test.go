@@ -70,6 +70,20 @@ func TestControllerSourceRejectsRepeatedCursor(t *testing.T) {
 	assertControllerCode(t, err, "PROVIDER_ERROR")
 }
 
+func TestControllerSourceRejectsCursorCycle(t *testing.T) {
+	cfg := controllerConfig()
+	cursors := []string{"a", "b", "a"}
+	index := 0
+	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Enumerate: func(context.Context, *string, EnumerateRequest) (SourcePage, error) {
+		cursor := cursors[index]
+		index++
+		return SourcePage{Records: []Record{}, NextCursor: &cursor, Count: Count{Kind: "unknown"}, Coverage: Coverage{Kind: "complete", Paths: []string{}}, Consistency: ConsistencyBestEffort}, nil
+	}}}
+	c := newTestController(t, cfg)
+	err := c.OpenSource(acceptedControllerContext(context.Background(), t, c), controllerSourceOpen(SourceModeSnapshot), &recordingSourceEmitter{})
+	assertControllerCode(t, err, "PROVIDER_ERROR")
+}
+
 func TestControllerSourceFenceResetsChangedCatalog(t *testing.T) {
 	cfg := controllerConfig()
 	catalog := cfg.Catalog
@@ -81,15 +95,65 @@ func TestControllerSourceFenceResetsChangedCatalog(t *testing.T) {
 		}
 		return result, err
 	}
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Source: func(ctx context.Context, _ *string, _ SourceRequest, emitter SourceEmitter) error {
+	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Source: func(context.Context, *string, SourceRequest, SourceEmitter) error {
 		changed = true
-		return emitter.Snapshot(ctx, []SourceObservation{{Record: controllerRecord()}})
+		return nil
 	}}}
 	c := newTestController(t, cfg)
 	emitter := &recordingSourceEmitter{}
 	err := c.OpenSource(acceptedControllerContext(context.Background(), t, c), controllerSourceOpen(SourceModeSnapshotAndUpdates), emitter)
 	if err != nil || emitter.reset != SourceResetBindingChanged || len(emitter.observations) != 0 {
 		t.Fatalf("reset=%q observations=%d err=%v", emitter.reset, len(emitter.observations), err)
+	}
+}
+
+func TestControllerSourceDoesNotRebuildCatalogPerEmission(t *testing.T) {
+	cfg := controllerConfig()
+	catalog := cfg.Catalog
+	calls := 0
+	cfg.Catalog = func(ctx context.Context, request CatalogRequest) (Catalog, error) {
+		calls++
+		return catalog(ctx, request)
+	}
+	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Source: func(ctx context.Context, _ *string, _ SourceRequest, emitter SourceEmitter) error {
+		before := calls
+		for range 100 {
+			if err := emitter.Snapshot(ctx, nil); err != nil {
+				return err
+			}
+		}
+		if calls != before {
+			t.Fatalf("catalog calls during emissions: %d", calls-before)
+		}
+		return nil
+	}}}
+	c := newTestController(t, cfg)
+	err := c.OpenSource(acceptedControllerContext(context.Background(), t, c), controllerSourceOpen(SourceModeSnapshotAndUpdates), &recordingSourceEmitter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestControllerSourceCatalogFailureIsNotBindingReset(t *testing.T) {
+	cfg := controllerConfig()
+	catalog := cfg.Catalog
+	fail := false
+	cfg.Catalog = func(ctx context.Context, request CatalogRequest) (Catalog, error) {
+		if fail {
+			return Catalog{}, NewError("INTERNAL", "catalog unavailable")
+		}
+		return catalog(ctx, request)
+	}
+	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Source: func(context.Context, *string, SourceRequest, SourceEmitter) error {
+		fail = true
+		return nil
+	}}}
+	c := newTestController(t, cfg)
+	emitter := &recordingSourceEmitter{}
+	err := c.OpenSource(acceptedControllerContext(context.Background(), t, c), controllerSourceOpen(SourceModeSnapshotAndUpdates), emitter)
+	assertControllerCode(t, err, "INTERNAL")
+	if emitter.reset != "" {
+		t.Fatalf("unexpected reset: %q", emitter.reset)
 	}
 }
 
