@@ -24,7 +24,7 @@ Inside the handler, call `hostconnections.FromContext(pc.Context)`. Use this cli
 
 The host supplies the selected route and a call-scoped delegation token. The SDK rejects missing tokens and missing callback bindings before the handler runs. The callback client rejects owner and route substitution before transport. The host enforces grants, target identity, call lifetime, and policy for every callback.
 
-Get rejects a response with a different resource address or a different requested incarnation. Scope order does not change identity. A request without an incarnation permits the returned incarnation.
+Get and Update reject a response with a different resource address or a different requested incarnation. Scope order does not change identity. A request without an incarnation permits the returned incarnation.
 
 The callback does not transfer the owner's connection profile or native client. Do not put credentials in tool arguments or error messages. A callback binding lasts for one plugin process and closes at shutdown. Rebinding is not permitted.
 

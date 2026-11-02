@@ -306,5 +306,12 @@ func (c *client) Update(ctx context.Context, owner, target string, in resourcev2
 	if r == nil || r.GetVersion() != resourcev2.WireVersion || r.GetRecord() == nil {
 		return z, invalid()
 	}
-	return resourcev2.FromProtoRecord(r.GetRecord())
+	record, err := resourcev2.FromProtoRecord(r.GetRecord())
+	if err != nil {
+		return z, err
+	}
+	if !sameReference(record.Reference, in.Reference) {
+		return z, invalid()
+	}
+	return record, nil
 }

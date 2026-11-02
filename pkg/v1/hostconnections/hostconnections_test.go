@@ -85,7 +85,11 @@ func (s *recordService) Get(context.Context, []byte, string, string, resourcev2.
 	return s.record, nil
 }
 
-func TestGetRejectsChangedResourceIdentity(t *testing.T) {
+func (s *recordService) Update(context.Context, []byte, string, string, resourcev2.MutationRequest) (resourcev2.Record, error) {
+	return s.record, nil
+}
+
+func TestFiniteRecordsRejectChangedResourceIdentity(t *testing.T) {
 	listener := bufconn.Listen(1024 * 1024)
 	server := grpc.NewServer()
 	service := &recordService{}
@@ -130,25 +134,31 @@ func TestGetRejectsChangedResourceIdentity(t *testing.T) {
 		}, false},
 		{"new incarnation", func(record *resourcev2.Record) { record.Reference.Incarnation = &incarnation }, false},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			requested := resourcev2.ResourceReference{Address: resourcev2.ResourceAddress{
-				Provider: "example", Authority: "authority", Type: "document", ID: "fixture",
-				Scope: []resourcev2.ScopeEntry{{Dimension: "namespace", Value: "scratch"}, {Dimension: "region", Value: "local"}},
-			}}
-			returned := requested
-			returned.Address.Scope = append([]resourcev2.ScopeEntry(nil), requested.Address.Scope...)
-			service.record = resourcev2.Record{
-				Reference: returned, Representation: representation,
-				Body:     resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{}},
-				Coverage: resourcev2.Coverage{Kind: "complete"},
-			}
-			test.change(&service.record)
-			_, err := client.Get(ctx, "owner", "target", resourcev2.GetRequest{Route: route, Reference: requested, Representation: representation.ID})
-			if test.wantError {
-				require.Equal(t, "INVALID_REQUEST", resourcev2.ErrorCode(err))
-			} else {
-				require.NoError(t, err)
-			}
-		})
+		for _, operation := range []string{"get", "update"} {
+			t.Run(operation+"/"+test.name, func(t *testing.T) {
+				requested := resourcev2.ResourceReference{Address: resourcev2.ResourceAddress{
+					Provider: "example", Authority: "authority", Type: "document", ID: "fixture",
+					Scope: []resourcev2.ScopeEntry{{Dimension: "namespace", Value: "scratch"}, {Dimension: "region", Value: "local"}},
+				}}
+				returned := requested
+				returned.Address.Scope = append([]resourcev2.ScopeEntry(nil), requested.Address.Scope...)
+				service.record = resourcev2.Record{
+					Reference: returned, Representation: representation,
+					Body:     resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{}},
+					Coverage: resourcev2.Coverage{Kind: "complete"},
+				}
+				test.change(&service.record)
+				if operation == "get" {
+					_, err = client.Get(ctx, "owner", "target", resourcev2.GetRequest{Route: route, Reference: requested, Representation: representation.ID})
+				} else {
+					_, err = client.Update(ctx, "owner", "target", resourcev2.MutationRequest{Route: route, Reference: requested, Operation: "update", Input: service.record.Body, ExpectedRevision: &revision})
+				}
+				if test.wantError {
+					require.Equal(t, "INVALID_REQUEST", resourcev2.ErrorCode(err))
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
 	}
 }
