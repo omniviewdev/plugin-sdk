@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -71,6 +72,67 @@ func TestSourceTransportSnapshotAndClose(t *testing.T) {
 	stream.Close()
 	if _, err = stream.Recv(); resourcev2.ErrorCode(err) != "CANCELLED" {
 		t.Fatalf("close: %v", err)
+	}
+}
+
+func TestSourceTransportValueDepth(t *testing.T) {
+	for _, shape := range []string{"map", "list", "mixed"} {
+		for _, depth := range []int{resourcev2.MaxValueDepth, resourcev2.MaxValueDepth + 1} {
+			t.Run(fmt.Sprintf("%s/%d", shape, depth), func(t *testing.T) {
+				record, err := (&qualifiedProvider{}).Get(context.Background(), testGet())
+				if err != nil {
+					t.Fatal(err)
+				}
+				record.Body = nestedDepthValue(shape, depth)
+				p := &transportSourceProvider{callback: func(ctx context.Context, e resourcev2.SourceEmitter) error {
+					if err := e.Snapshot(ctx, []resourcev2.SourceObservation{{Record: record}}); err != nil {
+						return err
+					}
+					return e.EndSnapshot(ctx, resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}, resourcev2.ContinuityNotApplicable)
+				}}
+				server := grpc.NewServer(ServerOptions()...)
+				RegisterServer(server, p)
+				c := sourceTCP(t, server)
+				r := transportSourceRequest()
+				ctx := acceptedCatalogContext(context.Background(), t, c, r.Target.Route)
+				stream, err := c.OpenSourceStream(ctx, r)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer stream.Close()
+				var records []resourcev2.Record
+				var failure string
+				for {
+					frame, err := stream.Recv()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					if frame.Snapshot != nil {
+						for _, observation := range frame.Snapshot.Observations {
+							records = append(records, observation.Record)
+						}
+					}
+					if frame.Failed != nil {
+						failure = frame.Failed.Code
+					}
+				}
+				if depth > resourcev2.MaxValueDepth {
+					// Invalid provider observations are reported as PROVIDER_ERROR;
+					// unary record admission separately exposes RESOURCE_LIMIT.
+					if failure != "PROVIDER_ERROR" || len(records) != 0 {
+						t.Fatalf("over-depth source: records=%d failure=%q", len(records), failure)
+					}
+					return
+				}
+				if failure != "" || len(records) != 1 {
+					t.Fatalf("source: records=%d failure=%q", len(records), failure)
+				}
+				assertDepthLeaf(t, records[0].Body, depth)
+			})
+		}
 	}
 }
 
