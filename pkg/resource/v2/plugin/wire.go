@@ -20,7 +20,7 @@ const (
 	// MaxBodyBytes bounds scalar payloads and encoded resource Value documents.
 	MaxBodyBytes = resourcev2.MaxDocumentBytes
 	// MaxDepth bounds nested protobuf messages, with the root at depth zero.
-	MaxDepth = resourcev2.MaxValueDepth
+	MaxDepth = resourcev2.MaxProtoDepth
 	// MaxNodes bounds raw message occurrences across one frame, including its root.
 	MaxNodes = resourcev2.MaxValueNodes
 	// MaxFields bounds raw field occurrences across all messages in one frame.

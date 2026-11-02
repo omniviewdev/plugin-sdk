@@ -27,10 +27,14 @@ const (
 	MaxMessageBytes    = 32 << 20
 	MaxDocumentBytes   = maxDocumentBytes
 	MaxValueDepth      = maxDomainDepth
-	MaxValueNodes      = maxDomainNodes
-	MaxWireFields      = maxDomainFields
-	MaxPageRecords     = maxPageRecords
-	MaxPageBodyBytes   = MaxMessageBytes
+	// MaxProtoDepth allows each semantic map level's Value, MapValue and
+	// ValueEntry messages, plus 16 messages for the enclosing RPC. Semantic
+	// Value depth remains limited by MaxValueDepth.
+	MaxProtoDepth    = MaxValueDepth*3 + 16
+	MaxValueNodes    = maxDomainNodes
+	MaxWireFields    = maxDomainFields
+	MaxPageRecords   = maxPageRecords
+	MaxPageBodyBytes = MaxMessageBytes
 )
 
 // Value tags are shared by domain validation and lossless JSON/protobuf codecs.
