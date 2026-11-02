@@ -36,6 +36,8 @@ const (
 	FeatureStreamingActions Feature = "streamingActions"
 	// FeatureConnectionMetadata enables public connection facts and refresh.
 	FeatureConnectionMetadata Feature = "connectionMetadata"
+	// FeatureSourceSessions enables phased source snapshot/update sessions.
+	FeatureSourceSessions Feature = "sourceSessions"
 )
 
 // FeatureSet lists ancillary traits available on this provider or transport.

@@ -30,9 +30,6 @@ const (
 	SourceChangeUpsert = "upsert"
 	SourceChangeRemove = "remove"
 
-	OperationSourceUpdates Operation = "sourceUpdates"
-	FeatureSourceSessions  Feature   = "sourceSessions"
-
 	MaxSourceBatchItems   = MaxPageRecords
 	MinSourceFrameBytes   = 64 << 10
 	MaxSourceFrameBytes   = MaxMessageBytes

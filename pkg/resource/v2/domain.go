@@ -164,6 +164,8 @@ const (
 	OperationDelete Operation = "delete"
 	// OperationAction advertises action dispatch; action descriptors define available actions.
 	OperationAction Operation = "action"
+	// OperationSourceUpdates advertises a source session that follows changes after its snapshot.
+	OperationSourceUpdates Operation = "sourceUpdates"
 )
 
 // Capability advertises one operation over an explicit query scope. Supporting
