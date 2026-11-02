@@ -151,7 +151,9 @@ func TestControllerSourceCatalogFailureIsNotBindingReset(t *testing.T) {
 	c := newTestController(t, cfg)
 	emitter := &recordingSourceEmitter{}
 	err := c.OpenSource(acceptedControllerContext(context.Background(), t, c), controllerSourceOpen(SourceModeSnapshotAndUpdates), emitter)
-	assertControllerCode(t, err, "INTERNAL")
+	if err != nil {
+		t.Fatalf("source completion returned catalog error: %v", err)
+	}
 	if emitter.reset != "" {
 		t.Fatalf("unexpected reset: %q", emitter.reset)
 	}

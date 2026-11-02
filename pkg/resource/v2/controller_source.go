@@ -54,11 +54,11 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 			return fenced.bindingReset(streamCtx)
 		}
 		if err == nil {
-			err = fenced.checkCatalog(ctx)
-			if fenced.reset.Load() {
-				return nil
-			}
-			return err
+			// A transient catalog failure cannot turn an otherwise completed
+			// source into a terminal failure. A revision mismatch still emits
+			// bindingChanged; otherwise the transport emits sourceInvalidated.
+			_ = fenced.checkCatalog(ctx)
+			return nil
 		}
 		return err
 	}

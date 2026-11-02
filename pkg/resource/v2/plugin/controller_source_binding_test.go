@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -79,5 +80,66 @@ func TestControllerSourceStopResetsBindingOverTransport(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
+	}
+}
+
+func TestControllerSourceEndWithTransientCatalogErrorResets(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var fail atomic.Bool
+	catalogProvider := &transportSourceProvider{}
+	controller, err := resourcev2.NewController(resourcev2.Config[string]{
+		Catalog: func(ctx context.Context, request resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
+			if fail.Load() {
+				return resourcev2.Catalog{}, resourcev2.NewError("UNAVAILABLE", "catalog unavailable")
+			}
+			return catalogProvider.Catalog(ctx, request)
+		},
+		Lifecycle: &resourcev2.Lifecycle[string]{
+			LoadConnections: func(context.Context) ([]types.Connection, error) {
+				return []types.Connection{{ID: "explicit"}}, nil
+			},
+			CreateClient: func(context.Context, types.Connection) (*string, error) {
+				value := "client"
+				return &value, nil
+			},
+			DestroyClient: func(context.Context, *string) error { return nil },
+		},
+		Registrations: []resourcev2.Registration[string]{{Type: "opaque/type", Source: func(ctx context.Context, _ *string, _ resourcev2.SourceRequest, emitter resourcev2.SourceEmitter) error {
+			if err := emitter.EndSnapshot(ctx, resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}, resourcev2.ContinuityBestEffort); err != nil {
+				return err
+			}
+			fail.Store(true)
+			return nil
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = controller.Close() })
+	if _, err = controller.LoadConnections(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = controller.StartConnection(ctx, "explicit"); err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	RegisterServer(server, controller)
+	client := NewClient(pipe(t, server))
+	request := transportSourceRequest()
+	request.Mode = resourcev2.SourceModeSnapshotAndUpdates
+	stream, err := client.OpenSourceStream(acceptedCatalogContext(ctx, t, client, request.Target.Route), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	for range 2 {
+		if _, err = stream.Recv(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	frame, err := stream.Recv()
+	if err != nil || frame.Reset == nil || frame.Reset.Reason != resourcev2.SourceResetSourceInvalidated {
+		t.Fatalf("reset frame = %+v, err = %v", frame, err)
 	}
 }
