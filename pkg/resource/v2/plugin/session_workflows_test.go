@@ -187,56 +187,27 @@ func TestDiagnosticsCrossAncillaryLifecycleAndActionStreams(t *testing.T) {
 	}
 }
 
-type updateContextProvider struct {
-	updateProvider
-
-	seen chan resourcev2.Session
-}
-
-func (p *updateContextProvider) ListenForEvents(
-	ctx context.Context,
-	sink resourcev2.WatchEventSink,
-	ready func() error,
-) error {
-	s, _ := resourcev2.SessionFromContext(ctx)
-	p.seen <- s
-	return p.updateProvider.ListenForEvents(ctx, sink, ready)
-}
-
-func TestDiagnosticsCrossAdvisoryListener(t *testing.T) {
-	p := &updateContextProvider{
-		updateProvider: updateProvider{trigger: make(chan struct{}, 1)},
-		seen:           make(chan resourcev2.Session, 1),
-	}
+func TestDiagnosticsCrossSourceSession(t *testing.T) {
+	p := &sourcePinProvider{qualifiedProvider: qualifiedProvider{allowed: true}, seen: make(chan resourcev2.Session, 1)}
 	s := grpc.NewServer()
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
-	ctx, cancel := context.WithCancel(
-		resourcev2.WithSession(
-			context.Background(),
-			resourcev2.Session{RequestID: "updates-request", RequesterID: "not-a-principal"},
-		),
-	)
-	defer cancel()
-	ready := make(chan struct{})
-	done := make(chan error, 1)
-	go func() { done <- c.ListenForEvents(ctx, &observedSink{}, func() error { close(ready); return nil }) }()
-	select {
-	case <-ready:
-	case <-time.After(5 * time.Second):
-		t.Fatal("listener readiness timeout")
+	ctx := resourcev2.WithSession(context.Background(), resourcev2.Session{RequestID: "source-request", RequesterID: "not-a-principal"})
+	ctx = resourcev2.WithCatalogRevision(ctx, "cat-1")
+	stream, err := c.OpenSourceStream(ctx, sourcePinRequest())
+	if err != nil {
+		t.Fatal(err)
 	}
-	v := <-p.seen
-	if v.RequestID != "updates-request" || v.RequesterID != "not-a-principal" {
-		t.Fatal("update listener lost diagnostics")
+	defer stream.Close()
+	if _, err = stream.Recv(); err != nil {
+		t.Fatal(err)
 	}
-	cancel()
 	select {
-	case err := <-done:
-		if testErrorClass(err) != "CANCELLED" {
-			t.Fatal(err)
+	case v := <-p.seen:
+		if v.RequestID != "source-request" || v.RequesterID != "not-a-principal" {
+			t.Fatal("source session lost diagnostics")
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("listener cancellation timeout")
+		t.Fatal("source callback timeout")
 	}
 }

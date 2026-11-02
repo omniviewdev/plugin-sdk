@@ -247,14 +247,6 @@ func (s *registeredReadinessScenario) checkRetarget(t *testing.T) {
 	if catalogA.Revision == catalogB.Revision {
 		t.Fatal("replacement reused retired catalog binding")
 	}
-	if _, err = client.GetWatchState(
-		resourcev2.WithCatalogRevision(ctx, catalogA.Revision),
-		route,
-	); resourcev2.ErrorCode(
-		err,
-	) != "RESET_REQUIRED" {
-		t.Fatalf("retired observation admitted watch diagnostics: %v", err)
-	}
 	if s.created.Load() != 2 || s.destroyed.Load() != 1 || s.probes.Load() != 0 || s.requestsA.Load() != 1 ||
 		s.requestsB.Load() != 1 {
 		t.Fatal("readiness caused native lifecycle or health side effects")

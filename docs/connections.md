@@ -46,7 +46,7 @@ type Config[ClientT any] struct {
 	Lifecycle     *Lifecycle[ClientT]
 	ConnectionMetadata func(context.Context, types.Connection, *ClientT) (ConnectionMetadataUpdate, error)
 	ResolveRegistration func(context.Context, AccessRoute, string) (Registration[ClientT], error)
-	DynamicUpdates bool
+	DynamicSources bool
 	ErrorClassifier ErrorClassifier
 }
 
@@ -68,7 +68,7 @@ Pass the config to `NewController`. It requires `Catalog`. A nonnil lifecycle al
 | `CreateClient` | Construct one native client using the supplied profile and generation context |
 | `DestroyClient` | Release one returned client; SDK invokes it exactly once per nonnil returned client |
 | `OnStart` | Optional setup that must finish before leases become usable |
-| `OnStop` | Optional cleanup after advisory sources stop and leases drain |
+| `OnStop` | Optional cleanup after source sessions stop and leases drain |
 | `CheckConnection` | Optional native health probe; return status for the requested profile |
 
 Nil client plus nil error is invalid. A nonnil client returned with an error is still destroyed. A failed `OnStart` also triggers cleanup.
@@ -201,7 +201,7 @@ sequenceDiagram
     Controller->>Native: Callback(combined context, borrowed client)
     Note over Controller: Stop / reconfigure / Close begins retirement
     Controller->>Controller: Reject new leases and cancel generation
-    Controller->>Native: Cancel advisory sources and leased work
+    Controller->>Native: Cancel source sessions and leased work
     Native-->>Controller: Sources stop and callbacks release leases
     Controller->>Native: OnStop(cleanup context)
     Controller->>Native: DestroyClient(cleanup context)

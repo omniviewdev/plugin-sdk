@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 	"google.golang.org/protobuf/proto"
+
+	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
 func TestSourceAdapterRoundTrips(t *testing.T) {
@@ -124,7 +125,7 @@ func TestSourceOpenAndWireVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Version != WireVersion {
+	if p.GetVersion() != WireVersion {
 		t.Fatal("open request version missing")
 	}
 	p.Version++
@@ -135,11 +136,25 @@ func TestSourceOpenAndWireVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if frame.Version != WireVersion {
+	if frame.GetVersion() != WireVersion {
 		t.Fatal("frame version missing")
 	}
 	frame.Version++
 	if _, err := FromProtoSourceFrame(frame); err == nil {
 		t.Fatal("accepted wrong frame version")
+	}
+}
+
+func TestSourceObservationRejectsDuplicateMetadataLabels(t *testing.T) {
+	observation, err := ToProtoSourceObservation(SourceObservation{
+		Record:   codecRecord(),
+		Metadata: &ResourceMetadata{Labels: map[string]string{"x": "1"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation.Metadata.Labels = []*resourcepb.LabelEntry{{Key: "x", Value: "1"}, {Key: "x", Value: "2"}}
+	if _, err := FromProtoSourceObservation(observation); ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatalf("duplicate label: %v", err)
 	}
 }

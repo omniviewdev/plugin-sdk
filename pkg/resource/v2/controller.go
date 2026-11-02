@@ -8,9 +8,7 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
-// Controller dispatches finite source operations and independently optional
-// best-effort updates. Strong continuity remains P05's separate contract;
-// neither a finite handler nor advisory updates imply that guarantee.
+// Controller dispatches finite resource operations and source sessions.
 // Construct it with NewController; the zero value and nil receiver are not usable.
 // Methods require nonnil contexts. Request/result containers remain borrowed
 // during SDK use unless a method explicitly returns a connection snapshot.
@@ -50,7 +48,6 @@ type Controller[ClientT any] struct {
 	failedStarts     map[string]bool
 	closeOnce        sync.Once
 	closeErr         error
-	updates          *updateManager[ClientT]
 	catalogNonce     [32]byte
 	metadata         map[string]*connectionMetadataState[ClientT]
 	metadataWatchers map[*metadataWatcher]struct{}
@@ -76,7 +73,7 @@ type clientSlot[T any] struct {
 // retained inputs immutable after construction; callbacks remain responsible
 // for synchronizing their own mutable implementation state.
 // Catalog is required. A nonnil Lifecycle requires load, create, and destroy
-// callbacks; dynamic update declarations require ResolveRegistration. Invalid
+// callbacks; dynamic source declarations require ResolveRegistration. Invalid
 // construction inputs return an error and no controller. Connections remain
 // absent until explicitly loaded/applied, and unstarted until explicitly started.
 func NewController[T any](cfg Config[T]) (*Controller[T], error) {
@@ -90,15 +87,12 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 	if cfg.ConnectionMetadata != nil && cfg.Lifecycle == nil {
 		return nil, NewError("INVALID_REQUEST", "Connection metadata requires client lifecycle.")
 	}
-	if cfg.DynamicUpdates && cfg.ResolveRegistration == nil {
-		return nil, NewError("INVALID_REQUEST", "Dynamic updates require an exact registration resolver.")
+	if cfg.DynamicSources && cfg.ResolveRegistration == nil {
+		return nil, NewError("INVALID_REQUEST", "Dynamic sources require an exact registration resolver.")
 	}
 	for _, r := range cfg.Registrations {
 		if r.Type == "" {
 			return nil, NewError("INVALID_REQUEST", "Registration requires an exact type.")
-		}
-		if r.SyncPolicy < SyncOnConnect || r.SyncPolicy > SyncNever {
-			return nil, NewError("INVALID_REQUEST", "Registration has an unknown sync policy.")
 		}
 		if r.Scope != nil {
 			if err := ValidateScope(r.Scope); err != nil {
@@ -130,7 +124,6 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 	//nolint:gosec // G118: Close cancels the owned controller lifetime.
 	controller.ctx, controller.cancel = context.WithCancel(context.Background())
 	controller.catalogNonce = nonce
-	controller.updates = newUpdateManager(controller)
 	return controller, nil
 }
 
@@ -210,15 +203,16 @@ func (c *Controller[T]) Features(ctx context.Context) (FeatureSet, error) {
 	if actionCatalog {
 		features.Traits = append(features.Traits, FeatureActionCatalog)
 	}
-	updates := c.cfg.DynamicUpdates
+	sources := c.cfg.DynamicSources
 	for _, registration := range c.cfg.Registrations {
-		if handles(registration, OperationUpdate) {
-			updates = true
+		if handles(registration, OperationEnumerate) || handles(registration, OperationNativeQuery) ||
+			handles(registration, OperationSourceUpdates) {
+			sources = true
 			break
 		}
 	}
-	if updates {
-		features.Traits = append(features.Traits, FeatureBestEffortUpdates)
+	if sources {
+		features.Traits = append(features.Traits, FeatureSourceSessions)
 	}
 	return features, nil
 }

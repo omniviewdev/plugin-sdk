@@ -26,7 +26,7 @@ Use this page for detailed admission, ownership, lifetime, limits, and pending c
 
 | Owner | Responsibility | Source/caller landmarks |
 | --- | --- | --- |
-| Provider domain | Canonical identity, explicit routes, scoped capabilities, representations, honest source results | SDK `pkg/resource/v2/domain.go`, `ancillary.go`, `ancillary_types.go`, `updates.go` |
+| Provider domain | Canonical identity, explicit routes, scoped capabilities, representations, honest source results | SDK `pkg/resource/v2/domain.go`, `ancillary.go`, `ancillary_types.go`, `source.go` |
 | Optional controller | One configured inventory and native-client registry; lifecycle, leasing, admission and result fences | SDK `Controller`, `Config`, `Registration`, `Lifecycle`; Kubernetes `pkg/plugin/resource/native_provider.go` constructs it |
 | Connection registry | Own actual configured profiles and active generations; utilities share this registry rather than create another | SDK `ConnectionContextProvider`; `pkg/v1/{exec,logs,metric,networker}` consumers |
 | Transport | Negotiate features/version, validate raw input before decoding, adapt domain values, preserve classification and readiness | SDK `pkg/resource/v2/plugin`, protobuf adapters, `proto/resource/v2` |
@@ -43,7 +43,7 @@ This is an ownership inventory, not blanket approval of every exported declarati
 | --- | --- | --- |
 | Provider author | `Provider`; optional `Getter`, `Enumerator`, `NativeQuerier`, `Mutator`, `Actioner`; domain identity/scope/value/catalog/page types | Kubernetes native and Helm providers construct canonical values. No mandatory CRUD, namespace, enumeration, or live source. |
 | Provider author | `Config`, `Registration`, `Lifecycle`, `NewController`, `Controller.WithClient` | Kubernetes `native_provider.go` composes native/Helm registrations and the client lifecycle. Custom providers may omit this controller. |
-| Provider author | Ancillary provider interfaces, `BestEffortUpdateProvider`, watch/action event types, sync policies | Optional schema, presentation, relationships, health, actions and advisory updates; negotiate feature availability remotely. |
+| Provider author | Ancillary provider interfaces, `SourceProvider`, source and action event types | Optional schema, presentation, relationships, health, actions and source sessions; negotiate feature availability remotely. |
 | Provider author | `NewCatalogBindingEpoch`, `BindCatalogRevision` | Custom providers issue source/configuration generations; controller users receive binding automatically. See executable example. |
 | Provider author / utility integration | `ValueFromNative`, `NativeFromValue`, `JSONToValue`, `TimestampValue`, `ScopeForAddress`, validation and bounded-size helpers | Preserve exact scalar intent, validate canonical shapes, and bound source pages without protobuf construction. These helpers do not authorize work. |
 | Provider author / host integration | `ResourceOperationError`, `NewError`, `ErrorClassifier`, `ErrorCode`, `IsErrorCode` | Provider classification crosses transport; host assigns trusted provenance and final public text. |
@@ -66,7 +66,7 @@ Qualified-observation transport framing and RPC-boundary clearing belong behind 
 
 Register a provider through `sdk.RegisterResourcePlugin(plugin, provider)`. The examples deliberately isolate domain construction from plugin process setup. A custom mutable provider must additionally synchronize generation publication, cancel retired work, and fence dispatch/results; issuing a token alone supplies none of those safeguards.
 
-Create/update/delete catalog declarations are independent: `OperationCreate`, `OperationMutationUpdate`, and `OperationDelete`. `MutationRequest.Operation` remains `create`, `update`, or `delete`; admission maps the requested verb to its exact declaration. `OperationUpdate` means advisory watch delivery only. Implementing `Mutator` does not imply all write verbs.
+Create/update/delete catalog declarations are independent: `OperationCreate`, `OperationMutationUpdate`, and `OperationDelete`. `MutationRequest.Operation` remains `create`, `update`, or `delete`; admission maps the requested verb to its exact declaration. `OperationSourceUpdates` declares source continuity, not writes. Implementing `Mutator` does not imply all write verbs.
 
 ## Route-qualified admission
 
@@ -80,7 +80,7 @@ The default and qualified helpers serve different call shapes:
 - `QualifiedCatalogRevisionFromContext` never falls back. `CatalogRevisionForRouteFromContext` does. Duplicate qualified entries fail closed, even if their revision strings match; helpers append rather than overwrite. Duplicate lookup yields a present invalid token, and admission rejects it.
 - Admission validates the bounded observation set and exact current catalog equality. Missing, malformed, duplicate, or stale required observations return `RESET_REQUIRED`; aggregate excess returns `RESOURCE_LIMIT`. A new cached revision must never silently replace the accepted token.
 
-Pins are observations, not grants. The host must first authorize provider/authority/type/scope/operation. Finite operations, resource ancillary operations and targeted advisory sources require accepted observations. Discovery, feature negotiation, connection management, and pin-free native leasing do not. Relationship targets cannot borrow an unobserved route's source pin.
+Pins are observations, not grants. The host must first authorize provider/authority/type/scope/operation. Finite operations, resource ancillary operations and targeted source sessions require accepted observations. Discovery, feature negotiation, connection management, and pin-free native leasing do not. Relationship targets cannot borrow an unobserved route's source pin.
 
 A native metadata change changes the bound catalog revision but not the source epoch. Replacing/reconfiguring the actual native binding changes its epoch, including A→B→A transitions. Custom providers retain an issued epoch for one actual binding; stateless providers issue one per instance. Never invent a constant epoch or rotate it merely for schema/catalog churn.
 
@@ -92,7 +92,7 @@ Controller is the sole state owner. Configured profiles and registered clients a
 - `CreateClient` and optional `OnStart` must finish before the slot becomes usable. Successful startup reports `CONNECTED`, which means registered lifecycle state, not network health.
 - Startup failure cancels and cleans up the slot. Every nonnil returned client is destroyed exactly once, including failed starts. Safe `FAILED` status survives client cleanup; no client/error diagnostic is retained for that status.
 - Explicit retry creates a fresh slot and clears the failure marker. Stop or meaningful configuration replacement also clears it; display-only edits preserve it.
-- Stop/configuration retirement/Close prevent new leases, cancel the generation, stop its advisory sources, wait for current leases, then invoke `OnStop` and `DestroyClient`. Cleanup uses a context without the retired generation's cancellation; callbacks must not depend on cancellation to end cleanup.
+- Stop/configuration retirement/Close prevent new leases, cancel the generation, stop its source sessions, wait for current leases, then invoke `OnStop` and `DestroyClient`. Cleanup uses a context without the retired generation's cancellation; callbacks must not depend on cancellation to end cleanup.
 - Unknown profile IDs return `NOT_FOUND`. `GetConnectionStatus` does not wait, start, acquire a resource lease, or probe the network. `CheckConnection` is the separate optional health operation.
 
 The startup creator's request cancellation cancels startup until construction completes. A concurrent waiter canceling its own request does not own the shared slot. Accepted native generation lifetime then belongs to the controller, not the completed start RPC. Request leases combine caller cancellation with generation/controller cancellation; dispatch fences reject retired results even when native callbacks ignore cancellation.
@@ -118,13 +118,13 @@ older strict server fails admission instead of silently accepting the edit.
 
 Controller serializes inventory changes with `configMu`; nested acquisition order is `configMu` then registry `mu`, never the reverse. Registry `mu` protects slot publication, lease admission and retirement. Teardown waits and provider callbacks run outside `mu`. Inventory teardown still holds `configMu` across callbacks: callbacks must not synchronously reenter inventory mutation/refresh. Do not synchronously Stop/Close/reconfigure the same generation from a callback holding its lease: retirement waits for that callback.
 
-Callbacks for different requests, watches and connections can run concurrently. Synchronize shared native clients and provider state; callback execution does not imply single-threaded access. Cancellation is cooperative. Native creation, finite work and watch loops must observe their contexts, and event sends must remain cancellation-aware. A blocked callback can block retirement.
+Callbacks for different requests, source sessions and connections can run concurrently. Synchronize shared native clients and provider state; callback execution does not imply single-threaded access. Cancellation is cooperative. Native creation, finite work and source callbacks must observe their contexts, and emissions must remain cancellation-aware. A blocked callback can block retirement.
 
 Constructor registration slices are snapshotted shallowly; nested registration scopes/value slices, the Lifecycle object and captured callback state must remain immutable after construction unless the provider synchronizes its own callback state. Do not infer deep ownership from the top-level slice copy.
 
-Controller copies mutable connection configuration at ingress, inventory/status egress and callback/session boundaries. Exported mutable credential containers remain owned even with `json:"-"`; opaque native handles/unexported implementation state retain their deliberate native ownership. Editing a profile snapshot does not apply configuration. Admitted watch targets and descriptor containers receive independent snapshots, including provider callback copies, so mutation cannot widen retained admission. General finite request/result containers must not be mutated concurrently with SDK use; produce independently owned results rather than reuse mutable buffers across calls.
+Controller copies mutable connection configuration at ingress, inventory/status egress and callback/session boundaries. Exported mutable credential containers remain owned even with `json:"-"`; opaque native handles/unexported implementation state retain their deliberate native ownership. Editing a profile snapshot does not apply configuration. Admitted source targets and descriptor containers receive independent snapshots, including provider callback copies, so mutation cannot widen retained admission. General finite request/result containers must not be mutated concurrently with SDK use; produce independently owned results rather than reuse mutable buffers across calls.
 
-Framework code owns its outgoing stream channels and completion. Producers send events and return; do not close framework-owned channels. Listener cancellation retires that listener; generation retirement owns its source cleanup. Advisory data arriving before a listener is ready is dropped, not queued for replay; state retains its readiness/replay barrier. This bounded advisory behavior is not gap-free continuity.
+Source emitters are framework-owned. A provider emits snapshot observations, a snapshot boundary with coverage and continuity, then changes. Reset and failure are terminal; cancellation ends the session. A `bestEffort` declaration does not promise gap-free continuity.
 
 ## Utility and stream lifetime
 
@@ -185,4 +185,4 @@ The lint cleanup preserves the candidate resource API and its pending acceptance
 
 The unused `command.ProviderImpl` export was removed after reference and managed-consumer checks; its method now belongs directly to `command.Provider`. This is an explicit export reduction in the API candidate, not an approved compatibility guarantee. Both network provider interfaces remain exported with their existing method sets.
 
-Metric enum adapters retain their existing integer-to-`int32` conversion: unknown values within the wire range survive, and wider integers truncate. Cleanup does not claim that metadata validation rejects unknown enum values. Successful absence remains distinct from an empty health result or watch summary; disabled telemetry still returns `(nil, nil)`.
+Metric enum adapters retain their existing integer-to-`int32` conversion: unknown values within the wire range survive, and wider integers truncate. Cleanup does not claim that metadata validation rejects unknown enum values. Successful absence remains distinct from an empty health result; disabled telemetry still returns `(nil, nil)`.

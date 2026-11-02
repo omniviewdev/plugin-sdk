@@ -99,9 +99,9 @@ This independent helper uses the `resourcev2` import shown in the [example provi
 | Execute its own query language | `NativeQuerier` or `NativeQuery` | `OperationNativeQuery` |
 | Create, update, or delete | `Mutator` or `Mutate` | Each supported verb separately: `OperationCreate`, `OperationMutationUpdate`, `OperationDelete` |
 | Execute a named operation | `Actioner` or `Action` | `OperationAction` |
-| Emit advisory changes | Optional update provider or watch callback | The relevant update support with the best-effort guarantee |
+| Emit snapshot and changes | `SourceProvider` or `Registration.Source` | `OperationSourceUpdates` with `gapFree` or `bestEffort` continuity |
 
-**`OperationUpdate` means advisory updates, not a write.** `MutationRequest.Operation` is still `"create"`, `"update"`, or `"delete"`.
+**`OperationSourceUpdates` declares source continuity, not a write.** `MutationRequest.Operation` is still `"create"`, `"update"`, or `"delete"`.
 
 ### Enumeration returns source pages
 

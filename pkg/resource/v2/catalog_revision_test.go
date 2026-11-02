@@ -232,42 +232,6 @@ func TestCatalogBindingEpochIsCanonicalAndSlotSpecific(t *testing.T) {
 	}
 }
 
-func TestWatchCatalogFenceDropsChangedGenerationEvent(t *testing.T) {
-	cfg := controllerUpdateConfig()
-	nativeCatalog := cfg.Catalog
-	var changed atomic.Bool
-	cfg.Catalog = func(ctx context.Context, request CatalogRequest) (Catalog, error) {
-		catalog, err := nativeCatalog(ctx, request)
-		if changed.Load() {
-			catalog.Revision = "native-B"
-		}
-		return catalog, err
-	}
-	c := newTestController(t, cfg)
-	target := controllerTarget()
-	catalog, err := c.Catalog(context.Background(), CatalogRequest{Route: target.Route})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(WithCatalogRevision(context.Background(), catalog.Revision))
-	defer cancel()
-	watch := &updateWatch{target: target, ctx: ctx, cancel: cancel}
-	var published atomic.Int32
-	c.updates.listeners = []*updateListener{
-		{ctx: context.Background(), sink: controllerUpdateSink{add: func(WatchAddPayload) { published.Add(1) }}},
-	}
-	sink := &updateSourceSink[string]{manager: c.updates, watch: watch, descriptor: catalog.Types[0]}
-	changed.Store(true)
-	sink.OnAdd(WatchAddPayload{Record: controllerRecord()})
-	if published.Load() != 0 {
-		t.Fatal("changed native generation published under old accepted catalog")
-	}
-	assertControllerCode(t, watch.validationErr, "RESET_REQUIRED")
-	if ctx.Err() == nil {
-		t.Fatal("stale watch was not canceled")
-	}
-}
-
 func TestOverlayPrivateCredentialsStaySourceOwned(t *testing.T) {
 	for _, change := range []string{"display", "endpoint", "clear"} {
 		t.Run(change, func(t *testing.T) { testOverlayPrivateCredentials(t, change) })
@@ -426,84 +390,11 @@ func TestWithConnectionRejectsSuccessAfterSourceRetiresWithoutCatalogPin(t *test
 	assertControllerCode(t, <-result, "CANCELLED")
 }
 
-func TestWatchReuseRejectsChangedCatalogWithinSameBinding(t *testing.T) {
-	cfg := controllerConfig()
-	nativeCatalog := cfg.Catalog
-	var changed atomic.Bool
-	cfg.Catalog = func(ctx context.Context, request CatalogRequest) (Catalog, error) {
-		catalog, err := nativeCatalog(ctx, request)
-		if changed.Load() {
-			catalog.Revision = "native-B"
-		}
-		return catalog, err
-	}
-	started := make(chan struct{}, 2)
-	cfg.Registrations = []Registration[string]{
-		{
-			Type: "opaque/type",
-			Watch: func(ctx context.Context, _ *string, _ ReadTarget, _ Representation, _ WatchEventSink) error {
-				started <- struct{}{}
-				<-ctx.Done()
-				return ctx.Err()
-			},
-		},
-	}
-	c := newTestController(t, cfg)
-	target := controllerTarget()
-	ctx := context.Background()
-	first, err := c.Catalog(ctx, CatalogRequest{Route: target.Route})
-	if err != nil {
-		t.Fatal(err)
-	}
-	firstCtx := WithCatalogRevision(ctx, first.Revision)
-	if err = c.EnsureResourceWatch(firstCtx, target); err != nil {
-		t.Fatal(err)
-	}
-	<-started
-	changed.Store(true)
-	second, err := c.Catalog(ctx, CatalogRequest{Route: target.Route})
-	if err != nil {
-		t.Fatal(err)
-	}
-	firstEpoch, err := CatalogBindingEpoch(first.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	secondEpoch, err := CatalogBindingEpoch(second.Revision)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first.Revision == second.Revision || firstEpoch != secondEpoch {
-		t.Fatal("fixture did not preserve source binding across catalog churn")
-	}
-	secondCtx := WithCatalogRevision(ctx, second.Revision)
-	assertControllerCode(t, c.EnsureResourceWatch(secondCtx, target), "RESET_REQUIRED")
-	select {
-	case <-started:
-		t.Fatal("stale watch reuse unexpectedly started another source")
-	default:
-	}
-	if err = c.StopResourceWatch(secondCtx, target.Route, target.Type); err != nil {
-		t.Fatal(err)
-	}
-	if err = c.EnsureResourceWatch(secondCtx, target); err != nil {
-		t.Fatal(err)
-	}
-	<-started
-	if err = c.StopResourceWatch(secondCtx, target.Route, target.Type); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestControllerSelectsQualifiedPinAndWatchRetainsObservation(t *testing.T) {
+func TestControllerSelectsQualifiedPin(t *testing.T) {
 	cfg := controllerConfig()
 	cfg.Registrations = []Registration[string]{{
 		Type: "opaque/type",
 		Get:  func(context.Context, *string, GetRequest) (Record, error) { return controllerRecord(), nil },
-		Watch: func(ctx context.Context, _ *string, _ ReadTarget, _ Representation, _ WatchEventSink) error {
-			<-ctx.Done()
-			return ctx.Err()
-		},
 	}}
 	c := newTestController(t, cfg)
 	target := controllerTarget()
@@ -519,18 +410,6 @@ func TestControllerSelectsQualifiedPinAndWatchRetainsObservation(t *testing.T) {
 		Representation: "document",
 	}
 	if _, err = c.Get(ctx, request); err != nil {
-		t.Fatal(err)
-	}
-	if err = c.EnsureResourceWatch(ctx, target); err != nil {
-		t.Fatal(err)
-	}
-	c.updates.mu.Lock()
-	retained, _ := CatalogRevisionFromContext(c.updates.watches[target.Route.Connection][target.Type].ctx)
-	c.updates.mu.Unlock()
-	if retained != catalog.Revision {
-		t.Fatal("watch did not retain selected qualified observation")
-	}
-	if err = c.StopResourceWatch(ctx, target.Route, target.Type); err != nil {
 		t.Fatal(err)
 	}
 	wrong := WithCatalogRevisionForRoute(

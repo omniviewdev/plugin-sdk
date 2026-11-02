@@ -269,12 +269,12 @@ func TestCatalogHintCoverageAndGuarantees(t *testing.T) {
 		Provider: "p",
 		Revision: "r",
 		Coverage: Coverage{Kind: "complete"},
-		Types:    []ResourceType{{Type: "resource/type", Capabilities: []Capability{{Operation: OperationUpdate}}}},
+		Types:    []ResourceType{{Type: "resource/type", Capabilities: []Capability{{Operation: OperationSourceUpdates}}}},
 	}
 	if _, err := ToProtoCatalog(c); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("missing update guarantee: %v", err)
 	}
-	c.Types[0].Capabilities = []Capability{{Operation: OperationGet, Guarantee: BestEffortGuarantee}}
+	c.Types[0].Capabilities = []Capability{{Operation: OperationGet, Guarantee: ContinuityBestEffort}}
 	if _, err := ToProtoCatalog(c); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("finite operation update guarantee: %v", err)
 	}

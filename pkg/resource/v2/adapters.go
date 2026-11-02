@@ -438,7 +438,7 @@ func (d *adapterDecoder) resourceType(p *resourcepb.ResourceType) ResourceType {
 		DisplayName:           p.DisplayName,
 		DefaultRepresentation: p.DefaultRepresentation,
 		ModelRepresentation:   p.ModelRepresentation,
-		AcquireOnConnect:      p.AcquireOnConnect,
+		AcquireOnConnect:      p.GetAcquireOnConnect(),
 		IdentityDimensions:    make([]Dimension, len(p.IdentityDimensions)),
 		QueryDimensions:       make([]Dimension, len(p.QueryDimensions)),
 		Representations:       make([]Representation, len(p.Representations)),
@@ -666,10 +666,6 @@ func validateCapability(v Capability) error {
 		OperationAction:
 		if v.Guarantee != "" {
 			return invalid("finite capability has update guarantee")
-		}
-	case OperationUpdate:
-		if err := validateGuarantee(v.Guarantee); err != nil {
-			return err
 		}
 	case OperationSourceUpdates:
 		if v.Guarantee != ContinuityGapFree && v.Guarantee != ContinuityBestEffort {

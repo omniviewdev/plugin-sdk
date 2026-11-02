@@ -156,11 +156,9 @@ const (
 	OperationGet Operation = "get"
 	// OperationNativeQuery advertises provider-native query execution.
 	OperationNativeQuery Operation = "nativeQuery"
-	// OperationUpdate describes advisory watch delivery, not mutation.
-	OperationUpdate Operation = "update"
 	// OperationCreate admits only the create mutation verb.
 	OperationCreate Operation = "create"
-	// OperationMutationUpdate admits only the update mutation verb, never advisory delivery.
+	// OperationMutationUpdate admits only the update mutation verb.
 	OperationMutationUpdate Operation = "mutationUpdate"
 	// OperationDelete admits only the delete mutation verb.
 	OperationDelete Operation = "delete"
@@ -173,8 +171,7 @@ const (
 type Capability struct {
 	Operation Operation  `json:"operation"`
 	Scope     QueryScope `json:"scope"`
-	// Guarantee labels advisory update semantics; finite operations leave it
-	// empty. BestEffortGuarantee does not promise replay or source continuity.
+	// Guarantee declares source update continuity; finite operations leave it empty.
 	Guarantee string `json:"guarantee,omitempty"`
 }
 
@@ -326,7 +323,7 @@ type SourcePage struct {
 }
 
 // MutationRequest selects create, update, or delete. Catalog admission maps
-// update to OperationMutationUpdate, never to the advisory OperationUpdate.
+// update to OperationMutationUpdate.
 // Its mutable input is borrowed for the call, not transferred to the provider.
 type MutationRequest struct {
 	Route     AccessRoute       `json:"route"`

@@ -17,7 +17,7 @@ This guide covers the two removed resource stacks: `pkg/resource` and `pkg/v1/re
 | Connection appears in older reference/session models | Identity and explicit access route are separate | Preserve host authority; do not make connection ID part of canonical identity. |
 | Generic maps or raw JSON, depending on the old stack | Tagged `Value` domain | Preserve native numeric and timestamp intent before transport. |
 | List/Find and filtering extensions | Finite `Enumerate` and optional provider-language `NativeQuery` | Return honest source pages, not a replacement host query engine. |
-| SDK-managed watches/informers | Explicit best-effort advisory updates | Do not claim replay or snapshot/live continuity. |
+| SDK-managed watches/informers | Explicit source sessions | Snapshot boundaries and declared continuity replace advisory watch delivery. |
 
 Old extensions such as watches, actions, schemas, and relationships were already optional. The old framework was Kubernetes-shaped, not Kubernetes-exclusive. See [historical v1 source](https://github.com/omniviewdev/plugin-sdk/blob/32a3358/pkg/v1/resource/resourcer.go) for the actual six-method core and extensions.
 
@@ -48,7 +48,7 @@ Capabilities: []resourcev2.Capability{{
 
 This excerpt matches [the example catalog](../examples/resource-plugin/provider.go). Add scopes and representations for your real backend, then register the matching callback.
 
-Create, mutation-update, and delete need separate declarations. `OperationUpdate` is advisory watch delivery; it is not the capability for a write.
+Create, mutation-update, and delete need separate declarations. `OperationSourceUpdates` declares source continuity; it is not the capability for a write.
 
 ## 3. Map identity separately from access
 

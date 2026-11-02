@@ -1,6 +1,50 @@
 package resourcev2
 
-import resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
+import (
+	"sort"
+
+	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
+)
+
+func validateMetadata(v ResourceMetadata) error { return admission(v) }
+func toResourceMetadata(v ResourceMetadata) *resourcepb.ResourceMetadata {
+	keys := make([]string, 0, len(v.Labels))
+	for k := range v.Labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	p := &resourcepb.ResourceMetadata{
+		Labels:    make([]*resourcepb.LabelEntry, 0, len(keys)),
+		CreatedAt: toOptionalTimestamp(v.CreatedAt),
+	}
+	for _, k := range keys {
+		p.Labels = append(p.Labels, &resourcepb.LabelEntry{Key: k, Value: v.Labels[k]})
+	}
+	return p
+}
+
+func (d *adapterDecoder) metadata(p *resourcepb.ResourceMetadata) ResourceMetadata {
+	if p == nil {
+		return ResourceMetadata{Labels: map[string]string{}}
+	}
+	keys := make(map[string]struct{}, len(p.GetLabels()))
+	for _, entry := range p.GetLabels() {
+		if entry == nil {
+			d.fail("missing label entry")
+			return ResourceMetadata{}
+		}
+		if _, ok := keys[entry.GetKey()]; ok {
+			d.fail("duplicate metadata label")
+			return ResourceMetadata{}
+		}
+		keys[entry.GetKey()] = struct{}{}
+	}
+	v := ResourceMetadata{Labels: make(map[string]string, len(p.GetLabels())), CreatedAt: d.optionalTimestamp(p.GetCreatedAt())}
+	for _, entry := range p.GetLabels() {
+		v.Labels[entry.GetKey()] = entry.GetValue()
+	}
+	return v
+}
 
 func validateSourceLimits(v SourceLimits) error {
 	if v.MaxFrameBytes < MinSourceFrameBytes || v.MaxFrameBytes > MaxSourceFrameBytes || v.MaxBatchItems == 0 || v.MaxBatchItems > MaxSourceBatchItems {
@@ -196,7 +240,7 @@ func (d *adapterDecoder) sourceLimits(p *resourcepb.SourceLimits) SourceLimits {
 		d.fail("missing source limits")
 		return SourceLimits{}
 	}
-	return SourceLimits{MaxFrameBytes: p.MaxFrameBytes, MaxBatchItems: p.MaxBatchItems}
+	return SourceLimits{MaxFrameBytes: p.GetMaxFrameBytes(), MaxBatchItems: p.GetMaxBatchItems()}
 }
 func toSourceAcquisition(v SourceAcquisition) *resourcepb.SourceAcquisition {
 	p := &resourcepb.SourceAcquisition{}
@@ -213,7 +257,7 @@ func (d *adapterDecoder) sourceAcquisition(p *resourcepb.SourceAcquisition) Sour
 		d.fail("missing source acquisition")
 		return SourceAcquisition{}
 	}
-	switch x := p.Kind.(type) {
+	switch x := p.GetKind().(type) {
 	case *resourcepb.SourceAcquisition_Enumerate:
 		if x.Enumerate == nil {
 			d.fail("missing source enumerate")
@@ -224,8 +268,8 @@ func (d *adapterDecoder) sourceAcquisition(p *resourcepb.SourceAcquisition) Sour
 			d.fail("missing source native query")
 			return SourceAcquisition{}
 		}
-		q := d.value(x.NativeQuery.Query)
-		return SourceAcquisition{Kind: SourceAcquisitionNativeQuery, Language: x.NativeQuery.Language, Query: &q}
+		q := d.value(x.NativeQuery.GetQuery())
+		return SourceAcquisition{Kind: SourceAcquisitionNativeQuery, Language: x.NativeQuery.GetLanguage(), Query: &q}
 	default:
 		d.fail("missing source acquisition kind")
 		return SourceAcquisition{}
@@ -235,10 +279,10 @@ func toSourceOpenRequest(v SourceOpenRequest) *resourcepb.SourceOpenRequest {
 	return &resourcepb.SourceOpenRequest{Version: WireVersion, SessionId: v.SessionID, Generation: v.Generation, Target: toReadTarget(v.Target), Mode: v.Mode, Acquisition: toSourceAcquisition(v.Acquisition), Limits: toSourceLimits(v.Limits)}
 }
 func (d *adapterDecoder) sourceOpenRequest(p *resourcepb.SourceOpenRequest) SourceOpenRequest {
-	if p.Version != WireVersion {
+	if p.GetVersion() != WireVersion {
 		d.fail("invalid wire version")
 	}
-	return SourceOpenRequest{SessionID: p.SessionId, Generation: p.Generation, Target: d.target(p.Target), Mode: p.Mode, Acquisition: d.sourceAcquisition(p.Acquisition), Limits: d.sourceLimits(p.Limits)}
+	return SourceOpenRequest{SessionID: p.GetSessionId(), Generation: p.GetGeneration(), Target: d.target(p.GetTarget()), Mode: p.GetMode(), Acquisition: d.sourceAcquisition(p.GetAcquisition()), Limits: d.sourceLimits(p.GetLimits())}
 }
 func toSourceCoverage(v SourceCoverage) *resourcepb.SourceCoverage {
 	return &resourcepb.SourceCoverage{Enumeration: v.Enumeration, Consistency: v.Consistency, Limitations: copyStrings(v.Limitations)}
@@ -248,7 +292,7 @@ func (d *adapterDecoder) sourceCoverage(p *resourcepb.SourceCoverage) SourceCove
 		d.fail("missing source coverage")
 		return SourceCoverage{}
 	}
-	return SourceCoverage{Enumeration: p.Enumeration, Consistency: p.Consistency, Limitations: copyStrings(p.Limitations)}
+	return SourceCoverage{Enumeration: p.GetEnumeration(), Consistency: p.GetConsistency(), Limitations: copyStrings(p.GetLimitations())}
 }
 func toSourceObservation(v SourceObservation) *resourcepb.SourceObservation {
 	p := &resourcepb.SourceObservation{Record: toRecord(v.Record), DisplayName: copyToken(v.DisplayName)}
@@ -262,9 +306,9 @@ func (d *adapterDecoder) sourceObservation(p *resourcepb.SourceObservation) Sour
 		d.fail("missing source observation")
 		return SourceObservation{}
 	}
-	v := SourceObservation{Record: d.record(p.Record), DisplayName: copyToken(p.DisplayName)}
-	if p.Metadata != nil {
-		m := d.metadata(p.Metadata)
+	v := SourceObservation{Record: d.record(p.GetRecord()), DisplayName: copyToken(p.DisplayName)}
+	if p.GetMetadata() != nil {
+		m := d.metadata(p.GetMetadata())
 		v.Metadata = &m
 	}
 	return v
@@ -283,7 +327,7 @@ func (d *adapterDecoder) sourceChange(p *resourcepb.SourceChange) SourceChange {
 		d.fail("missing source change")
 		return SourceChange{}
 	}
-	switch x := p.Change.(type) {
+	switch x := p.GetChange().(type) {
 	case *resourcepb.SourceChange_Upsert:
 		o := d.sourceObservation(x.Upsert)
 		return SourceChange{Kind: SourceChangeUpsert, Observation: &o}
@@ -292,7 +336,7 @@ func (d *adapterDecoder) sourceChange(p *resourcepb.SourceChange) SourceChange {
 			d.fail("missing source remove")
 			return SourceChange{}
 		}
-		r := d.reference(x.Remove.Reference)
+		r := d.reference(x.Remove.GetReference())
 		return SourceChange{Kind: SourceChangeRemove, Reference: &r, SourceRevision: copyToken(x.Remove.SourceRevision)}
 	default:
 		d.fail("missing source change kind")
@@ -307,7 +351,7 @@ func (d *adapterDecoder) sourceBegin(p *resourcepb.SourceBegin) SourceBegin {
 		d.fail("missing source begin")
 		return SourceBegin{}
 	}
-	return SourceBegin{Mode: p.Mode}
+	return SourceBegin{Mode: p.GetMode()}
 }
 func toSourceSnapshot(v SourceSnapshot) *resourcepb.SourceSnapshot {
 	p := &resourcepb.SourceSnapshot{Observations: make([]*resourcepb.SourceObservation, len(v.Observations))}
@@ -321,12 +365,12 @@ func (d *adapterDecoder) sourceSnapshot(p *resourcepb.SourceSnapshot) SourceSnap
 		d.fail("missing source snapshot")
 		return SourceSnapshot{}
 	}
-	if len(p.Observations) > MaxSourceBatchItems {
+	if len(p.GetObservations()) > MaxSourceBatchItems {
 		d.err = limited("source batch limit")
 		return SourceSnapshot{}
 	}
-	v := SourceSnapshot{Observations: make([]SourceObservation, len(p.Observations))}
-	for i, o := range p.Observations {
+	v := SourceSnapshot{Observations: make([]SourceObservation, len(p.GetObservations()))}
+	for i, o := range p.GetObservations() {
 		v.Observations[i] = d.sourceObservation(o)
 	}
 	return v
@@ -339,7 +383,7 @@ func (d *adapterDecoder) sourceSnapshotEnd(p *resourcepb.SourceSnapshotEnd) Sour
 		d.fail("missing source snapshot end")
 		return SourceSnapshotEnd{}
 	}
-	return SourceSnapshotEnd{Coverage: d.sourceCoverage(p.Coverage), Continuity: p.Continuity}
+	return SourceSnapshotEnd{Coverage: d.sourceCoverage(p.GetCoverage()), Continuity: p.GetContinuity()}
 }
 func toSourceChanges(v SourceChanges) *resourcepb.SourceChanges {
 	p := &resourcepb.SourceChanges{Changes: make([]*resourcepb.SourceChange, len(v.Changes))}
@@ -356,16 +400,16 @@ func (d *adapterDecoder) sourceChanges(p *resourcepb.SourceChanges) SourceChange
 		d.fail("missing source changes")
 		return SourceChanges{}
 	}
-	if len(p.Changes) > MaxSourceBatchItems {
+	if len(p.GetChanges()) > MaxSourceBatchItems {
 		d.err = limited("source batch limit")
 		return SourceChanges{}
 	}
-	v := SourceChanges{Changes: make([]SourceChange, len(p.Changes))}
-	for i, c := range p.Changes {
+	v := SourceChanges{Changes: make([]SourceChange, len(p.GetChanges()))}
+	for i, c := range p.GetChanges() {
 		v.Changes[i] = d.sourceChange(c)
 	}
-	if p.Coverage != nil {
-		c := d.sourceCoverage(p.Coverage)
+	if p.GetCoverage() != nil {
+		c := d.sourceCoverage(p.GetCoverage())
 		v.Coverage = &c
 	}
 	return v
@@ -378,7 +422,7 @@ func (d *adapterDecoder) sourceReset(p *resourcepb.SourceReset) SourceReset {
 		d.fail("missing source reset")
 		return SourceReset{}
 	}
-	return SourceReset{Reason: p.Reason, Message: p.Message}
+	return SourceReset{Reason: p.GetReason(), Message: p.GetMessage()}
 }
 func toSourceFailure(v SourceFailure) *resourcepb.SourceFailure {
 	return &resourcepb.SourceFailure{Code: v.Code, Message: v.Message}
@@ -388,7 +432,7 @@ func (d *adapterDecoder) sourceFailure(p *resourcepb.SourceFailure) SourceFailur
 		d.fail("missing source failure")
 		return SourceFailure{}
 	}
-	return SourceFailure{Code: p.Code, Message: p.Message}
+	return SourceFailure{Code: p.GetCode(), Message: p.GetMessage()}
 }
 func toSourceFrame(v SourceFrame) *resourcepb.SourceFrame {
 	p := &resourcepb.SourceFrame{Version: WireVersion, SessionId: v.SessionID, Generation: v.Generation, Sequence: v.Sequence}
@@ -409,11 +453,11 @@ func toSourceFrame(v SourceFrame) *resourcepb.SourceFrame {
 	return p
 }
 func (d *adapterDecoder) sourceFrame(p *resourcepb.SourceFrame) SourceFrame {
-	if p.Version != WireVersion {
+	if p.GetVersion() != WireVersion {
 		d.fail("invalid wire version")
 	}
-	v := SourceFrame{SessionID: p.SessionId, Generation: p.Generation, Sequence: p.Sequence}
-	switch x := p.Payload.(type) {
+	v := SourceFrame{SessionID: p.GetSessionId(), Generation: p.GetGeneration(), Sequence: p.GetSequence()}
+	switch x := p.GetPayload().(type) {
 	case *resourcepb.SourceFrame_Begin:
 		b := d.sourceBegin(x.Begin)
 		v.Begin = &b

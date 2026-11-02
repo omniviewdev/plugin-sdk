@@ -218,9 +218,9 @@ to secret settings.
 Resource v2 is an **implementation candidate awaiting public API review**, not
 an approved contract. Providers use handwritten `pkg/resource/v2` values and
 `sdk.RegisterResourcePlugin(plugin, provider)`. Only catalog discovery is required;
-finite operations, lifecycle, ancillary traits and advisory updates are optional.
+finite operations, lifecycle, ancillary traits and source sessions are optional.
 Catalog declarations qualify each operation independently, including create,
-mutation update and delete. Advisory `OperationUpdate` never authorizes writes.
+mutation update and delete. `OperationSourceUpdates` never authorizes writes.
 
 Start with the [plugin author guides](docs/README.md) for a runnable quickstart,
 resource recipes, connection management, and capability registration.
