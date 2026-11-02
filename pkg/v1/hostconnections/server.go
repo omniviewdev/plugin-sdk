@@ -37,6 +37,9 @@ func RegisterServer(reg grpc.ServiceRegistrar, service Service) {
 	}}}
 	reg.RegisterService(&desc, &server{service: service})
 }
+
+// Call validates callback variants before the host service authorizes and dispatches them.
+// Only discovery, finite reads, and revision-checked updates enter the service.
 func (s *server) Call(ctx context.Context, req *pb.CallRequest) (out *pb.CallResponse, err error) {
 	defer func() {
 		if err != nil {

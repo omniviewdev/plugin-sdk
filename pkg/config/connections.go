@@ -5,22 +5,30 @@ import (
 	"strings"
 )
 
+// ExportsSpec declares services this plugin offers to installed consumers.
 type ExportsSpec struct {
 	Connections *ConnectionExport `json:"connections,omitempty" yaml:"connections,omitempty"`
 }
+
+// RequiresSpec declares services this plugin needs from installed owners.
 type RequiresSpec struct {
 	Connections []ConnectionRequirement `json:"connections" yaml:"connections"`
 }
+
+// ConnectionExport limits exported operations to explicit resource patterns.
 type ConnectionExport struct {
 	Operations    []string `json:"operations" yaml:"operations"`
 	ResourceTypes []string `json:"resource_types" yaml:"resource_types"`
 }
+
+// ConnectionRequirement names one owner and the complete access a consumer needs.
 type ConnectionRequirement struct {
 	Plugin        string   `json:"plugin" yaml:"plugin"`
 	Operations    []string `json:"operations" yaml:"operations"`
 	ResourceTypes []string `json:"resource_types" yaml:"resource_types"`
 }
 
+// validPattern admits opaque literals or one terminal /* wildcard.
 func validPattern(p string) bool {
 	if p == "" {
 		return false
@@ -30,6 +38,8 @@ func validPattern(p string) bool {
 	}
 	return strings.HasSuffix(p, "/*") && len(p) > 2 && strings.Count(p, "*") == 1
 }
+
+// validateConnectionLists rejects empty, duplicate, or unsupported declarations.
 func validateConnectionLists(operations, patterns []string) error {
 	if len(operations) == 0 || len(patterns) == 0 {
 		return fmt.Errorf("connection operations and resource types must not be empty")
@@ -56,6 +66,8 @@ func validateConnectionLists(operations, patterns []string) error {
 	}
 	return nil
 }
+
+// Validate checks connection declarations only; absent declarations remain valid.
 func (m PluginMeta) Validate() error {
 	if m.Exports != nil && m.Exports.Connections != nil {
 		if err := validateConnectionLists(m.Exports.Connections.Operations, m.Exports.Connections.ResourceTypes); err != nil {
@@ -82,6 +94,8 @@ func (m PluginMeta) Validate() error {
 	}
 	return nil
 }
+
+// patternCovers checks complete containment without normalizing either pattern.
 func patternCovers(export, required string) bool {
 	if export == required {
 		return true
@@ -96,11 +110,13 @@ func patternCovers(export, required string) bool {
 	return strings.HasPrefix(required, prefix) && len(required) > len(prefix)
 }
 
+// ConnectionGrant is an immutable snapshot of an admitted consumer requirement.
 type ConnectionGrant struct {
 	operations []string
 	patterns   []string
 }
 
+// GrantConnections requires full owner coverage and never returns a partial grant.
 func GrantConnections(consumer, owner PluginMeta) (ConnectionGrant, error) {
 	if err := consumer.Validate(); err != nil {
 		return ConnectionGrant{}, err
@@ -148,6 +164,8 @@ func GrantConnections(consumer, owner PluginMeta) (ConnectionGrant, error) {
 	}
 	return ConnectionGrant{operations: append([]string(nil), requirement.Operations...), patterns: append([]string(nil), requirement.ResourceTypes...)}, nil
 }
+
+// Allows checks an operation and literal resource type against the admitted requirement.
 func (g ConnectionGrant) Allows(operation, resourceType string) bool {
 	found := false
 	for _, op := range g.operations {

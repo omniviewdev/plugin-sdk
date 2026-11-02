@@ -14,20 +14,27 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Version is the negotiated host callback protocol version.
 const Version uint32 = 1
 
+// ErrHostConnectionsUnavailable rejects calls without a live process binding.
 var ErrHostConnectionsUnavailable = errors.New("host connections service is unavailable")
 
+// ResolveTargetRequest selects a host-authorized target through the owner route.
 type ResolveTargetRequest struct {
 	Route          resourcev2.AccessRoute
 	Type           string
 	Scope          resourcev2.QueryScope
 	Representation string
 }
+
+// ResolvedTarget includes the opaque host ID required by finite operations.
 type ResolvedTarget struct {
 	TargetID string
 	Target   resourcev2.ReadTarget
 }
+
+// Client exposes owner operations within one delegated tool invocation.
 type Client interface {
 	Catalog(context.Context, string, resourcev2.CatalogRequest) (resourcev2.Catalog, error)
 	ResolveTarget(context.Context, string, ResolveTargetRequest) (ResolvedTarget, error)
@@ -36,6 +43,9 @@ type Client interface {
 	Enumerate(context.Context, string, string, resourcev2.EnumerateRequest) (resourcev2.SourcePage, error)
 	Update(context.Context, string, string, resourcev2.MutationRequest) (resourcev2.Record, error)
 }
+
+// Service is the host boundary for one consumer process.
+// Implementations must authorize each token, owner, route, target, and operation.
 type Service interface {
 	Catalog(context.Context, []byte, string, resourcev2.CatalogRequest) (resourcev2.Catalog, error)
 	ResolveTarget(context.Context, []byte, string, ResolveTargetRequest) (ResolvedTarget, error)
@@ -46,6 +56,7 @@ type Service interface {
 }
 type contextKey struct{}
 
+// FromContext returns the invocation client, never a global connection.
 func FromContext(ctx context.Context) (Client, error) {
 	if ctx != nil {
 		if c, ok := ctx.Value(contextKey{}).(Client); ok && c != nil {
@@ -55,12 +66,15 @@ func FromContext(ctx context.Context) (Client, error) {
 	return nil, ErrHostConnectionsUnavailable
 }
 
+// Binding owns the callback connection for one plugin process.
+// An accepted binding cannot be replaced, even after Close.
 type Binding struct {
 	mu    sync.Mutex
 	conn  *grpc.ClientConn
 	bound bool
 }
 
+// Bind accepts one callback connection; the caller retains ownership on failure.
 func (b *Binding) Bind(conn *grpc.ClientConn) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -71,6 +85,8 @@ func (b *Binding) Bind(conn *grpc.ClientConn) error {
 	b.bound = true
 	return nil
 }
+
+// Close retires an accepted connection without permitting its replacement.
 func (b *Binding) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -81,6 +97,9 @@ func (b *Binding) Close() error {
 	}
 	return nil
 }
+
+// Context freezes the invocation owner, route, and copied opaque token.
+// A missing binding or selector fails before a consumer handler can run.
 func (b *Binding) Context(ctx context.Context, owner string, route resourcev2.AccessRoute, token []byte) (context.Context, error) {
 	if b == nil || len(token) == 0 || owner == "" || ctx == nil {
 		return nil, ErrHostConnectionsUnavailable
@@ -106,6 +125,8 @@ type client struct {
 func invalid() error {
 	return resourcev2.NewError("INVALID_REQUEST", "Invalid host connection request.")
 }
+
+// call sends only supported callback variants and admits bounded response frames.
 func (c *client) call(ctx context.Context, owner, target string, op any) (*pb.CallResponse, error) {
 	if owner != c.owner {
 		return nil, invalid()
@@ -131,6 +152,8 @@ func (c *client) call(ctx context.Context, owner, target string, op any) (*pb.Ca
 	}
 	return out, nil
 }
+
+// check refuses a route different from the invocation's selected owner connection.
 func (c *client) check(route resourcev2.AccessRoute) error {
 	if route != c.route {
 		return invalid()
@@ -138,6 +161,8 @@ func (c *client) check(route resourcev2.AccessRoute) error {
 	_, err := resourcev2.ToProtoAccessRoute(route)
 	return err
 }
+
+// Catalog retrieves discovery metadata without granting object read access.
 func (c *client) Catalog(ctx context.Context, owner string, in resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
 	var z resourcev2.Catalog
 	if err := c.check(in.Route); err != nil {
@@ -157,6 +182,8 @@ func (c *client) Catalog(ctx context.Context, owner string, in resourcev2.Catalo
 	}
 	return resourcev2.FromProtoCatalog(r.GetCatalog())
 }
+
+// ResolveTarget requires the host response to preserve the requested route and type.
 func (c *client) ResolveTarget(ctx context.Context, owner string, in ResolveTargetRequest) (ResolvedTarget, error) {
 	var z ResolvedTarget
 	if err := c.check(in.Route); err != nil {
@@ -190,6 +217,8 @@ func (c *client) ResolveTarget(ctx context.Context, owner string, in ResolveTarg
 	}
 	return ResolvedTarget{TargetID: p.GetTargetId(), Target: t}, nil
 }
+
+// GetSchemaDocument retrieves the exact referenced schema without changing its identity.
 func (c *client) GetSchemaDocument(ctx context.Context, owner string, route resourcev2.AccessRoute, ref resourcev2.SchemaDocumentReference) (resourcev2.SchemaDocument, error) {
 	var z resourcev2.SchemaDocument
 	if err := c.check(route); err != nil {
@@ -220,6 +249,7 @@ func (c *client) GetSchemaDocument(ctx context.Context, owner string, route reso
 	return d, nil
 }
 
+// sameReference ignores scope order and checks incarnation only when requested.
 func sameReference(got, requested resourcev2.ResourceReference) bool {
 	address, expected := got.Address, requested.Address
 	if address.Provider != expected.Provider || address.Authority != expected.Authority ||
@@ -235,6 +265,7 @@ func sameReference(got, requested resourcev2.ResourceReference) bool {
 		(got.Incarnation != nil && *got.Incarnation == *requested.Incarnation)
 }
 
+// Get rejects a record that names another resource or requested incarnation.
 func (c *client) Get(ctx context.Context, owner, target string, in resourcev2.GetRequest) (resourcev2.Record, error) {
 	var z resourcev2.Record
 	if target == "" {
@@ -264,6 +295,8 @@ func (c *client) Get(ctx context.Context, owner, target string, in resourcev2.Ge
 	}
 	return record, nil
 }
+
+// Enumerate preserves the owner's finite page, cursor, and coverage metadata.
 func (c *client) Enumerate(ctx context.Context, owner, target string, in resourcev2.EnumerateRequest) (resourcev2.SourcePage, error) {
 	var z resourcev2.SourcePage
 	if target == "" {
@@ -286,6 +319,8 @@ func (c *client) Enumerate(ctx context.Context, owner, target string, in resourc
 	}
 	return resourcev2.FromProtoSourcePage(r.GetPage())
 }
+
+// Update requires optimistic concurrency and preserves the requested resource identity.
 func (c *client) Update(ctx context.Context, owner, target string, in resourcev2.MutationRequest) (resourcev2.Record, error) {
 	var z resourcev2.Record
 	if target == "" || in.Operation != "update" || in.ExpectedRevision == nil || *in.ExpectedRevision == "" {
