@@ -51,3 +51,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260209200024-4cfbd4190f57 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
 )
+
+// Source-session receive controls require the scoped grpc-go fork.
+replace google.golang.org/grpc => github.com/omniviewdev/grpc-go v1.79.3-0.20261102213527-236d3bce77a1

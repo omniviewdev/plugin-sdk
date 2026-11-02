@@ -343,6 +343,40 @@ The legacy finite-response compatibility path does not accept retired schema cla
 
 Framework owns stream channels and completion. Send events and return; never close framework-owned channels. See [stream lifetime contracts](resource-v2-contracts.md#utility-and-stream-lifetime).
 
+### Source-session transport
+
+This SDK uses scoped receive controls from the maintained
+[`omniviewdev/grpc-go`](https://github.com/omniviewdev/grpc-go) fork.
+Its module path remains `google.golang.org/grpc`.
+
+Go does not inherit dependency replacements. Each application or plugin module
+that consumes this SDK must select the same fork in its own root `go.mod`:
+
+```sh
+grpc_fork=github.com/omniviewdev/grpc-go
+grpc_version=v1.79.3-0.20261102213527-236d3bce77a1
+go mod edit \
+  "-replace=google.golang.org/grpc=${grpc_fork}@${grpc_version}"
+go mod tidy
+```
+
+The host and Kubernetes plugin have independent module roots. An unchanged
+provider that uses SDK v0.10.0 can retain stock gRPC.
+
+The controls require native `grpc.Server.Serve`. Configured methods fail with
+`FailedPrecondition` under `ServeHTTP`; that transport cannot enforce these
+ingress bounds.
+
+A partial message has a five-second deadline. A healthy wait between complete
+messages has no partial-read timer. An ordinary message timeout cancels only its
+RPC. A physical HTTP/2 DATA frame has a separate absolute deadline; progress does
+not extend it. If that frame remains incomplete, the transport closes the broken
+connection because HTTP/2 cannot parse another frame through missing bytes.
+
+Use `IsFatalSourceTransportError` from `pkg/resource/v2/plugin` to identify this
+local transport failure. Retire the unhealthy provider transport. Do not infer
+the failure from an error message or treat every RPC timeout as connection loss.
+
 ### Resource log-session ownership
 
 Use the existing logs capability's `ResourceSessionProvider.CreateResourceSession`,
