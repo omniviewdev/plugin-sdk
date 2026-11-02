@@ -153,16 +153,16 @@ func (b *metadataBudget) structFields(v reflect.Value, depth int) error {
 		}
 		return validateNativeTime(t)
 	}
-	isValue := v.Type() == reflect.TypeFor[Value]()
-	if isValue {
-		b.values++
-		if b.values > maxDomainNodes {
-			return limited("aggregate value node limit")
+	if v.Type() == reflect.TypeFor[Value]() {
+		value, ok := reflect.TypeAssert[Value](v)
+		if !ok {
+			return invalid("invalid domain value")
 		}
+		return b.valueFields(value, depth)
 	}
 	for i := range v.NumField() {
 		field := v.Type().Field(i)
-		if field.PkgPath != "" || (field.Tag.Get("json") == "-" && !isValue) {
+		if field.PkgPath != "" || field.Tag.Get("json") == "-" {
 			continue
 		}
 		if b.jsonOutput && strings.Contains(field.Tag.Get("json"), ",omitempty") && emptyJSONField(v.Field(i)) {
@@ -171,6 +171,103 @@ func (b *metadataBudget) structFields(v reflect.Value, depth int) error {
 		if err := b.visit(v.Field(i), depth+1); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// valueFields follows Value's declaration order, including inactive payloads.
+// The caller has already charged the struct node. Each field and container
+// retains the same bookkeeping as the generic reflection traversal.
+func (b *metadataBudget) valueFields(v Value, depth int) error {
+	b.values++
+	if b.values > maxDomainNodes {
+		return limited("aggregate value node limit")
+	}
+	if err := b.valueString(v.Kind, depth+1); err != nil {
+		return err
+	}
+	if err := b.valueNode(depth + 1); err != nil { // Bool
+		return err
+	}
+	if err := b.valueString(v.String, depth+1); err != nil {
+		return err
+	}
+	if err := b.valueString(v.Int, depth+1); err != nil {
+		return err
+	}
+	if err := b.valueString(v.Uint, depth+1); err != nil {
+		return err
+	}
+	if err := b.valueNode(depth + 1); err != nil { // Double
+		return err
+	}
+	if math.IsInf(v.Double, 0) || math.IsNaN(v.Double) {
+		return invalid("nonfinite metadata number")
+	}
+	if err := b.valueString(v.Timestamp, depth+1); err != nil {
+		return err
+	}
+	if err := b.valueContainer(len(v.List), depth+1); err != nil {
+		return err
+	}
+	for i := range v.List {
+		if err := b.valueNode(depth + 2); err != nil {
+			return err
+		}
+		if err := b.valueFields(v.List[i], depth+2); err != nil {
+			return err
+		}
+	}
+	if err := b.valueContainer(len(v.Map), depth+1); err != nil {
+		return err
+	}
+	for key, value := range v.Map {
+		if err := b.valueString(key, depth+2); err != nil {
+			return err
+		}
+		if err := b.valueNode(depth + 2); err != nil {
+			return err
+		}
+		if err := b.valueFields(value, depth+2); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *metadataBudget) valueNode(depth int) error {
+	if depth > b.depthLimit {
+		return limited("domain nesting limit")
+	}
+	b.nodes++
+	if b.nodes > b.nodeLimit {
+		return limited("domain node limit")
+	}
+	return nil
+}
+
+func (b *metadataBudget) valueString(s string, depth int) error {
+	if err := b.valueNode(depth); err != nil {
+		return err
+	}
+	if b.jsonOutput {
+		b.bytes += quotedJSONSize(s)
+	} else {
+		b.bytes += len(s)
+	}
+	if b.bytes > MaxMessageBytes {
+		return limited("domain byte limit")
+	}
+	return text(s, false)
+}
+
+func (b *metadataBudget) valueContainer(length, depth int) error {
+	if err := b.valueNode(depth); err != nil {
+		return err
+	}
+	b.fields += length
+	if b.fields > maxDomainFields {
+		return limited("domain field limit")
 	}
 	return nil
 }

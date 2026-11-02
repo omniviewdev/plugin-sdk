@@ -2,9 +2,118 @@ package resourcev2
 
 import (
 	"encoding/json"
+	"math"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestValueMetadataAdmissionBookkeeping(t *testing.T) {
+	v := Value{
+		Kind: "null",
+		List: []Value{{Kind: "null"}},
+		Map:  map[string]Value{"x": {Kind: "null"}},
+	}
+	for _, jsonOutput := range []bool{false, true} {
+		b := metadataBudget{depthLimit: 3, nodeLimit: 31, jsonOutput: jsonOutput}
+		if err := b.visit(reflect.ValueOf(v), 0); err != nil {
+			t.Fatal(err)
+		}
+		wantBytes := 13
+		if jsonOutput {
+			wantBytes = 45
+		}
+		if b.nodes != 31 || b.fields != 2 || b.values != 3 || b.bytes != wantBytes {
+			t.Fatalf("json=%v: nodes=%d fields=%d values=%d bytes=%d",
+				jsonOutput, b.nodes, b.fields, b.values, b.bytes)
+		}
+	}
+	for _, limits := range []struct{ depth, nodes int }{{2, 31}, {3, 30}} {
+		if err := metadataAdmission(v, limits.depth, limits.nodes, false); ErrorCode(err) != "RESOURCE_LIMIT" {
+			t.Fatalf("limits=%+v: %v", limits, err)
+		}
+	}
+}
+
+func TestValueMetadataAdmissionBudgetBoundaries(t *testing.T) {
+	// Every exported payload field must consume a node, even when inactive.
+	// Derive the boundary from Value so a new, unvisited field cannot silently
+	// bypass admission accounting while the existing fixtures remain green.
+	typ := reflect.TypeFor[Value]()
+	nodes := 1 // The Value struct itself.
+	for i := range typ.NumField() {
+		if typ.Field(i).IsExported() {
+			nodes++
+		}
+	}
+	for _, jsonOutput := range []bool{false, true} {
+		for _, deficit := range []int{0, 1} {
+			err := metadataAdmission(Value{Kind: "null"}, 1, nodes-deficit, jsonOutput)
+			if (err != nil) != (deficit == 1) || (err != nil && ErrorCode(err) != "RESOURCE_LIMIT") {
+				t.Fatalf("declared-field node boundary json=%v deficit=%d: %v; update valueFields for new payloads",
+					jsonOutput, deficit, err)
+			}
+		}
+	}
+	for _, jsonOutput := range []bool{false, true} {
+		stringBytes := 4
+		if jsonOutput {
+			stringBytes = 14
+		}
+		for _, extra := range []int{0, 1} {
+			b := metadataBudget{
+				depthLimit: 3, nodeLimit: 100, jsonOutput: jsonOutput,
+				bytes: MaxMessageBytes - stringBytes + extra,
+			}
+			err := b.visit(reflect.ValueOf(Value{Kind: "null"}), 0)
+			if (err != nil) != (extra == 1) || (err != nil && ErrorCode(err) != "RESOURCE_LIMIT") {
+				t.Fatalf("byte boundary json=%v extra=%d: %v", jsonOutput, extra, err)
+			}
+		}
+	}
+	for _, extra := range []int{0, 1} {
+		b := metadataBudget{
+			depthLimit: 3, nodeLimit: 100,
+			fields: maxDomainFields - 1 + extra,
+			values: maxDomainNodes - 2,
+		}
+		v := Value{Kind: "null", List: []Value{{Kind: "null"}}}
+		err := b.visit(reflect.ValueOf(v), 0)
+		if (err != nil) != (extra == 1) || (err != nil && ErrorCode(err) != "RESOURCE_LIMIT") {
+			t.Fatalf("field boundary extra=%d: %v", extra, err)
+		}
+	}
+	for _, extra := range []int{0, 1} {
+		b := metadataBudget{depthLimit: 1, nodeLimit: 10, values: maxDomainNodes - 1 + extra}
+		err := b.visit(reflect.ValueOf(Value{Kind: "null"}), 0)
+		if (err != nil) != (extra == 1) || (err != nil && ErrorCode(err) != "RESOURCE_LIMIT") {
+			t.Fatalf("value boundary extra=%d: %v", extra, err)
+		}
+	}
+}
+
+func TestValueMetadataAdmissionInactivePayloads(t *testing.T) {
+	for _, v := range []Value{
+		{Kind: "null", String: string([]byte{0xff})},
+		{Kind: "null", Double: math.NaN()},
+		{Kind: "null", List: []Value{{Kind: "null", Double: math.Inf(1)}}},
+		{Kind: "null", Map: map[string]Value{"x": {Kind: "null", Timestamp: string([]byte{0xff})}}},
+		{Kind: "null", Map: map[string]Value{string([]byte{0xff}): {Kind: "null"}}},
+	} {
+		for _, jsonOutput := range []bool{false, true} {
+			if err := metadataAdmission(v, 10, 100, jsonOutput); ErrorCode(err) != "INVALID_REQUEST" {
+				t.Fatalf("inactive payload admitted json=%v: %#v: %v", jsonOutput, v, err)
+			}
+		}
+	}
+	// Declaration order must reject the invalid string before charging List's
+	// field budget, even when the inactive container also exceeds its limit.
+	b := metadataBudget{depthLimit: 3, nodeLimit: 100, fields: maxDomainFields}
+	v := Value{Kind: "null", String: string([]byte{0xff}), List: []Value{{}}}
+	if err := b.visit(reflect.ValueOf(v), 0); ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatalf("field traversal order changed: %v", err)
+	}
+}
 
 func TestAddressAndScopeDimensionAdmission(t *testing.T) {
 	a := codecRecord().Reference.Address

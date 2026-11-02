@@ -178,6 +178,8 @@ Raw protobuf admission and direct adapter admission bound protobuf message depth
 
 These are candidate safety ceilings, not latency promises, planner budgets, or approved product policy. Hosts may lower effective limits. The separate predicate/projection policy remains 64 KiB. `ValueWireSize` and `RecordWireSize` support bounded source construction without allocating transport messages.
 
+Domain admission uses typed traversal for `Value` trees to avoid repeated reflection field discovery and tag parsing. This is not a validation bypass: inactive payload fields and containers still consume the same budgets and receive the same checks, in declaration order. Generic metadata traversal remains reflective. Changes to the `Value` layout must also update `metadataBudget.valueFields` and its budget-boundary tests.
+
 History ingestion/storage, search, timeline, universal planning, schema normalization (P07), and strong P05 source continuity are excluded. Advisory updates never claim replay, gap-free delivery, or atomic snapshot/live handoff. Domain documentation does not turn excluded engines into implicit requirements or completion claims.
 
 ## Cleanup contract decisions
