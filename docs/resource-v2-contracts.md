@@ -126,6 +126,10 @@ Controller copies mutable connection configuration at ingress, inventory/status 
 
 Source emitters are framework-owned. A provider emits snapshot observations, a snapshot boundary with coverage and continuity, then changes. Reset and failure are terminal; cancellation ends the session. A `bestEffort` declaration does not promise gap-free continuity.
 
+The host caller must close each `SourceStream` or cancel its opening context when it stops receiving, including on errors. The send-stall watchdog bounds cooperative provider work, not the lifetime of a blocked gRPC `SendMsg` or its RPC handler. Canceling the derived provider context cannot cancel the underlying transport; the handler joins the send before releasing stream ownership. This transport assumes a trusted host that owns cancellation. Less-trusted network receivers require a separate transport termination policy; the watchdog is not an autonomous transport-drain guarantee.
+
+Source snapshots and upserts must match the admitted representation and all catalog-declared identity dimensions. Removals must match the admitted identity and scope. Structural frame validation alone does not establish catalog-bound observation admission.
+
 ## Utility and stream lifetime
 
 `WithConnection` requires a configured, already-started native generation and supplies its actual configured-profile snapshot. Metadata is only a selector. `WithClient` exposes the registered native client under a lease; with no lifecycle configured its client is nil. Neither helper probes, implicitly starts, chooses a default connection, or grants resource access.

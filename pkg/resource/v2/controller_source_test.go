@@ -233,3 +233,45 @@ func TestControllerSourceLimitationsAreBounded(t *testing.T) {
 		t.Fatalf("limitations = %v", emitter.coverage.Limitations)
 	}
 }
+
+func TestControllerLiveSourceRejectsUnboundRecords(t *testing.T) {
+	for _, mutation := range []string{"revision", "schema", "identity"} {
+		for _, phase := range []string{"snapshot", "upsert", "remove"} {
+			if phase == "remove" && mutation != "identity" {
+				continue
+			}
+			t.Run(mutation+"/"+phase, func(t *testing.T) {
+				record := controllerRecord()
+				switch mutation {
+				case "revision":
+					record.Representation.Revision = "unaccepted-revision"
+				case "schema":
+					record.Representation.Schema.State = "unavailable"
+				case "identity":
+					record.Reference.Address.Scope = []ScopeEntry{{Dimension: "undeclared", Value: "value"}}
+				}
+				if err := ValidateRecord(record); err != nil {
+					t.Fatalf("regression requires a structurally valid record: %v", err)
+				}
+				cfg := controllerConfig()
+				cfg.Registrations = []Registration[string]{{Type: "opaque/type", Source: func(ctx context.Context, _ *string, _ SourceRequest, emitter SourceEmitter) error {
+					observation := SourceObservation{Record: record}
+					if phase == "snapshot" {
+						return emitter.Snapshot(ctx, []SourceObservation{observation})
+					}
+					if err := emitter.EndSnapshot(ctx, SourceCoverage{Enumeration: EnumerationExhausted, Consistency: ConsistencyBestEffort}, ContinuityBestEffort); err != nil {
+						return err
+					}
+					change := SourceChange{Kind: SourceChangeUpsert, Observation: &observation}
+					if phase == "remove" {
+						change = SourceChange{Kind: SourceChangeRemove, Reference: &record.Reference}
+					}
+					return emitter.Changes(ctx, []SourceChange{change}, nil)
+				}}}
+				controller := newTestController(t, cfg)
+				err := controller.OpenSource(acceptedControllerContext(context.Background(), t, controller), controllerSourceOpen(SourceModeSnapshotAndUpdates), &recordingSourceEmitter{})
+				assertControllerCode(t, err, "PROVIDER_ERROR")
+			})
+		}
+	}
+}

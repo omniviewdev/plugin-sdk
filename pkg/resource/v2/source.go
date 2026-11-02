@@ -125,6 +125,10 @@ type SourceStreamOpener interface {
 	OpenSourceStream(ctx context.Context, request SourceOpenRequest) (SourceStream, error)
 }
 
+// SourceStream is a caller-owned source session. Callers must Close the stream
+// or cancel the opening context when they stop receiving, including on errors.
+// Close is idempotent. A server send-stall watchdog cancels provider work but
+// cannot terminate a blocked gRPC send without transport cancellation.
 type SourceStream interface {
 	Recv() (SourceFrame, error)
 	Close()

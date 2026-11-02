@@ -13,6 +13,7 @@ import (
 type SourcePhaseTracker struct {
 	mu                 sync.Mutex
 	request            SourceOpenRequest
+	descriptor         *ResourceType
 	declaredContinuity string
 	sequence           uint64
 	phase              uint8 // 0: opening, 1: snapshot, 2: following, 3: terminal
@@ -21,6 +22,12 @@ type SourcePhaseTracker struct {
 
 func NewSourcePhaseTracker(request SourceOpenRequest, declaredContinuity string) *SourcePhaseTracker {
 	return &SourcePhaseTracker{request: request, declaredContinuity: declaredContinuity}
+}
+
+// NewCatalogBoundSourcePhaseTracker also validates records and removals against
+// the descriptor admitted for this session. The descriptor must remain immutable.
+func NewCatalogBoundSourcePhaseTracker(request SourceOpenRequest, descriptor ResourceType) *SourcePhaseTracker {
+	return &SourcePhaseTracker{request: request, descriptor: &descriptor, declaredContinuity: SourceGuaranteeForTarget(descriptor, request.Target)}
 }
 
 // Close marks the tracker cancelled. It is idempotent and does not wait for the peer.
@@ -112,6 +119,46 @@ func ValidateSourceObservation(target ReadTarget, representation string, observa
 	return nil
 }
 
+func checkSourceObservation(descriptor ResourceType, target ReadTarget, observation SourceObservation) error {
+	if err := checkRecord(observation.Record, descriptor, target.Provider, target.Authority, target.Representation, nil, target.Scope); err != nil {
+		return NewError("PROVIDER_ERROR", "invalid source observation")
+	}
+	return nil
+}
+
+func checkSourceReference(descriptor ResourceType, target ReadTarget, reference ResourceReference) error {
+	if err := validateReference(reference); err != nil {
+		return NewError("PROVIDER_ERROR", "invalid source removal")
+	}
+	if err := ValidateAddress(reference.Address, descriptor.IdentityDimensions); err != nil {
+		return NewError("PROVIDER_ERROR", "invalid source removal")
+	}
+	if !sourceContainsReference(target, reference) {
+		return NewError("PROVIDER_ERROR", "source removal escapes target")
+	}
+	return nil
+}
+
+func (t *SourcePhaseTracker) checkObservation(observation SourceObservation) error {
+	if t.descriptor != nil {
+		return checkSourceObservation(*t.descriptor, t.request.Target, observation)
+	}
+	return ValidateSourceObservation(t.request.Target, t.request.Target.Representation, observation)
+}
+
+func (t *SourcePhaseTracker) checkReference(reference ResourceReference) error {
+	if t.descriptor != nil {
+		return checkSourceReference(*t.descriptor, t.request.Target, reference)
+	}
+	if err := validateReference(reference); err != nil {
+		return err
+	}
+	if !sourceContainsReference(t.request.Target, reference) {
+		return NewError("PROVIDER_ERROR", "source removal escapes target")
+	}
+	return nil
+}
+
 func sourceCoverageValid(c SourceCoverage) bool {
 	if c.Enumeration != EnumerationExhausted && c.Enumeration != EnumerationPartial && c.Enumeration != EnumerationUnknown {
 		return false
@@ -178,7 +225,7 @@ func (t *SourcePhaseTracker) admit(f SourceFrame, size int) error {
 			return bad()
 		}
 		for _, o := range f.Snapshot.Observations {
-			if ValidateSourceObservation(t.request.Target, t.request.Target.Representation, o) != nil {
+			if t.checkObservation(o) != nil {
 				return bad()
 			}
 		}
@@ -208,11 +255,11 @@ func (t *SourcePhaseTracker) admit(f SourceFrame, size int) error {
 		for _, c := range f.Changes.Changes {
 			switch c.Kind {
 			case SourceChangeUpsert:
-				if c.Observation == nil || c.Reference != nil || c.SourceRevision != nil || ValidateSourceObservation(t.request.Target, t.request.Target.Representation, *c.Observation) != nil {
+				if c.Observation == nil || c.Reference != nil || c.SourceRevision != nil || t.checkObservation(*c.Observation) != nil {
 					return bad()
 				}
 			case SourceChangeRemove:
-				if c.Reference == nil || c.Observation != nil || validateReference(*c.Reference) != nil || token(c.SourceRevision) != nil || !sourceContainsReference(t.request.Target, *c.Reference) {
+				if c.Reference == nil || c.Observation != nil || token(c.SourceRevision) != nil || t.checkReference(*c.Reference) != nil {
 					return bad()
 				}
 			default:
