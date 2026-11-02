@@ -4,6 +4,7 @@ package hostconnections
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -218,6 +219,22 @@ func (c *client) GetSchemaDocument(ctx context.Context, owner string, route reso
 	}
 	return d, nil
 }
+
+func sameReference(got, requested resourcev2.ResourceReference) bool {
+	address, expected := got.Address, requested.Address
+	if address.Provider != expected.Provider || address.Authority != expected.Authority ||
+		address.Type != expected.Type || address.ID != expected.ID || len(address.Scope) != len(expected.Scope) {
+		return false
+	}
+	for _, entry := range address.Scope {
+		if !slices.Contains(expected.Scope, entry) {
+			return false
+		}
+	}
+	return requested.Incarnation == nil ||
+		(got.Incarnation != nil && *got.Incarnation == *requested.Incarnation)
+}
+
 func (c *client) Get(ctx context.Context, owner, target string, in resourcev2.GetRequest) (resourcev2.Record, error) {
 	var z resourcev2.Record
 	if target == "" {
@@ -238,7 +255,14 @@ func (c *client) Get(ctx context.Context, owner, target string, in resourcev2.Ge
 	if r == nil || r.GetVersion() != resourcev2.WireVersion || r.GetRecord() == nil {
 		return z, invalid()
 	}
-	return resourcev2.FromProtoRecord(r.GetRecord())
+	record, err := resourcev2.FromProtoRecord(r.GetRecord())
+	if err != nil {
+		return z, err
+	}
+	if !sameReference(record.Reference, in.Reference) {
+		return z, invalid()
+	}
+	return record, nil
 }
 func (c *client) Enumerate(ctx context.Context, owner, target string, in resourcev2.EnumerateRequest) (resourcev2.SourcePage, error) {
 	var z resourcev2.SourcePage

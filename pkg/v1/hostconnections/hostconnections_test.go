@@ -75,3 +75,80 @@ func TestCallbackSchemaAndAdmission(t *testing.T) {
 	require.ErrorIs(t, err, ErrHostConnectionsUnavailable)
 	require.Error(t, binding.Bind(conn))
 }
+
+type recordService struct {
+	testService
+	record resourcev2.Record
+}
+
+func (s *recordService) Get(context.Context, []byte, string, string, resourcev2.GetRequest) (resourcev2.Record, error) {
+	return s.record, nil
+}
+
+func TestGetRejectsChangedResourceIdentity(t *testing.T) {
+	listener := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer()
+	service := &recordService{}
+	RegisterServer(server, service)
+	go server.Serve(listener)
+	defer server.Stop()
+	conn, err := grpc.NewClient("passthrough:///identity", grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+		return listener.DialContext(ctx)
+	}))
+	require.NoError(t, err)
+	defer conn.Close()
+	binding := &Binding{}
+	require.NoError(t, binding.Bind(conn))
+	route := resourcev2.AccessRoute{Connection: "route"}
+	ctx, err := binding.Context(context.Background(), "owner", route, []byte("token"))
+	require.NoError(t, err)
+	client, err := FromContext(ctx)
+	require.NoError(t, err)
+	revision, incarnation := "1", "uid"
+	representation := resourcev2.Representation{
+		ID: "document", Revision: revision,
+		Schema: resourcev2.SchemaBinding{
+			State: "available", Revision: &revision,
+			Dialect:     "https://json-schema.org/draft/2020-12/schema",
+			DocumentRef: &resourcev2.SchemaDocumentReference{ID: "schema", Revision: revision},
+			Validation:  "full",
+		},
+	}
+	for _, test := range []struct {
+		name      string
+		change    func(*resourcev2.Record)
+		wantError bool
+	}{
+		{"same identity", func(*resourcev2.Record) {}, false},
+		{"provider", func(record *resourcev2.Record) { record.Reference.Address.Provider = "other" }, true},
+		{"authority", func(record *resourcev2.Record) { record.Reference.Address.Authority = "other" }, true},
+		{"type", func(record *resourcev2.Record) { record.Reference.Address.Type = "other" }, true},
+		{"id", func(record *resourcev2.Record) { record.Reference.Address.ID = "other" }, true},
+		{"scope", func(record *resourcev2.Record) { record.Reference.Address.Scope[0].Value = "other" }, true},
+		{"scope order", func(record *resourcev2.Record) {
+			record.Reference.Address.Scope[0], record.Reference.Address.Scope[1] = record.Reference.Address.Scope[1], record.Reference.Address.Scope[0]
+		}, false},
+		{"new incarnation", func(record *resourcev2.Record) { record.Reference.Incarnation = &incarnation }, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			requested := resourcev2.ResourceReference{Address: resourcev2.ResourceAddress{
+				Provider: "example", Authority: "authority", Type: "document", ID: "fixture",
+				Scope: []resourcev2.ScopeEntry{{Dimension: "namespace", Value: "scratch"}, {Dimension: "region", Value: "local"}},
+			}}
+			returned := requested
+			returned.Address.Scope = append([]resourcev2.ScopeEntry(nil), requested.Address.Scope...)
+			service.record = resourcev2.Record{
+				Reference: returned, Representation: representation,
+				Body:     resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{}},
+				Coverage: resourcev2.Coverage{Kind: "complete"},
+			}
+			test.change(&service.record)
+			_, err := client.Get(ctx, "owner", "target", resourcev2.GetRequest{Route: route, Reference: requested, Representation: representation.ID})
+			if test.wantError {
+				require.Equal(t, "INVALID_REQUEST", resourcev2.ErrorCode(err))
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

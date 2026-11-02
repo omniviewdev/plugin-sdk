@@ -63,14 +63,20 @@ func ErrorCode(err error) string {
 		return ""
 	}
 	var classified *ResourceOperationError
-	if errors.As(err, &classified) && classified != nil && IsErrorCode(classified.Code) {
-		return classified.Code
+	if errors.As(err, &classified) && classified != nil {
+		switch classified.Code {
+		case "GRANT_DENIED", "CONNECTION_NOT_STARTED", "OWNER_UNAVAILABLE", "DELEGATION_NOT_ACTIVE":
+			return classified.Code
+		}
 	}
 	if errors.Is(err, context.Canceled) {
 		return "CANCELLED"
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "TIMEOUT"
+	}
+	if classified != nil && IsErrorCode(classified.Code) {
+		return classified.Code
 	}
 	return errorCodeInternal
 }

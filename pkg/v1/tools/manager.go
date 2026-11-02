@@ -201,8 +201,6 @@ func (m *Manager) finish(tool Tool, handler Handler, ctx *types.PluginContext, a
 			code = ErrorUnavailable
 		case ErrorPermissionDenied, "FORBIDDEN":
 			code = ErrorPermissionDenied
-		case "GRANT_DENIED", "CONNECTION_NOT_STARTED", "OWNER_UNAVAILABLE", "DELEGATION_NOT_ACTIVE", "CONFLICT", "TIMEOUT", "UNSUPPORTED":
-			code = resourcev2.ErrorCode(err)
 		}
 		switch status.Code(err) {
 		case codes.Unavailable:
