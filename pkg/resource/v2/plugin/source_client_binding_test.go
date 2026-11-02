@@ -58,7 +58,7 @@ func TestSourceClientRejectsUnboundPeerRecords(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer stream.Close()
-				for range len(frames)-1 {
+				for range len(frames) - 1 {
 					if _, err = stream.Recv(); err != nil {
 						t.Fatal(err)
 					}

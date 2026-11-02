@@ -467,7 +467,7 @@ func TestSourceTCPStalledHost(t *testing.T) {
 	handlerDone := make(chan struct{})
 	transportDone := make(chan struct{})
 	options := append(ServerOptions(), grpc.ChainStreamInterceptor(func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if !strings.HasSuffix(info.FullMethod, "/Open") {
+		if info.FullMethod != resourcepb.ResourceSources_Open_FullMethodName {
 			return handler(srv, stream)
 		}
 		go func() {
@@ -496,15 +496,23 @@ func TestSourceTCPStalledHost(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Error("stalled host did not cancel provider")
 	}
+	// The watchdog cancels provider work, but cannot cancel the underlying gRPC
+	// send. The host owns transport cancellation and must close abandoned streams.
+	select {
+	case <-handlerDone:
+		t.Fatal("stalled source handler returned while its send remained blocked")
+	default:
+	}
+	stream.Close()
 	select {
 	case <-handlerDone:
 	case <-time.After(time.Second):
-		t.Fatal("stalled source handler retained without client cancellation")
+		t.Fatal("stalled source handler retained after client close")
 	}
 	select {
 	case <-transportDone:
 	case <-time.After(time.Second):
-		t.Fatal("stalled source transport retained without client cancellation")
+		t.Fatal("stalled source transport retained after client close")
 	}
 	// The stalled source must not tear down other RPCs on the same connection.
 	_ = acceptedCatalogContext(context.Background(), t, client, r.Target.Route)

@@ -37,7 +37,7 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 	}
 	sourceCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	fenced := &controllerSourceEmitter[T]{controller: c, route: target.Route, emitter: emitter, cancel: cancel, streamCtx: streamCtx, leaseCtx: ctx, updates: operation == OperationSourceUpdates, nextCatalogCheck: time.Now().Add(time.Second)}
+	fenced := &controllerSourceEmitter[T]{controller: c, route: target.Route, descriptor: descriptor, target: target, emitter: emitter, cancel: cancel, streamCtx: streamCtx, leaseCtx: ctx, updates: operation == OperationSourceUpdates, nextCatalogCheck: time.Now().Add(time.Second)}
 	if operation == OperationSourceUpdates {
 		var representation Representation
 		for _, candidate := range descriptor.Representations {
@@ -151,6 +151,8 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 type controllerSourceEmitter[T any] struct {
 	controller       *Controller[T]
 	route            AccessRoute
+	descriptor       ResourceType
+	target           ReadTarget
 	emitter          SourceEmitter
 	reset            atomic.Bool
 	cancel           context.CancelFunc
@@ -205,6 +207,11 @@ func (e *controllerSourceEmitter[T]) Snapshot(ctx context.Context, observations 
 	if err := e.fence(ctx); err != nil {
 		return err
 	}
+	for _, observation := range observations {
+		if err := checkSourceObservation(e.descriptor, e.target, observation); err != nil {
+			return err
+		}
+	}
 	return e.emitter.Snapshot(ctx, observations)
 }
 func (e *controllerSourceEmitter[T]) EndSnapshot(ctx context.Context, coverage SourceCoverage, continuity string) error {
@@ -216,6 +223,29 @@ func (e *controllerSourceEmitter[T]) EndSnapshot(ctx context.Context, coverage S
 func (e *controllerSourceEmitter[T]) Changes(ctx context.Context, changes []SourceChange, coverage *SourceCoverage) error {
 	if err := e.fence(ctx); err != nil {
 		return err
+	}
+	for _, change := range changes {
+		switch change.Kind {
+		case SourceChangeUpsert:
+			if change.Observation == nil || change.Reference != nil || change.SourceRevision != nil {
+				return NewError("PROVIDER_ERROR", "invalid source upsert")
+			}
+			if err := checkSourceObservation(e.descriptor, e.target, *change.Observation); err != nil {
+				return err
+			}
+		case SourceChangeRemove:
+			if change.Reference == nil || change.Observation != nil {
+				return NewError("PROVIDER_ERROR", "invalid source removal")
+			}
+			if err := token(change.SourceRevision); err != nil {
+				return err
+			}
+			if err := checkSourceReference(e.descriptor, e.target, *change.Reference); err != nil {
+				return err
+			}
+		default:
+			return NewError("PROVIDER_ERROR", "invalid source change")
+		}
 	}
 	return e.emitter.Changes(ctx, changes, coverage)
 }
