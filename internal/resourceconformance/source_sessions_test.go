@@ -19,6 +19,15 @@ type sessionController struct {
 	base *nativeProvider
 }
 
+func (p *sessionController) Features(ctx context.Context) (resource.FeatureSet, error) {
+	features, err := p.Controller.Features(ctx)
+	if err != nil {
+		return features, err
+	}
+	features.Traits = append(features.Traits, resource.FeatureConnections)
+	return features, nil
+}
+
 func (p *sessionController) LoadConnections(ctx context.Context) ([]types.Connection, error) {
 	return p.base.LoadConnections(ctx)
 }
@@ -64,6 +73,7 @@ func newSessionController(p *nativeProvider) *sessionController {
 			for _, page := range s.Pages {
 				for _, name := range page.Records {
 					r := nativeRecord(p.corpus.Record(name), s)
+					r.Reference.Address.Authority = in.Target.Authority
 					observations = append(observations, resource.SourceObservation{Record: r, Metadata: &resource.ResourceMetadata{Labels: map[string]string{"fixture": "container"}}})
 				}
 			}
@@ -78,6 +88,7 @@ func newSessionController(p *nativeProvider) *sessionController {
 				r.Body = update.Body
 				r.Revision = update.Revision
 				obs := resource.SourceObservation{Record: nativeRecord(r, s), Metadata: &resource.ResourceMetadata{Labels: map[string]string{"fixture": "container"}}}
+				obs.Record.Reference.Address.Authority = in.Target.Authority
 				if err = out.Changes(ctx, []resource.SourceChange{{Kind: resource.SourceChangeUpsert, Observation: &obs}}, nil); err != nil {
 					return err
 				}
@@ -123,7 +134,11 @@ func TestCurrentSDKSourceSessions(t *testing.T) {
 			defer stop()
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			_, err := p.(resource.ConnectionLifecycle).StartConnection(ctx, s.Name)
+			features, err := p.(resource.FeatureNegotiator).Features(ctx)
+			require.NoError(t, err)
+			require.True(t, features.Has(resource.FeatureConnections))
+			require.True(t, features.Has(resource.FeatureSourceSessions))
+			_, err = p.(resource.ConnectionLifecycle).StartConnection(ctx, s.Name)
 			require.NoError(t, err)
 			catalog, err := p.Catalog(ctx, resource.CatalogRequest{Route: resource.AccessRoute{Connection: s.Name}})
 			require.NoError(t, err)
@@ -133,7 +148,9 @@ func TestCurrentSDKSourceSessions(t *testing.T) {
 				mode = resource.SourceModeSnapshotAndUpdates
 			}
 			opener := p.(resource.SourceStreamOpener)
-			stream, err := opener.OpenSourceStream(ctx, sourceRequest(s, c, mode))
+			request := sourceRequest(s, c, mode)
+			request.Target.Authority = "host-issued:authority"
+			stream, err := opener.OpenSourceStream(ctx, request)
 			require.NoError(t, err)
 			defer stream.Close()
 			count := 0
@@ -154,6 +171,7 @@ func TestCurrentSDKSourceSessions(t *testing.T) {
 					snapshotFrames++
 					for _, o := range f.Snapshot.Observations {
 						count++
+						require.Equal(t, request.Target.Authority, o.Record.Reference.Address.Authority)
 						if mode == resource.SourceModeSnapshot {
 							require.Nil(t, o.Metadata)
 						} else {
@@ -182,6 +200,7 @@ func TestCurrentSDKSourceSessions(t *testing.T) {
 					require.True(t, ended)
 					require.True(t, sawInitial)
 					got := f.Changes.Changes[0].Observation
+					require.Equal(t, request.Target.Authority, got.Record.Reference.Address.Authority)
 					require.NoError(t, CheckChanges(s, []Change{{Record: recordContainerA, Revision: *got.Record.SourceRevision, Body: nativeBodyJSON(got.Record.Body)}}))
 					require.Equal(t, "event:a1", *f.Changes.Changes[0].Observation.Record.SourceRevision)
 					require.Equal(t, "paused", f.Changes.Changes[0].Observation.Record.Body.Map["state"].String)
