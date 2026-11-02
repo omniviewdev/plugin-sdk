@@ -36,6 +36,25 @@ func TestValueMetadataAdmissionBookkeeping(t *testing.T) {
 }
 
 func TestValueMetadataAdmissionBudgetBoundaries(t *testing.T) {
+	// Every exported payload field must consume a node, even when inactive.
+	// Derive the boundary from Value so a new, unvisited field cannot silently
+	// bypass admission accounting while the existing fixtures remain green.
+	typ := reflect.TypeFor[Value]()
+	nodes := 1 // The Value struct itself.
+	for i := range typ.NumField() {
+		if typ.Field(i).IsExported() {
+			nodes++
+		}
+	}
+	for _, jsonOutput := range []bool{false, true} {
+		for _, deficit := range []int{0, 1} {
+			err := metadataAdmission(Value{Kind: "null"}, 1, nodes-deficit, jsonOutput)
+			if (err != nil) != (deficit == 1) || (err != nil && ErrorCode(err) != "RESOURCE_LIMIT") {
+				t.Fatalf("declared-field node boundary json=%v deficit=%d: %v; update valueFields for new payloads",
+					jsonOutput, deficit, err)
+			}
+		}
+	}
 	for _, jsonOutput := range []bool{false, true} {
 		stringBytes := 4
 		if jsonOutput {
