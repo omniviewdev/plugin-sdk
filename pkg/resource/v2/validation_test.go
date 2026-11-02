@@ -108,6 +108,55 @@ func TestOptionalEmptyTokensReject(t *testing.T) {
 	}
 }
 
+func TestSchemaDocumentByteBudgetDoesNotCountBytesAsFields(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		size   int
+		reject bool
+	}{
+		{"above field count", maxDomainFields + 1, false},
+		{"document boundary", MaxDocumentBytes, false},
+		{"above document boundary", MaxDocumentBytes + 1, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			const prefix = `{"type":"object","description":"`
+			const suffix = `"}`
+			document := SchemaDocument{
+				Reference: SchemaDocumentReference{ID: "schema", Revision: "revision"},
+				Dialect:   "json-schema",
+				Document:  json.RawMessage(prefix + strings.Repeat("a", test.size-len(prefix)-len(suffix)) + suffix),
+			}
+			check := func(operation string, err error) {
+				t.Helper()
+				if test.reject {
+					if ErrorCode(err) != "RESOURCE_LIMIT" {
+						t.Fatalf("%s admitted an oversized document: %v", operation, err)
+					}
+				} else if err != nil {
+					t.Fatalf("%s rejected a bounded document: %v", operation, err)
+				}
+			}
+			_, err := ToProtoSchemaDocument(document)
+			check("protobuf encode", err)
+			seed := document
+			seed.Document = json.RawMessage(`{}`)
+			message, err := ToProtoSchemaDocument(seed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			message.Document = document.Document
+			_, err = FromProtoSchemaDocument(message)
+			check("protobuf decode", err)
+			encoded, err := json.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded SchemaDocument
+			check("JSON decode", json.Unmarshal(encoded, &decoded))
+		})
+	}
+}
+
 func TestSchemaDocumentBindingAndLocalRoot(t *testing.T) {
 	ref := SchemaDocumentReference{ID: "shared-document", Revision: "doc-1"}
 	binding := SchemaBinding{
