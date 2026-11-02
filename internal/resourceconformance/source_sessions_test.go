@@ -3,6 +3,8 @@ package resourceconformance
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -81,6 +83,9 @@ func newSessionController(p *nativeProvider) *sessionController {
 				}
 			}
 			<-ctx.Done()
+			if err := os.WriteFile(filepath.Join(p.state, in.Target.Route.Connection+".source-cancelled"), []byte("cancelled"), 0o600); err != nil {
+				return err
+			}
 			return ctx.Err()
 		}}, nil
 	}
@@ -114,7 +119,7 @@ func TestCurrentSDKSourceSessions(t *testing.T) {
 			if name == "empty" {
 				profile = "source-sessions-empty"
 			}
-			p, _, stop := startNativeProfile(t, profile)
+			p, receipts, stop := startNativeProfile(t, profile)
 			defer stop()
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
@@ -182,6 +187,10 @@ func TestCurrentSDKSourceSessions(t *testing.T) {
 					require.Equal(t, "paused", f.Changes.Changes[0].Observation.Record.Body.Map["state"].String)
 					break
 				}
+			}
+			if mode == resource.SourceModeSnapshotAndUpdates {
+				stream.Close()
+				waitReceipt(t, filepath.Join(receipts, s.Name+".source-cancelled"))
 			}
 			require.True(t, ended)
 			n := 0

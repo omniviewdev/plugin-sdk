@@ -133,7 +133,10 @@ type SourceStream interface {
 	Close()
 }
 
+// SourceRequest is passed to Registration.Source. Limits are the session
+// limits; one Changes call must stay within Limits.MaxBatchItems.
 type SourceRequest struct {
 	Target         ReadTarget
 	Representation Representation
+	Limits         SourceLimits
 }

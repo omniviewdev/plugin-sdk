@@ -44,7 +44,7 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 				break
 			}
 		}
-		err = registration.Source(sourceCtx, client, SourceRequest{Target: target, Representation: representation}, fenced)
+		err = registration.Source(sourceCtx, client, SourceRequest{Target: target, Representation: representation, Limits: request.Limits}, fenced)
 		if fenced.reset.Load() {
 			return nil
 		}
