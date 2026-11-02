@@ -122,6 +122,9 @@ type maliciousServer struct {
 }
 
 func (s *maliciousServer) Call(ctx context.Context, in *resourcepb.Request) (*resourcepb.Response, error) {
+	if in.GetFeatures() != nil {
+		return &resourcepb.Response{Version: 2, Result: &resourcepb.Response_Features{Features: &resourcepb.FeatureSet{}}}, nil
+	}
 	if in.GetCatalog() != nil {
 		v, err := s.provider.Catalog(ctx, resourcev2.CatalogRequest{})
 		if err != nil {

@@ -6,7 +6,7 @@ func TestSourceQueryOnlyDimension(t *testing.T) {
 	r := phaseRequest(SourceModeSnapshotAndUpdates)
 	values := []string{"repository-a"}
 	r.Target.Scope = append(r.Target.Scope, ScopeConstraint{Dimension: "repository", Match: ScopeOneOf, Values: &values})
-	observation := SourceObservation{Record: codecRecord()}
+	observation := SourceObservation{Record: CompactSourceRecord(codecRecord())}
 	if err := ValidateSourceObservation(r.Target, r.Target.Representation, observation); err != nil {
 		t.Fatalf("query-only dimension rejected observation: %v", err)
 	}

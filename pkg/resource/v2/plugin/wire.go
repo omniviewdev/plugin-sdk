@@ -48,7 +48,11 @@ func limited(s string) error     { return resourcev2.NewError("RESOURCE_LIMIT", 
 func unsupported(s string) error { return resourcev2.NewError("UNSUPPORTED", s) }
 
 // Nodes count raw protobuf message occurrences across the entire frame.
-type wireBudget struct{ fields, nodes int }
+type wireBudget struct {
+	fields, nodes, sourceBatchLimit int
+	source bool
+	legacySchemaClaims bool
+}
 
 type wireMessage struct {
 	descriptor protoreflect.MessageDescriptor
@@ -61,14 +65,29 @@ type wireMessage struct {
 	durationSeconds, durationNanos int64
 
 	schemaUnavailable, schemaReason bool
+	legacyValidationSeen bool
 
 	keys map[wireKey]struct{}
 
 	records, relationshipTargets int
+	sourceBatchLimit int
+	source bool
 }
 
 // ValidateWire admits only the exact negotiated resource descriptor tree, before decoding.
 func ValidateWire(data []byte, descriptor protoreflect.MessageDescriptor) error {
+	return validateWire(data, descriptor, resourcev2.MaxSourceBatchItems)
+}
+
+func validateWire(data []byte, descriptor protoreflect.MessageDescriptor, sourceBatchLimit int) error {
+	return validateWireMode(data, descriptor, sourceBatchLimit, false)
+}
+
+func validateLegacySchemaWire(data []byte, descriptor protoreflect.MessageDescriptor) error {
+	return validateWireMode(data, descriptor, resourcev2.MaxSourceBatchItems, true)
+}
+
+func validateWireMode(data []byte, descriptor protoreflect.MessageDescriptor, sourceBatchLimit int, legacySchemaClaims bool) error {
 	if len(data) > MaxWireBytes {
 		return limited("resource message exceeds byte limit")
 	}
@@ -81,7 +100,7 @@ func ValidateWire(data []byte, descriptor protoreflect.MessageDescriptor) error 
 			return err
 		}
 	}
-	b := wireBudget{}
+	b := wireBudget{sourceBatchLimit: sourceBatchLimit, source: descriptor.FullName() == "omniview.resource.v2.SourceOpenRequest" || descriptor.FullName() == "omniview.resource.v2.SourceFrame", legacySchemaClaims: legacySchemaClaims}
 	return b.message(data, descriptor, 0)
 }
 
@@ -93,7 +112,7 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 	if b.nodes > MaxNodes {
 		return limited("resource nodes exceed limit")
 	}
-	state := wireMessage{descriptor: d, versionField: utilityVersionField(d)}
+	state := wireMessage{descriptor: d, versionField: utilityVersionField(d), sourceBatchLimit: b.sourceBatchLimit, source: b.source}
 	for len(data) > 0 {
 		b.fields++
 		if b.fields > MaxFields {
@@ -104,6 +123,33 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 			return err
 		}
 		data = data[n:]
+		if b.legacySchemaClaims && d.FullName() == "omniview.resource.v2.SchemaBinding" && (number == 5 || number == 6) {
+			if wire != protowire.BytesType {
+				return invalid("wrong protobuf wire type")
+			}
+			if number == 5 {
+				if state.legacyValidationSeen {
+					return invalid("duplicate protobuf field")
+				}
+				state.legacyValidationSeen = true
+			}
+			size, prefix := protowire.ConsumeVarint(data)
+			if prefix < 0 || prefix != protowire.SizeVarint(size) {
+				return invalid("malformed protobuf length")
+			}
+			value, length := protowire.ConsumeBytes(data)
+			if length < 0 {
+				return invalid("malformed protobuf length")
+			}
+			if len(value) > MaxBodyBytes {
+				return limited("schema claim exceeds byte limit")
+			}
+			if !utf8.Valid(value) {
+				return invalid("invalid UTF-8")
+			}
+			data = data[length:]
+			continue
+		}
 		f := d.Fields().ByNumber(number)
 		if err = state.admitField(f); err != nil {
 			return err
@@ -179,8 +225,20 @@ func (s *wireMessage) countRepeated(number protoreflect.FieldNumber) error {
 	}
 	if (s.descriptor.Name() == "SourceSnapshot" || s.descriptor.Name() == "SourceChanges") && number == 1 {
 		s.records++
-		if s.records > resourcev2.MaxSourceBatchItems {
+		if s.records > s.sourceBatchLimit {
 			return limited("source batch exceeds limit")
+		}
+	}
+	if (s.descriptor.Name() == "DocumentCoverage" || s.descriptor.Name() == "DocumentFieldPath") && number == 1 || s.descriptor.Name() == "SourceCoverage" && number == 3 {
+		s.records++
+		if s.records > 256 {
+			return limited("source path or limitation limit")
+		}
+	}
+	if s.source && s.descriptor.Name() == "Coverage" && number == 2 {
+		s.records++
+		if s.records > 256 {
+			return limited("source coverage path limit")
 		}
 	}
 	if s.descriptor.Name() == "RelationshipResolutionInput" && number == 2 {
@@ -332,6 +390,9 @@ func (b *wireBudget) consumeBytes(
 }
 
 func (s *wireMessage) validateBytes(f protoreflect.FieldDescriptor, v []byte) error {
+	if s.source && f.Kind() == protoreflect.StringKind && s.descriptor.Name() != "Value" && len(v) > 64<<10 {
+		return limited("source text field exceeds limit")
+	}
 	if metricCatalogPin(s.descriptor, f.Number()) {
 		if len(v) > resourcev2.MaxCatalogRevisionBytes || !utf8.Valid(v) {
 			return resourcev2.NewError("RESET_REQUIRED", "Invalid metric catalog admission pin.")
@@ -379,7 +440,7 @@ func (s *wireMessage) validateChild(f protoreflect.FieldDescriptor, v []byte) er
 	if f.IsMap() && duplicateWireKey(&s.keys, number, rawEntryKey(v)) {
 		return invalid("duplicate protobuf map key")
 	}
-	if s.descriptor.Name() == "Record" && number == 2 {
+	if (s.descriptor.Name() == "Record" || s.descriptor.Name() == "SourceRecord") && number == 2 {
 		kind, _, _ := protowire.ConsumeTag(v)
 		if kind != wireValueMapField {
 			return invalid("resource body must be a map")

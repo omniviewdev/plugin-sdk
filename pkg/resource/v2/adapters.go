@@ -667,6 +667,11 @@ func validateCapability(v Capability) error {
 		if v.Guarantee != ContinuityGapFree && v.Guarantee != ContinuityBestEffort {
 			return invalid("unsupported source update guarantee")
 		}
+	case Operation("update"):
+		// Legacy advisory updates are inert and do not grant source sessions.
+		if v.Guarantee != ContinuityBestEffort {
+			return invalid("unsupported legacy update guarantee")
+		}
 	default:
 		return invalid("unknown capability operation")
 	}

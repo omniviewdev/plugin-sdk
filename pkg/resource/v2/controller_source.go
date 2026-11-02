@@ -2,10 +2,10 @@ package resourcev2
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 )
 
 // OpenSource dispatches a source session under a route lease and catalog fence.
@@ -35,9 +35,19 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 	if err != nil {
 		return err
 	}
+	foundBinding := false
+	for _, candidate := range descriptor.Representations {
+		if candidate.ID == target.Representation && reflect.DeepEqual(candidate, request.Binding.Representation) {
+			foundBinding = true
+			break
+		}
+	}
+	if !foundBinding {
+		return NewError("RESET_REQUIRED", "Source binding changed.")
+	}
 	sourceCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	fenced := &controllerSourceEmitter[T]{controller: c, route: target.Route, descriptor: descriptor, target: target, emitter: emitter, cancel: cancel, streamCtx: streamCtx, leaseCtx: ctx, updates: operation == OperationSourceUpdates, nextCatalogCheck: time.Now().Add(time.Second)}
+	fenced := &controllerSourceEmitter[T]{controller: c, route: target.Route, descriptor: descriptor, target: target, binding: request.Binding.Representation, emitter: emitter, cancel: cancel, streamCtx: streamCtx, leaseCtx: ctx, updates: operation == OperationSourceUpdates, nextCatalogCheck: time.Now().Add(time.Second)}
 	if operation == OperationSourceUpdates {
 		var representation Representation
 		for _, candidate := range descriptor.Representations {
@@ -102,12 +112,6 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 		}
 		if page.Coverage.Reason != "" {
 			reason := page.Coverage.Reason
-			if len(reason) > 256 {
-				reason = reason[:256]
-				for !utf8.ValidString(reason) {
-					reason = reason[:len(reason)-1]
-				}
-			}
 			found := false
 			for _, existing := range coverage.Limitations {
 				if existing == reason {
@@ -129,7 +133,10 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 		}
 		observations := make([]SourceObservation, len(page.Records))
 		for i := range page.Records {
-			observations[i] = SourceObservation{Record: page.Records[i]}
+			if !reflect.DeepEqual(page.Records[i].Representation, request.Binding.Representation) {
+				return NewError("RESET_REQUIRED", "Source binding changed.")
+			}
+			observations[i] = SourceObservation{Record: CompactSourceRecord(page.Records[i])}
 		}
 		if len(observations) != 0 {
 			if err = fenced.Snapshot(ctx, observations); err != nil {
@@ -153,6 +160,7 @@ type controllerSourceEmitter[T any] struct {
 	route            AccessRoute
 	descriptor       ResourceType
 	target           ReadTarget
+	binding          Representation
 	emitter          SourceEmitter
 	reset            atomic.Bool
 	cancel           context.CancelFunc
@@ -207,7 +215,11 @@ func (e *controllerSourceEmitter[T]) Snapshot(ctx context.Context, observations 
 	if err := e.fence(ctx); err != nil {
 		return err
 	}
+	expected := RepresentationRef{ID: e.binding.ID, Revision: e.binding.Revision, SchemaRevision: e.binding.Schema.Revision}
 	for _, observation := range observations {
+		if !reflect.DeepEqual(observation.Record.Representation, expected) {
+			return NewError("RESET_REQUIRED", "Source binding changed.")
+		}
 		if err := checkSourceObservation(e.descriptor, e.target, observation); err != nil {
 			return err
 		}
@@ -224,11 +236,15 @@ func (e *controllerSourceEmitter[T]) Changes(ctx context.Context, changes []Sour
 	if err := e.fence(ctx); err != nil {
 		return err
 	}
+	expected := RepresentationRef{ID: e.binding.ID, Revision: e.binding.Revision, SchemaRevision: e.binding.Schema.Revision}
 	for _, change := range changes {
 		switch change.Kind {
 		case SourceChangeUpsert:
 			if change.Observation == nil || change.Reference != nil || change.SourceRevision != nil {
 				return NewError("PROVIDER_ERROR", "invalid source upsert")
+			}
+			if !reflect.DeepEqual(change.Observation.Record.Representation, expected) {
+				return NewError("RESET_REQUIRED", "Source binding changed.")
 			}
 			if err := checkSourceObservation(e.descriptor, e.target, *change.Observation); err != nil {
 				return err

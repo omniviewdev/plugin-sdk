@@ -31,7 +31,7 @@ func (e *recordingSourceEmitter) Reset(_ context.Context, reason, _ string) erro
 }
 
 func controllerSourceOpen(mode string) SourceOpenRequest {
-	return SourceOpenRequest{SessionID: "session", Generation: "generation", Target: controllerTarget(), Mode: mode, Acquisition: SourceAcquisition{Kind: SourceAcquisitionEnumerate}, Limits: SourceLimits{MaxFrameBytes: MinSourceFrameBytes, MaxBatchItems: 1}}
+	return SourceOpenRequest{SessionID: "session", Generation: "generation", Target: controllerTarget(), Binding: RepresentationBinding{Representation: controllerRepresentation()}, Mode: mode, Acquisition: SourceAcquisition{Kind: SourceAcquisitionEnumerate}, Limits: SourceLimits{MaxFrameBytes: 64 << 10, MaxBatchItems: 1}}
 }
 
 func TestControllerSourcePagesAndCoverage(t *testing.T) {
@@ -245,8 +245,6 @@ func TestControllerLiveSourceRejectsUnboundRecords(t *testing.T) {
 				switch mutation {
 				case "revision":
 					record.Representation.Revision = "unaccepted-revision"
-				case "schema":
-					record.Representation.Schema.State = "unavailable"
 				case "identity":
 					record.Reference.Address.Scope = []ScopeEntry{{Dimension: "undeclared", Value: "value"}}
 				}
@@ -255,7 +253,10 @@ func TestControllerLiveSourceRejectsUnboundRecords(t *testing.T) {
 				}
 				cfg := controllerConfig()
 				cfg.Registrations = []Registration[string]{{Type: "opaque/type", Source: func(ctx context.Context, _ *string, _ SourceRequest, emitter SourceEmitter) error {
-					observation := SourceObservation{Record: record}
+					observation := SourceObservation{Record: CompactSourceRecord(record)}
+					if mutation == "schema" {
+						observation.Record.Representation.SchemaRevision = codecToken("unaccepted-schema")
+					}
 					if phase == "snapshot" {
 						return emitter.Snapshot(ctx, []SourceObservation{observation})
 					}
@@ -270,7 +271,11 @@ func TestControllerLiveSourceRejectsUnboundRecords(t *testing.T) {
 				}}}
 				controller := newTestController(t, cfg)
 				err := controller.OpenSource(acceptedControllerContext(context.Background(), t, controller), controllerSourceOpen(SourceModeSnapshotAndUpdates), &recordingSourceEmitter{})
-				assertControllerCode(t, err, "PROVIDER_ERROR")
+				code := "RESET_REQUIRED"
+				if mutation == "identity" {
+					code = "PROVIDER_ERROR"
+				}
+				assertControllerCode(t, err, code)
 			})
 		}
 	}

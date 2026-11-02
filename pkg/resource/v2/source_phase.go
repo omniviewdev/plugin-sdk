@@ -46,7 +46,7 @@ func (t *SourcePhaseTracker) TransportError(err error) error {
 	if errors.Is(err, io.EOF) && t.phase == 3 {
 		return io.EOF
 	}
-	return NewError("RESET_REQUIRED", "source transport ended before completion")
+	return &ResourceOperationError{Code: "RESET_REQUIRED", Message: "source transport ended before completion", Err: err}
 }
 
 func sourceToken(s string) bool {
@@ -64,11 +64,20 @@ func sourceToken(s string) bool {
 
 // ValidateSourceOpenRequest checks the request's target, acquisition and negotiated limits.
 func ValidateSourceOpenRequest(r SourceOpenRequest) error {
+	if len(r.Binding.Representation.Schema.Document) > 256<<10 {
+		return limited("source open exceeds byte limit")
+	}
 	if !sourceToken(r.SessionID) || !sourceToken(r.Generation) {
 		return invalid("invalid source token")
 	}
 	if err := validateTarget(r.Target); err != nil {
 		return err
+	}
+	if err := validateRepresentation(r.Binding.Representation); err != nil {
+		return err
+	}
+	if r.Binding.Representation.ID != r.Target.Representation {
+		return invalid("source binding differs from target")
 	}
 	if r.Limits.MaxFrameBytes < MinSourceFrameBytes || r.Limits.MaxFrameBytes > MaxSourceFrameBytes || r.Limits.MaxBatchItems == 0 || r.Limits.MaxBatchItems > MaxSourceBatchItems {
 		return invalid("invalid source limits")
@@ -97,6 +106,9 @@ func ValidateSourceOpenRequest(r SourceOpenRequest) error {
 	default:
 		return invalid("invalid source acquisition")
 	}
+	if sourceOpenWireSize(r) > 256<<10 {
+		return limited("source open exceeds byte limit")
+	}
 	return nil
 }
 
@@ -110,7 +122,7 @@ func sourceContainsReference(target ReadTarget, reference ResourceReference) boo
 
 // ValidateSourceObservation validates a record and binds it to the requested target.
 func ValidateSourceObservation(target ReadTarget, representation string, observation SourceObservation) error {
-	if err := ValidateRecord(observation.Record); err != nil {
+	if err := validateSourceObservationAdapter(observation); err != nil {
 		return err
 	}
 	if observation.Record.Representation.ID != representation || representation != target.Representation || !sourceContainsReference(target, observation.Record.Reference) {
@@ -120,7 +132,10 @@ func ValidateSourceObservation(target ReadTarget, representation string, observa
 }
 
 func checkSourceObservation(descriptor ResourceType, target ReadTarget, observation SourceObservation) error {
-	if err := checkRecord(observation.Record, descriptor, target.Provider, target.Authority, target.Representation, nil, target.Scope); err != nil {
+	if err := ValidateSourceObservation(target, target.Representation, observation); err != nil {
+		return err
+	}
+	if err := ValidateAddress(observation.Record.Reference.Address, descriptor.IdentityDimensions); err != nil {
 		return NewError("PROVIDER_ERROR", "invalid source observation")
 	}
 	return nil
@@ -140,6 +155,10 @@ func checkSourceReference(descriptor ResourceType, target ReadTarget, reference 
 }
 
 func (t *SourcePhaseTracker) checkObservation(observation SourceObservation) error {
+	ref, binding := observation.Record.Representation, t.request.Binding.Representation
+	if ref.ID != binding.ID || ref.Revision != binding.Revision || (ref.SchemaRevision == nil) != (binding.Schema.Revision == nil) || ref.SchemaRevision != nil && *ref.SchemaRevision != *binding.Schema.Revision {
+		return NewError("RESET_REQUIRED", "source binding changed")
+	}
 	if t.descriptor != nil {
 		return checkSourceObservation(*t.descriptor, t.request.Target, observation)
 	}
@@ -170,7 +189,7 @@ func sourceCoverageValid(c SourceCoverage) bool {
 		return false
 	}
 	for _, s := range c.Limitations {
-		if len(s) == 0 || len(s) > 256 || !utf8.ValidString(s) {
+		if len(s) == 0 || len(s) > 64<<10 || !utf8.ValidString(s) {
 			return false
 		}
 	}
@@ -225,7 +244,10 @@ func (t *SourcePhaseTracker) admit(f SourceFrame, size int) error {
 			return bad()
 		}
 		for _, o := range f.Snapshot.Observations {
-			if t.checkObservation(o) != nil {
+			if err := t.checkObservation(o); err != nil {
+				if ErrorCode(err) == "RESET_REQUIRED" {
+					return err
+				}
 				return bad()
 			}
 		}
@@ -243,19 +265,25 @@ func (t *SourcePhaseTracker) admit(f SourceFrame, size int) error {
 			if c != ContinuityGapFree && c != ContinuityBestEffort {
 				return bad()
 			}
-			if t.declaredContinuity != ContinuityGapFree && t.declaredContinuity != ContinuityBestEffort || c == ContinuityGapFree && t.declaredContinuity != ContinuityGapFree {
+			if t.declaredContinuity != ContinuityGapFree && t.declaredContinuity != ContinuityBestEffort || c != t.declaredContinuity {
 				return bad()
 			}
 			phase = 2
 		}
 	case f.Changes != nil:
-		if phase != 2 || len(f.Changes.Changes) > int(t.request.Limits.MaxBatchItems) || f.Changes.Coverage != nil && !sourceCoverageValid(*f.Changes.Coverage) {
+		if phase != 2 || len(f.Changes.Changes) > int(t.request.Limits.MaxBatchItems) || len(f.Changes.Changes) == 0 && f.Changes.Coverage == nil || f.Changes.Coverage != nil && !sourceCoverageValid(*f.Changes.Coverage) {
 			return bad()
 		}
 		for _, c := range f.Changes.Changes {
 			switch c.Kind {
 			case SourceChangeUpsert:
-				if c.Observation == nil || c.Reference != nil || c.SourceRevision != nil || t.checkObservation(*c.Observation) != nil {
+				if c.Observation == nil || c.Reference != nil || c.SourceRevision != nil {
+					return bad()
+				}
+				if err := t.checkObservation(*c.Observation); err != nil {
+					if ErrorCode(err) == "RESET_REQUIRED" {
+						return err
+					}
 					return bad()
 				}
 			case SourceChangeRemove:
@@ -277,7 +305,7 @@ func (t *SourcePhaseTracker) admit(f SourceFrame, size int) error {
 		}
 		phase = 3
 	case f.Failed != nil:
-		if !IsErrorCode(f.Failed.Code) || len(f.Failed.Message) > MaxSourceMessageBytes || !utf8.ValidString(f.Failed.Message) {
+		if phase == 0 || !IsErrorCode(f.Failed.Code) || len(f.Failed.Message) > MaxSourceMessageBytes || !utf8.ValidString(f.Failed.Message) {
 			return bad()
 		}
 		phase = 3

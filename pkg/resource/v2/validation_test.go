@@ -331,6 +331,61 @@ func TestSourceUpdatesCatalogCapability(t *testing.T) {
 	}
 }
 
+func TestLegacyDeclarationsAreInert(t *testing.T) {
+	features := FeatureSet{Traits: []Feature{"bestEffortUpdates"}}
+	if err := ValidateFeatures(features); err != nil {
+		t.Fatal(err)
+	}
+	if features.Has(FeatureSourceSessions) {
+		t.Fatal("legacy feature granted source sessions")
+	}
+	if err := ValidateFeatures(FeatureSet{Traits: []Feature{"bestEffortUpdates", "bestEffortUpdates"}}); ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatalf("duplicate legacy feature: %v", err)
+	}
+	if err := ValidateFeatures(FeatureSet{Traits: []Feature{"unknownFeature"}}); ErrorCode(err) != "UNSUPPORTED" {
+		t.Fatalf("unknown feature: %v", err)
+	}
+
+	target := controllerTarget()
+	catalog := Catalog{
+		Provider: target.Provider, Revision: "catalog-1", Coverage: Coverage{Kind: "complete"},
+		Types: []ResourceType{{
+			Type: target.Type, Representations: []Representation{controllerRepresentation()},
+			Capabilities: []Capability{
+				{Operation: OperationEnumerate, Scope: QueryScope{}},
+				{Operation: "update", Scope: QueryScope{}, Guarantee: "bestEffort"},
+			},
+		}},
+	}
+	wire, err := ToProtoCatalog(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err = FromProtoCatalog(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AdmitCatalogOperation(catalog, EnumerateRequest{Target: target}); err != nil {
+		t.Fatalf("finite operation rejected: %v", err)
+	}
+	if _, err := AdmitCatalogOperation(catalog, target); ErrorCode(err) != "UNSUPPORTED" {
+		t.Fatalf("legacy update granted source updates: %v", err)
+	}
+	catalog.Types[0].AcquireOnConnect = true
+	if err := ValidateCatalog(catalog); ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatalf("legacy update granted automatic source acquisition: %v", err)
+	}
+	catalog.Types[0].AcquireOnConnect = false
+	catalog.Types[0].Capabilities[1].Guarantee = "gapFree"
+	if err := ValidateCatalog(catalog); ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatalf("unknown legacy guarantee accepted: %v", err)
+	}
+	catalog.Types[0].Capabilities[1].Operation = "unknownOperation"
+	if err := ValidateCatalog(catalog); ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatalf("unknown operation accepted: %v", err)
+	}
+}
+
 func TestUnavailableSchemaKeepsKnownProvenance(t *testing.T) {
 	binding := SchemaBinding{
 		State:       "unavailable",

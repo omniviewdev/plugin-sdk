@@ -30,11 +30,11 @@ const (
 	SourceChangeUpsert = "upsert"
 	SourceChangeRemove = "remove"
 
-	MaxSourceBatchItems   = MaxPageRecords
-	MinSourceFrameBytes   = 64 << 10
-	MaxSourceFrameBytes   = MaxMessageBytes
+	MaxSourceBatchItems   = 256
+	MinSourceFrameBytes   = 1
+	MaxSourceFrameBytes   = 4 << 20
 	MaxSourceTokenBytes   = 128
-	MaxSourceLimitations  = 16
+	MaxSourceLimitations  = 256
 	MaxSourceMessageBytes = 1024
 )
 
@@ -55,6 +55,46 @@ type SourceAcquisition struct {
 	Language string `json:"language,omitempty"`
 	Query    *Value `json:"query,omitempty"`
 }
+type RepresentationBinding struct {
+	Representation Representation `json:"representation"`
+}
+
+type RepresentationRef struct {
+	ID             string  `json:"id"`
+	Revision       string  `json:"revision"`
+	SchemaRevision *string `json:"schemaRevision,omitempty"`
+}
+
+type FieldPathSegment struct {
+	Member *string `json:"member,omitempty"`
+	Index  *uint32 `json:"index,omitempty"`
+}
+
+type DocumentFieldPath struct {
+	Segments []FieldPathSegment `json:"segments"`
+}
+
+type DocumentCoverage struct {
+	KnownAbsent []DocumentFieldPath `json:"knownAbsent"`
+}
+
+type SourceRecord struct {
+	Reference      ResourceReference `json:"reference"`
+	Body           Value             `json:"body"`
+	Representation RepresentationRef `json:"representation"`
+	Coverage       Coverage          `json:"coverage"`
+	SourceRevision *string           `json:"sourceRevision,omitempty"`
+}
+
+// CompactSourceRecord removes the per-record schema after its binding is admitted.
+func CompactSourceRecord(record Record) SourceRecord {
+	return SourceRecord{
+		Reference: record.Reference, Body: record.Body, Coverage: record.Coverage,
+		SourceRevision: record.SourceRevision,
+		Representation: RepresentationRef{ID: record.Representation.ID, Revision: record.Representation.Revision, SchemaRevision: record.Representation.Schema.Revision},
+	}
+}
+
 
 type SourceOpenRequest struct {
 	SessionID   string            `json:"sessionId"`
@@ -63,6 +103,7 @@ type SourceOpenRequest struct {
 	Mode        string            `json:"mode"`
 	Acquisition SourceAcquisition `json:"acquisition"`
 	Limits      SourceLimits      `json:"limits"`
+	Binding     RepresentationBinding `json:"binding"`
 }
 
 type SourceCoverage struct {
@@ -72,9 +113,10 @@ type SourceCoverage struct {
 }
 
 type SourceObservation struct {
-	Record      Record            `json:"record"`
-	Metadata    *ResourceMetadata `json:"metadata,omitempty"`
-	DisplayName *string           `json:"displayName,omitempty"`
+	Record           SourceRecord      `json:"record"`
+	Metadata         *ResourceMetadata `json:"metadata,omitempty"`
+	DisplayName      *string           `json:"displayName,omitempty"`
+	DocumentCoverage DocumentCoverage  `json:"documentCoverage"`
 }
 
 type SourceChange struct {
@@ -84,27 +126,34 @@ type SourceChange struct {
 	SourceRevision *string            `json:"sourceRevision,omitempty"`
 }
 
-type SourceBegin struct{ Mode string }
-type SourceSnapshot struct{ Observations []SourceObservation }
+type SourceBegin struct{ Mode string `json:"mode"` }
+type SourceSnapshot struct{ Observations []SourceObservation `json:"observations"` }
 type SourceSnapshotEnd struct {
-	Coverage   SourceCoverage
-	Continuity string
+	Coverage   SourceCoverage `json:"coverage"`
+	Continuity string         `json:"continuity"`
 }
 type SourceChanges struct {
-	Changes  []SourceChange
-	Coverage *SourceCoverage
+	Changes  []SourceChange  `json:"changes"`
+	Coverage *SourceCoverage `json:"coverage,omitempty"`
 }
-type SourceReset struct{ Reason, Message string }
-type SourceFailure struct{ Code, Message string }
+type SourceReset struct {
+	Reason string `json:"reason"`
+	Message string `json:"message"`
+}
+type SourceFailure struct {
+	Code string `json:"code"`
+	Message string `json:"message"`
+}
 type SourceFrame struct {
-	SessionID, Generation string
-	Sequence              uint64
-	Begin                 *SourceBegin
-	Snapshot              *SourceSnapshot
-	SnapshotEnd           *SourceSnapshotEnd
-	Changes               *SourceChanges
-	Reset                 *SourceReset
-	Failed                *SourceFailure
+	SessionID  string             `json:"sessionId"`
+	Generation string             `json:"generation"`
+	Sequence   uint64             `json:"-"`
+	Begin      *SourceBegin       `json:"begin,omitempty"`
+	Snapshot   *SourceSnapshot    `json:"snapshot,omitempty"`
+	SnapshotEnd *SourceSnapshotEnd `json:"snapshotEnd,omitempty"`
+	Changes    *SourceChanges     `json:"changes,omitempty"`
+	Reset      *SourceReset       `json:"reset,omitempty"`
+	Failed     *SourceFailure     `json:"failed,omitempty"`
 }
 
 // SourceProvider opens a source session and emits its snapshot and updates.
@@ -127,8 +176,7 @@ type SourceStreamOpener interface {
 
 // SourceStream is a caller-owned source session. Callers must Close the stream
 // or cancel the opening context when they stop receiving, including on errors.
-// Close is idempotent. A server send-stall watchdog cancels provider work but
-// cannot terminate a blocked gRPC send without transport cancellation.
+// Close is idempotent and unblocks a concurrent Recv.
 type SourceStream interface {
 	Recv() (SourceFrame, error)
 	Close()

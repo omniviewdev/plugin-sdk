@@ -38,6 +38,8 @@ const (
 	FeatureConnectionMetadata Feature = "connectionMetadata"
 	// FeatureSourceSessions enables phased source snapshot/update sessions.
 	FeatureSourceSessions Feature = "sourceSessions"
+	// featureLegacyBestEffortUpdates is accepted for old providers but grants no transport.
+	featureLegacyBestEffortUpdates Feature = "bestEffortUpdates"
 )
 
 // FeatureSet lists ancillary traits available on this provider or transport.
@@ -83,6 +85,7 @@ func ValidateFeatures(f FeatureSet) error {
 			FeatureActionCatalog,
 			FeatureStreamingActions,
 			FeatureSourceSessions,
+			featureLegacyBestEffortUpdates,
 			FeatureConnectionMetadata:
 		default:
 			return NewError("UNSUPPORTED", "unknown ancillary feature")

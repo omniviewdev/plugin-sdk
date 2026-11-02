@@ -337,6 +337,8 @@ Negotiate remote features through [`FeatureNegotiator`](../pkg/resource/v2/featu
 
 Source sessions begin with a framework-issued `begin` frame. Providers emit snapshot observations and call `EndSnapshot` with coverage and continuity before sending changes. Snapshot-only sessions terminate at the boundary; update sessions terminate with reset or failure. Catalog `sourceUpdates` capabilities declare `gapFree` or `bestEffort` continuity. `AcquireOnConnect` requires that capability. Hosts supply session and generation tokens and frame limits, and must reopen after a reset.
 
+`SourceOpenRequest.Binding` supplies the admitted representation once per generation. Observations carry a compact `RepresentationRef`, the tagged `Value` body, per-record coverage, and independent `DocumentCoverage.KnownAbsent` paths. The reference must match the binding's ID, revision, and schema-revision presence and value. Frame sequences use unsigned decimal strings in JSON; protobuf retains `uint64`. `CompactSourceRecord` converts a P45 record after the caller verifies its full representation against the admitted binding.
+
 Framework owns stream channels and completion. Send events and return; never close framework-owned channels. See [stream lifetime contracts](resource-v2-contracts.md#utility-and-stream-lifetime).
 
 ### Resource log-session ownership

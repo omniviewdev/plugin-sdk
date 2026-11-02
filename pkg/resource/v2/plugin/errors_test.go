@@ -115,7 +115,10 @@ type actionCatalogServer struct {
 	resourcepb.UnimplementedResourceProviderServer
 }
 
-func (*actionCatalogServer) Call(ctx context.Context, _ *resourcepb.Request) (*resourcepb.Response, error) {
+func (*actionCatalogServer) Call(ctx context.Context, request *resourcepb.Request) (*resourcepb.Response, error) {
+	if request.GetFeatures() != nil {
+		return &resourcepb.Response{Version: 2, Result: &resourcepb.Response_Features{Features: &resourcepb.FeatureSet{}}}, nil
+	}
 	p := &streamProvider{}
 	v, err := p.Catalog(ctx, resourcev2.CatalogRequest{})
 	if err != nil {

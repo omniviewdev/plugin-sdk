@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"sync/atomic"
 
 	"google.golang.org/grpc"
 
@@ -11,12 +12,22 @@ import (
 
 // Client adapts remote resource operations to domain interfaces. Its method set
 // does not imply optional provider support; negotiate Features before using it.
-type Client struct{ conn grpc.ClientConnInterface }
+type Client struct {
+	conn grpc.ClientConnInterface
+	featureMode atomic.Uint32
+}
 
 // NewClient binds resource operations to an existing gRPC connection.
 func NewClient(c grpc.ClientConnInterface) *Client { return &Client{conn: c} }
 
 func (c *Client) call(ctx context.Context, r *resourcepb.Request) (*resourcepb.Response, error) {
+	legacyEligible := r.GetCatalog() != nil || r.GetGet() != nil || r.GetEnumerate() != nil ||
+		r.GetNativeQuery() != nil || r.GetMutate() != nil
+	if legacyEligible && c.featureMode.Load() == 0 {
+		if _, err := c.Features(ctx); err != nil {
+			return nil, err
+		}
+	}
 	var err error
 	ctx, err = outgoingSession(ctx)
 	if err != nil {
@@ -24,7 +35,7 @@ func (c *Client) call(ctx context.Context, r *resourcepb.Request) (*resourcepb.R
 	}
 	r.Version = resourcev2.WireVersion
 	out := &resourcepb.Response{}
-	e := &envelope{message: out}
+	e := &envelope{message: out, legacySchemaClaims: legacyEligible && c.featureMode.Load() == 2}
 	if err := c.conn.Invoke(
 		ctx,
 		resourcepb.ResourceProvider_Call_FullMethodName,

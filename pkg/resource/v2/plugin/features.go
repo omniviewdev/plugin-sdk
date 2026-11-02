@@ -27,5 +27,10 @@ func (c *Client) Features(ctx context.Context) (resourcev2.FeatureSet, error) {
 	if err := resourcev2.ValidateFeatures(features); err != nil {
 		return resourcev2.FeatureSet{}, err
 	}
+	if features.Has(resourcev2.FeatureSourceSessions) {
+		c.featureMode.Store(1)
+	} else {
+		c.featureMode.CompareAndSwap(0, 2)
+	}
 	return features, nil
 }

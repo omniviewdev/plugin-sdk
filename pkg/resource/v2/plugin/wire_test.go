@@ -206,10 +206,10 @@ func TestRawResponseAdmission(t *testing.T) {
 		s := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{data: data}))
 		RegisterServer(s, &countProvider{})
 		c := NewClient(pipe(t, s))
-		_, err := c.Catalog(
-			context.Background(),
-			resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}},
-		)
+		c.featureMode.Store(1) // This fixture supplies raw responses, not a feature RPC.
+		_, err := c.call(context.Background(), &resourcepb.Request{
+			Operation: &resourcepb.Request_Catalog{Catalog: &resourcepb.AccessRoute{Connection: "c"}},
+		})
 		want := "INVALID_REQUEST"
 		if len(data) == 4 && data[2] == 120 {
 			want = "UNSUPPORTED"
@@ -243,6 +243,7 @@ func TestRawValueControls(t *testing.T) {
 		s := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{data: payload}))
 		RegisterServer(s, &countProvider{})
 		c := NewClient(pipe(t, s))
+		c.featureMode.Store(1) // This fixture supplies raw responses, not a feature RPC.
 		out, err := c.call(
 			context.Background(),
 			&resourcepb.Request{

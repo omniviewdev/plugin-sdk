@@ -86,7 +86,7 @@ func validateSourceCoverageAdapter(v SourceCoverage) error {
 		return limited("source limitations limit")
 	}
 	for _, s := range v.Limitations {
-		if len(s) > 256 {
+		if len(s) > 64<<10 {
 			return limited("source limitation length")
 		}
 		if err := text(s, true); err != nil {
@@ -96,7 +96,10 @@ func validateSourceCoverageAdapter(v SourceCoverage) error {
 	return nil
 }
 func validateSourceObservationAdapter(v SourceObservation) error {
-	if err := ValidateRecord(v.Record); err != nil {
+	if err := validateSourceRecord(v.Record); err != nil {
+		return err
+	}
+	if err := validateDocumentCoverage(v.DocumentCoverage, v.Record.Body); err != nil {
 		return err
 	}
 	if v.Metadata != nil {
@@ -158,6 +161,9 @@ func validateSourceSnapshotEndAdapter(v SourceSnapshotEnd) error {
 func validateSourceChangesAdapter(v SourceChanges) error {
 	if len(v.Changes) > MaxSourceBatchItems {
 		return limited("source batch limit")
+	}
+	if len(v.Changes) == 0 && v.Coverage == nil {
+		return invalid("source changes contain no information")
 	}
 	for _, c := range v.Changes {
 		if err := validateSourceChangeAdapter(c); err != nil {
@@ -276,13 +282,19 @@ func (d *adapterDecoder) sourceAcquisition(p *resourcepb.SourceAcquisition) Sour
 	}
 }
 func toSourceOpenRequest(v SourceOpenRequest) *resourcepb.SourceOpenRequest {
-	return &resourcepb.SourceOpenRequest{Version: WireVersion, SessionId: v.SessionID, Generation: v.Generation, Target: toReadTarget(v.Target), Mode: v.Mode, Acquisition: toSourceAcquisition(v.Acquisition), Limits: toSourceLimits(v.Limits)}
+	return &resourcepb.SourceOpenRequest{Version: WireVersion, SessionId: v.SessionID, Generation: v.Generation, Target: toReadTarget(v.Target), Mode: v.Mode, Acquisition: toSourceAcquisition(v.Acquisition), Limits: toSourceLimits(v.Limits), Binding: &resourcepb.RepresentationBinding{Representation: toRepresentation(v.Binding.Representation)}}
 }
 func (d *adapterDecoder) sourceOpenRequest(p *resourcepb.SourceOpenRequest) SourceOpenRequest {
 	if p.GetVersion() != WireVersion {
 		d.fail("invalid wire version")
 	}
-	return SourceOpenRequest{SessionID: p.GetSessionId(), Generation: p.GetGeneration(), Target: d.target(p.GetTarget()), Mode: p.GetMode(), Acquisition: d.sourceAcquisition(p.GetAcquisition()), Limits: d.sourceLimits(p.GetLimits())}
+	var binding RepresentationBinding
+	if p.GetBinding() == nil {
+		d.fail("missing representation binding")
+	} else {
+		binding.Representation = d.representation(p.GetBinding().GetRepresentation())
+	}
+	return SourceOpenRequest{SessionID: p.GetSessionId(), Generation: p.GetGeneration(), Target: d.target(p.GetTarget()), Mode: p.GetMode(), Acquisition: d.sourceAcquisition(p.GetAcquisition()), Limits: d.sourceLimits(p.GetLimits()), Binding: binding}
 }
 func toSourceCoverage(v SourceCoverage) *resourcepb.SourceCoverage {
 	return &resourcepb.SourceCoverage{Enumeration: v.Enumeration, Consistency: v.Consistency, Limitations: copyStrings(v.Limitations)}
@@ -295,7 +307,8 @@ func (d *adapterDecoder) sourceCoverage(p *resourcepb.SourceCoverage) SourceCove
 	return SourceCoverage{Enumeration: p.GetEnumeration(), Consistency: p.GetConsistency(), Limitations: copyStrings(p.GetLimitations())}
 }
 func toSourceObservation(v SourceObservation) *resourcepb.SourceObservation {
-	p := &resourcepb.SourceObservation{Record: toRecord(v.Record), DisplayName: copyToken(v.DisplayName)}
+	r := v.Record
+	p := &resourcepb.SourceObservation{Record: &resourcepb.SourceRecord{Reference: toResourceReference(r.Reference), Body: toValue(r.Body), Representation: &resourcepb.RepresentationRef{Id: r.Representation.ID, Revision: r.Representation.Revision, SchemaRevision: copyToken(r.Representation.SchemaRevision)}, Coverage: toCoverage(r.Coverage), SourceRevision: copyToken(r.SourceRevision)}, DisplayName: copyToken(v.DisplayName), DocumentCoverage: toDocumentCoverage(v.DocumentCoverage)}
 	if v.Metadata != nil {
 		p.Metadata = toResourceMetadata(*v.Metadata)
 	}
@@ -306,7 +319,13 @@ func (d *adapterDecoder) sourceObservation(p *resourcepb.SourceObservation) Sour
 		d.fail("missing source observation")
 		return SourceObservation{}
 	}
-	v := SourceObservation{Record: d.record(p.GetRecord()), DisplayName: copyToken(p.DisplayName)}
+	record := p.GetRecord()
+	if record == nil || record.GetRepresentation() == nil {
+		d.fail("missing source record or representation")
+		return SourceObservation{}
+	}
+	ref := record.GetRepresentation()
+	v := SourceObservation{Record: SourceRecord{Reference: d.reference(record.GetReference()), Body: d.value(record.GetBody()), Representation: RepresentationRef{ID: ref.GetId(), Revision: ref.GetRevision(), SchemaRevision: copyToken(ref.SchemaRevision)}, Coverage: d.coverage(record.GetCoverage()), SourceRevision: copyToken(record.SourceRevision)}, DisplayName: copyToken(p.DisplayName), DocumentCoverage: d.documentCoverage(p.GetDocumentCoverage())}
 	if p.GetMetadata() != nil {
 		m := d.metadata(p.GetMetadata())
 		v.Metadata = &m

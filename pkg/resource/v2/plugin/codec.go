@@ -22,6 +22,8 @@ type envelope struct {
 	legacyExec      bool
 	forceStrict     bool
 	legacyValidator func([]byte) error
+	sourceBatchLimit int
+	legacySchemaClaims bool
 }
 type strictCodec struct{ fallback encoding.CodecV2 }
 
@@ -80,6 +82,16 @@ func decodeResource(data mem.BufferSlice, p proto.Message, e *envelope, wrapped 
 	if data.Len() > MaxWireBytes {
 		return limited("resource message exceeds byte limit")
 	}
+	switch p.ProtoReflect().Descriptor().FullName() {
+	case "omniview.resource.v2.SourceOpenRequest":
+		if data.Len() > 256<<10 {
+			return limited("source open exceeds byte limit")
+		}
+	case "omniview.resource.v2.SourceFrame":
+		if data.Len() > resourcev2.MaxSourceFrameBytes {
+			return limited("source frame exceeds byte limit")
+		}
+	}
 	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
 	defer buf.Free()
 	var err error
@@ -88,11 +100,18 @@ func decodeResource(data mem.BufferSlice, p proto.Message, e *envelope, wrapped 
 		err = e.legacyValidator(buf.ReadOnlyData())
 	case wrapped && e.legacyExec:
 		err = ValidateLegacyExecWire(buf.ReadOnlyData())
+	case wrapped && e.legacySchemaClaims:
+		err = validateLegacySchemaWire(buf.ReadOnlyData(), p.ProtoReflect().Descriptor())
+	case wrapped && e.sourceBatchLimit > 0:
+		err = validateWire(buf.ReadOnlyData(), p.ProtoReflect().Descriptor(), e.sourceBatchLimit)
 	default:
 		err = ValidateWire(buf.ReadOnlyData(), p.ProtoReflect().Descriptor())
 	}
 	if err != nil {
 		return err
+	}
+	if wrapped && e.legacySchemaClaims {
+		return (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(buf.ReadOnlyData(), p)
 	}
 	return proto.Unmarshal(buf.ReadOnlyData(), p)
 }
