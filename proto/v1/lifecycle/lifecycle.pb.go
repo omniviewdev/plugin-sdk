@@ -72,12 +72,13 @@ func (ServingStatus) EnumDescriptor() ([]byte, []int) {
 }
 
 type GetInfoResponse struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	PluginId           string                 `protobuf:"bytes,1,opt,name=plugin_id,json=pluginId,proto3" json:"plugin_id,omitempty"`
-	Version            string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
-	SdkProtocolVersion int32                  `protobuf:"varint,3,opt,name=sdk_protocol_version,json=sdkProtocolVersion,proto3" json:"sdk_protocol_version,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	PluginId               string                 `protobuf:"bytes,1,opt,name=plugin_id,json=pluginId,proto3" json:"plugin_id,omitempty"`
+	Version                string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	SdkProtocolVersion     int32                  `protobuf:"varint,3,opt,name=sdk_protocol_version,json=sdkProtocolVersion,proto3" json:"sdk_protocol_version,omitempty"`
+	HostConnectionsVersion uint32                 `protobuf:"varint,4,opt,name=host_connections_version,json=hostConnectionsVersion,proto3" json:"host_connections_version,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *GetInfoResponse) Reset() {
@@ -131,6 +132,109 @@ func (x *GetInfoResponse) GetSdkProtocolVersion() int32 {
 	return 0
 }
 
+func (x *GetInfoResponse) GetHostConnectionsVersion() uint32 {
+	if x != nil {
+		return x.HostConnectionsVersion
+	}
+	return 0
+}
+
+type BindHostServicesRequest struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	HostConnectionsBrokerId uint32                 `protobuf:"varint,1,opt,name=host_connections_broker_id,json=hostConnectionsBrokerId,proto3" json:"host_connections_broker_id,omitempty"`
+	Version                 uint32                 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *BindHostServicesRequest) Reset() {
+	*x = BindHostServicesRequest{}
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BindHostServicesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BindHostServicesRequest) ProtoMessage() {}
+
+func (x *BindHostServicesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BindHostServicesRequest.ProtoReflect.Descriptor instead.
+func (*BindHostServicesRequest) Descriptor() ([]byte, []int) {
+	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *BindHostServicesRequest) GetHostConnectionsBrokerId() uint32 {
+	if x != nil {
+		return x.HostConnectionsBrokerId
+	}
+	return 0
+}
+
+func (x *BindHostServicesRequest) GetVersion() uint32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+type BindHostServicesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BindHostServicesResponse) Reset() {
+	*x = BindHostServicesResponse{}
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BindHostServicesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BindHostServicesResponse) ProtoMessage() {}
+
+func (x *BindHostServicesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BindHostServicesResponse.ProtoReflect.Descriptor instead.
+func (*BindHostServicesResponse) Descriptor() ([]byte, []int) {
+	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *BindHostServicesResponse) GetVersion() uint32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
 type GetCapabilitiesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Capabilities  []string               `protobuf:"bytes,1,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
@@ -140,7 +244,7 @@ type GetCapabilitiesResponse struct {
 
 func (x *GetCapabilitiesResponse) Reset() {
 	*x = GetCapabilitiesResponse{}
-	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[1]
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -152,7 +256,7 @@ func (x *GetCapabilitiesResponse) String() string {
 func (*GetCapabilitiesResponse) ProtoMessage() {}
 
 func (x *GetCapabilitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[1]
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -165,7 +269,7 @@ func (x *GetCapabilitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCapabilitiesResponse.ProtoReflect.Descriptor instead.
 func (*GetCapabilitiesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{1}
+	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *GetCapabilitiesResponse) GetCapabilities() []string {
@@ -184,7 +288,7 @@ type HealthCheckResponse struct {
 
 func (x *HealthCheckResponse) Reset() {
 	*x = HealthCheckResponse{}
-	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[2]
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -196,7 +300,7 @@ func (x *HealthCheckResponse) String() string {
 func (*HealthCheckResponse) ProtoMessage() {}
 
 func (x *HealthCheckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[2]
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -209,7 +313,7 @@ func (x *HealthCheckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthCheckResponse.ProtoReflect.Descriptor instead.
 func (*HealthCheckResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{2}
+	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *HealthCheckResponse) GetStatus() ServingStatus {
@@ -231,7 +335,7 @@ type ProfilingStatusResponse struct {
 
 func (x *ProfilingStatusResponse) Reset() {
 	*x = ProfilingStatusResponse{}
-	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[3]
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -243,7 +347,7 @@ func (x *ProfilingStatusResponse) String() string {
 func (*ProfilingStatusResponse) ProtoMessage() {}
 
 func (x *ProfilingStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[3]
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -256,7 +360,7 @@ func (x *ProfilingStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfilingStatusResponse.ProtoReflect.Descriptor instead.
 func (*ProfilingStatusResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{3}
+	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ProfilingStatusResponse) GetRunning() bool {
@@ -291,11 +395,17 @@ var File_proto_v1_lifecycle_lifecycle_proto protoreflect.FileDescriptor
 
 const file_proto_v1_lifecycle_lifecycle_proto_rawDesc = "" +
 	"\n" +
-	"\"proto/v1/lifecycle/lifecycle.proto\x12\x19omniview.sdk.lifecycle.v1\x1a\x1bgoogle/protobuf/empty.proto\"z\n" +
+	"\"proto/v1/lifecycle/lifecycle.proto\x12\x19omniview.sdk.lifecycle.v1\x1a\x1bgoogle/protobuf/empty.proto\"\xb4\x01\n" +
 	"\x0fGetInfoResponse\x12\x1b\n" +
 	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x120\n" +
-	"\x14sdk_protocol_version\x18\x03 \x01(\x05R\x12sdkProtocolVersion\"=\n" +
+	"\x14sdk_protocol_version\x18\x03 \x01(\x05R\x12sdkProtocolVersion\x128\n" +
+	"\x18host_connections_version\x18\x04 \x01(\rR\x16hostConnectionsVersion\"p\n" +
+	"\x17BindHostServicesRequest\x12;\n" +
+	"\x1ahost_connections_broker_id\x18\x01 \x01(\rR\x17hostConnectionsBrokerId\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\rR\aversion\"4\n" +
+	"\x18BindHostServicesResponse\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\rR\aversion\"=\n" +
 	"\x17GetCapabilitiesResponse\x12\"\n" +
 	"\fcapabilities\x18\x01 \x03(\tR\fcapabilities\"W\n" +
 	"\x13HealthCheckResponse\x12@\n" +
@@ -308,12 +418,13 @@ const file_proto_v1_lifecycle_lifecycle_proto_rawDesc = "" +
 	"\rServingStatus\x12\x1a\n" +
 	"\x16SERVING_STATUS_UNKNOWN\x10\x00\x12\x1a\n" +
 	"\x16SERVING_STATUS_SERVING\x10\x01\x12\x1e\n" +
-	"\x1aSERVING_STATUS_NOT_SERVING\x10\x022\xf8\x02\n" +
+	"\x1aSERVING_STATUS_NOT_SERVING\x10\x022\xf5\x03\n" +
 	"\x0fPluginLifecycle\x12M\n" +
 	"\aGetInfo\x12\x16.google.protobuf.Empty\x1a*.omniview.sdk.lifecycle.v1.GetInfoResponse\x12]\n" +
 	"\x0fGetCapabilities\x12\x16.google.protobuf.Empty\x1a2.omniview.sdk.lifecycle.v1.GetCapabilitiesResponse\x12U\n" +
 	"\vHealthCheck\x12\x16.google.protobuf.Empty\x1a..omniview.sdk.lifecycle.v1.HealthCheckResponse\x12`\n" +
-	"\x12GetProfilingStatus\x12\x16.google.protobuf.Empty\x1a2.omniview.sdk.lifecycle.v1.ProfilingStatusResponseBBZ@github.com/omniviewdev/plugin-sdk/proto/v1/lifecycle;lifecyclepbb\x06proto3"
+	"\x12GetProfilingStatus\x12\x16.google.protobuf.Empty\x1a2.omniview.sdk.lifecycle.v1.ProfilingStatusResponse\x12{\n" +
+	"\x10BindHostServices\x122.omniview.sdk.lifecycle.v1.BindHostServicesRequest\x1a3.omniview.sdk.lifecycle.v1.BindHostServicesResponseBBZ@github.com/omniviewdev/plugin-sdk/proto/v1/lifecycle;lifecyclepbb\x06proto3"
 
 var (
 	file_proto_v1_lifecycle_lifecycle_proto_rawDescOnce sync.Once
@@ -328,27 +439,31 @@ func file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_v1_lifecycle_lifecycle_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_v1_lifecycle_lifecycle_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_proto_v1_lifecycle_lifecycle_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_proto_v1_lifecycle_lifecycle_proto_goTypes = []any{
-	(ServingStatus)(0),              // 0: omniview.sdk.lifecycle.v1.ServingStatus
-	(*GetInfoResponse)(nil),         // 1: omniview.sdk.lifecycle.v1.GetInfoResponse
-	(*GetCapabilitiesResponse)(nil), // 2: omniview.sdk.lifecycle.v1.GetCapabilitiesResponse
-	(*HealthCheckResponse)(nil),     // 3: omniview.sdk.lifecycle.v1.HealthCheckResponse
-	(*ProfilingStatusResponse)(nil), // 4: omniview.sdk.lifecycle.v1.ProfilingStatusResponse
-	(*emptypb.Empty)(nil),           // 5: google.protobuf.Empty
+	(ServingStatus)(0),               // 0: omniview.sdk.lifecycle.v1.ServingStatus
+	(*GetInfoResponse)(nil),          // 1: omniview.sdk.lifecycle.v1.GetInfoResponse
+	(*BindHostServicesRequest)(nil),  // 2: omniview.sdk.lifecycle.v1.BindHostServicesRequest
+	(*BindHostServicesResponse)(nil), // 3: omniview.sdk.lifecycle.v1.BindHostServicesResponse
+	(*GetCapabilitiesResponse)(nil),  // 4: omniview.sdk.lifecycle.v1.GetCapabilitiesResponse
+	(*HealthCheckResponse)(nil),      // 5: omniview.sdk.lifecycle.v1.HealthCheckResponse
+	(*ProfilingStatusResponse)(nil),  // 6: omniview.sdk.lifecycle.v1.ProfilingStatusResponse
+	(*emptypb.Empty)(nil),            // 7: google.protobuf.Empty
 }
 var file_proto_v1_lifecycle_lifecycle_proto_depIdxs = []int32{
 	0, // 0: omniview.sdk.lifecycle.v1.HealthCheckResponse.status:type_name -> omniview.sdk.lifecycle.v1.ServingStatus
-	5, // 1: omniview.sdk.lifecycle.v1.PluginLifecycle.GetInfo:input_type -> google.protobuf.Empty
-	5, // 2: omniview.sdk.lifecycle.v1.PluginLifecycle.GetCapabilities:input_type -> google.protobuf.Empty
-	5, // 3: omniview.sdk.lifecycle.v1.PluginLifecycle.HealthCheck:input_type -> google.protobuf.Empty
-	5, // 4: omniview.sdk.lifecycle.v1.PluginLifecycle.GetProfilingStatus:input_type -> google.protobuf.Empty
-	1, // 5: omniview.sdk.lifecycle.v1.PluginLifecycle.GetInfo:output_type -> omniview.sdk.lifecycle.v1.GetInfoResponse
-	2, // 6: omniview.sdk.lifecycle.v1.PluginLifecycle.GetCapabilities:output_type -> omniview.sdk.lifecycle.v1.GetCapabilitiesResponse
-	3, // 7: omniview.sdk.lifecycle.v1.PluginLifecycle.HealthCheck:output_type -> omniview.sdk.lifecycle.v1.HealthCheckResponse
-	4, // 8: omniview.sdk.lifecycle.v1.PluginLifecycle.GetProfilingStatus:output_type -> omniview.sdk.lifecycle.v1.ProfilingStatusResponse
-	5, // [5:9] is the sub-list for method output_type
-	1, // [1:5] is the sub-list for method input_type
+	7, // 1: omniview.sdk.lifecycle.v1.PluginLifecycle.GetInfo:input_type -> google.protobuf.Empty
+	7, // 2: omniview.sdk.lifecycle.v1.PluginLifecycle.GetCapabilities:input_type -> google.protobuf.Empty
+	7, // 3: omniview.sdk.lifecycle.v1.PluginLifecycle.HealthCheck:input_type -> google.protobuf.Empty
+	7, // 4: omniview.sdk.lifecycle.v1.PluginLifecycle.GetProfilingStatus:input_type -> google.protobuf.Empty
+	2, // 5: omniview.sdk.lifecycle.v1.PluginLifecycle.BindHostServices:input_type -> omniview.sdk.lifecycle.v1.BindHostServicesRequest
+	1, // 6: omniview.sdk.lifecycle.v1.PluginLifecycle.GetInfo:output_type -> omniview.sdk.lifecycle.v1.GetInfoResponse
+	4, // 7: omniview.sdk.lifecycle.v1.PluginLifecycle.GetCapabilities:output_type -> omniview.sdk.lifecycle.v1.GetCapabilitiesResponse
+	5, // 8: omniview.sdk.lifecycle.v1.PluginLifecycle.HealthCheck:output_type -> omniview.sdk.lifecycle.v1.HealthCheckResponse
+	6, // 9: omniview.sdk.lifecycle.v1.PluginLifecycle.GetProfilingStatus:output_type -> omniview.sdk.lifecycle.v1.ProfilingStatusResponse
+	3, // 10: omniview.sdk.lifecycle.v1.PluginLifecycle.BindHostServices:output_type -> omniview.sdk.lifecycle.v1.BindHostServicesResponse
+	6, // [6:11] is the sub-list for method output_type
+	1, // [1:6] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
 	1, // [1:1] is the sub-list for extension extendee
 	0, // [0:1] is the sub-list for field type_name
@@ -365,7 +480,7 @@ func file_proto_v1_lifecycle_lifecycle_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_lifecycle_lifecycle_proto_rawDesc), len(file_proto_v1_lifecycle_lifecycle_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

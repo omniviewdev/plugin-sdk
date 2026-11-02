@@ -21,6 +21,7 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/state"
 	"github.com/omniviewdev/plugin-sdk/pkg/telemetry"
 	"github.com/omniviewdev/plugin-sdk/pkg/utils"
+	"github.com/omniviewdev/plugin-sdk/pkg/v1/hostconnections"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/lifecycle"
 	sdksettings "github.com/omniviewdev/plugin-sdk/pkg/v1/settings"
 )
@@ -49,11 +50,12 @@ type Plugin struct {
 	SettingsProvider pkgsettings.Provider
 	// pluginMap is the map of plugins we can dispense. Each plugin entry in the map
 	// is a plugin capability.
-	pluginMap      map[string]plugin.Plugin
-	Log            logging.Logger
-	LogLevel       *logging.LevelController
-	runtimeBackend *logging.HCLBackend
-	profiler       *profiling.Service
+	pluginMap       map[string]plugin.Plugin
+	Log             logging.Logger
+	LogLevel        *logging.LevelController
+	runtimeBackend  *logging.HCLBackend
+	profiler        *profiling.Service
+	hostConnections *hostconnections.Binding
 	// meta holds metadata for the plugin, found inside of the plugin.yaml
 	// file in the same directory as the plugin.
 	meta config.PluginMeta
@@ -151,6 +153,14 @@ func (p *Plugin) RegisterCapability(capability string, registration plugin.Plugi
 		p.pluginMap = make(map[string]plugin.Plugin)
 	}
 
+	if p.hostConnections == nil {
+		p.hostConnections = &hostconnections.Binding{}
+	}
+	if consumer, ok := registration.(interface {
+		BindHostConnections(*hostconnections.Binding)
+	}); ok {
+		consumer.BindHostConnections(p.hostConnections)
+	}
 	p.pluginMap[capability] = registration
 	p.bindConnectionContexts()
 }
@@ -236,6 +246,10 @@ func (p *Plugin) SetLogLevel(level logging.Level) {
 // manifest versions continue to use CurrentProtocolVersion.
 func (p *Plugin) Serve() {
 	p.profiler = p.startProfiling()
+	if p.hostConnections == nil {
+		p.hostConnections = &hostconnections.Binding{}
+	}
+	defer p.hostConnections.Close()
 	defer p.profiler.Close()
 
 	telemetryProvider, err := telemetry.InitFromEnv()
@@ -278,6 +292,7 @@ func (p *Plugin) registerLifecycle() {
 			Version:            p.meta.Version,
 			SDKProtocolVersion: int32(version),
 			Capabilities:       caps,
+			HostConnections:    p.hostConnections,
 			ProfilingStatus:    p.profilingStatus,
 		},
 	}

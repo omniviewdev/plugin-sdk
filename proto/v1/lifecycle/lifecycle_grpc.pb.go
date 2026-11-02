@@ -24,6 +24,7 @@ const (
 	PluginLifecycle_GetCapabilities_FullMethodName    = "/omniview.sdk.lifecycle.v1.PluginLifecycle/GetCapabilities"
 	PluginLifecycle_HealthCheck_FullMethodName        = "/omniview.sdk.lifecycle.v1.PluginLifecycle/HealthCheck"
 	PluginLifecycle_GetProfilingStatus_FullMethodName = "/omniview.sdk.lifecycle.v1.PluginLifecycle/GetProfilingStatus"
+	PluginLifecycle_BindHostServices_FullMethodName   = "/omniview.sdk.lifecycle.v1.PluginLifecycle/BindHostServices"
 )
 
 // PluginLifecycleClient is the client API for PluginLifecycle service.
@@ -39,6 +40,7 @@ type PluginLifecycleClient interface {
 	HealthCheck(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HealthCheckResponse, error)
 	// GetProfilingStatus reports the optional profiler owned by this process.
 	GetProfilingStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ProfilingStatusResponse, error)
+	BindHostServices(ctx context.Context, in *BindHostServicesRequest, opts ...grpc.CallOption) (*BindHostServicesResponse, error)
 }
 
 type pluginLifecycleClient struct {
@@ -85,6 +87,15 @@ func (c *pluginLifecycleClient) GetProfilingStatus(ctx context.Context, in *empt
 	return out, nil
 }
 
+func (c *pluginLifecycleClient) BindHostServices(ctx context.Context, in *BindHostServicesRequest, opts ...grpc.CallOption) (*BindHostServicesResponse, error) {
+	out := new(BindHostServicesResponse)
+	err := c.cc.Invoke(ctx, PluginLifecycle_BindHostServices_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PluginLifecycleServer is the server API for PluginLifecycle service.
 // All implementations should embed UnimplementedPluginLifecycleServer
 // for forward compatibility
@@ -98,6 +109,7 @@ type PluginLifecycleServer interface {
 	HealthCheck(context.Context, *emptypb.Empty) (*HealthCheckResponse, error)
 	// GetProfilingStatus reports the optional profiler owned by this process.
 	GetProfilingStatus(context.Context, *emptypb.Empty) (*ProfilingStatusResponse, error)
+	BindHostServices(context.Context, *BindHostServicesRequest) (*BindHostServicesResponse, error)
 }
 
 // UnimplementedPluginLifecycleServer should be embedded to have forward compatible implementations.
@@ -115,6 +127,9 @@ func (UnimplementedPluginLifecycleServer) HealthCheck(context.Context, *emptypb.
 }
 func (UnimplementedPluginLifecycleServer) GetProfilingStatus(context.Context, *emptypb.Empty) (*ProfilingStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetProfilingStatus not implemented")
+}
+func (UnimplementedPluginLifecycleServer) BindHostServices(context.Context, *BindHostServicesRequest) (*BindHostServicesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BindHostServices not implemented")
 }
 
 // UnsafePluginLifecycleServer may be embedded to opt out of forward compatibility for this service.
@@ -200,6 +215,24 @@ func _PluginLifecycle_GetProfilingStatus_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PluginLifecycle_BindHostServices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BindHostServicesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginLifecycleServer).BindHostServices(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginLifecycle_BindHostServices_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginLifecycleServer).BindHostServices(ctx, req.(*BindHostServicesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PluginLifecycle_ServiceDesc is the grpc.ServiceDesc for PluginLifecycle service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -222,6 +255,10 @@ var PluginLifecycle_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetProfilingStatus",
 			Handler:    _PluginLifecycle_GetProfilingStatus_Handler,
+		},
+		{
+			MethodName: "BindHostServices",
+			Handler:    _PluginLifecycle_BindHostServices_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -21,12 +21,24 @@ service PluginLifecycle {
 
   // GetProfilingStatus reports the optional profiler owned by this process.
   rpc GetProfilingStatus(google.protobuf.Empty) returns (ProfilingStatusResponse);
+
+  rpc BindHostServices(BindHostServicesRequest) returns (BindHostServicesResponse);
 }
 
 message GetInfoResponse {
   string plugin_id = 1;
   string version = 2;
   int32 sdk_protocol_version = 3;
+  uint32 host_connections_version = 4;
+}
+
+message BindHostServicesRequest {
+  uint32 host_connections_broker_id = 1;
+  uint32 version = 2;
+}
+
+message BindHostServicesResponse {
+  uint32 version = 1;
 }
 
 message GetCapabilitiesResponse {

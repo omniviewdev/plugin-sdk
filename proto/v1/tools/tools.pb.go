@@ -150,11 +150,12 @@ type ToolDescriptor struct {
 	// JSON Schema (object) for the tool arguments, serialized as JSON.
 	InputSchema []byte `protobuf:"bytes,4,opt,name=input_schema,json=inputSchema,proto3" json:"input_schema,omitempty"`
 	// Optional JSON Schema for the structured result, serialized as JSON.
-	OutputSchema  []byte           `protobuf:"bytes,5,opt,name=output_schema,json=outputSchema,proto3" json:"output_schema,omitempty"`
-	Scope         ToolScope        `protobuf:"varint,6,opt,name=scope,proto3,enum=omniview.sdk.tools.v2.ToolScope" json:"scope,omitempty"`
-	Annotations   *ToolAnnotations `protobuf:"bytes,7,opt,name=annotations,proto3" json:"annotations,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	OutputSchema    []byte           `protobuf:"bytes,5,opt,name=output_schema,json=outputSchema,proto3" json:"output_schema,omitempty"`
+	Scope           ToolScope        `protobuf:"varint,6,opt,name=scope,proto3,enum=omniview.sdk.tools.v2.ToolScope" json:"scope,omitempty"`
+	Annotations     *ToolAnnotations `protobuf:"bytes,7,opt,name=annotations,proto3" json:"annotations,omitempty"`
+	ConnectionOwner string           `protobuf:"bytes,8,opt,name=connection_owner,json=connectionOwner,proto3" json:"connection_owner,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ToolDescriptor) Reset() {
@@ -234,6 +235,13 @@ func (x *ToolDescriptor) GetAnnotations() *ToolAnnotations {
 		return x.Annotations
 	}
 	return nil
+}
+
+func (x *ToolDescriptor) GetConnectionOwner() string {
+	if x != nil {
+		return x.ConnectionOwner
+	}
+	return ""
 }
 
 type ListToolsRequest struct {
@@ -339,6 +347,7 @@ type CallToolRequest struct {
 	Arguments       []byte          `protobuf:"bytes,2,opt,name=arguments,proto3" json:"arguments,omitempty"`
 	Route           *v2.AccessRoute `protobuf:"bytes,3,opt,name=route,proto3" json:"route,omitempty"`
 	ContractVersion uint32          `protobuf:"varint,4,opt,name=contract_version,json=contractVersion,proto3" json:"contract_version,omitempty"`
+	DelegationToken []byte          `protobuf:"bytes,5,opt,name=delegation_token,json=delegationToken,proto3" json:"delegation_token,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -399,6 +408,13 @@ func (x *CallToolRequest) GetContractVersion() uint32 {
 		return x.ContractVersion
 	}
 	return 0
+}
+
+func (x *CallToolRequest) GetDelegationToken() []byte {
+	if x != nil {
+		return x.DelegationToken
+	}
+	return nil
 }
 
 type ToolContent struct {
@@ -553,7 +569,7 @@ const file_proto_v1_tools_tools_proto_rawDesc = "" +
 	"_read_onlyB\x0e\n" +
 	"\f_destructiveB\r\n" +
 	"\v_idempotentB\r\n" +
-	"\v_open_world\"\xa6\x02\n" +
+	"\v_open_world\"\xd1\x02\n" +
 	"\x0eToolDescriptor\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -561,17 +577,19 @@ const file_proto_v1_tools_tools_proto_rawDesc = "" +
 	"\finput_schema\x18\x04 \x01(\fR\vinputSchema\x12#\n" +
 	"\routput_schema\x18\x05 \x01(\fR\foutputSchema\x126\n" +
 	"\x05scope\x18\x06 \x01(\x0e2 .omniview.sdk.tools.v2.ToolScopeR\x05scope\x12H\n" +
-	"\vannotations\x18\a \x01(\v2&.omniview.sdk.tools.v2.ToolAnnotationsR\vannotations\"=\n" +
+	"\vannotations\x18\a \x01(\v2&.omniview.sdk.tools.v2.ToolAnnotationsR\vannotations\x12)\n" +
+	"\x10connection_owner\x18\b \x01(\tR\x0fconnectionOwner\"=\n" +
 	"\x10ListToolsRequest\x12)\n" +
 	"\x10contract_version\x18\x01 \x01(\rR\x0fcontractVersion\"{\n" +
 	"\x11ListToolsResponse\x12;\n" +
 	"\x05tools\x18\x01 \x03(\v2%.omniview.sdk.tools.v2.ToolDescriptorR\x05tools\x12)\n" +
-	"\x10contract_version\x18\x02 \x01(\rR\x0fcontractVersion\"\xa7\x01\n" +
+	"\x10contract_version\x18\x02 \x01(\rR\x0fcontractVersion\"\xd2\x01\n" +
 	"\x0fCallToolRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
 	"\targuments\x18\x02 \x01(\fR\targuments\x127\n" +
 	"\x05route\x18\x03 \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\x12)\n" +
-	"\x10contract_version\x18\x04 \x01(\rR\x0fcontractVersion\"+\n" +
+	"\x10contract_version\x18\x04 \x01(\rR\x0fcontractVersion\x12)\n" +
+	"\x10delegation_token\x18\x05 \x01(\fR\x0fdelegationToken\"+\n" +
 	"\vToolContent\x12\x14\n" +
 	"\x04text\x18\x01 \x01(\tH\x00R\x04textB\x06\n" +
 	"\x04kind\"\xb9\x01\n" +

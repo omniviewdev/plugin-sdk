@@ -62,14 +62,20 @@ func ErrorCode(err error) string {
 	if err == nil {
 		return ""
 	}
+	var classified *ResourceOperationError
+	if errors.As(err, &classified) && classified != nil {
+		switch classified.Code {
+		case "GRANT_DENIED", "CONNECTION_NOT_STARTED", "OWNER_UNAVAILABLE", "DELEGATION_NOT_ACTIVE":
+			return classified.Code
+		}
+	}
 	if errors.Is(err, context.Canceled) {
 		return "CANCELLED"
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "TIMEOUT"
 	}
-	var classified *ResourceOperationError
-	if errors.As(err, &classified) && classified != nil && IsErrorCode(classified.Code) {
+	if classified != nil && IsErrorCode(classified.Code) {
 		return classified.Code
 	}
 	return errorCodeInternal
@@ -87,7 +93,7 @@ func IsErrorCode(code string) bool {
 		"FILTER_INVALID_OPERATOR", "FORBIDDEN", "UNAUTHORIZED", "CONNECTION_ERROR",
 		"CERTIFICATE_ERROR", "INVALID_REQUEST", errorCodeUnsupported, "CANCELLED",
 		"RESOURCE_LIMIT", "CONTINUATION_EXPIRED", "RESET_REQUIRED", "PARTIAL_RESULT",
-		"PROVIDER_ERROR":
+		"PROVIDER_ERROR", "GRANT_DENIED", "CONNECTION_NOT_STARTED", "OWNER_UNAVAILABLE", "DELEGATION_NOT_ACTIVE":
 		return true
 	default:
 		return false
