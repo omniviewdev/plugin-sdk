@@ -39,9 +39,8 @@ func (b *protoAdmissionBudget) visit(m protoreflect.Message, depth int) error {
 		return invalid("missing protobuf message")
 	}
 	b.nodes++
-	const wrapperDepth = maxDomainDepth*3 + 16
 	const wrapperNodes = maxDomainNodes * 4
-	if depth > wrapperDepth || b.nodes > wrapperNodes {
+	if depth > MaxProtoDepth || b.nodes > wrapperNodes {
 		return limited("protobuf complexity limit")
 	}
 	if len(m.GetUnknown()) != 0 {
