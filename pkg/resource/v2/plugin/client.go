@@ -15,6 +15,7 @@ import (
 type Client struct {
 	conn grpc.ClientConnInterface
 	featureMode atomic.Uint32
+	features atomic.Pointer[resourcev2.FeatureSet]
 }
 
 // NewClient binds resource operations to an existing gRPC connection.
