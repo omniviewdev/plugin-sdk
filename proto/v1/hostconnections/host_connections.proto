@@ -1,0 +1,46 @@
+syntax = "proto3";
+package omniview.sdk.hostconnections.v1;
+
+option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/hostconnections;hostconnectionspb";
+
+import "proto/resource/v2/domain.proto";
+
+service HostConnections {
+  rpc Call(CallRequest) returns (CallResponse);
+}
+
+message CallRequest {
+  string owner_plugin = 1;
+  bytes delegation_token = 2;
+  string target_id = 3;
+  oneof operation {
+    omniview.resource.v2.Request resource = 4;
+    ResolveTargetInput resolve_target = 5;
+    SchemaDocumentInput schema_document = 6;
+  }
+}
+
+message ResolveTargetInput {
+  omniview.resource.v2.AccessRoute route = 1;
+  string type = 2;
+  omniview.resource.v2.QueryScope scope = 3;
+  string representation = 4;
+}
+
+message SchemaDocumentInput {
+  omniview.resource.v2.AccessRoute route = 1;
+  omniview.resource.v2.SchemaDocumentReference reference = 2;
+}
+
+message CallResponse {
+  oneof result {
+    omniview.resource.v2.Response resource = 1;
+    ResolvedTarget resolved_target = 2;
+    omniview.resource.v2.SchemaDocument schema_document = 3;
+  }
+}
+
+message ResolvedTarget {
+  string target_id = 1;
+  omniview.resource.v2.ReadTarget target = 2;
+}

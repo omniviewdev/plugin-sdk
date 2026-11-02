@@ -41,6 +41,8 @@ type PluginMeta struct {
 	Components         PluginComponents   `json:"components"           yaml:"components"`
 	SchemaVersion      int                `json:"schema_version"       yaml:"schema_version,omitempty"`
 	SDKProtocolVersion int                `json:"sdk_protocol_version" yaml:"sdk_protocol_version,omitempty"`
+	Exports            *ExportsSpec       `json:"exports,omitempty" yaml:"exports,omitempty"`
+	Requires           *RequiresSpec      `json:"requires,omitempty" yaml:"requires,omitempty"`
 	// StateIsolation is inspectable before launch; only a trusted builder's
 	// attestation may authorize isolated startup, never self-asserted YAML.
 	StateIsolation *StateIsolationProvenance `json:"state_isolation,omitempty" yaml:"state_isolation,omitempty"`

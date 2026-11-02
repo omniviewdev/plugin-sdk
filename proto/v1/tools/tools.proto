@@ -38,6 +38,7 @@ message ToolDescriptor {
   bytes output_schema = 5;
   ToolScope scope = 6;
   ToolAnnotations annotations = 7;
+  string connection_owner = 8;
 }
 
 message ListToolsRequest {
@@ -55,6 +56,7 @@ message CallToolRequest {
   bytes arguments = 2;
   omniview.resource.v2.AccessRoute route = 3;
   uint32 contract_version = 4;
+  bytes delegation_token = 5;
 }
 
 message ToolContent {

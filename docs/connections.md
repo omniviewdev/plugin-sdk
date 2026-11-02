@@ -27,6 +27,14 @@ No lifecycle does not mean no route. Catalogs and finite requests still carry an
 
 Do not add a second registry for utilities. Bind exec, logs, metrics, and forwarding to the shared configured-client registry through `ConnectionContextConsumer`. See [SDK capabilities](capabilities.md).
 
+## Share connection access
+
+An owner may declare `exports.connections` with `operations` and `resource_types`. A consumer may declare `requires.connections` entries with `plugin`, `operations`, and `resource_types`. Use `catalog`, `get`, `enumerate`, or `update` for operations. A resource type is a literal token or a nonempty literal prefix ending in `/*`. Wildcards match a nonempty suffix and are case-sensitive.
+
+Call `PluginMeta.Validate` on each manifest, then `config.GrantConnections(consumer, owner)` to require complete coverage. `ConnectionGrant.Allows` checks an individual operation and literal resource type. Catalog access permits discovery, target resolution, and schema documents for permitted types. It does not authorize reading or writing resource objects.
+
+This is installation-level opt-in, not a sandbox or per-user approval. The host must enforce live policy, per-call capabilities, target identity, connection lifetime, and grants. The callback transports only resource requests and results. It does not share credentials, native clients, or connection profile data.
+
 ## Wire the controller and hooks
 
 `pkg/resource/v2/provider_options.go` — contextual declarations from [source](../pkg/resource/v2/provider_options.go), with comments omitted. These types use that package's `context`, `types`, and resource declarations.

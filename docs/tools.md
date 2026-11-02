@@ -16,6 +16,22 @@ Use a custom tool for work that is not already a resource operation. The host bu
 
 Register only capabilities the plugin implements. MCP publication and permission are host decisions, not consequences of registration.
 
+## Use another plugin's connection
+
+Set `Descriptor.ConnectionOwner` to the owner plugin ID and use `ScopeConnection`. Declare the required operations and resource types in the consumer manifest. The owner must export the same access. See [connection grants](connections.md#share-connection-access).
+
+Inside the handler, call `hostconnections.FromContext(pc.Context)`. Use this client for catalog discovery, target resolution, schema documents, Get, Enumerate, and conditional Update. Update requires `Operation: "update"` and a nonempty expected revision.
+
+The host supplies the selected route and a call-scoped delegation token. The SDK rejects missing tokens and missing callback bindings before the handler runs. The callback client rejects owner and route substitution before transport. The host enforces grants, target identity, call lifetime, and policy for every callback.
+
+Get and Update reject a response with a different resource address or a different requested incarnation. Scope order does not change identity. A request without an incarnation permits the returned incarnation.
+
+The callback does not transfer the owner's connection profile or native client. Do not put credentials in tool arguments or error messages. A callback binding lasts for one plugin process and closes at shutdown. Rebinding is not permitted.
+
+Hosts dispense the standard `lifecycle.Plugin` to obtain a lifecycle client with the process broker. Call `ServeHostConnections(ctx, service)` to register and bind a bounded callback server. This helper requires host connections version 1 and returns an idempotent stop function. Call stop when the consumer process or its grants retire. The context limits binding only; it does not own the accepted server's lifetime. The host service must bind caller identity to that consumer process.
+
+A binding error can occur after remote acceptance. Retire the consumer process after a binding error. Do not retry a binding with an uncertain result.
+
 ## Register a connection-free tool
 
 This entrypoint assumes an installed `notes` manifest, as described in the [quickstart](quickstart.md#installation-and-launch-boundary). Add `tools` to that manifest's capabilities without removing its other capabilities.
@@ -136,9 +152,11 @@ Use `Annotations.Resolve()` when consuming hints. A read-only annotation does no
 
 ## Return safe failures
 
-Return cancellation and deadline errors normally. They remain transport failures, not successful tool calls containing an error message.
+Return context cancellation and deadline errors normally. They remain transport failures.
 
-For other failures, the model receives a reviewed code and fixed safe presentation: `EXECUTION_FAILED`, `UNAVAILABLE`, or `PERMISSION_DENIED`. Raw handler diagnostics, failure text, and failure structured content do not cross this boundary. Keep useful diagnostic details in local plugin logs.
+Classified `TIMEOUT` errors return a safe tool failure. Other reviewed codes are `EXECUTION_FAILED`, `UNAVAILABLE`, `PERMISSION_DENIED`, `GRANT_DENIED`, `CONNECTION_NOT_STARTED`, `OWNER_UNAVAILABLE`, `DELEGATION_NOT_ACTIVE`, `CONFLICT`, and `UNSUPPORTED`.
+
+Failure results contain only the reviewed code and fixed public text. Raw diagnostics and structured failure content do not cross this boundary. Keep diagnostic causes in the local error wrapper.
 
 Retirement or timeout can reject a result after a native side effect has started. That rejection does not prove rollback. Do not automatically retry writes.
 

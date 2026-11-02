@@ -82,7 +82,7 @@ func (s *PluginServer) CallTool(
 			return nil, status.Error(codes.InvalidArgument, "Selected tool connection must be nonempty and singular.")
 		}
 	}
-	input := CallInput{Name: in.GetName(), Arguments: in.GetArguments()}
+	input := CallInput{Name: in.GetName(), Arguments: in.GetArguments(), DelegationToken: in.GetDelegationToken()}
 	if in.GetRoute() != nil {
 		route, err := resourcev2.FromProtoAccessRoute(in.GetRoute())
 		if err != nil {

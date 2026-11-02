@@ -13,6 +13,7 @@ import (
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	"github.com/omniviewdev/plugin-sdk/pkg/v1/hostconnections"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
@@ -33,6 +34,7 @@ type Manager struct {
 	tools              map[string]Tool
 	order              []string
 	connectionProvider resourcev2.ConnectionContextProvider
+	hostConnections    *hostconnections.Binding
 	inputs             map[string]*compiledSchema
 	outputs            map[string]*compiledSchema
 }
@@ -76,6 +78,9 @@ func (m *Manager) BindConnectionContextProvider(provider resourcev2.ConnectionCo
 	m.connectionProvider = provider
 }
 
+// BindHostConnections shares the process callback binding.
+func (m *Manager) BindHostConnections(binding *hostconnections.Binding) { m.hostConnections = binding }
+
 // ValidateDescriptor validates tool metadata without requiring a handler. It uses
 // the same bounded schema profile as registration, does not mutate the descriptor,
 // and performs no tool execution or native connection work. Returned diagnostics
@@ -93,6 +98,9 @@ func compileDescriptor(descriptor Descriptor) (*compiledSchema, *compiledSchema,
 	case ScopePlugin, ScopeConnection:
 	default:
 		return nil, nil, fmt.Errorf("scope must be %q or %q", ScopePlugin, ScopeConnection)
+	}
+	if descriptor.ConnectionOwner != "" && descriptor.Scope != ScopeConnection {
+		return nil, nil, errors.New("connection owner requires connection scope")
 	}
 	input, err := compileSchema(descriptor.InputSchema)
 	if err != nil {
@@ -150,6 +158,14 @@ func (m *Manager) CallTool(ctx *types.PluginContext, input CallInput) (*Result, 
 		selected = *ctx
 	}
 	selected.Connection = &types.Connection{ID: input.Route.Connection}
+	if tool.ConnectionOwner != "" {
+		bound, err := m.hostConnections.Context(selected.Context, tool.ConnectionOwner, *input.Route, input.DelegationToken)
+		if err != nil {
+			return nil, err
+		}
+		selected.Context = bound
+		return m.finish(tool, tool.Handler, &selected, input.Arguments)
+	}
 	var result *Result
 	err := resourcev2.WithUtilityConnection(&selected, m.connectionProvider, nil, input.Route,
 		func(bound *types.PluginContext) error {
@@ -165,6 +181,13 @@ func (m *Manager) CallTool(ctx *types.PluginContext, input CallInput) (*Result, 
 
 func (m *Manager) finish(tool Tool, handler Handler, ctx *types.PluginContext, arguments []byte) (*Result, error) {
 	result, err := handler(ctx, arguments)
+	var classified *resourcev2.ResourceOperationError
+	if errors.As(err, &classified) && classified != nil {
+		switch classified.Code {
+		case "GRANT_DENIED", "CONNECTION_NOT_STARTED", "OWNER_UNAVAILABLE", "DELEGATION_NOT_ACTIVE", "CONFLICT", "TIMEOUT", "UNSUPPORTED":
+			return safeFailure(&Result{ErrorCode: classified.Code}), nil
+		}
+	}
 	if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
 		return nil, context.Canceled
 	}
