@@ -104,8 +104,8 @@ message SchemaBinding {
   optional string revision = 2;
   string dialect = 3;
   bytes document = 4;
-  string validation = 5;
-  repeated string unvalidated = 6;
+  reserved 5, 6;
+  reserved "validation", "unvalidated";
   SchemaDocumentReference document_ref = 7;
   string root = 8;
   optional string unavailable_reason = 9;

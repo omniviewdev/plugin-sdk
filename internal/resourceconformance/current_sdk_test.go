@@ -660,3 +660,55 @@ func TestNativeFixtureCatalogBindingTracksSourceInstance(t *testing.T) {
 	require.NotEqual(t, first.Revision, second.Revision)
 	require.Equal(t, "catalog:opaque/1", provider.nativeCatalogRevision)
 }
+
+func TestCurrentSDKSchemaCatalogScenarios(t *testing.T) {
+	provider, _, stop := startNativeProfile(t, "read-only")
+	defer stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	documents, ok := provider.(resource.SchemaDocumentProvider)
+	require.True(t, ok)
+	lifecycle, ok := provider.(resource.ConnectionLifecycle)
+	require.True(t, ok)
+	binding := func(name string) (resource.AccessRoute, resource.SchemaBinding, context.Context) {
+		route := resource.AccessRoute{Connection: name}
+		_, err := lifecycle.StartConnection(ctx, name)
+		require.NoError(t, err)
+		catalog, err := provider.Catalog(ctx, resource.CatalogRequest{Route: route})
+		require.NoError(t, err)
+		require.Equal(t, catalog.Types[0].Representations[0].ID, catalog.Types[0].DefaultRepresentation)
+		return route, catalog.Types[0].Representations[0].Schema, resource.WithCatalogRevision(ctx, catalog.Revision)
+	}
+
+	route, schema, callCtx := binding("cloud-discovered-schema")
+	require.Equal(t, "available", schema.State)
+	require.Equal(t, resource.DialectJSONSchema202012, schema.Dialect)
+	require.Empty(t, schema.Document)
+	require.NotNil(t, schema.DocumentRef)
+	document, err := documents.GetSchemaDocument(callCtx, route, *schema.DocumentRef)
+	require.NoError(t, err)
+	require.Equal(t, *schema.DocumentRef, document.Reference)
+	require.Equal(t, resource.DialectJSONSchema202012, document.Dialect)
+	require.JSONEq(t, string(NativeCorpus().Scenarios[0].Schema), string(document.Document))
+	_, err = documents.GetSchemaDocument(
+		callCtx,
+		route,
+		resource.SchemaDocumentReference{ID: "conformance/cloud-bundled-pages", Revision: schema.DocumentRef.Revision},
+	)
+	require.Equal(t, "NOT_FOUND", resource.ErrorCode(err))
+
+	_, schema, _ = binding("cloud-unavailable-schema")
+	require.Equal(t, "unavailable", schema.State)
+	require.NotNil(t, schema.UnavailableReason)
+	require.Equal(t, "FORBIDDEN", *schema.UnavailableReason)
+
+	_, schema, _ = binding("container-unsupported-dialect")
+	require.Equal(t, "available", schema.State)
+	require.Equal(t, "https://json-schema.org/draft/2019-09/schema", schema.Dialect)
+
+	_, schema, _ = binding("hypervisor-openapi-vms")
+	require.Equal(t, "available", schema.State)
+	require.Equal(t, resource.DialectOpenAPI30, schema.Dialect)
+	require.Equal(t, "#/components/schemas/VM", schema.Root)
+	require.Contains(t, string(schema.Document), `"x-kubernetes-validations"`)
+}

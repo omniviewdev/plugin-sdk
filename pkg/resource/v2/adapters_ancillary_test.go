@@ -51,15 +51,31 @@ func TestAncillaryDomainAdapters(t *testing.T) {
 	adapterRoundTrip(
 		t,
 		EditorSchema{
-			Type:      r.Reference.Address.Type,
-			FileMatch: "*.json",
-			URI:       "omniview://schema",
-			Language:  "json",
-			Binding:   r.Representation.Schema,
+			Type:     r.Reference.Address.Type,
+			Key:      "team-a/release-web",
+			Language: "json",
+			Binding:  r.Representation.Schema,
 		},
 		ToProtoEditorSchema,
 		FromProtoEditorSchema,
 	)
+}
+
+func TestEditorSchemaKeyCrossesProtoAdapters(t *testing.T) {
+	encoded, err := ToProtoEditorSchema(EditorSchema{
+		Type: "helm:releases", Key: "team-a/release-web", Language: "yaml", Binding: SchemaBinding{State: "absent"},
+	})
+	if err != nil || encoded.GetKey() != "team-a/release-web" {
+		t.Fatalf("encoded key = %v %v", encoded, err)
+	}
+	decoded, err := FromProtoEditorSchema(encoded)
+	if err != nil || decoded.Key != "team-a/release-web" {
+		t.Fatalf("decoded key = %+v %v", decoded, err)
+	}
+	encoded.Key = ""
+	if _, err = FromProtoEditorSchema(encoded); ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatalf("keyless wire editor schema admitted: %v", err)
+	}
 }
 
 func TestAncillaryStrictPayloadAdmission(t *testing.T) {

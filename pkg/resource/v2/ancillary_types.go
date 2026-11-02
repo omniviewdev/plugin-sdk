@@ -6,15 +6,16 @@ import (
 	"time"
 )
 
-// EditorSchema associates editor selection metadata with an explicit schema
-// binding. URI is editor metadata, not permission to fetch an external document;
+// EditorSchema is an auxiliary editor schema for documents that are not catalog
+// representations (for example Helm values). The host derives editor
+// associations; providers never supply file matches or URIs. Type and Key
+// identify the document uniquely within one list; Language is yaml or json.
 // Binding distinguishes unavailable acquisition from known schema absence.
 type EditorSchema struct {
-	Type      string        `json:"type"`
-	FileMatch string        `json:"fileMatch"`
-	URI       string        `json:"uri"`
-	Language  string        `json:"language"`
-	Binding   SchemaBinding `json:"binding"`
+	Type     string        `json:"type"`
+	Key      string        `json:"key"`
+	Language string        `json:"language"`
+	Binding  SchemaBinding `json:"binding"`
 }
 
 // ResourceGroup organizes opaque resource type IDs for presentation. Group

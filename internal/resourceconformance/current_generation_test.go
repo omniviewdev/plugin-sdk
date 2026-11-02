@@ -42,7 +42,7 @@ func generationRepresentation() resource.Representation {
 	return resource.Representation{
 		ID:       "document",
 		Revision: "document-1",
-		Schema:   resource.SchemaBinding{State: "absent", Validation: "none", Unvalidated: []string{}},
+		Schema:   resource.SchemaBinding{State: "absent"},
 	}
 }
 

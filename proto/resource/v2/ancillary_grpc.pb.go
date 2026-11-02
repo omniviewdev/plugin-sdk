@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	ResourceAncillary_Call_FullMethodName             = "/omniview.resource.v2.ResourceAncillary/Call"
-	ResourceAncillary_WatchConnections_FullMethodName = "/omniview.resource.v2.ResourceAncillary/WatchConnections"
-	ResourceAncillary_StreamAction_FullMethodName     = "/omniview.resource.v2.ResourceAncillary/StreamAction"
+	ResourceAncillary_Call_FullMethodName                    = "/omniview.resource.v2.ResourceAncillary/Call"
+	ResourceAncillary_WatchConnections_FullMethodName        = "/omniview.resource.v2.ResourceAncillary/WatchConnections"
+	ResourceAncillary_StreamAction_FullMethodName            = "/omniview.resource.v2.ResourceAncillary/StreamAction"
+	ResourceAncillary_WatchConnectionMetadata_FullMethodName = "/omniview.resource.v2.ResourceAncillary/WatchConnectionMetadata"
 )
 
 // ResourceAncillaryClient is the client API for ResourceAncillary service.
@@ -31,6 +32,7 @@ type ResourceAncillaryClient interface {
 	Call(ctx context.Context, in *AncillaryRequest, opts ...grpc.CallOption) (*AncillaryResponse, error)
 	WatchConnections(ctx context.Context, in *AncillaryRequest, opts ...grpc.CallOption) (ResourceAncillary_WatchConnectionsClient, error)
 	StreamAction(ctx context.Context, in *ActionStreamRequest, opts ...grpc.CallOption) (ResourceAncillary_StreamActionClient, error)
+	WatchConnectionMetadata(ctx context.Context, in *AncillaryRequest, opts ...grpc.CallOption) (ResourceAncillary_WatchConnectionMetadataClient, error)
 }
 
 type resourceAncillaryClient struct {
@@ -114,6 +116,38 @@ func (x *resourceAncillaryStreamActionClient) Recv() (*ActionStreamEvent, error)
 	return m, nil
 }
 
+func (c *resourceAncillaryClient) WatchConnectionMetadata(ctx context.Context, in *AncillaryRequest, opts ...grpc.CallOption) (ResourceAncillary_WatchConnectionMetadataClient, error) {
+	stream, err := c.cc.NewStream(ctx, &ResourceAncillary_ServiceDesc.Streams[2], ResourceAncillary_WatchConnectionMetadata_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &resourceAncillaryWatchConnectionMetadataClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type ResourceAncillary_WatchConnectionMetadataClient interface {
+	Recv() (*ConnectionStreamEvent, error)
+	grpc.ClientStream
+}
+
+type resourceAncillaryWatchConnectionMetadataClient struct {
+	grpc.ClientStream
+}
+
+func (x *resourceAncillaryWatchConnectionMetadataClient) Recv() (*ConnectionStreamEvent, error) {
+	m := new(ConnectionStreamEvent)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // ResourceAncillaryServer is the server API for ResourceAncillary service.
 // All implementations should embed UnimplementedResourceAncillaryServer
 // for forward compatibility
@@ -121,6 +155,7 @@ type ResourceAncillaryServer interface {
 	Call(context.Context, *AncillaryRequest) (*AncillaryResponse, error)
 	WatchConnections(*AncillaryRequest, ResourceAncillary_WatchConnectionsServer) error
 	StreamAction(*ActionStreamRequest, ResourceAncillary_StreamActionServer) error
+	WatchConnectionMetadata(*AncillaryRequest, ResourceAncillary_WatchConnectionMetadataServer) error
 }
 
 // UnimplementedResourceAncillaryServer should be embedded to have forward compatible implementations.
@@ -135,6 +170,9 @@ func (UnimplementedResourceAncillaryServer) WatchConnections(*AncillaryRequest, 
 }
 func (UnimplementedResourceAncillaryServer) StreamAction(*ActionStreamRequest, ResourceAncillary_StreamActionServer) error {
 	return status.Errorf(codes.Unimplemented, "method StreamAction not implemented")
+}
+func (UnimplementedResourceAncillaryServer) WatchConnectionMetadata(*AncillaryRequest, ResourceAncillary_WatchConnectionMetadataServer) error {
+	return status.Errorf(codes.Unimplemented, "method WatchConnectionMetadata not implemented")
 }
 
 // UnsafeResourceAncillaryServer may be embedded to opt out of forward compatibility for this service.
@@ -208,6 +246,27 @@ func (x *resourceAncillaryStreamActionServer) Send(m *ActionStreamEvent) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _ResourceAncillary_WatchConnectionMetadata_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(AncillaryRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ResourceAncillaryServer).WatchConnectionMetadata(m, &resourceAncillaryWatchConnectionMetadataServer{stream})
+}
+
+type ResourceAncillary_WatchConnectionMetadataServer interface {
+	Send(*ConnectionStreamEvent) error
+	grpc.ServerStream
+}
+
+type resourceAncillaryWatchConnectionMetadataServer struct {
+	grpc.ServerStream
+}
+
+func (x *resourceAncillaryWatchConnectionMetadataServer) Send(m *ConnectionStreamEvent) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // ResourceAncillary_ServiceDesc is the grpc.ServiceDesc for ResourceAncillary service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -229,6 +288,11 @@ var ResourceAncillary_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "StreamAction",
 			Handler:       _ResourceAncillary_StreamAction_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchConnectionMetadata",
+			Handler:       _ResourceAncillary_WatchConnectionMetadata_Handler,
 			ServerStreams: true,
 		},
 	},

@@ -575,7 +575,7 @@ func TestUpdateTargetAndRepresentationCopiesOwnContainers(t *testing.T) {
 	target.Scope = QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &values}}
 	retained := cloneReadTarget(target)
 	representation := Representation{ID: "json", Schema: SchemaBinding{
-		Document: []byte(`{"type":"object"}`), Unvalidated: []string{"original"},
+		Document: []byte(`{"type":"object"}`),
 		Revision: copyToken(&target.Type),
 	}}
 	registration := &Registration[string]{
@@ -583,7 +583,6 @@ func TestUpdateTargetAndRepresentationCopiesOwnContainers(t *testing.T) {
 			(*callback.Scope[0].Values)[0] = "callback"
 			callback.Scope[0].Dimension = "changed"
 			rep.Schema.Document[0] = '!'
-			rep.Schema.Unvalidated[0] = "changed"
 			*rep.Schema.Revision = "changed"
 			return nil
 		},
@@ -605,7 +604,7 @@ func TestUpdateTargetAndRepresentationCopiesOwnContainers(t *testing.T) {
 			t.Fatal("caller or callback changed retained admission")
 		}
 	}
-	if representation.Schema.Document[0] != '{' || representation.Schema.Unvalidated[0] != "original" ||
+	if representation.Schema.Document[0] != '{' ||
 		*representation.Schema.Revision != target.Type {
 		t.Fatal("callback changed retained representation")
 	}

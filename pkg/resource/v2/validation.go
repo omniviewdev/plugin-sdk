@@ -27,10 +27,12 @@ const (
 	MaxMessageBytes    = 32 << 20
 	MaxDocumentBytes   = maxDocumentBytes
 	MaxValueDepth      = maxDomainDepth
-	MaxValueNodes      = maxDomainNodes
-	MaxWireFields      = maxDomainFields
-	MaxPageRecords     = maxPageRecords
-	MaxPageBodyBytes   = MaxMessageBytes
+	// MaxProtoDepth bounds protobuf message nesting, including Value wrappers.
+	MaxProtoDepth    = MaxValueDepth*3 + 16
+	MaxValueNodes    = maxDomainNodes
+	MaxWireFields    = maxDomainFields
+	MaxPageRecords   = maxPageRecords
+	MaxPageBodyBytes = MaxMessageBytes
 )
 
 // Value tags are shared by domain validation and lossless JSON/protobuf codecs.
@@ -601,10 +603,7 @@ func validateSchema(s SchemaBinding) error {
 			return err
 		}
 	}
-	if err := validateSchemaState(s); err != nil {
-		return err
-	}
-	return validateSchemaClaims(s)
+	return validateSchemaState(s)
 }
 
 func validateSchemaState(s SchemaBinding) error {
@@ -632,31 +631,6 @@ func validateSchemaState(s SchemaBinding) error {
 	return nil
 }
 
-func validateSchemaClaims(s SchemaBinding) error {
-	switch s.Validation {
-	case "full":
-		if len(s.Unvalidated) != 0 || s.State != schemaStateAvailable {
-			return invalid("invalid full schema validation")
-		}
-	case "reduced":
-		if s.State != schemaStateAvailable || len(s.Unvalidated) == 0 {
-			return invalid("reduced validation lacks constraints")
-		}
-	case "none":
-		if len(s.Unvalidated) != 0 {
-			return invalid("none validation has constraint claims")
-		}
-	default:
-		return invalid("unknown schema validation")
-	}
-	for _, x := range s.Unvalidated {
-		if err := text(x, true); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func validateRepresentation(r Representation) error {
 	if err := text(r.ID, true); err != nil {
 		return err
@@ -680,8 +654,29 @@ func validateCoverage(c Coverage) error {
 		if c.Reason == "" {
 			return invalid("incomplete coverage lacks reason")
 		}
+		for _, path := range c.Paths {
+			if err := validateCoveragePath(path); err != nil {
+				return err
+			}
+		}
 	default:
 		return invalid("unknown coverage kind")
+	}
+	return nil
+}
+
+// validateCoveragePath admits one RFC6901 JSON pointer naming a limited subtree.
+func validateCoveragePath(path string) error {
+	if !utf8.ValidString(path) || !strings.HasPrefix(path, "/") {
+		return invalid("coverage path must be an RFC6901 JSON pointer starting with \"/\"")
+	}
+	for i := 0; i < len(path); i++ {
+		if path[i] != '~' {
+			continue
+		}
+		if i+1 >= len(path) || (path[i+1] != '0' && path[i+1] != '1') {
+			return invalid("coverage path has an invalid RFC6901 escape")
+		}
 	}
 	return nil
 }
@@ -1178,8 +1173,6 @@ func schemaWireSize(s SchemaBinding) int {
 	) + stringFieldSize(
 		s.Dialect,
 	) + stringFieldSize(
-		s.Validation,
-	) + stringFieldSize(
 		s.Root,
 	) + optionalStringFieldSize(
 		s.UnavailableReason,
@@ -1189,9 +1182,6 @@ func schemaWireSize(s SchemaBinding) int {
 	}
 	if s.DocumentRef != nil {
 		size += messageFieldSize(stringFieldSize(s.DocumentRef.ID) + stringFieldSize(s.DocumentRef.Revision))
-	}
-	for _, constraint := range s.Unvalidated {
-		size += messageFieldSize(len(constraint))
 	}
 	return size
 }
