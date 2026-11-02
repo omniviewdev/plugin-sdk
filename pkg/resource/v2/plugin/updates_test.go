@@ -212,64 +212,80 @@ func (s *depthUpdateServer) Listen(_ *resourcepb.UpdateRequest, stream resourcep
 	})
 }
 
+func depthUpdateFixture(t *testing.T, depth int) (resourcev2.Value, *resourcepb.WatchUpdatePayload) {
+	t.Helper()
+	value := resourcev2.Value{Kind: "bool"}
+	wireValue := &resourcepb.Value{Selection: &resourcepb.Value_BoolValue{}}
+	for range depth {
+		value = resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{"x": value}}
+		wireValue = &resourcepb.Value{Selection: &resourcepb.Value_MapValue{
+			MapValue: &resourcepb.MapValue{Entries: []*resourcepb.ValueEntry{{Key: "x", Value: wireValue}}},
+		}}
+	}
+	record, err := (&qualifiedProvider{}).Get(context.Background(), testGet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	update, err := resourcev2.ToProtoWatchUpdatePayload(resourcev2.WatchUpdatePayload{
+		Route: testGet().Route, Record: record, Guarantee: resourcev2.BestEffortGuarantee,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	update.Record.Body = wireValue
+	return value, update
+}
+
+func assertDepthUpdateWire(t *testing.T, depth int, update *resourcepb.WatchUpdatePayload) {
+	t.Helper()
+	event := &resourcepb.UpdateStreamEvent{
+		Version: resourcev2.WireVersion,
+		Event:   &resourcepb.UpdateStreamEvent_Update{Update: update},
+	}
+	data, err := proto.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ValidateWire(data, event.ProtoReflect().Descriptor()); err != nil {
+		t.Fatalf("wire rejected depth %d: %v", depth, err)
+	}
+}
+
+func assertDepthUpdateResult(t *testing.T, depth int, value resourcev2.Value, sink *observedSink, err error) {
+	t.Helper()
+	if depth > resourcev2.MaxValueDepth {
+		if resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" || !strings.Contains(err.Error(), "value complexity limit") {
+			t.Fatalf("expected semantic depth rejection, got %v", err)
+		}
+		if len(sink.updates) != 0 {
+			t.Fatal("delivered over-depth update")
+		}
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-sink.updates:
+		if !reflect.DeepEqual(got.Record.Body, value) {
+			t.Fatal("update body changed in transit")
+		}
+	default:
+		t.Fatal("valid update was not delivered")
+	}
+}
+
 func TestActualGRPCUpdateValueDepth(t *testing.T) {
 	for _, depth := range []int{21, resourcev2.MaxValueDepth - 1, resourcev2.MaxValueDepth, resourcev2.MaxValueDepth + 1} {
 		t.Run(fmt.Sprintf("depth_%d", depth), func(t *testing.T) {
-			value := resourcev2.Value{Kind: "bool"}
-			wireValue := &resourcepb.Value{Selection: &resourcepb.Value_BoolValue{}}
-			for range depth {
-				value = resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{"x": value}}
-				wireValue = &resourcepb.Value{Selection: &resourcepb.Value_MapValue{
-					MapValue: &resourcepb.MapValue{Entries: []*resourcepb.ValueEntry{{Key: "x", Value: wireValue}}},
-				}}
-			}
-			record, err := (&qualifiedProvider{}).Get(context.Background(), testGet())
-			if err != nil {
-				t.Fatal(err)
-			}
-			update, err := resourcev2.ToProtoWatchUpdatePayload(resourcev2.WatchUpdatePayload{
-				Route: testGet().Route, Record: record, Guarantee: resourcev2.BestEffortGuarantee,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			update.Record.Body = wireValue
-			event := &resourcepb.UpdateStreamEvent{
-				Version: resourcev2.WireVersion,
-				Event:   &resourcepb.UpdateStreamEvent_Update{Update: update},
-			}
-			data, err := proto.Marshal(event)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err = ValidateWire(data, event.ProtoReflect().Descriptor()); err != nil {
-				t.Fatalf("wire rejected depth %d: %v", depth, err)
-			}
+			value, update := depthUpdateFixture(t, depth)
+			assertDepthUpdateWire(t, depth, update)
 			server := grpc.NewServer()
 			resourcepb.RegisterResourceUpdatesServer(server, &depthUpdateServer{update: update})
 			client := NewClient(pipe(t, server))
 			sink := &observedSink{updates: make(chan resourcev2.WatchUpdatePayload, 1)}
-			err = client.ListenForEvents(context.Background(), sink, func() error { return nil })
-			if depth > resourcev2.MaxValueDepth {
-				if resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" || !strings.Contains(err.Error(), "value complexity limit") {
-					t.Fatalf("expected semantic depth rejection, got %v", err)
-				}
-				if len(sink.updates) != 0 {
-					t.Fatal("delivered over-depth update")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case got := <-sink.updates:
-				if !reflect.DeepEqual(got.Record.Body, value) {
-					t.Fatal("update body changed in transit")
-				}
-			default:
-				t.Fatal("valid update was not delivered")
-			}
+			err := client.ListenForEvents(context.Background(), sink, func() error { return nil })
+			assertDepthUpdateResult(t, depth, value, sink, err)
 		})
 	}
 }

@@ -28,11 +28,11 @@ const (
 	MaxDocumentBytes   = maxDocumentBytes
 	MaxValueDepth      = maxDomainDepth
 	// MaxProtoDepth bounds protobuf message nesting, including Value wrappers.
-	MaxProtoDepth      = MaxValueDepth*3 + 16
-	MaxValueNodes      = maxDomainNodes
-	MaxWireFields      = maxDomainFields
-	MaxPageRecords     = maxPageRecords
-	MaxPageBodyBytes   = MaxMessageBytes
+	MaxProtoDepth    = MaxValueDepth*3 + 16
+	MaxValueNodes    = maxDomainNodes
+	MaxWireFields    = maxDomainFields
+	MaxPageRecords   = maxPageRecords
+	MaxPageBodyBytes = MaxMessageBytes
 )
 
 // Value tags are shared by domain validation and lossless JSON/protobuf codecs.
