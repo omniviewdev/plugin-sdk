@@ -339,6 +339,8 @@ Source sessions begin with a framework-issued `begin` frame. Providers emit snap
 
 `SourceOpenRequest.Binding` supplies the admitted representation once per generation. Observations carry a compact `RepresentationRef`, the tagged `Value` body, per-record coverage, and independent `DocumentCoverage.KnownAbsent` paths. The reference must match the binding's ID, revision, and schema-revision presence and value. Frame sequences use unsigned decimal strings in JSON; protobuf retains `uint64`. `CompactSourceRecord` converts a P45 record after the caller verifies its full representation against the admitted binding.
 
+The legacy finite-response compatibility path does not accept retired schema claims in ancillary editor-schema responses. Such responses are unsupported; the exercised Proxmox SDK v0.10.0 provider does not advertise editor schemas.
+
 Framework owns stream channels and completion. Send events and return; never close framework-owned channels. See [stream lifetime contracts](resource-v2-contracts.md#utility-and-stream-lifetime).
 
 ### Resource log-session ownership

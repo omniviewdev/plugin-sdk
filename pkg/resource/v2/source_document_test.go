@@ -52,6 +52,26 @@ func TestSourceDocumentProtoRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDocumentCoverageJSONKnownAbsentArray(t *testing.T) {
+	member := "missing"
+	nonempty := DocumentCoverage{KnownAbsent: []DocumentFieldPath{{Segments: []FieldPathSegment{{Member: &member}}}}}
+	for _, tc := range []struct {
+		name string
+		coverage DocumentCoverage
+		want string
+	}{
+		{"nil", DocumentCoverage{}, `{"knownAbsent":[]}`},
+		{"empty", DocumentCoverage{KnownAbsent: []DocumentFieldPath{}}, `{"knownAbsent":[]}`},
+		{"nonempty", nonempty, `{"knownAbsent":[{"segments":[{"member":"missing"}]}]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.coverage)
+			if err != nil { t.Fatal(err) }
+			if string(data) != tc.want { t.Fatalf("json = %s, want %s", data, tc.want) }
+		})
+	}
+}
+
 func TestSourceDocumentBindingSchemaRevisionPresence(t *testing.T) {
 	for _, tc := range []struct {
 		name string

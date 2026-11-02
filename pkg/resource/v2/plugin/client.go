@@ -68,7 +68,18 @@ func (c *Client) Catalog(ctx context.Context, in resourcev2.CatalogRequest) (res
 	if out.GetCatalog() == nil {
 		return resourcev2.Catalog{}, invalid("unexpected response result")
 	}
-	return resourcev2.FromProtoCatalog(out.GetCatalog())
+	catalog, err := resourcev2.FromProtoCatalog(out.GetCatalog())
+	if err != nil {
+		return resourcev2.Catalog{}, err
+	}
+	features := resourcev2.FeatureSet{}
+	if c.featureMode.Load() == 1 {
+		features.Traits = []resourcev2.Feature{resourcev2.FeatureSourceSessions}
+	}
+	if err = resourcev2.ValidateCatalogFeatures(catalog, features); err != nil {
+		return resourcev2.Catalog{}, err
+	}
+	return catalog, nil
 }
 
 // finiteClientOperation retains admission before encoding and validates decoded

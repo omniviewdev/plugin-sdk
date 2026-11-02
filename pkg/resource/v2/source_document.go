@@ -43,6 +43,17 @@ func validateDocumentCoverage(c DocumentCoverage, body Value) error {
 	return nil
 }
 
+
+func (c DocumentCoverage) MarshalJSON() ([]byte, error) {
+	knownAbsent := c.KnownAbsent
+	if knownAbsent == nil {
+		knownAbsent = []DocumentFieldPath{}
+	}
+	return json.Marshal(struct {
+		KnownAbsent []DocumentFieldPath `json:"knownAbsent"`
+	}{KnownAbsent: knownAbsent})
+}
+
 func toDocumentCoverage(c DocumentCoverage) *resourcepb.DocumentCoverage {
 	p := &resourcepb.DocumentCoverage{KnownAbsent: make([]*resourcepb.DocumentFieldPath, len(c.KnownAbsent))}
 	for i, path := range c.KnownAbsent {

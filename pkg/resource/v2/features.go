@@ -62,8 +62,8 @@ type FeatureNegotiator interface {
 	Features(context.Context) (FeatureSet, error)
 }
 
-// ValidateFeatures rejects duplicate or unknown trait names without changing f.
-// Unknown traits return UNSUPPORTED; malformed duplicates return INVALID_REQUEST.
+// ValidateFeatures rejects duplicate, conflicting, or unknown trait names.
+// Unknown traits return UNSUPPORTED; malformed declarations return INVALID_REQUEST.
 func ValidateFeatures(f FeatureSet) error {
 	seen := make(map[Feature]bool, len(f.Traits))
 	for _, feature := range f.Traits {
@@ -90,6 +90,9 @@ func ValidateFeatures(f FeatureSet) error {
 		default:
 			return NewError("UNSUPPORTED", "unknown ancillary feature")
 		}
+	}
+	if seen[FeatureSourceSessions] && seen[featureLegacyBestEffortUpdates] {
+		return NewError("INVALID_REQUEST", "legacy updates conflict with source sessions")
 	}
 	return nil
 }

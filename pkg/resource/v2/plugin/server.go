@@ -217,6 +217,9 @@ func (s *server) dispatchCatalog(ctx context.Context, op *resourcepb.Request_Cat
 	if err != nil {
 		return nil, err
 	}
+	if err = resourcev2.ValidateProviderCatalog(ctx, s.impl, value); err != nil {
+		return nil, err
+	}
 	p, err := resourcev2.ToProtoCatalog(value)
 	if err != nil {
 		return nil, err

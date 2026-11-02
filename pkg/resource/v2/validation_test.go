@@ -391,6 +391,14 @@ func TestLegacyDeclarationsAreInert(t *testing.T) {
 	if err := ValidateFeatures(FeatureSet{Traits: []Feature{"bestEffortUpdates", "bestEffortUpdates"}}); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("duplicate legacy feature: %v", err)
 	}
+	for _, traits := range [][]Feature{
+		{"bestEffortUpdates", FeatureSourceSessions},
+		{FeatureSourceSessions, "bestEffortUpdates"},
+	} {
+		if err := ValidateFeatures(FeatureSet{Traits: traits}); ErrorCode(err) != "INVALID_REQUEST" {
+			t.Fatalf("conflicting features: %v", err)
+		}
+	}
 	if err := ValidateFeatures(FeatureSet{Traits: []Feature{"unknownFeature"}}); ErrorCode(err) != "UNSUPPORTED" {
 		t.Fatalf("unknown feature: %v", err)
 	}
@@ -413,6 +421,12 @@ func TestLegacyDeclarationsAreInert(t *testing.T) {
 	catalog, err = FromProtoCatalog(wire)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := ValidateCatalogFeatures(catalog, features); err != nil {
+		t.Fatalf("legacy catalog rejected: %v", err)
+	}
+	if err := ValidateCatalogFeatures(catalog, FeatureSet{Traits: []Feature{FeatureSourceSessions}}); ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatalf("modern catalog accepted legacy update: %v", err)
 	}
 	if _, err := AdmitCatalogOperation(catalog, EnumerateRequest{Target: target}); err != nil {
 		t.Fatalf("finite operation rejected: %v", err)
