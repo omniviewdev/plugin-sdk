@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -186,5 +187,80 @@ func TestActualGRPCUpdateReadinessFailures(t *testing.T) {
 				t.Fatalf("readiness class: %v", err)
 			}
 		})
+	}
+}
+
+type depthUpdateProvider struct {
+	updateProvider
+	body  resourcev2.Value
+	event string
+}
+
+func (p *depthUpdateProvider) ListenForEvents(ctx context.Context, sink resourcev2.WatchEventSink, ready func() error) error {
+	if err := ready(); err != nil {
+		return err
+	}
+	record, err := p.qualifiedProvider.Get(ctx, testGet())
+	if err != nil {
+		return err
+	}
+	record.Body = p.body
+	switch p.event {
+	case "add":
+		sink.OnAdd(resourcev2.WatchAddPayload{Route: testGet().Route, Record: record, Guarantee: resourcev2.BestEffortGuarantee})
+	case "update":
+		sink.OnUpdate(resourcev2.WatchUpdatePayload{Route: testGet().Route, Record: record, Guarantee: resourcev2.BestEffortGuarantee})
+	case "delete":
+		sink.OnDelete(resourcev2.WatchDeletePayload{Route: testGet().Route, Reference: record.Reference, LastKnown: &record, Guarantee: resourcev2.BestEffortGuarantee})
+	}
+	return nil
+}
+
+type depthUpdateSink struct {
+	records []resourcev2.Record
+}
+
+func (s *depthUpdateSink) OnAdd(v resourcev2.WatchAddPayload) {
+	s.records = append(s.records, v.Record)
+}
+func (s *depthUpdateSink) OnUpdate(v resourcev2.WatchUpdatePayload) {
+	s.records = append(s.records, v.Record)
+}
+func (s *depthUpdateSink) OnDelete(v resourcev2.WatchDeletePayload) {
+	if v.LastKnown != nil {
+		s.records = append(s.records, *v.LastKnown)
+	}
+}
+func (*depthUpdateSink) OnStateChange(resourcev2.WatchStateEvent) {}
+
+func TestActualGRPCWatchValueDepth(t *testing.T) {
+	for _, shape := range []string{"map", "list", "mixed"} {
+		for _, event := range []string{"add", "update", "delete"} {
+			for _, depth := range []int{resourcev2.MaxValueDepth, resourcev2.MaxValueDepth + 1} {
+				t.Run(fmt.Sprintf("%s/%s/%d", shape, event, depth), func(t *testing.T) {
+					p := &depthUpdateProvider{body: nestedDepthValue(shape, depth), event: event}
+					s := grpc.NewServer(ServerOptions()...)
+					RegisterServer(s, p)
+					c := NewClient(pipe(t, s))
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					sink := &depthUpdateSink{}
+					err := c.ListenForEvents(ctx, sink, func() error { return nil })
+					if depth > resourcev2.MaxValueDepth {
+						if resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" || len(sink.records) != 0 {
+							t.Fatalf("over-depth watch event: records=%d error=%v", len(sink.records), err)
+						}
+						return
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					if len(sink.records) != 1 {
+						t.Fatalf("received %d records", len(sink.records))
+					}
+					assertDepthLeaf(t, sink.records[0].Body, depth)
+				})
+			}
+		}
 	}
 }
