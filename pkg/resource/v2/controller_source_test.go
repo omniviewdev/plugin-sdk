@@ -270,9 +270,7 @@ func TestControllerLiveSourceRejectsUnboundRecords(t *testing.T) {
 				}}}
 				controller := newTestController(t, cfg)
 				err := controller.OpenSource(acceptedControllerContext(context.Background(), t, controller), controllerSourceOpen(SourceModeSnapshotAndUpdates), &recordingSourceEmitter{})
-				if err == nil {
-					t.Fatal("live source accepted an unbound record")
-				}
+				assertControllerCode(t, err, "PROVIDER_ERROR")
 			})
 		}
 	}

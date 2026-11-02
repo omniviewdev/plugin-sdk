@@ -238,7 +238,7 @@ func (e *controllerSourceEmitter[T]) Changes(ctx context.Context, changes []Sour
 				return NewError("PROVIDER_ERROR", "invalid source removal")
 			}
 			if err := token(change.SourceRevision); err != nil {
-				return err
+				return NewError("PROVIDER_ERROR", "invalid source removal")
 			}
 			if err := checkSourceReference(e.descriptor, e.target, *change.Reference); err != nil {
 				return err

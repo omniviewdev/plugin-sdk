@@ -120,15 +120,18 @@ func ValidateSourceObservation(target ReadTarget, representation string, observa
 }
 
 func checkSourceObservation(descriptor ResourceType, target ReadTarget, observation SourceObservation) error {
-	return checkRecord(observation.Record, descriptor, target.Provider, target.Authority, target.Representation, nil, target.Scope)
+	if err := checkRecord(observation.Record, descriptor, target.Provider, target.Authority, target.Representation, nil, target.Scope); err != nil {
+		return NewError("PROVIDER_ERROR", "invalid source observation")
+	}
+	return nil
 }
 
 func checkSourceReference(descriptor ResourceType, target ReadTarget, reference ResourceReference) error {
 	if err := validateReference(reference); err != nil {
-		return err
+		return NewError("PROVIDER_ERROR", "invalid source removal")
 	}
 	if err := ValidateAddress(reference.Address, descriptor.IdentityDimensions); err != nil {
-		return err
+		return NewError("PROVIDER_ERROR", "invalid source removal")
 	}
 	if !sourceContainsReference(target, reference) {
 		return NewError("PROVIDER_ERROR", "source removal escapes target")
