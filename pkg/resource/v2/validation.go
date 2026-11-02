@@ -27,6 +27,8 @@ const (
 	MaxMessageBytes    = 32 << 20
 	MaxDocumentBytes   = maxDocumentBytes
 	MaxValueDepth      = maxDomainDepth
+	// MaxProtoDepth bounds protobuf message nesting, including Value wrappers.
+	MaxProtoDepth      = MaxValueDepth*3 + 16
 	MaxValueNodes      = maxDomainNodes
 	MaxWireFields      = maxDomainFields
 	MaxPageRecords     = maxPageRecords

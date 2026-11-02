@@ -170,6 +170,8 @@ See [relationship_validation.go](../pkg/resource/v2/relationship_validation.go) 
 
 Candidate policy `omniview.resource-wire-policy.v1` bounds frames at 32 MiB, bodies at 16 MiB, semantic value depth at 64, nodes at 262144, fields at 1048576 and source pages at 256 records. Aggregate frame/page budgets apply before generated decoding; record limits do not multiply aggregate allowance. Protobuf-tree, JSON-tree and semantic-value depth checks are separate boundaries, not interchangeable traversal counters. Qualified observations have 4096-byte individual revision and conservative 32 KiB aggregate limits; targets are bounded at 256. Metric lanes separately bound used-ID tombstones at 4096 and retained admission metadata at 32 MiB.
 
+Raw protobuf admission and direct adapter admission bound protobuf message depth at 208, counting the root at zero and including wrappers. Semantic Value depth remains 64, counting the root Value at zero. Map entries, list containers, and enclosing RPC messages therefore do not consume the semantic Value depth budget. The independent protobuf node, field, and byte limits remain in force.
+
 These are candidate safety ceilings, not latency promises, planner budgets, or approved product policy. Hosts may lower effective limits. The separate predicate/projection policy remains 64 KiB. `ValueWireSize` and `RecordWireSize` support bounded source construction without allocating transport messages.
 
 History ingestion/storage, search, timeline, universal planning, schema normalization (P07), and strong P05 source continuity are excluded. Advisory updates never claim replay, gap-free delivery, or atomic snapshot/live handoff. Domain documentation does not turn excluded engines into implicit requirements or completion claims.
