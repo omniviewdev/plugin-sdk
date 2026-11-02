@@ -57,6 +57,73 @@ func (p *largeProvider) Get(context.Context, resourcev2.GetRequest) (resourcev2.
 	}, nil
 }
 
+type depthProvider struct {
+	qualifiedProvider
+	body resourcev2.Value
+}
+
+func (p *depthProvider) Get(ctx context.Context, req resourcev2.GetRequest) (resourcev2.Record, error) {
+	record, err := p.qualifiedProvider.Get(ctx, req)
+	record.Body = p.body
+	return record, err
+}
+
+func nestedDepthValue(shape string, depth int) resourcev2.Value {
+	value := resourcev2.Value{Kind: "string", String: "leaf"}
+	for i := range depth - 1 {
+		if shape == "list" || (shape == "mixed" && i%2 == 0) {
+			value = resourcev2.Value{Kind: "list", List: []resourcev2.Value{value}}
+		} else {
+			value = resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{"child": value}}
+		}
+	}
+	return resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{"child": value}}
+}
+
+func assertDepthLeaf(t *testing.T, value resourcev2.Value, depth int) {
+	t.Helper()
+	for range depth {
+		switch value.Kind {
+		case "map":
+			value = value.Map["child"]
+		case "list":
+			if len(value.List) != 1 {
+				t.Fatal("nested list changed")
+			}
+			value = value.List[0]
+		default:
+			t.Fatalf("unexpected nested value kind %q", value.Kind)
+		}
+	}
+	if value.Kind != "string" || value.String != "leaf" {
+		t.Fatal("nested leaf changed")
+	}
+}
+
+func TestActualGRPCResourceValueDepth(t *testing.T) {
+	for _, shape := range []string{"map", "list", "mixed"} {
+		for _, depth := range []int{resourcev2.MaxValueDepth, resourcev2.MaxValueDepth + 1} {
+			t.Run(fmt.Sprintf("%s/%d", shape, depth), func(t *testing.T) {
+				p := &depthProvider{qualifiedProvider: qualifiedProvider{allowed: true}, body: nestedDepthValue(shape, depth)}
+				s := grpc.NewServer(ServerOptions()...)
+				RegisterServer(s, p)
+				c := NewClient(pipe(t, s))
+				record, err := c.Get(acceptedCatalogContext(context.Background(), t, c, testGet().Route), testGet())
+				if depth > resourcev2.MaxValueDepth {
+					if resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {
+						t.Fatalf("over-depth record: %v", err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertDepthLeaf(t, record.Body, depth)
+			})
+		}
+	}
+}
+
 func TestActualGRPCMultiMiBResourceBodies(t *testing.T) {
 	for _, size := range []int{2 << 20, 8 << 20} {
 		t.Run(fmt.Sprintf("%dMiB", size>>20), func(t *testing.T) {

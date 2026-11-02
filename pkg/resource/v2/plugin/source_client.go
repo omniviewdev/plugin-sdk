@@ -49,7 +49,7 @@ func (c *Client) OpenSourceStream(ctx context.Context, r resourcev2.SourceOpenRe
 		cancel()
 		return nil, domainError(err)
 	}
-	return &sourceClientStream{stream: stream, cancel: cancel, tracker: resourcev2.NewSourcePhaseTracker(r, resourcev2.SourceGuaranteeForTarget(descriptor, r.Target))}, nil
+	return &sourceClientStream{stream: stream, cancel: cancel, tracker: resourcev2.NewCatalogBoundSourcePhaseTracker(r, descriptor)}, nil
 }
 func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 	var zero resourcev2.SourceFrame

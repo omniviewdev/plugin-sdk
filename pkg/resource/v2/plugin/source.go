@@ -96,7 +96,7 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
 		if err == nil {
 			err = s.owner.checkCatalogRoute(ctx, p.GetTarget().GetRoute())
 		}
-		e.tracker = resourcev2.NewSourcePhaseTracker(r, resourcev2.SourceGuaranteeForTarget(descriptor, r.Target))
+		e.tracker = resourcev2.NewCatalogBoundSourcePhaseTracker(r, descriptor)
 		if err == nil {
 			provider, ok := s.owner.impl.(resourcev2.SourceProvider)
 			if !ok {
@@ -148,7 +148,9 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
 				close(stalled)
 				cancel()
 				d.ack <- limited("source host stalled")
-				// gRPC forbids returning while SendMsg is in flight.
+				// The watchdog bounds provider work, not transport lifetime. A
+				// derived context cannot abort SendMsg; the host must close or
+				// cancel abandoned streams. Join before releasing stream ownership.
 				return <-sent
 			case <-stream.Context().Done():
 				if !timer.Stop() {

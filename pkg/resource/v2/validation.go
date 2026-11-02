@@ -27,7 +27,9 @@ const (
 	MaxMessageBytes    = 32 << 20
 	MaxDocumentBytes   = maxDocumentBytes
 	MaxValueDepth      = maxDomainDepth
-	// MaxProtoDepth bounds protobuf message nesting, including Value wrappers.
+	// MaxProtoDepth allows each semantic map level's Value, MapValue and
+	// ValueEntry messages, plus 16 messages for the enclosing RPC. Semantic
+	// Value depth remains limited by MaxValueDepth.
 	MaxProtoDepth    = MaxValueDepth*3 + 16
 	MaxValueNodes    = maxDomainNodes
 	MaxWireFields    = maxDomainFields

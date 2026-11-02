@@ -76,6 +76,67 @@ func TestSourceTransportSnapshotAndClose(t *testing.T) {
 	}
 }
 
+func TestSourceTransportValueDepth(t *testing.T) {
+	for _, shape := range []string{"map", "list", "mixed"} {
+		for _, depth := range []int{resourcev2.MaxValueDepth, resourcev2.MaxValueDepth + 1} {
+			t.Run(fmt.Sprintf("%s/%d", shape, depth), func(t *testing.T) {
+				record, err := (&qualifiedProvider{}).Get(context.Background(), testGet())
+				if err != nil {
+					t.Fatal(err)
+				}
+				record.Body = nestedDepthValue(shape, depth)
+				p := &transportSourceProvider{callback: func(ctx context.Context, e resourcev2.SourceEmitter) error {
+					if err := e.Snapshot(ctx, []resourcev2.SourceObservation{{Record: record}}); err != nil {
+						return err
+					}
+					return e.EndSnapshot(ctx, resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}, resourcev2.ContinuityNotApplicable)
+				}}
+				server := grpc.NewServer(ServerOptions()...)
+				RegisterServer(server, p)
+				c := sourceTCP(t, server)
+				r := transportSourceRequest()
+				ctx := acceptedCatalogContext(context.Background(), t, c, r.Target.Route)
+				stream, err := c.OpenSourceStream(ctx, r)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer stream.Close()
+				var records []resourcev2.Record
+				var failure string
+				for {
+					frame, err := stream.Recv()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+					if frame.Snapshot != nil {
+						for _, observation := range frame.Snapshot.Observations {
+							records = append(records, observation.Record)
+						}
+					}
+					if frame.Failed != nil {
+						failure = frame.Failed.Code
+					}
+				}
+				if depth > resourcev2.MaxValueDepth {
+					// Invalid provider observations are reported as PROVIDER_ERROR;
+					// unary record admission separately exposes RESOURCE_LIMIT.
+					if failure != "PROVIDER_ERROR" || len(records) != 0 {
+						t.Fatalf("over-depth source: records=%d failure=%q", len(records), failure)
+					}
+					return
+				}
+				if failure != "" || len(records) != 1 {
+					t.Fatalf("source: records=%d failure=%q", len(records), failure)
+				}
+				assertDepthLeaf(t, records[0].Body, depth)
+			})
+		}
+	}
+}
+
 type hostileSourceStream struct {
 	grpc.ClientStream
 	frames []*resourcepb.SourceFrame
@@ -404,7 +465,20 @@ func TestSourceTCPStalledHost(t *testing.T) {
 			}
 		}
 	}}
-	server := grpc.NewServer(ServerOptions()...)
+	handlerDone := make(chan struct{})
+	transportDone := make(chan struct{})
+	options := append(ServerOptions(), grpc.ChainStreamInterceptor(func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if info.FullMethod != resourcepb.ResourceSources_Open_FullMethodName {
+			return handler(srv, stream)
+		}
+		go func() {
+			<-stream.Context().Done()
+			close(transportDone)
+		}()
+		defer close(handlerDone)
+		return handler(srv, stream)
+	}))
+	server := grpc.NewServer(options...)
 	RegisterServer(server, p)
 	client := sourceTCP(t, server)
 	r := transportSourceRequest()
@@ -414,6 +488,7 @@ func TestSourceTCPStalledHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer stream.Close()
 	select {
 	case err := <-cancelled:
 		if resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {
@@ -422,7 +497,26 @@ func TestSourceTCPStalledHost(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Error("stalled host did not cancel provider")
 	}
+	// The watchdog cancels provider work, but cannot cancel the underlying gRPC
+	// send. The host owns transport cancellation and must close abandoned streams.
+	select {
+	case <-handlerDone:
+		t.Fatal("stalled source handler returned while its send remained blocked")
+	default:
+	}
 	stream.Close()
+	select {
+	case <-handlerDone:
+	case <-time.After(time.Second):
+		t.Fatal("stalled source handler retained after client close")
+	}
+	select {
+	case <-transportDone:
+	case <-time.After(time.Second):
+		t.Fatal("stalled source transport retained after client close")
+	}
+	// The stalled source must not tear down other RPCs on the same connection.
+	_ = acceptedCatalogContext(context.Background(), t, client, r.Target.Route)
 }
 
 func TestSourceTCPCloseCancelsProvider(t *testing.T) {
@@ -814,7 +908,7 @@ func TestSourceScopedContinuityTransport(t *testing.T) {
 	}
 }
 
-func TestSourceTransportValueDepth(t *testing.T) {
+func TestSourceTransportHostileValueDepth(t *testing.T) {
 	for _, depth := range []int{21, resourcev2.MaxValueDepth - 1, resourcev2.MaxValueDepth, resourcev2.MaxValueDepth + 1} {
 		t.Run(fmt.Sprintf("depth_%d", depth), func(t *testing.T) {
 			value := resourcev2.Value{Kind: "bool"}
