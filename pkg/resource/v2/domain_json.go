@@ -409,7 +409,7 @@ func (v *SchemaDocumentReference) UnmarshalJSON(data []byte) error {
 func (v *SchemaBinding) UnmarshalJSON(data []byte) error {
 	type plain SchemaBinding
 	var out plain
-	object, err := decodeDomainObject(data, &out, "state", "validation", "unvalidated")
+	object, err := decodeDomainObject(data, &out, "state")
 	if err != nil {
 		return err
 	}
@@ -667,11 +667,7 @@ func (v SchemaBinding) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	type plain SchemaBinding
-	out := plain(v)
-	if out.Unvalidated == nil {
-		out.Unvalidated = []string{}
-	}
-	return marshalDomainJSON(out)
+	return marshalDomainJSON(plain(v))
 }
 
 // MarshalJSON validates Coverage and emits canonical JSON without mutating caller-owned containers.

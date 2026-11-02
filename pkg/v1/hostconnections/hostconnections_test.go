@@ -115,7 +115,6 @@ func TestFiniteRecordsRejectChangedResourceIdentity(t *testing.T) {
 			State: "available", Revision: &revision,
 			Dialect:     "https://json-schema.org/draft/2020-12/schema",
 			DocumentRef: &resourcev2.SchemaDocumentReference{ID: "schema", Revision: revision},
-			Validation:  "full",
 		},
 	}
 	for _, test := range []struct {

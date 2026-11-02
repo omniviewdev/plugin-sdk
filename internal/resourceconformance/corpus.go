@@ -46,19 +46,36 @@ type Change struct {
 	Body     json.RawMessage
 }
 
+// Scenario schema delivery modes.
+const (
+	SchemaDeliveryInline    = "inline"
+	SchemaDeliveryReference = "reference"
+)
+
 // Scenario binds selected native scopes to finite pages and declared guarantees.
 // A nil Schema means the source did not provide one.
 type Scenario struct {
-	Name       string
-	Profile    string
-	Type       string
-	Selection  map[string][]string // explicit finite selected native scope values
-	Schema     json.RawMessage     // nil means not provided
-	Pages      []Page
-	Coverage   Coverage
-	Freshness  string
-	Updates    []Change
-	Operations map[string]string // finite fixture expectations, not SDK capabilities
+	Name      string
+	Profile   string
+	Type      string
+	Selection map[string][]string // explicit finite selected native scope values
+	Schema    json.RawMessage     // nil means not provided
+	// SchemaDialect names the Schema dialect; empty means JSON Schema 2020-12.
+	SchemaDialect string
+	// SchemaRoot is the local RFC6901 URI-fragment root of Schema; empty
+	// selects the document root. OpenAPI documents require a root.
+	SchemaRoot string
+	// SchemaDelivery is empty or SchemaDeliveryInline for an inline document,
+	// or SchemaDeliveryReference for a document served by reference.
+	SchemaDelivery string
+	// SchemaUnavailable, when set, is the reviewed error code reported as the
+	// unavailable representation schema reason; Schema must then be nil.
+	SchemaUnavailable string
+	Pages             []Page
+	Coverage          Coverage
+	Freshness         string
+	Updates           []Change
+	Operations        map[string]string // finite fixture expectations, not SDK capabilities
 }
 
 // IdentityCase supplies independent expected equality for two named records.
@@ -200,6 +217,9 @@ func (s *Scenario) validate(names map[string]*Record) error {
 	if err := s.validatePages(names); err != nil {
 		return err
 	}
+	if err := s.validateSchemaSource(); err != nil {
+		return err
+	}
 	if s.Freshness == "" || s.Coverage.Enumeration == "" || s.Coverage.Consistency == "" {
 		return fmt.Errorf("%s: missing explicit guarantee", s.Name)
 	}
@@ -208,6 +228,28 @@ func (s *Scenario) validate(names map[string]*Record) error {
 		if !ok || r.Provider != s.Profile || r.Type != s.Type || !json.Valid(u.Body) || u.Revision == "" {
 			return fmt.Errorf("%s: invalid native change", s.Name)
 		}
+	}
+	return nil
+}
+
+func (s *Scenario) validateSchemaSource() error {
+	switch s.SchemaDelivery {
+	case "", SchemaDeliveryInline:
+	case SchemaDeliveryReference:
+		if s.Schema == nil {
+			return fmt.Errorf("%s: reference schema delivery requires a schema", s.Name)
+		}
+	default:
+		return fmt.Errorf("%s: unknown schema delivery %q", s.Name, s.SchemaDelivery)
+	}
+	if s.SchemaUnavailable != "" && (s.Schema != nil || s.SchemaDelivery != "" || s.SchemaDialect != "") {
+		return fmt.Errorf("%s: unavailable schema carries a document binding", s.Name)
+	}
+	if s.Schema == nil && (s.SchemaDialect != "" || s.SchemaRoot != "") {
+		return fmt.Errorf("%s: schema dialect or root without a schema", s.Name)
+	}
+	if s.SchemaDialect == schemaDialectOpenAPI30 && s.SchemaRoot == "" {
+		return fmt.Errorf("%s: OpenAPI schema requires a root", s.Name)
 	}
 	return nil
 }

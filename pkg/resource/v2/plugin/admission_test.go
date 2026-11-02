@@ -21,7 +21,7 @@ func testRepresentation() resourcev2.Representation {
 	return resourcev2.Representation{
 		ID:       "document",
 		Revision: "rep-1",
-		Schema:   resourcev2.SchemaBinding{State: "absent", Validation: "none", Unvalidated: []string{}},
+		Schema:   resourcev2.SchemaBinding{State: "absent"},
 	}
 }
 

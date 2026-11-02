@@ -185,3 +185,20 @@ func TestAddressSeparatesProviderAuthorityAndType(t *testing.T) {
 		}
 	}
 }
+
+func TestScenarioSchemaSourceValidation(t *testing.T) {
+	for name, mutate := range map[string]func(*Scenario){
+		"reference without schema":   func(s *Scenario) { s.Schema, s.SchemaDelivery = nil, SchemaDeliveryReference },
+		"unknown delivery":           func(s *Scenario) { s.SchemaDelivery = "remote" },
+		"unavailable with schema":    func(s *Scenario) { s.SchemaUnavailable = "FORBIDDEN" },
+		"dialect without any schema": func(s *Scenario) { s.Schema, s.SchemaDialect = nil, "openapi-3.0" },
+		"root without any schema":    func(s *Scenario) { s.Schema, s.SchemaRoot = nil, "#/x" },
+		"openapi without root":       func(s *Scenario) { s.SchemaDialect = "openapi-3.0" },
+	} {
+		c := NativeCorpus()
+		mutate(&c.Scenarios[0])
+		if c.Validate() == nil {
+			t.Fatalf("%s admitted", name)
+		}
+	}
+}

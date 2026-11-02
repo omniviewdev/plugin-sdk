@@ -35,7 +35,7 @@ func codecRecord() Record {
 		Representation: Representation{
 			ID:       "native",
 			Revision: "representation-1",
-			Schema:   SchemaBinding{State: "absent", Validation: "none", Unvalidated: []string{}},
+			Schema:   SchemaBinding{State: "absent"},
 		},
 		Coverage:       Coverage{Kind: "complete", Paths: []string{}},
 		SourceRevision: codecToken("object-revision"),
@@ -273,7 +273,6 @@ func TestEveryFiniteDomainAdapter(t *testing.T) {
 		Dialect:     "https://json-schema.org/draft/2020-12/schema",
 		DocumentRef: &reference,
 		Root:        "#/$defs/x",
-		Validation:  "none",
 	}
 	adapterRoundTrip(t, r, ToProtoRecord, FromProtoRecord)
 }

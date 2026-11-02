@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -902,6 +903,69 @@ func TestSourceScopedContinuityTransport(t *testing.T) {
 				}
 			} else if err != nil || frame.Failed == nil || frame.Failed.Code != "PROVIDER_ERROR" {
 				t.Fatalf("emitter accepted gap-free claim: %#v %v", frame.Failed, err)
+			}
+		})
+	}
+}
+
+func TestSourceTransportHostileValueDepth(t *testing.T) {
+	for _, depth := range []int{21, resourcev2.MaxValueDepth - 1, resourcev2.MaxValueDepth, resourcev2.MaxValueDepth + 1} {
+		t.Run(fmt.Sprintf("depth_%d", depth), func(t *testing.T) {
+			value := resourcev2.Value{Kind: "bool"}
+			wireValue := &resourcepb.Value{Selection: &resourcepb.Value_BoolValue{}}
+			for range depth {
+				value = resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{"x": value}}
+				wireValue = &resourcepb.Value{Selection: &resourcepb.Value_MapValue{
+					MapValue: &resourcepb.MapValue{Entries: []*resourcepb.ValueEntry{{Key: "x", Value: wireValue}}},
+				}}
+			}
+			record, err := (&qualifiedProvider{}).Get(context.Background(), testGet())
+			if err != nil {
+				t.Fatal(err)
+			}
+			observation, err := resourcev2.ToProtoSourceObservation(resourcev2.SourceObservation{Record: record})
+			if err != nil {
+				t.Fatal(err)
+			}
+			observation.Record.Body = wireValue
+			request := transportSourceRequest()
+			begin := &resourcepb.SourceFrame{
+				Version: resourcev2.WireVersion, SessionId: request.SessionID, Generation: request.Generation, Sequence: 1,
+				Payload: &resourcepb.SourceFrame_Begin{Begin: &resourcepb.SourceBegin{Mode: request.Mode}},
+			}
+			snapshot := &resourcepb.SourceFrame{
+				Version: resourcev2.WireVersion, SessionId: request.SessionID, Generation: request.Generation, Sequence: 2,
+				Payload: &resourcepb.SourceFrame_Snapshot{Snapshot: &resourcepb.SourceSnapshot{Observations: []*resourcepb.SourceObservation{observation}}},
+			}
+			raw, err := proto.Marshal(snapshot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = ValidateWire(raw, snapshot.ProtoReflect().Descriptor()); err != nil {
+				t.Fatalf("raw protobuf wrappers rejected semantic depth %d: %v", depth, err)
+			}
+			client := hostileTCP(t, []*resourcepb.SourceFrame{begin, snapshot}, false)
+			ctx := acceptedCatalogContext(context.Background(), t, client, request.Target.Route)
+			stream, err := client.OpenSourceStream(ctx, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			if _, err = stream.Recv(); err != nil {
+				t.Fatal(err)
+			}
+			frame, err := stream.Recv()
+			if depth > resourcev2.MaxValueDepth {
+				if resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {
+					t.Fatalf("expected semantic depth rejection, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if frame.Snapshot == nil || len(frame.Snapshot.Observations) != 1 || !reflect.DeepEqual(frame.Snapshot.Observations[0].Record.Body, value) {
+				t.Fatal("valid nested source body changed in transit")
 			}
 		})
 	}

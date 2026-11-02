@@ -98,15 +98,40 @@ func token(s string) *string {
 	return &s
 }
 
-func representation(s Scenario) resource.Representation {
-	schema := resource.SchemaBinding{State: "absent", Validation: "none", Unvalidated: []string{}}
-	if s.Schema != nil {
-		schema.State = "available"
-		schema.Revision = token("schema:opaque/1")
-		schema.Dialect = "https://json-schema.org/draft/2020-12/schema"
-		schema.Document = s.Schema
+const nativeSchemaRevision = "schema:opaque/1"
+
+func schemaDialect(s Scenario) string {
+	if s.SchemaDialect == "" {
+		return resource.DialectJSONSchema202012
 	}
-	return resource.Representation{ID: "native", Revision: "representation:opaque/1", Schema: schema}
+	return s.SchemaDialect
+}
+
+func schemaDocumentReference(s Scenario) resource.SchemaDocumentReference {
+	return resource.SchemaDocumentReference{ID: "conformance/" + s.Name, Revision: nativeSchemaRevision}
+}
+
+const nativeRepresentationID = "native"
+
+func representation(s Scenario) resource.Representation {
+	schema := resource.SchemaBinding{State: "absent"}
+	switch {
+	case s.SchemaUnavailable != "":
+		reason := s.SchemaUnavailable
+		schema = resource.SchemaBinding{State: "unavailable", UnavailableReason: &reason}
+	case s.Schema != nil:
+		schema.State = "available"
+		schema.Revision = token(nativeSchemaRevision)
+		schema.Dialect = schemaDialect(s)
+		schema.Root = s.SchemaRoot
+		if s.SchemaDelivery == SchemaDeliveryReference {
+			reference := schemaDocumentReference(s)
+			schema.DocumentRef = &reference
+		} else {
+			schema.Document = s.Schema
+		}
+	}
+	return resource.Representation{ID: nativeRepresentationID, Revision: "representation:opaque/1", Schema: schema}
 }
 
 func nativeRecord(r Record, s Scenario) resource.Record {
@@ -209,14 +234,39 @@ func (p *nativeProvider) Catalog(ctx context.Context, in resource.CatalogRequest
 		Coverage: resource.Coverage{Kind: "complete", Paths: []string{}},
 		Types: []resource.ResourceType{
 			{
-				Type:               s.Type,
-				DisplayName:        s.Type,
-				IdentityDimensions: dims,
-				QueryDimensions:    dims,
-				Representations:    []resource.Representation{representation(s)},
-				Capabilities:       caps,
+				Type:                  s.Type,
+				DisplayName:           s.Type,
+				IdentityDimensions:    dims,
+				QueryDimensions:       dims,
+				Representations:       []resource.Representation{representation(s)},
+				DefaultRepresentation: nativeRepresentationID,
+				Capabilities:          caps,
 			},
 		},
+	}, nil
+}
+
+// GetSchemaDocument serves a reference-delivered scenario schema; any other
+// reference is NOT_FOUND.
+func (p *nativeProvider) GetSchemaDocument(
+	ctx context.Context,
+	route resource.AccessRoute,
+	reference resource.SchemaDocumentReference,
+) (resource.SchemaDocument, error) {
+	s, err := p.scenario(route)
+	if err != nil {
+		return resource.SchemaDocument{}, err
+	}
+	if err = ctx.Err(); err != nil {
+		return resource.SchemaDocument{}, err
+	}
+	if s.SchemaDelivery != SchemaDeliveryReference || reference != schemaDocumentReference(s) {
+		return resource.SchemaDocument{}, nativeError("NOT_FOUND", "schema document is not served by this source")
+	}
+	return resource.SchemaDocument{
+		Reference: reference,
+		Dialect:   schemaDialect(s),
+		Document:  append(json.RawMessage(nil), s.Schema...),
 	}, nil
 }
 

@@ -93,6 +93,14 @@ type Value struct {
 	Map       map[string]Value `json:"-"`
 }
 
+// Schema dialect identifiers. SDK validation requires only a non-empty dialect;
+// the host schema catalog decides which dialects it normalizes.
+const (
+	DialectJSONSchema202012  = "https://json-schema.org/draft/2020-12/schema"
+	DialectJSONSchemaDraft07 = "http://json-schema.org/draft-07/schema#"
+	DialectOpenAPI30         = "openapi-3.0"
+)
+
 // SchemaBinding distinguishes known absence from failed schema acquisition.
 // Available schemas require a revision, dialect, and exactly one inline Document
 // or DocumentRef. Absent schemas have no document binding. Unavailable schemas
@@ -107,10 +115,6 @@ type SchemaBinding struct {
 	Root        string                   `json:"root,omitempty"`
 	DocumentRef *SchemaDocumentReference `json:"documentRef,omitempty"`
 	Document    json.RawMessage          `json:"document,omitempty"`
-	// Validation is full, reduced, or none. Reduced requires explicit
-	// Unvalidated constraints; full and none forbid such claims.
-	Validation  string   `json:"validation"`
-	Unvalidated []string `json:"unvalidated"`
 	// UnavailableReason is an optional reviewed ErrorCode, not native diagnostic
 	// text, and is valid only in the unavailable state.
 	UnavailableReason *string `json:"unavailableReason,omitempty"`
@@ -281,6 +285,9 @@ type NativeQueryRequest struct {
 // Coverage states known acquisition limitations, not operation success alone.
 // Complete forbids Paths and Reason. Partial and unknown require a public-safe
 // Reason; preserve any reported path limitations rather than claiming completeness.
+// Each Paths entry is an RFC6901 JSON pointer into the record body that starts
+// with "/" and names a LIMITED subtree; empty Paths on partial or unknown
+// coverage means the limitation is not localized.
 type Coverage struct {
 	Kind   string   `json:"kind"`
 	Paths  []string `json:"paths"`

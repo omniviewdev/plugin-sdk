@@ -43,17 +43,14 @@ func (p *nativeSchemaReasonProvider) GetEditorSchemas(
 	}
 	revision := "native-schema-v1"
 	native := resourcev2.EditorSchema{
-		Type:      "native:pod",
-		FileMatch: "*.yaml",
-		URI:       "schema://native/pod",
-		Language:  "yaml",
+		Type:     "native:pod",
+		Key:      "default",
+		Language: "yaml",
 		Binding: resourcev2.SchemaBinding{
-			State:       "available",
-			Revision:    &revision,
-			Dialect:     "https://json-schema.org/draft/2020-12/schema",
-			Document:    document,
-			Validation:  "none",
-			Unvalidated: []string{},
+			State:    "available",
+			Revision: &revision,
+			Dialect:  "https://json-schema.org/draft/2020-12/schema",
+			Document: document,
 		},
 	}
 	request, err = http.NewRequestWithContext(ctx, http.MethodGet, p.endpoint+"/helm", nil)
@@ -70,14 +67,11 @@ func (p *nativeSchemaReasonProvider) GetEditorSchemas(
 	}
 	reason := "FORBIDDEN"
 	helm := resourcev2.EditorSchema{
-		Type:      "helm:values",
-		FileMatch: "values.yaml",
-		URI:       "schema://helm/values",
-		Language:  "yaml",
+		Type:     "helm:values",
+		Key:      "default",
+		Language: "yaml",
 		Binding: resourcev2.SchemaBinding{
 			State:             "unavailable",
-			Validation:        "none",
-			Unvalidated:       []string{},
 			UnavailableReason: &reason,
 		},
 	}
@@ -112,9 +106,7 @@ func TestActualRPCSchemaUnavailableReasonRetainsNativeSchemas(t *testing.T) {
 	binding := schemas[1].Binding
 	if binding.State != "unavailable" || binding.UnavailableReason == nil ||
 		*binding.UnavailableReason != "FORBIDDEN" ||
-		binding.Validation != "none" ||
-		len(binding.Document) != 0 ||
-		len(binding.Unvalidated) != 0 {
+		len(binding.Document) != 0 {
 		t.Fatalf("unavailable role misrepresented: %+v", binding)
 	}
 	output, err := json.Marshal(schemas)
@@ -142,7 +134,7 @@ func TestSchemaUnavailableReasonStrictAdmissionBeforeDecode(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.state+"/"+tc.reason, func(t *testing.T) {
 			reason := tc.reason
-			wire := &resourcepb.SchemaBinding{State: tc.state, Validation: "none", UnavailableReason: &reason}
+			wire := &resourcepb.SchemaBinding{State: tc.state, UnavailableReason: &reason}
 			data, err := proto.Marshal(wire)
 			if err != nil {
 				t.Fatal(err)
@@ -158,17 +150,14 @@ func TestSchemaUnavailableReasonStrictAdmissionBeforeDecode(t *testing.T) {
 			}
 			value := resourcev2.SchemaBinding{
 				State:             tc.state,
-				Validation:        "none",
-				Unvalidated:       []string{},
 				UnavailableReason: &reason,
 			}
 			if _, err := resourcev2.ToProtoEditorSchema(
 				resourcev2.EditorSchema{
-					Type:      "resource/type",
-					FileMatch: "*.json",
-					URI:       "omniview://schema",
-					Language:  "json",
-					Binding:   value,
+					Type:     "resource/type",
+					Key:      "default",
+					Language: "json",
+					Binding:  value,
 				},
 			); resourcev2.ErrorCode(
 				err,
@@ -178,8 +167,6 @@ func TestSchemaUnavailableReasonStrictAdmissionBeforeDecode(t *testing.T) {
 			input, _ := json.Marshal(
 				map[string]any{
 					"state":             tc.state,
-					"validation":        "none",
-					"unvalidated":       []string{},
 					"unavailableReason": tc.reason,
 				},
 			)
@@ -191,18 +178,97 @@ func TestSchemaUnavailableReasonStrictAdmissionBeforeDecode(t *testing.T) {
 	}
 	var absent resourcev2.SchemaBinding
 	if err := json.Unmarshal(
-		[]byte(`{"state":"unavailable","validation":"none","unvalidated":[]}`),
+		[]byte(`{"state":"unavailable"}`),
 		&absent,
 	); err != nil ||
 		absent.UnavailableReason != nil {
 		t.Fatalf("absent reason synthesized: %+v %v", absent, err)
 	}
 	if err := json.Unmarshal(
-		[]byte(`{"state":"unavailable","validation":"none","unvalidated":[],"unavailableReason":null}`),
+		[]byte(`{"state":"unavailable","unavailableReason":null}`),
 		&absent,
 	); resourcev2.ErrorCode(
 		err,
 	) != "INVALID_REQUEST" {
 		t.Fatalf("explicit null reason admitted: %v", err)
+	}
+}
+
+type duplicateEditorSchemaProvider struct {
+	qualifiedProvider
+
+	schemas []resourcev2.EditorSchema
+}
+
+func duplicateEditorSchemas() []resourcev2.EditorSchema {
+	schema := resourcev2.EditorSchema{
+		Type:     "helm:releases",
+		Key:      "default/web",
+		Language: "yaml",
+		Binding:  resourcev2.SchemaBinding{State: "absent"},
+	}
+	return []resourcev2.EditorSchema{schema, schema}
+}
+
+func (p *duplicateEditorSchemaProvider) GetEditorSchemas(
+	context.Context,
+	resourcev2.AccessRoute,
+) ([]resourcev2.EditorSchema, error) {
+	return p.schemas, nil
+}
+
+func TestActualRPCServerRejectsDuplicateAuxiliaryEditorSchemas(t *testing.T) {
+	provider := &duplicateEditorSchemaProvider{}
+	server := grpc.NewServer()
+	RegisterServer(server, provider)
+	client := NewClient(pipe(t, server))
+	route := resourcev2.AccessRoute{Connection: "explicit"}
+	ctx := acceptedCatalogContext(context.Background(), t, client, route)
+	distinct := duplicateEditorSchemas()
+	distinct[1].Key = "default/api"
+	provider.schemas = distinct
+	if schemas, err := client.GetEditorSchemas(ctx, route); err != nil || len(schemas) != 2 {
+		t.Fatalf("distinct auxiliary editor schemas rejected: %+v %v", schemas, err)
+	}
+	// The server boundary sanitizes messages; the code is the observable result.
+	provider.schemas = duplicateEditorSchemas()
+	schemas, err := client.GetEditorSchemas(ctx, route)
+	if resourcev2.ErrorCode(err) != "INVALID_REQUEST" || len(schemas) != 0 {
+		t.Fatalf("duplicate auxiliary editor schemas admitted by server: %+v %v", schemas, err)
+	}
+}
+
+type duplicateEditorSchemaWire struct {
+	resourcepb.UnimplementedResourceAncillaryServer
+}
+
+func (duplicateEditorSchemaWire) Call(
+	context.Context,
+	*resourcepb.AncillaryRequest,
+) (*resourcepb.AncillaryResponse, error) {
+	result := &resourcepb.EditorSchemas{}
+	for _, schema := range duplicateEditorSchemas() {
+		encoded, err := resourcev2.ToProtoEditorSchema(schema)
+		if err != nil {
+			return nil, err
+		}
+		result.Schemas = append(result.Schemas, encoded)
+	}
+	return &resourcepb.AncillaryResponse{
+		Version: resourcev2.WireVersion,
+		Result:  &resourcepb.AncillaryResponse_EditorSchemas{EditorSchemas: result},
+	}, nil
+}
+
+func TestActualRPCClientRejectsDuplicateAuxiliaryEditorSchemas(t *testing.T) {
+	server := grpc.NewServer()
+	resourcepb.RegisterResourceAncillaryServer(server, duplicateEditorSchemaWire{})
+	client := NewClient(pipe(t, server))
+	route := resourcev2.AccessRoute{Connection: "explicit"}
+	ctx := resourcev2.WithCatalogRevision(context.Background(), "revision")
+	schemas, err := client.GetEditorSchemas(ctx, route)
+	if resourcev2.ErrorCode(err) != "INVALID_REQUEST" ||
+		!strings.Contains(err.Error(), "duplicate auxiliary editor schema") {
+		t.Fatalf("duplicate auxiliary editor schemas admitted by client: %+v %v", schemas, err)
 	}
 }

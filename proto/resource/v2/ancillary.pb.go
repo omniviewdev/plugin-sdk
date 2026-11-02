@@ -370,10 +370,9 @@ func (*AncillaryResponse_EditorSchemas) isAncillaryResponse_Result() {}
 type EditorSchema struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
-	FileMatch     string                 `protobuf:"bytes,2,opt,name=file_match,json=fileMatch,proto3" json:"file_match,omitempty"`
-	Uri           string                 `protobuf:"bytes,3,opt,name=uri,proto3" json:"uri,omitempty"`
 	Language      string                 `protobuf:"bytes,4,opt,name=language,proto3" json:"language,omitempty"`
 	Binding       *SchemaBinding         `protobuf:"bytes,5,opt,name=binding,proto3" json:"binding,omitempty"`
+	Key           string                 `protobuf:"bytes,6,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -415,20 +414,6 @@ func (x *EditorSchema) GetType() string {
 	return ""
 }
 
-func (x *EditorSchema) GetFileMatch() string {
-	if x != nil {
-		return x.FileMatch
-	}
-	return ""
-}
-
-func (x *EditorSchema) GetUri() string {
-	if x != nil {
-		return x.Uri
-	}
-	return ""
-}
-
 func (x *EditorSchema) GetLanguage() string {
 	if x != nil {
 		return x.Language
@@ -441,6 +426,13 @@ func (x *EditorSchema) GetBinding() *SchemaBinding {
 		return x.Binding
 	}
 	return nil
+}
+
+func (x *EditorSchema) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
 }
 
 type EditorSchemas struct {
@@ -1391,14 +1383,13 @@ const file_proto_resource_v2_ancillary_proto_rawDesc = "" +
 	"\x06events\x18\x06 \x01(\v2$.omniview.resource.v2.ResourceEventsH\x00R\x06events\x12B\n" +
 	"\bdocument\x18\a \x01(\v2$.omniview.resource.v2.SchemaDocumentH\x00R\bdocument\x12L\n" +
 	"\x0eeditor_schemas\x18\b \x01(\v2#.omniview.resource.v2.EditorSchemasH\x00R\reditorSchemasB\b\n" +
-	"\x06result\"\xae\x01\n" +
+	"\x06result\"\xac\x01\n" +
 	"\fEditorSchema\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1d\n" +
-	"\n" +
-	"file_match\x18\x02 \x01(\tR\tfileMatch\x12\x10\n" +
-	"\x03uri\x18\x03 \x01(\tR\x03uri\x12\x1a\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1a\n" +
 	"\blanguage\x18\x04 \x01(\tR\blanguage\x12=\n" +
-	"\abinding\x18\x05 \x01(\v2#.omniview.resource.v2.SchemaBindingR\abinding\"M\n" +
+	"\abinding\x18\x05 \x01(\v2#.omniview.resource.v2.SchemaBindingR\abinding\x12\x10\n" +
+	"\x03key\x18\x06 \x01(\tR\x03keyJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\n" +
+	"file_matchR\x03uri\"M\n" +
 	"\rEditorSchemas\x12<\n" +
 	"\aschemas\x18\x01 \x03(\v2\".omniview.resource.v2.EditorSchemaR\aschemas\"N\n" +
 	"\x0eOptionalHealth\x12<\n" +

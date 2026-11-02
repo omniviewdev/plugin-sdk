@@ -44,9 +44,7 @@ func metricRegistry(
 								ID:       "document",
 								Revision: "1",
 								Schema: resourcev2.SchemaBinding{
-									State:       "absent",
-									Validation:  "none",
-									Unvalidated: []string{},
+									State: "absent",
 								},
 							},
 						},
