@@ -2,6 +2,7 @@ syntax = "proto3";
 package omniview.resource.v2;
 option go_package = "github.com/omniviewdev/plugin-sdk/proto/resource/v2;resourcepb";
 import "proto/resource/v2/domain.proto";
+import "proto/resource/v2/source.proto";
 // Update operations select payloads by operation name: startConnection uses
 // targets; ensure/restart use target; stopConnection/has/state use route;
 // stopResource/running use route and type. Listen registers an advisory listener.
@@ -9,16 +10,6 @@ import "proto/resource/v2/domain.proto";
 // OptionalWatchSummary with absent summary means no watch summary is available.
 // Singular duplicates, repeated oneof selections, and unknown fields fail raw
 // wire admission; generated decoding alone cannot enforce this contract.
-
-message LabelEntry {
-  string key = 1;
-  string value = 2;
-}
-
-message ResourceMetadata {
-  repeated LabelEntry labels = 1;
-  TimestampValue created_at = 2;
-}
 
 message WatchAddPayload {
   AccessRoute route = 1;

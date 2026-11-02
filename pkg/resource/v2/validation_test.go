@@ -280,6 +280,31 @@ func TestCatalogHintCoverageAndGuarantees(t *testing.T) {
 	}
 }
 
+func TestSourceUpdatesCatalogCapability(t *testing.T) {
+	c := Catalog{Provider: "p", Revision: "r", Coverage: Coverage{Kind: "complete"},
+		Types: []ResourceType{{Type: "resource/type", AcquireOnConnect: true}}}
+	if err := ValidateCatalog(c); ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatalf("acquisition without source updates: %v", err)
+	}
+	for _, guarantee := range []string{"", "unknown", ContinuityGapFree, ContinuityBestEffort} {
+		c.Types[0].Capabilities = []Capability{{Operation: OperationSourceUpdates, Guarantee: guarantee}}
+		p, err := ToProtoCatalog(c)
+		if guarantee != ContinuityGapFree && guarantee != ContinuityBestEffort {
+			if ErrorCode(err) != "INVALID_REQUEST" {
+				t.Fatalf("guarantee %q: %v", guarantee, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := FromProtoCatalog(p)
+		if err != nil || !got.Types[0].AcquireOnConnect || got.Types[0].Capabilities[0].Guarantee != guarantee {
+			t.Fatalf("catalog round trip: %#v, %v", got, err)
+		}
+	}
+}
+
 func TestUnavailableSchemaKeepsKnownProvenance(t *testing.T) {
 	binding := SchemaBinding{
 		State:       "unavailable",

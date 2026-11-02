@@ -203,6 +203,7 @@ type ResourceType struct {
 	NativeQueries       []NativeQueryDescriptor `json:"nativeQueries,omitempty"`
 	Capabilities        []Capability            `json:"capabilities"`
 	NativeAuthorityHint *NativeAuthorityHint    `json:"nativeAuthorityHint,omitempty"`
+	AcquireOnConnect    bool                    `json:"acquireOnConnect"`
 }
 
 // CatalogRequest discovers support through one explicit access route. Discovery

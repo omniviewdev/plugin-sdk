@@ -1,9 +1,6 @@
 package resourcev2
 
-import (
-	"context"
-	"time"
-)
+import "context"
 
 // BestEffortGuarantee labels the existing advisory update workflow. It provides
 // no atomic snapshot/update cutover, replay, gap detection, or continuity proof.
@@ -58,13 +55,6 @@ type WatchStateEvent struct {
 	Error     *ResourceOperationError `json:"error,omitempty"`
 	Message   string                  `json:"message,omitempty"`
 	Guarantee string                  `json:"guarantee"`
-}
-
-// ResourceMetadata carries optional display metadata outside canonical identity
-// and body provenance. Nil CreatedAt means no creation time was supplied.
-type ResourceMetadata struct {
-	Labels    map[string]string `json:"labels,omitempty"`
-	CreatedAt *time.Time        `json:"createdAt,omitempty"`
 }
 
 // WatchAddPayload reports an advisory observed addition, not proof that the object

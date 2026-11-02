@@ -21,110 +21,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type LabelEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *LabelEntry) Reset() {
-	*x = LabelEntry{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[0]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *LabelEntry) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*LabelEntry) ProtoMessage() {}
-
-func (x *LabelEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[0]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use LabelEntry.ProtoReflect.Descriptor instead.
-func (*LabelEntry) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{0}
-}
-
-func (x *LabelEntry) GetKey() string {
-	if x != nil {
-		return x.Key
-	}
-	return ""
-}
-
-func (x *LabelEntry) GetValue() string {
-	if x != nil {
-		return x.Value
-	}
-	return ""
-}
-
-type ResourceMetadata struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Labels        []*LabelEntry          `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`
-	CreatedAt     *TimestampValue        `protobuf:"bytes,2,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ResourceMetadata) Reset() {
-	*x = ResourceMetadata{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ResourceMetadata) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ResourceMetadata) ProtoMessage() {}
-
-func (x *ResourceMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ResourceMetadata.ProtoReflect.Descriptor instead.
-func (*ResourceMetadata) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *ResourceMetadata) GetLabels() []*LabelEntry {
-	if x != nil {
-		return x.Labels
-	}
-	return nil
-}
-
-func (x *ResourceMetadata) GetCreatedAt() *TimestampValue {
-	if x != nil {
-		return x.CreatedAt
-	}
-	return nil
-}
-
 type WatchAddPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Route         *AccessRoute           `protobuf:"bytes,1,opt,name=route,proto3" json:"route,omitempty"`
@@ -137,7 +33,7 @@ type WatchAddPayload struct {
 
 func (x *WatchAddPayload) Reset() {
 	*x = WatchAddPayload{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[2]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -149,7 +45,7 @@ func (x *WatchAddPayload) String() string {
 func (*WatchAddPayload) ProtoMessage() {}
 
 func (x *WatchAddPayload) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[2]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -162,7 +58,7 @@ func (x *WatchAddPayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchAddPayload.ProtoReflect.Descriptor instead.
 func (*WatchAddPayload) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{2}
+	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *WatchAddPayload) GetRoute() *AccessRoute {
@@ -205,7 +101,7 @@ type WatchUpdatePayload struct {
 
 func (x *WatchUpdatePayload) Reset() {
 	*x = WatchUpdatePayload{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[3]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -217,7 +113,7 @@ func (x *WatchUpdatePayload) String() string {
 func (*WatchUpdatePayload) ProtoMessage() {}
 
 func (x *WatchUpdatePayload) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[3]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -230,7 +126,7 @@ func (x *WatchUpdatePayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchUpdatePayload.ProtoReflect.Descriptor instead.
 func (*WatchUpdatePayload) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{3}
+	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *WatchUpdatePayload) GetRoute() *AccessRoute {
@@ -273,7 +169,7 @@ type WatchDeletePayload struct {
 
 func (x *WatchDeletePayload) Reset() {
 	*x = WatchDeletePayload{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[4]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -285,7 +181,7 @@ func (x *WatchDeletePayload) String() string {
 func (*WatchDeletePayload) ProtoMessage() {}
 
 func (x *WatchDeletePayload) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[4]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -298,7 +194,7 @@ func (x *WatchDeletePayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchDeletePayload.ProtoReflect.Descriptor instead.
 func (*WatchDeletePayload) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{4}
+	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *WatchDeletePayload) GetRoute() *AccessRoute {
@@ -344,7 +240,7 @@ type WatchStateEvent struct {
 
 func (x *WatchStateEvent) Reset() {
 	*x = WatchStateEvent{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[5]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -356,7 +252,7 @@ func (x *WatchStateEvent) String() string {
 func (*WatchStateEvent) ProtoMessage() {}
 
 func (x *WatchStateEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[5]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -369,7 +265,7 @@ func (x *WatchStateEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchStateEvent.ProtoReflect.Descriptor instead.
 func (*WatchStateEvent) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{5}
+	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *WatchStateEvent) GetRoute() *AccessRoute {
@@ -431,7 +327,7 @@ type ResourceWatchState struct {
 
 func (x *ResourceWatchState) Reset() {
 	*x = ResourceWatchState{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[6]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -443,7 +339,7 @@ func (x *ResourceWatchState) String() string {
 func (*ResourceWatchState) ProtoMessage() {}
 
 func (x *ResourceWatchState) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[6]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -456,7 +352,7 @@ func (x *ResourceWatchState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceWatchState.ProtoReflect.Descriptor instead.
 func (*ResourceWatchState) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{6}
+	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ResourceWatchState) GetType() string {
@@ -483,7 +379,7 @@ type ResourceWatchCount struct {
 
 func (x *ResourceWatchCount) Reset() {
 	*x = ResourceWatchCount{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[7]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -495,7 +391,7 @@ func (x *ResourceWatchCount) String() string {
 func (*ResourceWatchCount) ProtoMessage() {}
 
 func (x *ResourceWatchCount) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[7]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -508,7 +404,7 @@ func (x *ResourceWatchCount) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceWatchCount.ProtoReflect.Descriptor instead.
 func (*ResourceWatchCount) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{7}
+	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ResourceWatchCount) GetType() string {
@@ -538,7 +434,7 @@ type WatchConnectionSummary struct {
 
 func (x *WatchConnectionSummary) Reset() {
 	*x = WatchConnectionSummary{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[8]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -550,7 +446,7 @@ func (x *WatchConnectionSummary) String() string {
 func (*WatchConnectionSummary) ProtoMessage() {}
 
 func (x *WatchConnectionSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[8]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -563,7 +459,7 @@ func (x *WatchConnectionSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchConnectionSummary.ProtoReflect.Descriptor instead.
 func (*WatchConnectionSummary) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{8}
+	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *WatchConnectionSummary) GetRoute() *AccessRoute {
@@ -615,7 +511,7 @@ type UpdateRequest struct {
 
 func (x *UpdateRequest) Reset() {
 	*x = UpdateRequest{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[9]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -627,7 +523,7 @@ func (x *UpdateRequest) String() string {
 func (*UpdateRequest) ProtoMessage() {}
 
 func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[9]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -640,7 +536,7 @@ func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRequest.ProtoReflect.Descriptor instead.
 func (*UpdateRequest) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{9}
+	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *UpdateRequest) GetVersion() uint32 {
@@ -694,7 +590,7 @@ type OptionalWatchSummary struct {
 
 func (x *OptionalWatchSummary) Reset() {
 	*x = OptionalWatchSummary{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[10]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -706,7 +602,7 @@ func (x *OptionalWatchSummary) String() string {
 func (*OptionalWatchSummary) ProtoMessage() {}
 
 func (x *OptionalWatchSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[10]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -719,7 +615,7 @@ func (x *OptionalWatchSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OptionalWatchSummary.ProtoReflect.Descriptor instead.
 func (*OptionalWatchSummary) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{10}
+	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *OptionalWatchSummary) GetSummary() *WatchConnectionSummary {
@@ -744,7 +640,7 @@ type UpdateResponse struct {
 
 func (x *UpdateResponse) Reset() {
 	*x = UpdateResponse{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[11]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -756,7 +652,7 @@ func (x *UpdateResponse) String() string {
 func (*UpdateResponse) ProtoMessage() {}
 
 func (x *UpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[11]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -769,7 +665,7 @@ func (x *UpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateResponse.ProtoReflect.Descriptor instead.
 func (*UpdateResponse) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{11}
+	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *UpdateResponse) GetVersion() uint32 {
@@ -855,7 +751,7 @@ type UpdateStreamEvent struct {
 
 func (x *UpdateStreamEvent) Reset() {
 	*x = UpdateStreamEvent{}
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[12]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -867,7 +763,7 @@ func (x *UpdateStreamEvent) String() string {
 func (*UpdateStreamEvent) ProtoMessage() {}
 
 func (x *UpdateStreamEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_updates_proto_msgTypes[12]
+	mi := &file_proto_resource_v2_updates_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -880,7 +776,7 @@ func (x *UpdateStreamEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateStreamEvent.ProtoReflect.Descriptor instead.
 func (*UpdateStreamEvent) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{12}
+	return file_proto_resource_v2_updates_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *UpdateStreamEvent) GetVersion() uint32 {
@@ -980,15 +876,7 @@ var File_proto_resource_v2_updates_proto protoreflect.FileDescriptor
 
 const file_proto_resource_v2_updates_proto_rawDesc = "" +
 	"\n" +
-	"\x1fproto/resource/v2/updates.proto\x12\x14omniview.resource.v2\x1a\x1eproto/resource/v2/domain.proto\"4\n" +
-	"\n" +
-	"LabelEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"\x91\x01\n" +
-	"\x10ResourceMetadata\x128\n" +
-	"\x06labels\x18\x01 \x03(\v2 .omniview.resource.v2.LabelEntryR\x06labels\x12C\n" +
-	"\n" +
-	"created_at\x18\x02 \x01(\v2$.omniview.resource.v2.TimestampValueR\tcreatedAt\"\xe2\x01\n" +
+	"\x1fproto/resource/v2/updates.proto\x12\x14omniview.resource.v2\x1a\x1eproto/resource/v2/domain.proto\x1a\x1eproto/resource/v2/source.proto\"\xe2\x01\n" +
 	"\x0fWatchAddPayload\x127\n" +
 	"\x05route\x18\x01 \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\x124\n" +
 	"\x06record\x18\x02 \x01(\v2\x1c.omniview.resource.v2.RecordR\x06record\x12B\n" +
@@ -1065,66 +953,62 @@ func file_proto_resource_v2_updates_proto_rawDescGZIP() []byte {
 	return file_proto_resource_v2_updates_proto_rawDescData
 }
 
-var file_proto_resource_v2_updates_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_proto_resource_v2_updates_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_proto_resource_v2_updates_proto_goTypes = []any{
-	(*LabelEntry)(nil),             // 0: omniview.resource.v2.LabelEntry
-	(*ResourceMetadata)(nil),       // 1: omniview.resource.v2.ResourceMetadata
-	(*WatchAddPayload)(nil),        // 2: omniview.resource.v2.WatchAddPayload
-	(*WatchUpdatePayload)(nil),     // 3: omniview.resource.v2.WatchUpdatePayload
-	(*WatchDeletePayload)(nil),     // 4: omniview.resource.v2.WatchDeletePayload
-	(*WatchStateEvent)(nil),        // 5: omniview.resource.v2.WatchStateEvent
-	(*ResourceWatchState)(nil),     // 6: omniview.resource.v2.ResourceWatchState
-	(*ResourceWatchCount)(nil),     // 7: omniview.resource.v2.ResourceWatchCount
-	(*WatchConnectionSummary)(nil), // 8: omniview.resource.v2.WatchConnectionSummary
-	(*UpdateRequest)(nil),          // 9: omniview.resource.v2.UpdateRequest
-	(*OptionalWatchSummary)(nil),   // 10: omniview.resource.v2.OptionalWatchSummary
-	(*UpdateResponse)(nil),         // 11: omniview.resource.v2.UpdateResponse
-	(*UpdateStreamEvent)(nil),      // 12: omniview.resource.v2.UpdateStreamEvent
-	(*TimestampValue)(nil),         // 13: omniview.resource.v2.TimestampValue
-	(*AccessRoute)(nil),            // 14: omniview.resource.v2.AccessRoute
-	(*Record)(nil),                 // 15: omniview.resource.v2.Record
-	(*ResourceReference)(nil),      // 16: omniview.resource.v2.ResourceReference
-	(*Count)(nil),                  // 17: omniview.resource.v2.Count
-	(*QueryScope)(nil),             // 18: omniview.resource.v2.QueryScope
-	(*ReadTarget)(nil),             // 19: omniview.resource.v2.ReadTarget
+	(*WatchAddPayload)(nil),        // 0: omniview.resource.v2.WatchAddPayload
+	(*WatchUpdatePayload)(nil),     // 1: omniview.resource.v2.WatchUpdatePayload
+	(*WatchDeletePayload)(nil),     // 2: omniview.resource.v2.WatchDeletePayload
+	(*WatchStateEvent)(nil),        // 3: omniview.resource.v2.WatchStateEvent
+	(*ResourceWatchState)(nil),     // 4: omniview.resource.v2.ResourceWatchState
+	(*ResourceWatchCount)(nil),     // 5: omniview.resource.v2.ResourceWatchCount
+	(*WatchConnectionSummary)(nil), // 6: omniview.resource.v2.WatchConnectionSummary
+	(*UpdateRequest)(nil),          // 7: omniview.resource.v2.UpdateRequest
+	(*OptionalWatchSummary)(nil),   // 8: omniview.resource.v2.OptionalWatchSummary
+	(*UpdateResponse)(nil),         // 9: omniview.resource.v2.UpdateResponse
+	(*UpdateStreamEvent)(nil),      // 10: omniview.resource.v2.UpdateStreamEvent
+	(*AccessRoute)(nil),            // 11: omniview.resource.v2.AccessRoute
+	(*Record)(nil),                 // 12: omniview.resource.v2.Record
+	(*ResourceMetadata)(nil),       // 13: omniview.resource.v2.ResourceMetadata
+	(*ResourceReference)(nil),      // 14: omniview.resource.v2.ResourceReference
+	(*Count)(nil),                  // 15: omniview.resource.v2.Count
+	(*QueryScope)(nil),             // 16: omniview.resource.v2.QueryScope
+	(*ReadTarget)(nil),             // 17: omniview.resource.v2.ReadTarget
 }
 var file_proto_resource_v2_updates_proto_depIdxs = []int32{
-	0,  // 0: omniview.resource.v2.ResourceMetadata.labels:type_name -> omniview.resource.v2.LabelEntry
-	13, // 1: omniview.resource.v2.ResourceMetadata.created_at:type_name -> omniview.resource.v2.TimestampValue
-	14, // 2: omniview.resource.v2.WatchAddPayload.route:type_name -> omniview.resource.v2.AccessRoute
-	15, // 3: omniview.resource.v2.WatchAddPayload.record:type_name -> omniview.resource.v2.Record
-	1,  // 4: omniview.resource.v2.WatchAddPayload.metadata:type_name -> omniview.resource.v2.ResourceMetadata
-	14, // 5: omniview.resource.v2.WatchUpdatePayload.route:type_name -> omniview.resource.v2.AccessRoute
-	15, // 6: omniview.resource.v2.WatchUpdatePayload.record:type_name -> omniview.resource.v2.Record
-	1,  // 7: omniview.resource.v2.WatchUpdatePayload.metadata:type_name -> omniview.resource.v2.ResourceMetadata
-	14, // 8: omniview.resource.v2.WatchDeletePayload.route:type_name -> omniview.resource.v2.AccessRoute
-	16, // 9: omniview.resource.v2.WatchDeletePayload.reference:type_name -> omniview.resource.v2.ResourceReference
-	15, // 10: omniview.resource.v2.WatchDeletePayload.last_known:type_name -> omniview.resource.v2.Record
-	14, // 11: omniview.resource.v2.WatchStateEvent.route:type_name -> omniview.resource.v2.AccessRoute
-	17, // 12: omniview.resource.v2.WatchStateEvent.count:type_name -> omniview.resource.v2.Count
-	17, // 13: omniview.resource.v2.ResourceWatchCount.count:type_name -> omniview.resource.v2.Count
-	14, // 14: omniview.resource.v2.WatchConnectionSummary.route:type_name -> omniview.resource.v2.AccessRoute
-	6,  // 15: omniview.resource.v2.WatchConnectionSummary.resources:type_name -> omniview.resource.v2.ResourceWatchState
-	7,  // 16: omniview.resource.v2.WatchConnectionSummary.resource_counts:type_name -> omniview.resource.v2.ResourceWatchCount
-	18, // 17: omniview.resource.v2.WatchConnectionSummary.scope:type_name -> omniview.resource.v2.QueryScope
-	14, // 18: omniview.resource.v2.UpdateRequest.route:type_name -> omniview.resource.v2.AccessRoute
-	19, // 19: omniview.resource.v2.UpdateRequest.target:type_name -> omniview.resource.v2.ReadTarget
-	19, // 20: omniview.resource.v2.UpdateRequest.targets:type_name -> omniview.resource.v2.ReadTarget
-	8,  // 21: omniview.resource.v2.OptionalWatchSummary.summary:type_name -> omniview.resource.v2.WatchConnectionSummary
-	10, // 22: omniview.resource.v2.UpdateResponse.summary:type_name -> omniview.resource.v2.OptionalWatchSummary
-	2,  // 23: omniview.resource.v2.UpdateStreamEvent.add:type_name -> omniview.resource.v2.WatchAddPayload
-	3,  // 24: omniview.resource.v2.UpdateStreamEvent.update:type_name -> omniview.resource.v2.WatchUpdatePayload
-	4,  // 25: omniview.resource.v2.UpdateStreamEvent.delete:type_name -> omniview.resource.v2.WatchDeletePayload
-	5,  // 26: omniview.resource.v2.UpdateStreamEvent.state:type_name -> omniview.resource.v2.WatchStateEvent
-	9,  // 27: omniview.resource.v2.ResourceUpdates.Call:input_type -> omniview.resource.v2.UpdateRequest
-	9,  // 28: omniview.resource.v2.ResourceUpdates.Listen:input_type -> omniview.resource.v2.UpdateRequest
-	11, // 29: omniview.resource.v2.ResourceUpdates.Call:output_type -> omniview.resource.v2.UpdateResponse
-	12, // 30: omniview.resource.v2.ResourceUpdates.Listen:output_type -> omniview.resource.v2.UpdateStreamEvent
-	29, // [29:31] is the sub-list for method output_type
-	27, // [27:29] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	11, // 0: omniview.resource.v2.WatchAddPayload.route:type_name -> omniview.resource.v2.AccessRoute
+	12, // 1: omniview.resource.v2.WatchAddPayload.record:type_name -> omniview.resource.v2.Record
+	13, // 2: omniview.resource.v2.WatchAddPayload.metadata:type_name -> omniview.resource.v2.ResourceMetadata
+	11, // 3: omniview.resource.v2.WatchUpdatePayload.route:type_name -> omniview.resource.v2.AccessRoute
+	12, // 4: omniview.resource.v2.WatchUpdatePayload.record:type_name -> omniview.resource.v2.Record
+	13, // 5: omniview.resource.v2.WatchUpdatePayload.metadata:type_name -> omniview.resource.v2.ResourceMetadata
+	11, // 6: omniview.resource.v2.WatchDeletePayload.route:type_name -> omniview.resource.v2.AccessRoute
+	14, // 7: omniview.resource.v2.WatchDeletePayload.reference:type_name -> omniview.resource.v2.ResourceReference
+	12, // 8: omniview.resource.v2.WatchDeletePayload.last_known:type_name -> omniview.resource.v2.Record
+	11, // 9: omniview.resource.v2.WatchStateEvent.route:type_name -> omniview.resource.v2.AccessRoute
+	15, // 10: omniview.resource.v2.WatchStateEvent.count:type_name -> omniview.resource.v2.Count
+	15, // 11: omniview.resource.v2.ResourceWatchCount.count:type_name -> omniview.resource.v2.Count
+	11, // 12: omniview.resource.v2.WatchConnectionSummary.route:type_name -> omniview.resource.v2.AccessRoute
+	4,  // 13: omniview.resource.v2.WatchConnectionSummary.resources:type_name -> omniview.resource.v2.ResourceWatchState
+	5,  // 14: omniview.resource.v2.WatchConnectionSummary.resource_counts:type_name -> omniview.resource.v2.ResourceWatchCount
+	16, // 15: omniview.resource.v2.WatchConnectionSummary.scope:type_name -> omniview.resource.v2.QueryScope
+	11, // 16: omniview.resource.v2.UpdateRequest.route:type_name -> omniview.resource.v2.AccessRoute
+	17, // 17: omniview.resource.v2.UpdateRequest.target:type_name -> omniview.resource.v2.ReadTarget
+	17, // 18: omniview.resource.v2.UpdateRequest.targets:type_name -> omniview.resource.v2.ReadTarget
+	6,  // 19: omniview.resource.v2.OptionalWatchSummary.summary:type_name -> omniview.resource.v2.WatchConnectionSummary
+	8,  // 20: omniview.resource.v2.UpdateResponse.summary:type_name -> omniview.resource.v2.OptionalWatchSummary
+	0,  // 21: omniview.resource.v2.UpdateStreamEvent.add:type_name -> omniview.resource.v2.WatchAddPayload
+	1,  // 22: omniview.resource.v2.UpdateStreamEvent.update:type_name -> omniview.resource.v2.WatchUpdatePayload
+	2,  // 23: omniview.resource.v2.UpdateStreamEvent.delete:type_name -> omniview.resource.v2.WatchDeletePayload
+	3,  // 24: omniview.resource.v2.UpdateStreamEvent.state:type_name -> omniview.resource.v2.WatchStateEvent
+	7,  // 25: omniview.resource.v2.ResourceUpdates.Call:input_type -> omniview.resource.v2.UpdateRequest
+	7,  // 26: omniview.resource.v2.ResourceUpdates.Listen:input_type -> omniview.resource.v2.UpdateRequest
+	9,  // 27: omniview.resource.v2.ResourceUpdates.Call:output_type -> omniview.resource.v2.UpdateResponse
+	10, // 28: omniview.resource.v2.ResourceUpdates.Listen:output_type -> omniview.resource.v2.UpdateStreamEvent
+	27, // [27:29] is the sub-list for method output_type
+	25, // [25:27] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_proto_resource_v2_updates_proto_init() }
@@ -1133,12 +1017,13 @@ func file_proto_resource_v2_updates_proto_init() {
 		return
 	}
 	file_proto_resource_v2_domain_proto_init()
-	file_proto_resource_v2_updates_proto_msgTypes[11].OneofWrappers = []any{
+	file_proto_resource_v2_source_proto_init()
+	file_proto_resource_v2_updates_proto_msgTypes[9].OneofWrappers = []any{
 		(*UpdateResponse_Running)(nil),
 		(*UpdateResponse_Summary)(nil),
 		(*UpdateResponse_Success)(nil),
 	}
-	file_proto_resource_v2_updates_proto_msgTypes[12].OneofWrappers = []any{
+	file_proto_resource_v2_updates_proto_msgTypes[10].OneofWrappers = []any{
 		(*UpdateStreamEvent_Ready)(nil),
 		(*UpdateStreamEvent_Add)(nil),
 		(*UpdateStreamEvent_Update)(nil),
@@ -1151,7 +1036,7 @@ func file_proto_resource_v2_updates_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_resource_v2_updates_proto_rawDesc), len(file_proto_resource_v2_updates_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

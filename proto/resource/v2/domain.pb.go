@@ -1348,6 +1348,7 @@ type ResourceType struct {
 	NativeAuthorityHint   *NativeAuthorityHint     `protobuf:"bytes,8,opt,name=native_authority_hint,json=nativeAuthorityHint,proto3" json:"native_authority_hint,omitempty"`
 	ModelRepresentation   string                   `protobuf:"bytes,9,opt,name=model_representation,json=modelRepresentation,proto3" json:"model_representation,omitempty"`
 	NativeQueries         []*NativeQueryDescriptor `protobuf:"bytes,10,rep,name=native_queries,json=nativeQueries,proto3" json:"native_queries,omitempty"`
+	AcquireOnConnect      bool                     `protobuf:"varint,11,opt,name=acquire_on_connect,json=acquireOnConnect,proto3" json:"acquire_on_connect,omitempty"`
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -1450,6 +1451,13 @@ func (x *ResourceType) GetNativeQueries() []*NativeQueryDescriptor {
 		return x.NativeQueries
 	}
 	return nil
+}
+
+func (x *ResourceType) GetAcquireOnConnect() bool {
+	if x != nil {
+		return x.AcquireOnConnect
+	}
+	return false
 }
 
 type NativeAuthorityHint struct {
@@ -2990,7 +2998,7 @@ const file_proto_resource_v2_domain_proto_rawDesc = "" +
 	"\x15NativeQueryDescriptor\x12\x1a\n" +
 	"\blanguage\x18\x01 \x01(\tR\blanguage\x12*\n" +
 	"\x11input_schema_json\x18\x02 \x01(\fR\x0finputSchemaJson\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\"\x96\x05\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\"\xc4\x05\n" +
 	"\fResourceType\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12P\n" +
@@ -3002,7 +3010,8 @@ const file_proto_resource_v2_domain_proto_rawDesc = "" +
 	"\x15native_authority_hint\x18\b \x01(\v2).omniview.resource.v2.NativeAuthorityHintR\x13nativeAuthorityHint\x121\n" +
 	"\x14model_representation\x18\t \x01(\tR\x13modelRepresentation\x12R\n" +
 	"\x0enative_queries\x18\n" +
-	" \x03(\v2+.omniview.resource.v2.NativeQueryDescriptorR\rnativeQueries\"]\n" +
+	" \x03(\v2+.omniview.resource.v2.NativeQueryDescriptorR\rnativeQueries\x12,\n" +
+	"\x12acquire_on_connect\x18\v \x01(\bR\x10acquireOnConnect\"]\n" +
 	"\x13NativeAuthorityHint\x12\x16\n" +
 	"\x06scheme\x18\x01 \x01(\tR\x06scheme\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x1e\n" +
