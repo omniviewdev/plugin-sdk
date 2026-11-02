@@ -75,7 +75,7 @@ func controllerConfig() Config[string] {
 						{Operation: OperationMutationUpdate, Scope: QueryScope{}},
 						{Operation: OperationDelete, Scope: QueryScope{}},
 						{Operation: OperationAction, Scope: QueryScope{}},
-						{Operation: OperationUpdate, Scope: QueryScope{}, Guarantee: BestEffortGuarantee},
+						{Operation: OperationSourceUpdates, Scope: QueryScope{}, Guarantee: ContinuityBestEffort},
 					},
 				},
 			},
@@ -856,7 +856,7 @@ func TestControllerFeaturesReflectInstalledHandlers(t *testing.T) {
 	cfg.Registrations = []Registration[string]{
 		{
 			Type: "opaque/type",
-			Watch: func(ctx context.Context, _ *string, _ ReadTarget, _ Representation, _ WatchEventSink) error {
+			Source: func(ctx context.Context, _ *string, _ SourceRequest, _ SourceEmitter) error {
 				<-ctx.Done()
 				return ctx.Err()
 			},
@@ -867,32 +867,32 @@ func TestControllerFeaturesReflectInstalledHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !features.Has(FeatureConnections) || !features.Has(FeatureBestEffortUpdates) ||
+	if !features.Has(FeatureConnections) || !features.Has(FeatureSourceSessions) ||
 		features.Has(FeatureConnectionBrowser) {
 		t.Fatal("installed traits reported incorrectly")
 	}
-	cfg.Registrations[0].SyncPolicy = SyncNever
+	cfg.Registrations[0].Source = nil
 	disabled := newTestController(t, cfg)
 	features, err = disabled.Features(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if features.Has(FeatureBestEffortUpdates) {
+	if features.Has(FeatureSourceSessions) {
 		t.Fatal("disabled callback advertised live support")
 	}
 }
 
-func TestControllerDynamicUpdateFeatureRequiresExplicitConfiguration(t *testing.T) {
+func TestControllerDynamicSourceFeatureRequiresExplicitConfiguration(t *testing.T) {
 	cfg := controllerConfig()
-	cfg.DynamicUpdates = true
+	cfg.DynamicSources = true
 	if _, err := NewController(cfg); err == nil {
 		t.Fatal("dynamic updates accepted without resolver")
 	}
-	cfg.DynamicUpdates = false
+	cfg.DynamicSources = false
 	cfg.ResolveRegistration = func(_ context.Context, _ AccessRoute, typ string) (Registration[string], error) {
 		return Registration[string]{
 			Type: typ,
-			Watch: func(ctx context.Context, _ *string, _ ReadTarget, _ Representation, _ WatchEventSink) error {
+			Source: func(ctx context.Context, _ *string, _ SourceRequest, _ SourceEmitter) error {
 				<-ctx.Done()
 				return ctx.Err()
 			},
@@ -903,16 +903,16 @@ func TestControllerDynamicUpdateFeatureRequiresExplicitConfiguration(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if features.Has(FeatureBestEffortUpdates) {
+	if features.Has(FeatureSourceSessions) {
 		t.Fatal("resolver alone fabricated live support")
 	}
-	cfg.DynamicUpdates = true
+	cfg.DynamicSources = true
 	declared := newTestController(t, cfg)
 	features, err = declared.Features(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !features.Has(FeatureBestEffortUpdates) {
+	if !features.Has(FeatureSourceSessions) {
 		t.Fatal("explicit dynamic update installation missing")
 	}
 }

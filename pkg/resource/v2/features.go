@@ -34,10 +34,10 @@ const (
 	FeatureActionCatalog Feature = "actionCatalog"
 	// FeatureStreamingActions enables ready-gated action event streams.
 	FeatureStreamingActions Feature = "streamingActions"
-	// FeatureBestEffortUpdates enables advisory updates without replay guarantees.
-	FeatureBestEffortUpdates Feature = "bestEffortUpdates"
 	// FeatureConnectionMetadata enables public connection facts and refresh.
 	FeatureConnectionMetadata Feature = "connectionMetadata"
+	// FeatureSourceSessions enables phased source snapshot/update sessions.
+	FeatureSourceSessions Feature = "sourceSessions"
 )
 
 // FeatureSet lists ancillary traits available on this provider or transport.
@@ -82,7 +82,7 @@ func ValidateFeatures(f FeatureSet) error {
 			FeatureHealth,
 			FeatureActionCatalog,
 			FeatureStreamingActions,
-			FeatureBestEffortUpdates,
+			FeatureSourceSessions,
 			FeatureConnectionMetadata:
 		default:
 			return NewError("UNSUPPORTED", "unknown ancillary feature")
@@ -138,8 +138,8 @@ func DetectFeatures(ctx context.Context, p Provider) (FeatureSet, error) {
 	if _, ok := p.(StreamingActioner); ok {
 		f.Traits = append(f.Traits, FeatureStreamingActions)
 	}
-	if _, ok := p.(BestEffortUpdateProvider); ok {
-		f.Traits = append(f.Traits, FeatureBestEffortUpdates)
+	if _, ok := p.(SourceProvider); ok {
+		f.Traits = append(f.Traits, FeatureSourceSessions)
 	}
 	if _, ok := p.(ConnectionMetadataProvider); ok {
 		f.Traits = append(f.Traits, FeatureConnectionMetadata)

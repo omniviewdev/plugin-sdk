@@ -17,7 +17,7 @@ import (
 func streamingMethodFilter() otelgrpc.Filter {
 	skip := []string{
 		"/WatchConnections",
-		"/ListenForEvents",
+		".ResourceSources/Open",
 		"/Stream",
 		"/StreamMetrics",
 		"/StreamAction",

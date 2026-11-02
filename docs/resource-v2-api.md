@@ -23,7 +23,7 @@ Providers define native semantics. The host authorizes access, issues authority,
 
 ## Construction and examples
 
-Only `Catalog` is required. Lifecycle, enumeration, writes, and watches are independent choices. `native` means provider-specific data, not Kubernetes data.
+Only `Catalog` is required. Lifecycle, enumeration, writes, and source sessions are independent choices. `native` means provider-specific data, not Kubernetes data.
 
 `pkg/resource/v2/domain.go` — contextual interface excerpts from [source](../pkg/resource/v2/domain.go). These declarations use the package's `context` import and domain types.
 
@@ -73,9 +73,9 @@ Support requires both a positive, matching scoped catalog capability and an impl
 | `OperationMutationUpdate` (`mutationUpdate`) | `Mutator` | `Registration.Mutate` | `MutationRequest{Operation: "update"}` → `Record` |
 | `OperationDelete` (`delete`) | `Mutator` | `Registration.Mutate` | `MutationRequest{Operation: "delete"}` → `Record` |
 | `OperationAction` (`action`) | `Actioner` or `StreamingActioner` | `Registration.Action` for finite actions | `ActionRequest` → `Value` or action events |
-| `OperationUpdate` (`update`) | `BestEffortUpdateProvider` | `Registration.Watch` | `ReadTarget` → advisory events |
+| `OperationSourceUpdates` (`sourceUpdates`) | `SourceProvider` | `Registration.Source` | `SourceOpenRequest` → snapshot and changes |
 
-Create, mutation update, and delete are independent. `OperationUpdate` never admits a write. Discovered actions also need action descriptors; action discovery remains optional for native callers.
+Create, mutation update, and delete are independent. Source updates never admit a write. Discovered actions also need action descriptors; action discovery remains optional for native callers.
 
 ### Controller registration lookup
 
@@ -84,13 +84,13 @@ Create, mutation update, and delete are independent. `OperationUpdate` never adm
 | `Config.Catalog` | Required route-qualified discovery callback |
 | `Config.Registrations` | Exact-type callback registrations |
 | `Config.ResolveRegistration` | Optional dynamic resolver; return the requested type and matching route |
-| `Config.DynamicUpdates` | Advertise dynamically resolved watch implementations during feature negotiation |
+| `Config.DynamicSources` | Advertise dynamically resolved source callbacks during feature negotiation |
 | `Config.Lifecycle` | Optional configured-client ownership; [setup](connections.md#choose-client-ownership) |
 | `Config.ErrorClassifier` | Fallback classification after registration classifier declines |
 | `Registration.Type` | Exact opaque type, never a wildcard |
 | `Registration.Connection` | Restrict to one explicit route; empty permits any explicitly supplied route |
 | `Registration.Scope` | Optional additional scope restriction; nil does not bypass catalog admission |
-| `Registration.SyncPolicy` | Advisory startup policy; not finite-operation support |
+| `Registration.Source` | Emit the snapshot boundary and subsequent changes for an admitted source |
 | `Registration.Actions` | Optional finite-action descriptors; when supplied, undeclared action names are rejected |
 
 Overlapping registrations for the same operation fail at dispatch. Keep registration scopes and lifecycle configuration immutable after construction.
@@ -333,7 +333,9 @@ Negotiate remote features through [`FeatureNegotiator`](../pkg/resource/v2/featu
 | Resolve native links | `RelationshipProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Explicit target routes, authorities, scopes, and observations |
 | Report resource health/events | `HealthProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Resource health is not connection health |
 | Describe/stream actions | `ActionCatalog`, `StreamingActioner` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Exactly one `ready` after native establishment, before output |
-| Publish advisory updates | `BestEffortUpdateProvider`, `WatchEventSink` in [updates.go](../pkg/resource/v2/updates.go) | No replay, gap-free continuity, or atomic handoff |
+| Publish source sessions | `SourceProvider`, `SourceEmitter` in [source.go](../pkg/resource/v2/source.go) | Emit snapshot, snapshot boundary, then changes; declare honest continuity |
+
+Source sessions begin with a framework-issued `begin` frame. Providers emit snapshot observations and call `EndSnapshot` with coverage and continuity before sending changes. Snapshot-only sessions terminate at the boundary; update sessions terminate with reset or failure. Catalog `sourceUpdates` capabilities declare `gapFree` or `bestEffort` continuity. `AcquireOnConnect` requires that capability. Hosts supply session and generation tokens and frame limits, and must reopen after a reset.
 
 Framework owns stream channels and completion. Send events and return; never close framework-owned channels. See [stream lifetime contracts](resource-v2-contracts.md#utility-and-stream-lifetime).
 

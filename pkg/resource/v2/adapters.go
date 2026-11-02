@@ -139,6 +139,7 @@ func toResourceType(v ResourceType) *resourcepb.ResourceType {
 		DisplayName:           v.DisplayName,
 		DefaultRepresentation: v.DefaultRepresentation,
 		ModelRepresentation:   v.ModelRepresentation,
+		AcquireOnConnect:      v.AcquireOnConnect,
 		IdentityDimensions:    make([]*resourcepb.Dimension, len(v.IdentityDimensions)),
 		QueryDimensions:       make([]*resourcepb.Dimension, len(v.QueryDimensions)),
 		Representations:       make([]*resourcepb.Representation, len(v.Representations)),
@@ -433,6 +434,7 @@ func (d *adapterDecoder) resourceType(p *resourcepb.ResourceType) ResourceType {
 		DisplayName:           p.DisplayName,
 		DefaultRepresentation: p.DefaultRepresentation,
 		ModelRepresentation:   p.ModelRepresentation,
+		AcquireOnConnect:      p.GetAcquireOnConnect(),
 		IdentityDimensions:    make([]Dimension, len(p.IdentityDimensions)),
 		QueryDimensions:       make([]Dimension, len(p.QueryDimensions)),
 		Representations:       make([]Representation, len(p.Representations)),
@@ -661,9 +663,9 @@ func validateCapability(v Capability) error {
 		if v.Guarantee != "" {
 			return invalid("finite capability has update guarantee")
 		}
-	case OperationUpdate:
-		if err := validateGuarantee(v.Guarantee); err != nil {
-			return err
+	case OperationSourceUpdates:
+		if v.Guarantee != ContinuityGapFree && v.Guarantee != ContinuityBestEffort {
+			return invalid("unsupported source update guarantee")
 		}
 	default:
 		return invalid("unknown capability operation")

@@ -27,7 +27,7 @@ func streamingMethodFilter() otelgrpc.Filter {
 	// Matched by suffix so we don't need full package paths.
 	skip := []string{
 		"/WatchConnections",
-		"/ListenForEvents",
+		".ResourceSources/Open",
 		"/Stream",
 		"/StreamMetrics",
 		"/StreamAction",

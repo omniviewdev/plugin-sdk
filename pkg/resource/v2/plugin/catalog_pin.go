@@ -61,22 +61,6 @@ func (s *server) checkCatalogRoutes(ctx context.Context, routes []*resourcepb.Ac
 	return nil
 }
 
-func updateRoutes(r *resourcepb.UpdateRequest) []*resourcepb.AccessRoute {
-	switch r.Operation {
-	case updateStartConnection:
-		routes := make([]*resourcepb.AccessRoute, 0, len(r.Targets))
-		for _, target := range r.Targets {
-			routes = append(routes, target.GetRoute())
-		}
-		return routes
-	case updateEnsure, updateRestart:
-		return []*resourcepb.AccessRoute{r.Target.GetRoute()}
-	case updateStopConnection, updateHas, updateState, updateStopResource, updateRunning:
-		return []*resourcepb.AccessRoute{r.Route}
-	}
-	return nil
-}
-
 func (s *server) checkAncillaryCatalogs(ctx context.Context, request *resourcepb.AncillaryRequest) error {
 	if request.Operation == ancillaryResolveRelationships {
 		in, err := resourcev2.FromProtoRelationshipResolutionRequest(request.RelationshipResolution)

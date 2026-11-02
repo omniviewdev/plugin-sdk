@@ -146,7 +146,7 @@ func TestEveryFiniteDomainAdapter(t *testing.T) {
 		Representations:    []Representation{r.Representation},
 		Capabilities: []Capability{
 			{Operation: OperationEnumerate, Scope: scope},
-			{Operation: OperationUpdate, Scope: scope, Guarantee: BestEffortGuarantee},
+			{Operation: OperationSourceUpdates, Scope: scope, Guarantee: ContinuityBestEffort},
 		},
 	}
 	typ.NativeAuthorityHint = &NativeAuthorityHint{

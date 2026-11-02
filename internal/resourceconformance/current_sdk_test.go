@@ -43,8 +43,22 @@ func TestCurrentSDKChild(t *testing.T) {
 		impl = &nativeEnumerationOnly{base}
 	case "native-query-only":
 		impl = &nativeQueryOnly{base}
+	case "source-sessions", "source-sessions-empty":
+		if base.profile == "source-sessions" {
+			third := base.corpus.Record(recordCloudARN)
+			third.Name, third.ID = "cloud-third-page", "third-page-id"
+			base.corpus.Records = append(base.corpus.Records, third)
+			for i := range base.corpus.Scenarios {
+				s := &base.corpus.Scenarios[i]
+				if s.Name == "cloud-bundled-pages" {
+					s.Pages[1].Next = "native:page/3"
+					s.Pages = append(s.Pages, Page{Cursor: "native:page/3", Records: []string{"cloud-third-page"}})
+				}
+			}
+		}
+		impl = newSessionController(base)
 	default:
-		impl = newNativeEventProvider(base)
+		impl = &nativeEnumerable{&nativeReader{base}}
 	}
 	closer, ok := impl.(resource.Closer)
 	require.True(t, ok)
@@ -206,16 +220,6 @@ func checkNativeScenario(
 		{Operation: resource.OperationGet, Scope: queryScope(s)},
 		{Operation: resource.OperationEnumerate, Scope: queryScope(s)},
 	}
-	if len(s.Updates) > 0 {
-		expectedCaps = append(
-			expectedCaps,
-			resource.Capability{
-				Operation: resource.OperationUpdate,
-				Scope:     queryScope(s),
-				Guarantee: resource.BestEffortGuarantee,
-			},
-		)
-	}
 	require.Equal(t, expectedCaps, catalog.Types[0].Capabilities)
 	require.Equal(t, resource.Coverage{Kind: "complete", Paths: []string{}}, catalog.Coverage)
 	for i := range catalog.Types {
@@ -262,9 +266,6 @@ func checkNativeScenario(
 		},
 	)
 	requireNativeError(t, err, "UNSUPPORTED")
-	if len(s.Updates) > 0 {
-		probeNativeEvents(ctx, t, provider, receipts, s, c)
-	}
 	probeCancellation(ctx, t, enumerator, receipts, s, c)
 	_, err = lifecycle.StopConnection(ctx, s.Name)
 	require.NoError(t, err)

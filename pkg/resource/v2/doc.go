@@ -10,8 +10,9 @@
 // Actioner, connection lifecycle, and ancillary traits are independently optional.
 // Method presence does not advertise support: the catalog qualifies each operation
 // by type and scope. Create, mutation update, and delete have separate capabilities;
-// OperationUpdate means advisory updates, never a write. Controller is optional.
-// It supplies one native-client registry, admission, leases, and retirement fences.
+// OperationSourceUpdates declares source-session continuity; AcquireOnConnect requests automatic
+// acquisition for a source-enabled type. Controller is optional. It supplies
+// one native-client registry, admission, leases, and retirement fences.
 // The executable examples show catalog-only and get-only composition, controller
 // startup/stop, and generation issuance without Controller.
 //

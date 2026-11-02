@@ -391,6 +391,10 @@ func (p *nativeProvider) page(ctx context.Context, in resource.EnumerateRequest)
 		!reflect.DeepEqual(in.Target.Scope, queryScope(s)) {
 		return resource.SourcePage{}, nativeError("INVALID_REQUEST", "target outside selected native source")
 	}
+	if p.profile == "source-sessions-empty" {
+		return resource.SourcePage{Records: []resource.Record{}, Count: resource.Count{Kind: "unknown"},
+			Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}, Consistency: resource.ConsistencyBestEffort}, nil
+	}
 	cursor := ""
 	if in.Cursor != nil {
 		cursor = *in.Cursor

@@ -177,6 +177,12 @@ func (s *wireMessage) countRepeated(number protoreflect.FieldNumber) error {
 			return limited("page records exceed limit")
 		}
 	}
+	if (s.descriptor.Name() == "SourceSnapshot" || s.descriptor.Name() == "SourceChanges") && number == 1 {
+		s.records++
+		if s.records > resourcev2.MaxSourceBatchItems {
+			return limited("source batch exceeds limit")
+		}
+	}
 	if s.descriptor.Name() == "RelationshipResolutionInput" && number == 2 {
 		s.relationshipTargets++
 		if s.relationshipTargets > resourcev2.MaxRelationshipTargets {
@@ -391,8 +397,7 @@ func (s *wireMessage) validateDomainKey(number protoreflect.FieldNumber, v []byt
 		message = "duplicate map key"
 	case name == "ResourceAddress" && number == 4 || name == "QueryScope" && number == 1:
 		message = "duplicate scope dimension"
-	case name == "ResourceMetadata" && number == 1 ||
-		name == "WatchConnectionSummary" && (number == 2 || number == 3):
+	case name == "ResourceMetadata" && number == 1:
 		message = "duplicate metadata map key"
 	case name == "RelationshipDescriptor" && (number == 8 || number == 9):
 		message = "duplicate relationship scope dimension"

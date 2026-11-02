@@ -31,10 +31,9 @@ type Config[ClientT any] struct {
 	// to the requested route, never another route. It may run repeatedly and
 	// concurrently; returned scopes must remain stable during SDK use.
 	ResolveRegistration func(context.Context, AccessRoute, string) (Registration[ClientT], error)
-	// DynamicUpdates declares that ResolveRegistration installs real Watch
-	// callbacks. It enables ancillary negotiation before connection discovery;
-	// each actual target still requires catalog and callback admission.
-	DynamicUpdates bool
+	// DynamicSources declares that ResolveRegistration installs source callbacks.
+	// Each target still requires catalog and callback admission.
+	DynamicSources bool
 	// ErrorClassifier runs after a registration classifier declines the error.
 	// Existing typed errors and context cancellation retain their classes.
 	ErrorClassifier ErrorClassifier
@@ -46,7 +45,7 @@ type Config[ClientT any] struct {
 // Overlapping registrations for the same operation are rejected at dispatch.
 // A callback alone does not advertise support: the catalog must independently
 // declare that operation and scope. Mutate handles only admitted create, update,
-// or delete declarations; Watch never implies finite read or mutation support.
+// or delete declarations; Source never implies finite read or mutation support.
 //
 // Callbacks share a leased native client and can run concurrently. Their contexts
 // end when the request, controller, or generation ends; do not retain the client
@@ -54,8 +53,8 @@ type Config[ClientT any] struct {
 // cancellation so retirement can drain. With no Lifecycle, the client is nil.
 // Finite request containers are borrowed during the call; do not mutate them
 // concurrently. Return results that remain stable while SDK validation and
-// transport consume them. Watch targets and representation containers are copied
-// independently from retained admission; its sink remains framework-owned.
+// transport consume them. Source request containers are copied independently
+// from retained admission; its emitter remains framework-owned.
 type Registration[ClientT any] struct {
 	Type        string
 	Connection  string
@@ -67,9 +66,8 @@ type Registration[ClientT any] struct {
 	Action      func(context.Context, *ClientT, ActionRequest) (Value, error)
 	// Actions declares the finite actions handled by Action, including schemas.
 	Actions []ActionDescriptor
-	// Watch supplies advisory best-effort updates, never P05 continuity.
-	Watch           func(context.Context, *ClientT, ReadTarget, Representation, WatchEventSink) error
-	SyncPolicy      SyncPolicy
+	// Source supplies a snapshot and subsequent updates.
+	Source          func(context.Context, *ClientT, SourceRequest, SourceEmitter) error
 	ErrorClassifier ErrorClassifier
 }
 
