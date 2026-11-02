@@ -51,13 +51,14 @@ func (a Annotations) Resolve() EffectiveAnnotations {
 
 // Descriptor describes one tool to the host.
 type Descriptor struct {
-	Name         string          `json:"name"`
-	Title        string          `json:"title"`
-	Description  string          `json:"description"`
-	InputSchema  json.RawMessage `json:"inputSchema"`
-	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
-	Scope        Scope           `json:"scope"`
-	Annotations  Annotations     `json:"annotations"`
+	Name            string          `json:"name"`
+	Title           string          `json:"title"`
+	Description     string          `json:"description"`
+	InputSchema     json.RawMessage `json:"inputSchema"`
+	OutputSchema    json.RawMessage `json:"outputSchema,omitempty"`
+	Scope           Scope           `json:"scope"`
+	Annotations     Annotations     `json:"annotations"`
+	ConnectionOwner string          `json:"connectionOwner,omitempty"`
 }
 
 // Content is one text block of a tool result.
@@ -76,9 +77,10 @@ type Result struct {
 
 // CallInput names the tool and carries its JSON object arguments.
 type CallInput struct {
-	Name      string
-	Arguments json.RawMessage
-	Route     *resourcev2.AccessRoute
+	Name            string
+	Arguments       json.RawMessage
+	Route           *resourcev2.AccessRoute
+	DelegationToken []byte
 }
 
 // Handler runs one tool call.
@@ -167,12 +169,13 @@ func scopeFromProto(s toolspb.ToolScope) Scope {
 
 func descriptorToProto(d Descriptor) *toolspb.ToolDescriptor {
 	return &toolspb.ToolDescriptor{
-		Name:         d.Name,
-		Title:        d.Title,
-		Description:  d.Description,
-		InputSchema:  d.InputSchema,
-		OutputSchema: d.OutputSchema,
-		Scope:        scopeToProto(d.Scope),
+		Name:            d.Name,
+		Title:           d.Title,
+		Description:     d.Description,
+		InputSchema:     d.InputSchema,
+		OutputSchema:    d.OutputSchema,
+		Scope:           scopeToProto(d.Scope),
+		ConnectionOwner: d.ConnectionOwner,
 		Annotations: &toolspb.ToolAnnotations{
 			ReadOnly:    d.Annotations.ReadOnly,
 			Destructive: d.Annotations.Destructive,
@@ -184,12 +187,13 @@ func descriptorToProto(d Descriptor) *toolspb.ToolDescriptor {
 
 func descriptorFromProto(d *toolspb.ToolDescriptor) Descriptor {
 	out := Descriptor{
-		Name:         d.GetName(),
-		Title:        d.GetTitle(),
-		Description:  d.GetDescription(),
-		InputSchema:  d.GetInputSchema(),
-		OutputSchema: d.GetOutputSchema(),
-		Scope:        scopeFromProto(d.GetScope()),
+		Name:            d.GetName(),
+		Title:           d.GetTitle(),
+		Description:     d.GetDescription(),
+		InputSchema:     d.GetInputSchema(),
+		OutputSchema:    d.GetOutputSchema(),
+		Scope:           scopeFromProto(d.GetScope()),
+		ConnectionOwner: d.GetConnectionOwner(),
 	}
 	if a := d.GetAnnotations(); a != nil {
 		out.Annotations = Annotations{

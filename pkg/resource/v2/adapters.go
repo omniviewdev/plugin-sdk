@@ -910,3 +910,13 @@ func ToProtoSchemaDocument(v SchemaDocument) (*resourcepb.SchemaDocument, error)
 func FromProtoSchemaDocument(p *resourcepb.SchemaDocument) (SchemaDocument, error) {
 	return fromProto(p, (*adapterDecoder).schemaDocument, ValidateSchemaDocument)
 }
+
+// ToProtoQueryScope validates and encodes a query scope.
+func ToProtoQueryScope(v QueryScope) (*resourcepb.QueryScope, error) {
+	return toProto(v, func(s QueryScope) error { return ValidateScope(s) }, toQueryScope)
+}
+
+// FromProtoQueryScope decodes and validates a query scope.
+func FromProtoQueryScope(p *resourcepb.QueryScope) (QueryScope, error) {
+	return fromProto(p, (*adapterDecoder).scope, func(s QueryScope) error { return ValidateScope(s) })
+}

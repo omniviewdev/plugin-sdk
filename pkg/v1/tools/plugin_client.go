@@ -66,6 +66,11 @@ func (p *PluginClient) ListTools(ctx *types.PluginContext) ([]Descriptor, error)
 
 // CallTool invokes a remote tool using the caller's cancellation and deadline.
 func (p *PluginClient) CallTool(ctx *types.PluginContext, input CallInput) (*Result, error) {
+	if len(input.DelegationToken) != 0 && ctx != nil && ctx.Connection != nil {
+		copyContext := *ctx
+		copyContext.Connection = &types.Connection{ID: ctx.Connection.ID}
+		ctx = &copyContext
+	}
 	descriptors, err := p.ListTools(ctx)
 	if err != nil {
 		return nil, err
@@ -91,7 +96,7 @@ func (p *PluginClient) CallTool(ctx *types.PluginContext, input CallInput) (*Res
 		return nil, resourcev2.NewError("INVALID_REQUEST", "Selected tool connection must not be empty.")
 	}
 	grpcCtx, pctx := rpcContext(ctx)
-	request := &toolspb.CallToolRequest{Name: input.Name, Arguments: input.Arguments, ContractVersion: ContractVersion}
+	request := &toolspb.CallToolRequest{Name: input.Name, Arguments: input.Arguments, ContractVersion: ContractVersion, DelegationToken: input.DelegationToken}
 	if input.Route != nil {
 		request.Route, err = resourcev2.ToProtoAccessRoute(*input.Route)
 		if err != nil {

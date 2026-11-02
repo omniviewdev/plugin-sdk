@@ -12,6 +12,7 @@ import (
 	_ "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin" // Install strict raw-wire admission.
 	"github.com/omniviewdev/plugin-sdk/pkg/sdk"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	"github.com/omniviewdev/plugin-sdk/pkg/v1/hostconnections"
 	toolspb "github.com/omniviewdev/plugin-sdk/proto/v1/tools"
 )
 
@@ -38,6 +39,15 @@ type Plugin struct {
 func (p *Plugin) BindConnectionContextProvider(provider resourcev2.ConnectionContextProvider) {
 	if consumer, ok := p.Impl.(resourcev2.ConnectionContextConsumer); ok {
 		consumer.BindConnectionContextProvider(provider)
+	}
+}
+
+// BindHostConnections installs the process-wide callback binding.
+func (p *Plugin) BindHostConnections(binding *hostconnections.Binding) {
+	if consumer, ok := p.Impl.(interface {
+		BindHostConnections(*hostconnections.Binding)
+	}); ok {
+		consumer.BindHostConnections(binding)
 	}
 }
 
