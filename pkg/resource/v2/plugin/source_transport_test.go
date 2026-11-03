@@ -803,6 +803,79 @@ func TestSourceEmitterLimitsAndPhases(t *testing.T) {
 	}
 }
 
+func TestSourceSnapshotWireNodeBudget(t *testing.T) {
+	record, err := (&qualifiedProvider{}).Get(context.Background(), testGet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	managedFields := make(map[string]any, 1000)
+	for i := range 1000 {
+		managedFields[fmt.Sprintf("field-%04d", i)] = map[string]any{"owner": "controller"}
+	}
+	record.Body, err = resourcev2.ValueFromNative(map[string]any{
+		"metadata": map[string]any{"managedFields": []any{managedFields}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observations := make([]resourcev2.SourceObservation, 191)
+	for i := range observations {
+		observations[i].Record = resourcev2.CompactSourceRecord(record)
+	}
+	request := transportSourceRequest()
+	request.Limits.MaxBatchItems = 256
+	request.Limits.MaxFrameBytes = resourcev2.MaxSourceFrameBytes
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	emitter := &sourceEmitter{ctx: ctx, request: request, tracker: resourcev2.NewSourcePhaseTracker(request, ""), queue: make(chan sourceDelivery), stalled: make(chan struct{})}
+	deliveries := make(chan *resourcepb.SourceFrame, 192)
+	go func() {
+		for {
+			select {
+			case delivery := <-emitter.queue:
+				deliveries <- delivery.frame
+				delivery.ack <- nil
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	if err := emitter.Snapshot(ctx, observations); err != nil {
+		t.Fatal(err)
+	}
+	close(deliveries)
+	var sequence uint64
+	var snapshots, count int
+	for frame := range deliveries {
+		sequence++
+		if frame.Sequence != sequence {
+			t.Fatalf("sequence = %d, want %d", frame.Sequence, sequence)
+		}
+		data, err := proto.Marshal(frame)
+		if err != nil {
+			t.Fatal(err)
+		}
+		budget := wireBudget{source: true, sourceBatchLimit: resourcev2.MaxSourceBatchItems}
+		if err := budget.message(data, frame.ProtoReflect().Descriptor(), 0); err != nil {
+			t.Fatal(err)
+		}
+		nodes, fields := protoWireCost(frame.ProtoReflect())
+		if nodes != budget.nodes || fields != budget.fields {
+			t.Fatalf("cost = (%d, %d), receiver = (%d, %d)", nodes, fields, budget.nodes, budget.fields)
+		}
+		if err := ValidateWire(data, frame.ProtoReflect().Descriptor()); err != nil {
+			t.Fatal(err)
+		}
+		if frame.GetSnapshot() != nil {
+			snapshots++
+			count += len(frame.GetSnapshot().Observations)
+		}
+	}
+	if snapshots < 2 || count != len(observations) {
+		t.Fatalf("got %d snapshots and %d observations", snapshots, count)
+	}
+}
+
 type sourceStatusStream struct {
 	grpc.ClientStream
 	err error
