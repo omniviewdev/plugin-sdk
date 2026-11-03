@@ -215,24 +215,18 @@ func (d *adapterDecoder) mapValue(x *resourcepb.Value_MapValue, depth int) Value
 		d.err = limited("value node limit")
 		return Value{}
 	}
-	keys := make(map[string]struct{}, len(entries))
+	v := Value{Kind: valueKindMap, Map: make(map[string]Value, len(entries))}
+	// Keep scanning keys after child failures: entry errors take precedence.
 	for _, e := range entries {
 		if e == nil {
-			d.fail("missing map entry")
+			d.err = invalid("missing map entry")
 			return Value{}
 		}
-		if _, ok := keys[e.Key]; ok {
-			d.fail("duplicate map key")
+		if _, ok := v.Map[e.Key]; ok {
+			d.err = invalid("duplicate map key")
 			return Value{}
 		}
-		keys[e.Key] = struct{}{}
-	}
-	v := Value{Kind: valueKindMap, Map: make(map[string]Value, len(entries))}
-	for _, e := range entries {
 		v.Map[e.Key] = d.valueAt(e.Value, depth+1)
-		if d.err != nil {
-			break
-		}
 	}
 	return v
 }

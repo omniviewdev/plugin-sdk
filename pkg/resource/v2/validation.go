@@ -103,6 +103,64 @@ type metadataBudget struct {
 	jsonOutput                   bool
 }
 
+type metadataFieldPlan struct {
+	index     int
+	omitEmpty bool
+}
+
+// Plans cover only these fixed SDK roots and their statically reachable fields.
+// Caller-defined types, including reflect.StructOf types, are never retained.
+var metadataFieldPlans = buildMetadataFieldPlans(
+	reflect.TypeFor[Catalog](), reflect.TypeFor[CatalogRequest](),
+	reflect.TypeFor[GetRequest](), reflect.TypeFor[EnumerateRequest](),
+	reflect.TypeFor[NativeQueryRequest](), reflect.TypeFor[MutationRequest](),
+	reflect.TypeFor[ActionRequest](), reflect.TypeFor[SourcePage](),
+	reflect.TypeFor[SchemaDocument](), reflect.TypeFor[EditorSchema](),
+	reflect.TypeFor[ResourceGroup](), reflect.TypeFor[ResourceDefinition](),
+	reflect.TypeFor[ActionDescriptor](), reflect.TypeFor[ActionEvent](),
+	reflect.TypeFor[ResourceHealth](), reflect.TypeFor[ResourceEvent](),
+	reflect.TypeFor[ResolvedRelationship](),
+	reflect.TypeFor[ConnectionMetadataSnapshot](),
+	reflect.TypeFor[ConnectionMetadataUpdate](),
+)
+
+func buildMetadataFieldPlans(roots ...reflect.Type) map[reflect.Type][]metadataFieldPlan {
+	plans := make(map[reflect.Type][]metadataFieldPlan)
+	var add func(reflect.Type)
+	add = func(t reflect.Type) {
+		switch t.Kind() {
+		case reflect.Pointer, reflect.Slice, reflect.Array:
+			add(t.Elem())
+		case reflect.Map:
+			add(t.Key())
+			add(t.Elem())
+		case reflect.Struct:
+			if t == reflect.TypeFor[time.Time]() || t == reflect.TypeFor[Value]() {
+				return
+			}
+			if _, exists := plans[t]; exists {
+				return
+			}
+			fields := make([]metadataFieldPlan, 0, t.NumField())
+			plans[t] = nil // Break recursive type cycles before following fields.
+			for i := range t.NumField() {
+				field := t.Field(i)
+				tag := field.Tag.Get("json")
+				if field.PkgPath != "" || tag == "-" {
+					continue
+				}
+				fields = append(fields, metadataFieldPlan{index: i, omitEmpty: strings.Contains(tag, ",omitempty")})
+				add(field.Type)
+			}
+			plans[t] = fields
+		}
+	}
+	for _, root := range roots {
+		add(root)
+	}
+	return plans
+}
+
 func (b *metadataBudget) visit(v reflect.Value, depth int) error {
 	if depth > b.depthLimit {
 		return limited("domain nesting limit")
@@ -160,12 +218,25 @@ func (b *metadataBudget) structFields(v reflect.Value, depth int) error {
 		}
 		return b.valueFields(value, depth)
 	}
+	if fields, ok := metadataFieldPlans[v.Type()]; ok {
+		for _, field := range fields {
+			value := v.Field(field.index)
+			if b.jsonOutput && field.omitEmpty && emptyJSONField(value) {
+				continue
+			}
+			if err := b.visit(value, depth+1); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	for i := range v.NumField() {
 		field := v.Type().Field(i)
-		if field.PkgPath != "" || field.Tag.Get("json") == "-" {
+		tag := field.Tag.Get("json")
+		if field.PkgPath != "" || tag == "-" {
 			continue
 		}
-		if b.jsonOutput && strings.Contains(field.Tag.Get("json"), ",omitempty") && emptyJSONField(v.Field(i)) {
+		if b.jsonOutput && strings.Contains(tag, ",omitempty") && emptyJSONField(v.Field(i)) {
 			continue
 		}
 		if err := b.visit(v.Field(i), depth+1); err != nil {
