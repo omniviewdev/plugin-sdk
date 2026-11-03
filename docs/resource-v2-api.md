@@ -254,6 +254,10 @@ Use `JSONToValue` for map-root native JSON documents. Integral tokens retain exa
 
 `ValueFromNative` preserves supported Go scalar types without a JSON float round trip. Use `TimestampValue` for explicit time intent.
 
+`ValueWireSize`, `RecordWireSize`, `SourceObservationWireSize`, and `SourceChangesWireSize` validate their inputs and report exact protobuf sizes without constructing transport trees. Body validation computes its size in the same traversal; callers do not need a separate validation call before these helpers.
+
+Sizes describe the supplied data at that call boundary, not a reusable validation proof. Keep borrowed containers stable during a call. Later calls revalidate mutable input; the SDK does not cache admission results across calls.
+
 `values.go` — complete standalone program using [Value JSON encoding](../pkg/resource/v2/value_json.go).
 
 ```go

@@ -163,7 +163,12 @@ func TestSourceOpenWireSize(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			wire, err := ToProtoSourceOpenRequest(tc.request)
 			if err != nil { t.Fatal(err) }
-			if got, want := sourceOpenWireSize(tc.request), proto.Size(wire); got != want {
+			querySize := 0
+			if tc.request.Acquisition.Query != nil {
+				querySize, err = validatedValueSize(tc.request.Acquisition.Query)
+				if err != nil { t.Fatal(err) }
+			}
+			if got, want := sourceOpenWireSize(tc.request, querySize), proto.Size(wire); got != want {
 				t.Fatalf("source open size = %d, want %d", got, want)
 			}
 		})
@@ -204,6 +209,100 @@ func TestSourceChangesWireSize(t *testing.T) {
 			if err != nil { t.Fatal(err) }
 			if want := proto.Size(wire); got != want {
 				t.Fatalf("source changes size = %d, want %d", got, want)
+			}
+		})
+	}
+}
+
+func TestSourceSizingValidationPrecedence(t *testing.T) {
+	oversized := strings.Repeat("x", MaxDocumentBytes+1)
+	metadata := &ResourceMetadata{Labels: map[string]string{"key": strings.Repeat("x", MaxMessageBytes+1)}}
+	for _, tc := range []struct {
+		name string
+		mutate func(*SourceObservation)
+		code string
+	}{
+		{"body before representation", func(o *SourceObservation) {
+			o.Record.Body.Map["large"] = Value{Kind: "string", String: oversized}
+			o.Record.Representation.ID = ""
+		}, "RESOURCE_LIMIT"},
+		{"representation before coverage", func(o *SourceObservation) {
+			o.Record.Representation.ID = ""
+			o.Record.Coverage.Paths = make([]string, 257)
+		}, "INVALID_REQUEST"},
+		{"document coverage before metadata", func(o *SourceObservation) {
+			o.DocumentCoverage.KnownAbsent = []DocumentFieldPath{{}}
+			o.Metadata = metadata
+		}, "INVALID_REQUEST"},
+		{"metadata before display name", func(o *SourceObservation) {
+			o.Metadata = metadata
+			o.DisplayName = codecToken("\xff")
+		}, "RESOURCE_LIMIT"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			observation := SourceObservation{Record: CompactSourceRecord(codecRecord())}
+			tc.mutate(&observation)
+			if _, err := SourceObservationWireSize(observation); ErrorCode(err) != tc.code {
+				t.Fatalf("observation error = %v, want %s", err, tc.code)
+			}
+			changes := SourceChanges{Changes: []SourceChange{{Kind: SourceChangeUpsert, Observation: &observation}}, Coverage: &SourceCoverage{}}
+			if _, err := SourceChangesWireSize(changes); ErrorCode(err) != tc.code {
+				t.Fatalf("changes error = %v, want %s", err, tc.code)
+			}
+		})
+	}
+}
+
+func TestSourceSizingMutableBoundaries(t *testing.T) {
+	observation := SourceObservation{Record: CompactSourceRecord(codecRecord())}
+	for _, value := range []Value{
+		{Kind: "list", List: []Value{{Kind: "int64", Int: "-9223372036854775808"}, {Kind: "uint64", Uint: "18446744073709551615"}}},
+		{Kind: "string", String: strings.Repeat("x", 128)},
+		{Kind: "map", Map: map[string]Value{"nested": {Kind: "null"}}},
+	} {
+		observation.Record.Body.Map["mutable"] = value
+		wire, err := ToProtoSourceObservation(observation)
+		if err != nil { t.Fatal(err) }
+		size, err := SourceObservationWireSize(observation)
+		if err != nil || size != proto.Size(wire) {
+			t.Fatalf("size = %d, protobuf = %d, error = %v", size, proto.Size(wire), err)
+		}
+	}
+	observation.Record.Body.Map["mutable"] = Value{Kind: "invalid"}
+	if _, err := SourceObservationWireSize(observation); ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatalf("mutated observation accepted: %v", err)
+	}
+}
+
+func TestSourceOpenSizingPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mutate func(*SourceOpenRequest)
+		code string
+	}{
+		{"schema budget before token", func(r *SourceOpenRequest) {
+			r.Binding.Representation.Schema.Document = json.RawMessage(strings.Repeat("x", (256<<10)+1))
+			r.SessionID = ""
+		}, "RESOURCE_LIMIT"},
+		{"unsupported mode before query", func(r *SourceOpenRequest) {
+			r.Mode = SourceModeSnapshotAndUpdates
+			query := Value{Kind: "invalid"}
+			r.Acquisition = SourceAcquisition{Kind: SourceAcquisitionNativeQuery, Language: "query", Query: &query}
+		}, "UNSUPPORTED"},
+		{"query validation before open budget", func(r *SourceOpenRequest) {
+			query := Value{Kind: "list", List: []Value{{Kind: "string", String: strings.Repeat("x", 256<<10)}, {Kind: "invalid"}}}
+			r.Acquisition = SourceAcquisition{Kind: SourceAcquisitionNativeQuery, Language: "query", Query: &query}
+		}, "INVALID_REQUEST"},
+		{"valid query exceeds open budget", func(r *SourceOpenRequest) {
+			query := Value{Kind: "string", String: strings.Repeat("x", 256<<10)}
+			r.Acquisition = SourceAcquisition{Kind: SourceAcquisitionNativeQuery, Language: "query", Query: &query}
+		}, "RESOURCE_LIMIT"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := phaseRequest(SourceModeSnapshot)
+			tc.mutate(&request)
+			if err := ValidateSourceOpenRequest(request); ErrorCode(err) != tc.code {
+				t.Fatalf("open error = %v, want %s", err, tc.code)
 			}
 		})
 	}
