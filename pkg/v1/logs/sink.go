@@ -3,16 +3,16 @@ package logs
 import "context"
 
 // OutputSink receives log lines and stream events from the Manager.
-// Tests inject RecordingOutput; production uses ChannelSink.
+// Tests inject RecordingOutput; callers may inject a custom sink instead of
+// the Manager's default session-cancellable output channel.
 type OutputSink interface {
 	OnLine(line LogLine)
 	OnEvent(sessionID string, event LogStreamEvent)
 }
 
 // ChannelSink writes StreamOutput to a channel with context-aware sends.
-// This is the production implementation used by Stream(). If the context
-// is cancelled (e.g., gRPC stream closed), sends are dropped instead of
-// blocking forever on a full channel.
+// Callers may inject it when a shared context should control delivery.
+// If that context is canceled, sends stop blocking on a full channel.
 type ChannelSink struct {
 	ctx context.Context
 	out chan StreamOutput

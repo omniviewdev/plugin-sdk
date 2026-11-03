@@ -95,7 +95,7 @@ func TestFiniteSessionEmitsEndAfterAllOutput(t *testing.T) {
 type failedLogReader struct{}
 
 func (failedLogReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }
-func (failedLogReader) Close() error           { return nil }
+func (failedLogReader) Close() error             { return nil }
 
 func TestExhaustedLogRetriesSetErrorStatus(t *testing.T) {
 	for _, mode := range []string{"open", "read", "nil"} {
@@ -199,6 +199,179 @@ func TestSourceFailureRemainsErrorWhenSiblingOpens(t *testing.T) {
 			if lines := output.Lines(); len(lines) != 1 || lines[0].Content != "healthy output" {
 				t.Fatalf("healthy sibling output = %+v; want one line", lines)
 			}
+		})
+	}
+}
+
+func TestFiniteOutputSurvivesLateTransportAttachment(t *testing.T) {
+	manager := logs.NewManager(logs.ManagerConfig{
+		Handlers: map[string]logs.Handler{
+			"test/pod": {Handler: func(_ *types.PluginContext, _ logs.LogStreamRequest) (io.ReadCloser, error) {
+				return io.NopCloser(strings.NewReader("first\nsecond\n")), nil
+			}},
+		},
+	})
+	defer manager.Close()
+	pctx := types.NewPluginContext(context.Background(), "late-transport", nil, nil, nil)
+	session, err := manager.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod", ResourceID: "finite"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed := make(chan struct{})
+	go func() {
+		manager.Wait()
+		close(completed)
+	}()
+	select {
+	case <-completed:
+	case <-time.After(time.Second):
+		t.Fatal("small finite source blocked before transport attachment")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	output, err := manager.Stream(ctx, make(chan logs.StreamInput))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contents []string
+	ready := false
+	for {
+		select {
+		case frame := <-output:
+			if frame.SessionID != session.ID {
+				t.Fatalf("unexpected session %q", frame.SessionID)
+			}
+			if frame.Line != nil {
+				contents = append(contents, frame.Line.Content)
+			}
+			if frame.Event != nil {
+				ready = ready || frame.Event.Type == logs.StreamEventSessionReady
+				if frame.Event.Type == logs.StreamEventStreamEnded {
+					if !ready || len(contents) != 2 || contents[0] != "first" || contents[1] != "second" {
+						t.Fatalf("late transport received ready=%v, lines=%v", ready, contents)
+					}
+					return
+				}
+			}
+		case <-ctx.Done():
+			t.Fatalf("early output was lost: ready=%v, lines=%v", ready, contents)
+		}
+	}
+}
+
+func TestCloseSessionUnblocksFullTransport(t *testing.T) {
+	manager := logs.NewManager(logs.ManagerConfig{
+		Handlers: map[string]logs.Handler{
+			"test/pod": {Handler: func(_ *types.PluginContext, _ logs.LogStreamRequest) (io.ReadCloser, error) {
+				// Exceed the bounded output queue without consuming transport output.
+				return io.NopCloser(strings.NewReader(strings.Repeat("line\n", 10000))), nil
+			}},
+		},
+	})
+	defer manager.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	output, err := manager.Stream(ctx, make(chan logs.StreamInput))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pctx := types.NewPluginContext(context.Background(), "unattached-transport", nil, nil, nil)
+	session, err := manager.CreateResourceSession(pctx, logs.CreateSessionOptions{ResourceKey: "pod", ResourceID: "large"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for len(output) < cap(output) {
+		select {
+		case <-tick.C:
+		case <-deadline.C:
+			t.Fatal("transport output queue did not fill")
+		}
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- manager.CloseSession(pctx, session.ID) }()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("close blocked on a full transport output queue")
+	}
+}
+
+func TestReadinessSurvivesCommandsBeforeReaderOpens(t *testing.T) {
+	for _, resume := range []bool{false, true} {
+		t.Run(map[bool]string{false: "paused", true: "resumed"}[resume], func(t *testing.T) {
+			reader, writer := io.Pipe()
+			defer writer.Close()
+			defer reader.Close()
+			releaseReader := make(chan struct{})
+			output := logtest.NewRecordingOutput()
+			manager := logs.NewManager(logs.ManagerConfig{
+				Sink: output,
+				Handlers: map[string]logs.Handler{
+					"test/pod": {Handler: func(ctx *types.PluginContext, _ logs.LogStreamRequest) (io.ReadCloser, error) {
+						select {
+						case <-releaseReader:
+							return reader, nil
+						case <-ctx.Context.Done():
+							return nil, ctx.Context.Err()
+						}
+					}},
+				},
+			})
+			defer manager.Close()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			commands := make(chan logs.StreamInput)
+			if _, err := manager.Stream(ctx, commands); err != nil {
+				t.Fatal(err)
+			}
+			pctx := types.NewPluginContext(ctx, "readiness-commands", nil, nil, nil)
+			session, err := manager.CreateResourceSession(pctx, logs.CreateSessionOptions{
+				ResourceKey: "pod", ResourceID: "silent", Options: logs.LogSessionOptions{Follow: true},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			waitStatus := func(want logs.LogSessionStatus) {
+				t.Helper()
+				deadline := time.NewTimer(time.Second)
+				defer deadline.Stop()
+				tick := time.NewTicker(time.Millisecond)
+				defer tick.Stop()
+				for {
+					current, err := manager.GetSession(pctx, session.ID)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if current.Status == want {
+						return
+					}
+					select {
+					case <-tick.C:
+					case <-deadline.C:
+						t.Fatalf("status=%v, want %v", current.Status, want)
+					}
+				}
+			}
+			commands <- logs.StreamInput{SessionID: session.ID, Command: logs.StreamCommandPause}
+			waitStatus(logs.LogSessionStatusPaused)
+			want := logs.LogSessionStatusPaused
+			if resume {
+				commands <- logs.StreamInput{SessionID: session.ID, Command: logs.StreamCommandResume}
+				waitStatus(logs.LogSessionStatusActive)
+				want = logs.LogSessionStatusActive
+			}
+			close(releaseReader)
+			if output.WaitForEvent(logs.StreamEventSessionReady, time.Second) == nil {
+				t.Fatal("commands before reader open suppressed readiness")
+			}
+			waitStatus(want)
 		})
 	}
 }
