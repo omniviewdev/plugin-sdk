@@ -133,6 +133,8 @@ func toCapability(v Capability) *resourcepb.Capability {
 	return &resourcepb.Capability{Operation: string(v.Operation), Scope: toQueryScope(v.Scope), Guarantee: v.Guarantee}
 }
 
+// toResourceType encodes catalog metadata and independent capability declarations.
+// Descriptive text is copied without interpretation or capability inference.
 func toResourceType(v ResourceType) *resourcepb.ResourceType {
 	p := &resourcepb.ResourceType{
 		Type:                  v.Type,
@@ -425,6 +427,8 @@ func (d *adapterDecoder) capability(p *resourcepb.Capability) Capability {
 	return Capability{Operation: Operation(p.Operation), Scope: d.scope(p.Scope), Guarantee: p.Guarantee}
 }
 
+// resourceType decodes catalog metadata, recording malformed nested fields in d.
+// Descriptive text remains provider metadata rather than an execution instruction.
 func (d *adapterDecoder) resourceType(p *resourcepb.ResourceType) ResourceType {
 	if p == nil {
 		d.fail("missing resource type")
