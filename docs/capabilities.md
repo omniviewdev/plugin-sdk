@@ -178,6 +178,19 @@ or idempotency key. Accepted native producers retain the shared generation lease
 until they actually drain, independently of the creation RPC. See [resource
 log-session ownership](resource-v2-api.md#resource-log-session-ownership).
 
+Log sessions become ready when their initial source readers open, even if those
+readers have no output yet. Readiness does not promise a first log line. Once all
+producers finish, the session reports `CLOSED`; exhausted stream retries report
+`ERROR`. A failed source leaves the session in `ERROR` even while healthy sources
+finish; a later source opening does not announce readiness for a failed session.
+Acquisition and read failures remain in local diagnostic logs.
+`STREAM_ENDED` marks producer completion, including a finite read with zero lines.
+Readiness remains observable if the caller pauses or resumes before a reader
+opens; becoming ready does not override a paused session. The default output
+channel retains bounded early output before the transport attaches. A slow or
+unattached consumer applies backpressure, and session cancellation unblocks
+output delivery rather than waiting for the transport to drain.
+
 ## Next
 
 - [Expose a resource type and implement Get](resources.md).

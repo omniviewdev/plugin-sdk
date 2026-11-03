@@ -2,6 +2,9 @@ module github.com/omniviewdev/plugin-sdk
 
 go 1.25.0
 
+// v0.14.4 included a source-wire preview ahead of the compatible host rollout.
+retract v0.14.4
+
 require (
 	github.com/creack/pty v1.1.21
 	github.com/google/uuid v1.6.0
