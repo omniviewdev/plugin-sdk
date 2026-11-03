@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-// decodeDomainObject checks the original bytes before encoding/json can replace
-// Unicode or erase duplicate members. Aliased destination structs avoid calling
-// their own UnmarshalJSON method while retaining strict nested admission.
+// decodeDomainObject validates the original bytes without retaining child trees.
+// Root members retain presence and null information; aliased destination structs
+// avoid their own UnmarshalJSON method while retaining strict nested admission.
 func decodeDomainObject(data []byte, out any, required ...string) (map[string]any, error) {
-	raw, err := parseJSONWithLimit(data, MaxMessageBytes)
+	raw, err := readJSON(data, MaxMessageBytes, jsonReadDomain)
 	if err != nil {
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func (v *ScopeConstraint) UnmarshalJSON(data []byte) error {
 
 // UnmarshalJSON decodes QueryScope, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *QueryScope) UnmarshalJSON(data []byte) error {
-	if _, err := parseJSONWithLimit(data, MaxMessageBytes); err != nil {
+	if err := ValidateJSON(data); err != nil {
 		return err
 	}
 	type plain QueryScope

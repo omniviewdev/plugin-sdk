@@ -98,6 +98,19 @@ func checkUnicodeEscape(data []byte, i int) (int, error) {
 }
 func parseJSON(data []byte) (any, error) { return parseJSONWithLimit(data, MaxDocumentBytes) }
 func parseJSONWithLimit(data []byte, byteLimit int) (any, error) {
+	return readJSON(data, byteLimit, jsonReadTree)
+}
+
+type jsonReadMode uint8
+
+const (
+	jsonReadTree jsonReadMode = iota
+	jsonReadValidate
+	jsonReadNative
+	jsonReadDomain
+)
+
+func readJSON(data []byte, byteLimit int, mode jsonReadMode) (any, error) {
 	if len(data) > byteLimit {
 		return nil, limited("JSON byte limit")
 	}
@@ -106,20 +119,33 @@ func parseJSONWithLimit(data []byte, byteLimit int) (any, error) {
 	}
 	d := json.NewDecoder(bytes.NewReader(data))
 	d.UseNumber()
-	reader := jsonTreeReader{decoder: d}
-	v, err := reader.read(0)
+	reader := jsonTreeReader{decoder: d, mode: mode}
+	var v any
+	var err error
+	if mode == jsonReadNative {
+		var value Value
+		value, err = reader.readNative(0)
+		v = value
+	} else {
+		v, err = reader.read(0)
+	}
 	if err != nil {
 		return nil, err
 	}
 	if _, err = d.Token(); !errors.Is(err, io.EOF) {
 		return nil, invalid("trailing JSON")
 	}
+	if reader.semanticErr != nil {
+		return nil, reader.semanticErr
+	}
 	return v, nil
 }
 
 type jsonTreeReader struct {
 	decoder       *json.Decoder
+	mode          jsonReadMode
 	nodes, fields int
+	semanticErr   error
 }
 
 func (r *jsonTreeReader) read(depth int) (any, error) {
@@ -133,6 +159,9 @@ func (r *jsonTreeReader) read(depth int) (any, error) {
 	}
 	delim, ok := t.(json.Delim)
 	if !ok {
+		if r.mode == jsonReadValidate || (r.mode == jsonReadDomain && depth > 1) {
+			return nil, nil
+		}
 		return t, nil
 	}
 	switch delim {
@@ -146,7 +175,14 @@ func (r *jsonTreeReader) read(depth int) (any, error) {
 }
 
 func (r *jsonTreeReader) object(depth int) (any, error) {
-	m := map[string]any{}
+	var m map[string]any
+	var keys map[string]struct{}
+	switch {
+	case r.mode == jsonReadTree || (r.mode == jsonReadDomain && depth == 0):
+		m = make(map[string]any)
+	default:
+		keys = make(map[string]struct{})
+	}
 	for r.decoder.More() {
 		r.fields++
 		if r.fields > maxDomainFields {
@@ -160,24 +196,39 @@ func (r *jsonTreeReader) object(depth int) (any, error) {
 		if !ok {
 			return nil, invalid("invalid JSON key")
 		}
-		if _, exists := m[k]; exists {
+		_, exists := m[k]
+		if keys != nil {
+			_, exists = keys[k]
+		}
+		if exists {
 			return nil, invalid("duplicate JSON member")
 		}
 		v, err := r.read(depth + 1)
 		if err != nil {
 			return nil, err
 		}
-		m[k] = v
+		switch {
+		case m != nil:
+			m[k] = v
+		default:
+			keys[k] = struct{}{}
+		}
 	}
 	end, err := r.decoder.Token()
 	if err != nil || end != json.Delim('}') {
 		return nil, invalid("invalid JSON object")
 	}
-	return m, nil
+	if m != nil {
+		return m, nil
+	}
+	return true, nil
 }
 
 func (r *jsonTreeReader) array(depth int) (any, error) {
-	a := []any{}
+	var a []any
+	if r.mode == jsonReadTree {
+		a = []any{}
+	}
 	for r.decoder.More() {
 		r.fields++
 		if r.fields > maxDomainFields {
@@ -187,19 +238,113 @@ func (r *jsonTreeReader) array(depth int) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		a = append(a, v)
+		if r.mode == jsonReadTree {
+			a = append(a, v)
+		}
 	}
 	end, err := r.decoder.Token()
 	if err != nil || end != json.Delim(']') {
 		return nil, invalid("invalid JSON array")
 	}
-	return a, nil
+	if r.mode == jsonReadTree {
+		return a, nil
+	}
+	return true, nil
+}
+
+// readNative keeps recursive Values typed: returning each through an interface
+// would allocate a box for every scalar and container in the document.
+func (r *jsonTreeReader) readNative(depth int) (Value, error) {
+	r.nodes++
+	if depth > maxDomainDepth || r.nodes > maxDomainNodes {
+		return Value{}, limited("JSON complexity limit")
+	}
+	token, err := r.decoder.Token()
+	if err != nil {
+		return Value{}, invalid("invalid JSON")
+	}
+	switch x := token.(type) {
+	case json.Delim:
+		switch x {
+		case '{':
+			return r.nativeObject(depth)
+		case '[':
+			return r.nativeArray(depth)
+		default:
+			return Value{}, invalid("unexpected JSON delimiter")
+		}
+	case string:
+		return Value{Kind: valueKindString, String: x}, nil
+	case json.Number:
+		value, err := nativeJSONNumber(x)
+		// Finish raw admission before reporting the first semantic error.
+		if err != nil && r.semanticErr == nil {
+			r.semanticErr = err
+		}
+		return value, nil
+	default:
+		return nativeScalarValue(token)
+	}
+}
+
+func (r *jsonTreeReader) nativeObject(depth int) (Value, error) {
+	values := make(map[string]Value)
+	for r.decoder.More() {
+		r.fields++
+		if r.fields > maxDomainFields {
+			return Value{}, limited("JSON field limit")
+		}
+		key, err := r.decoder.Token()
+		if err != nil {
+			return Value{}, invalid("invalid JSON member")
+		}
+		name, ok := key.(string)
+		if !ok {
+			return Value{}, invalid("invalid JSON key")
+		}
+		if _, exists := values[name]; exists {
+			return Value{}, invalid("duplicate JSON member")
+		}
+		value, err := r.readNative(depth + 1)
+		if err != nil {
+			return Value{}, err
+		}
+		values[name] = value
+	}
+	end, err := r.decoder.Token()
+	if err != nil || end != json.Delim('}') {
+		return Value{}, invalid("invalid JSON object")
+	}
+	return Value{Kind: valueKindMap, Map: values}, nil
+}
+
+func (r *jsonTreeReader) nativeArray(depth int) (Value, error) {
+	values := []Value{}
+	for r.decoder.More() {
+		r.fields++
+		if r.fields > maxDomainFields {
+			return Value{}, limited("JSON field limit")
+		}
+		value, err := r.readNative(depth + 1)
+		if err != nil {
+			return Value{}, err
+		}
+		values = append(values, value)
+	}
+	end, err := r.decoder.Token()
+	if err != nil || end != json.Delim(']') {
+		return Value{}, invalid("invalid JSON array")
+	}
+	return Value{Kind: valueKindList, List: values}, nil
 }
 
 // ValidateJSON applies the raw message ceiling and exact structural budgets.
 // Tagged values, native resource JSON and schema documents independently use
 // the smaller body ceiling before their semantic admission.
-func ValidateJSON(data []byte) error { _, err := parseJSONWithLimit(data, MaxMessageBytes); return err }
+func ValidateJSON(data []byte) error {
+	_, err := readJSON(data, MaxMessageBytes, jsonReadValidate)
+	return err
+}
 
 func taggedValue(raw any, depth int, nodes *int) (Value, error) {
 	*nodes++
@@ -464,11 +609,12 @@ func (v Value) MarshalJSON() ([]byte, error) {
 // exact signed/unsigned intent; only fractional/exponent tokens become doubles.
 // Native JSON strings never acquire timestamp intent.
 func JSONToValue(data []byte) (Value, error) {
-	raw, err := parseJSON(data)
+	raw, err := readJSON(data, MaxDocumentBytes, jsonReadNative)
 	if err != nil {
 		return Value{}, err
 	}
-	v, err := ValueFromNative(raw)
+	v := raw.(Value)
+	err = ValidateValue(v)
 	if err != nil {
 		return Value{}, err
 	}
