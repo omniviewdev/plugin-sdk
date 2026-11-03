@@ -183,6 +183,8 @@ descriptor.NativeQueries = []resourcev2.NativeQueryDescriptor{{
 
 `ResourceType.ModelRepresentation` optionally names a declared representation for model consumers. It does not change `DefaultRepresentation`, which continues to serve existing UI selection. Both fields must reference declared IDs. A type-level hint avoids adding purpose labels to every representation or hard-coding provider-specific projections in the host. Neither hint grants capability or changes record coverage.
 
+`ResourceType.Description` optionally describes the resource type for human or model consumers. Empty descriptions are omitted from JSON; omission does not block catalog discovery. Explicit JSON `null` is invalid, as for other optional string metadata. Catalog transport preserves the text without interpreting it as instructions or granting capabilities. Older SDK receivers with strict unknown-field admission require a compatible SDK upgrade before providers send nonempty descriptions.
+
 ### Action targets and schemas
 
 Instance actions use `ActionRequest.Reference`. Type actions leave `Reference` zero-valued and supply `TypeTarget: &resourcev2.TypeActionTarget{Provider: provider, Authority: authority, Type: typ, Scope: scope}`. The route remains explicit in both cases. Do not fabricate an object ID for a type action. Admission validates the type target's complete query scope against catalog dimensions and independently advertised action capability.

@@ -137,6 +137,7 @@ func toResourceType(v ResourceType) *resourcepb.ResourceType {
 	p := &resourcepb.ResourceType{
 		Type:                  v.Type,
 		DisplayName:           v.DisplayName,
+		Description:           v.Description,
 		DefaultRepresentation: v.DefaultRepresentation,
 		ModelRepresentation:   v.ModelRepresentation,
 		AcquireOnConnect:      v.AcquireOnConnect,
@@ -432,6 +433,7 @@ func (d *adapterDecoder) resourceType(p *resourcepb.ResourceType) ResourceType {
 	v := ResourceType{
 		Type:                  p.Type,
 		DisplayName:           p.DisplayName,
+		Description:           p.Description,
 		DefaultRepresentation: p.DefaultRepresentation,
 		ModelRepresentation:   p.ModelRepresentation,
 		AcquireOnConnect:      p.GetAcquireOnConnect(),

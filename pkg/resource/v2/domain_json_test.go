@@ -112,6 +112,16 @@ func TestPublicDomainJSONRejectsMalformedIdentity(t *testing.T) {
 			`{"type":"cluster/pod","identityDimensions":[],"queryDimensions":[],"representations":[],"capabilities":[],"nativeAuthorityHint":{"scheme":"fixture.v1","id":"id","continuity":"authoritative"}}`,
 			func() any { return &ResourceType{} },
 		},
+		{
+			"null type description",
+			`{"type":"vm","identityDimensions":[],"queryDimensions":[],"representations":[],"capabilities":[],"description":null}`,
+			func() any { return &ResourceType{} },
+		},
+		{
+			"non-string type description",
+			`{"type":"vm","identityDimensions":[],"queryDimensions":[],"representations":[],"capabilities":[],"description":42}`,
+			func() any { return &ResourceType{} },
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

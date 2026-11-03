@@ -148,6 +148,8 @@ message ResourceType {
   string model_representation = 9;
   repeated NativeQueryDescriptor native_queries = 10;
   bool acquire_on_connect = 11;
+  // Optional descriptive metadata; does not grant capability.
+  string description = 12;
 }
 
 message NativeAuthorityHint {
