@@ -108,6 +108,7 @@ const (
 	jsonReadTagged
 	jsonReadValidate
 	jsonReadDomain
+	jsonReadDomainValue
 	jsonReadResourceOptions
 )
 
@@ -136,6 +137,8 @@ type jsonTreeReader struct {
 	mode          jsonReadMode
 	nodes, fields int
 	inResourceData bool
+	inConnection bool
+	resourceDataDepth int
 }
 
 func (r *jsonTreeReader) read(depth int) (any, error) {
@@ -149,7 +152,7 @@ func (r *jsonTreeReader) read(depth int) (any, error) {
 	}
 	delim, ok := t.(json.Delim)
 	if !ok {
-		if r.mode == jsonReadValidate || r.mode == jsonReadResourceOptions || (r.mode == jsonReadDomain && depth > 1) {
+		if r.mode == jsonReadValidate || r.mode == jsonReadResourceOptions || ((r.mode == jsonReadDomain || r.mode == jsonReadDomainValue) && depth > 1) {
 			return nil, nil
 		}
 		return t, nil
@@ -166,12 +169,12 @@ func (r *jsonTreeReader) read(depth int) (any, error) {
 
 func (r *jsonTreeReader) depthLimit() int {
 	if r.mode == jsonReadResourceOptions && r.inResourceData {
-		return taggedChildDepth*MaxValueDepth + 2
+		return taggedChildDepth*MaxValueDepth + 1 + r.resourceDataDepth
 	}
 	if r.mode == jsonReadTagged {
 		return taggedChildDepth*MaxValueDepth + 1
 	}
-	if r.mode == jsonReadDomain {
+	if r.mode == jsonReadDomainValue {
 		// Domain envelopes may contain tagged Values, each semantic level
 		// expanding to two JSON levels. Nested Values still validate themselves.
 		return taggedChildDepth*MaxValueDepth + maxDomainDepth + 1
@@ -183,7 +186,7 @@ func (r *jsonTreeReader) object(depth int) (any, error) {
 	var m map[string]any
 	var keys map[string]struct{}
 	switch {
-	case r.mode == jsonReadTree || r.mode == jsonReadTagged || (r.mode == jsonReadDomain && depth == 0):
+	case r.mode == jsonReadTree || r.mode == jsonReadTagged || ((r.mode == jsonReadDomain || r.mode == jsonReadDomainValue) && depth == 0):
 		m = make(map[string]any)
 	default:
 		keys = make(map[string]struct{})
@@ -208,12 +211,18 @@ func (r *jsonTreeReader) object(depth int) (any, error) {
 		if exists {
 			return nil, invalid("duplicate JSON member")
 		}
-		previous := r.inResourceData
-		if r.mode == jsonReadResourceOptions && depth == 0 && k == "resource_data" {
-			r.inResourceData = true
+		previous, previousConnection, previousDepth := r.inResourceData, r.inConnection, r.resourceDataDepth
+		if r.mode == jsonReadResourceOptions {
+			if depth == 0 && k == "connection" {
+				r.inConnection = true
+			}
+			if k == "resource_data" && (depth == 0 || depth == 1 && r.inConnection) {
+				r.inResourceData = true
+				r.resourceDataDepth = depth + 1
+			}
 		}
 		v, err := r.read(depth + 1)
-		r.inResourceData = previous
+		r.inResourceData, r.inConnection, r.resourceDataDepth = previous, previousConnection, previousDepth
 		if err != nil {
 			return nil, err
 		}

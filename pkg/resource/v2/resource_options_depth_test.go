@@ -32,10 +32,15 @@ func TestResourceOptionJSONValueDepth(t *testing.T) {
 		{"metric query", `{"resource_data":`, func() any { return &metric.QueryRequest{} }},
 		{"metric stream", `{"resource_data":`, func() any { return &metric.StreamInput{} }},
 		{"network", `{"resource_data":`, func() any { return &networker.PortForwardResourceConnection{} }},
+		{"network session", `{"connection_type":"RESOURCE","connection":{"resource_data":`, func() any { return &networker.PortForwardSessionOptions{} }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			suffix := "}"
+			if tc.name == "network session" {
+				suffix = "}}"
+			}
 			out := tc.newValue()
-			if err := json.Unmarshal([]byte(tc.prefix+string(body)+"}"), out); err != nil {
+			if err := json.Unmarshal([]byte(tc.prefix+string(body)+suffix), out); err != nil {
 				t.Fatalf("depth %d decode: %v", resourcev2.MaxValueDepth, err)
 			}
 			encoded, err := json.Marshal(out)
@@ -45,7 +50,7 @@ func TestResourceOptionJSONValueDepth(t *testing.T) {
 			if err := json.Unmarshal(encoded, tc.newValue()); err != nil {
 				t.Fatalf("round trip decode: %v", err)
 			}
-			if err := json.Unmarshal([]byte(tc.prefix+tooDeep+"}"), tc.newValue()); err == nil {
+			if err := json.Unmarshal([]byte(tc.prefix+tooDeep+suffix), tc.newValue()); err == nil {
 				t.Fatal("accepted depth above value limit")
 			}
 		})

@@ -8,6 +8,50 @@ import (
 	"time"
 )
 
+func TestCatalogJSONSchemaDepthRemainsSymmetric(t *testing.T) {
+	catalog := Catalog{
+		Provider: "provider",
+		Revision: "revision",
+		Coverage: Coverage{Kind: "complete"},
+		Types: []ResourceType{{
+			Type: "type",
+			IdentityDimensions: []Dimension{},
+			QueryDimensions: []Dimension{},
+			Representations: []Representation{{ID: "document", Revision: "revision", Schema: SchemaBinding{State: "absent"}}},
+			Capabilities: []Capability{},
+		}},
+	}
+	base, err := json.Marshal(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		depth int
+		accepted bool
+	}{{58, true}, {59, false}} {
+		document := strings.Repeat("[", tc.depth) + "null" + strings.Repeat("]", tc.depth)
+		binding := `{"state":"available","revision":"revision","dialect":"fixture","document":` + document + `}`
+		input := strings.Replace(string(base), `{"state":"absent"}`, binding, 1)
+		if input == string(base) {
+			t.Fatal("schema binding fixture not found")
+		}
+		var decoded Catalog
+		err := json.Unmarshal([]byte(input), &decoded)
+		if !tc.accepted {
+			if ErrorCode(err) != "RESOURCE_LIMIT" {
+				t.Fatalf("schema depth %d: %v", tc.depth, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("schema depth %d: %v", tc.depth, err)
+		}
+		if _, err := json.Marshal(decoded); err != nil {
+			t.Fatalf("schema depth %d re-encode: %v", tc.depth, err)
+		}
+	}
+}
+
 func TestDomainJSONTaggedValueDepthBoundary(t *testing.T) {
 	body := Value{Kind: "string", String: "leaf"}
 	for range MaxValueDepth - 1 {
