@@ -965,7 +965,6 @@ func TestSourceEmitterRejectsWireComplexityOversize(t *testing.T) {
 	})
 }
 
-
 func TestFinitePageIncrementalWireCost(t *testing.T) {
 	record, err := (&qualifiedProvider{}).Get(context.Background(), testGet())
 	if err != nil {
@@ -1017,6 +1016,7 @@ func TestFinitePageIncrementalWireCost(t *testing.T) {
 		})
 	}
 }
+
 type sourceStatusStream struct {
 	grpc.ClientStream
 	err error
