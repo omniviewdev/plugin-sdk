@@ -162,8 +162,8 @@ func TestSourceFailureRemainsErrorWhenSiblingOpens(t *testing.T) {
 							select {
 							case <-releaseSibling:
 								return io.NopCloser(strings.NewReader("healthy output\n")), nil
-							case <-ctx.Done():
-								return nil, ctx.Err()
+							case <-ctx.Context.Done():
+								return nil, ctx.Context.Err()
 							}
 						},
 					},

@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"context"
 	"testing"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/utils/timeutil"
@@ -10,6 +11,7 @@ func TestReadinessCounterBeyondInt32(t *testing.T) {
 	const sourceCount = int64(1<<31) + 1
 	ss := &sessionState{
 		session:          LogSession{ID: "large-session", Status: LogSessionStatusInitializing},
+		ctx:              context.Background(),
 		totalSources:     sourceCount,
 		initialSourceIDs: map[string]struct{}{"last-source": {}},
 	}
