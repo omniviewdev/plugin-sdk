@@ -965,6 +965,58 @@ func TestSourceEmitterRejectsWireComplexityOversize(t *testing.T) {
 	})
 }
 
+
+func TestFinitePageIncrementalWireCost(t *testing.T) {
+	record, err := (&qualifiedProvider{}).Get(context.Background(), testGet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Body, err = resourcev2.ValueFromNative(map[string]any{
+		"metadata": map[string]any{"managedFields": []any{map[string]any{"manager": "controller", "fields": []any{"spec", "status"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cursorSize := range []int{0, 1, 127, 128, 16384} {
+		t.Run(fmt.Sprintf("cursor-%d", cursorSize), func(t *testing.T) {
+			page := resourcev2.SourcePage{Count: resourcev2.Count{Kind: "unknown"}, Coverage: resourcev2.Coverage{Kind: "complete"}, Consistency: resourcev2.ConsistencyBestEffort}
+			if cursorSize > 0 {
+				cursor := strings.Repeat("c", cursorSize)
+				page.NextCursor = &cursor
+			}
+			payload, nodes, fields, err := resourcev2.SourcePageWireCost(page)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range 3 {
+				bytes, n, f, err := resourcev2.SourceRecordWireCost(record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				payload += bytes
+				nodes += n
+				fields += f
+				page.Records = append(page.Records, record)
+			}
+			wirePage, err := resourcev2.ToProtoSourcePage(page)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := &resourcepb.Response{Version: resourcev2.WireVersion, Result: &resourcepb.Response_Page{Page: wirePage}}
+			data, err := proto.Marshal(response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			budget := wireBudget{}
+			if err := budget.message(data, response.ProtoReflect().Descriptor(), 0); err != nil {
+				t.Fatal(err)
+			}
+			if payload != proto.Size(wirePage) || resourcev2.SourcePageResponseWireSize(payload) != len(data) || nodes != budget.nodes || fields != budget.fields {
+				t.Fatalf("incremental=(%d,%d,%d,%d), encoded=(%d,%d,%d,%d)", payload, resourcev2.SourcePageResponseWireSize(payload), nodes, fields, proto.Size(wirePage), len(data), budget.nodes, budget.fields)
+			}
+		})
+	}
+}
 type sourceStatusStream struct {
 	grpc.ClientStream
 	err error

@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	"github.com/omniviewdev/plugin-sdk/pkg/resource/v2/internal/wirecost"
 )
 
 // WirePolicy is an implementation-candidate transport ceiling, not predicate policy or an SLO.
@@ -55,44 +56,7 @@ type wireBudget struct {
 }
 
 func protoWireCost(m protoreflect.Message) (nodes, fields int) {
-	nodes = 1
-	m.Range(func(fd protoreflect.FieldDescriptor, value protoreflect.Value) bool {
-		if fd.IsMap() {
-			value.Map().Range(func(_ protoreflect.MapKey, v protoreflect.Value) bool {
-				fields += 3
-				nodes++
-				if fd.MapValue().Message() != nil {
-					n, f := protoWireCost(v.Message())
-					nodes += n
-					fields += f
-				}
-				return true
-			})
-		} else if fd.IsList() {
-			list := value.List()
-			if fd.IsPacked() {
-				fields++
-			} else {
-				fields += list.Len()
-			}
-			if fd.Message() != nil {
-				for i := range list.Len() {
-					n, f := protoWireCost(list.Get(i).Message())
-					nodes += n
-					fields += f
-				}
-			}
-		} else {
-			fields++
-			if fd.Message() != nil {
-				n, f := protoWireCost(value.Message())
-				nodes += n
-				fields += f
-			}
-		}
-		return true
-	})
-	return nodes, fields
+	return wirecost.Count(m)
 }
 
 type wireMessage struct {
