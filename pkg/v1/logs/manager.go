@@ -67,7 +67,7 @@ type sessionState struct {
 
 	// Readiness — totalSources set BEFORE goroutines start (no race)
 	totalSources     int64               // immutable after set in orchestrateSession
-	readySources     atomic.Int64        // number of unique sources that sent their first line
+	readySources     atomic.Int64        // number of unique sources whose streams opened
 	readied          atomic.Bool         // whether SESSION_READY has been emitted
 	readySet         sync.Map            // map[string]struct{} — tracks which source IDs have been counted
 	initialSourceIDs map[string]struct{} // snapshot of source IDs at session init; only these gate readiness
@@ -617,7 +617,7 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 // finalizeSession drains every native producer before publishing completion.
 func (m *Manager) finalizeSession(ss *sessionState) {
 	ss.sourceWg.Wait()
-	if ss.ctx.Err() != nil && ss.status() != LogSessionStatusError {
+	if ss.status() != LogSessionStatusError {
 		ss.setStatus(LogSessionStatusClosed)
 	}
 	if ss.ctx.Err() == nil {
@@ -853,6 +853,7 @@ func (m *Manager) streamWithReconnect(
 			continue
 		}
 
+		m.markSourceReady(ss, source.ID)
 		err := m.consumeSourceReader(ctx, ss, source, reader, logger)
 
 		if ctx.Err() != nil {
@@ -866,6 +867,13 @@ func (m *Manager) streamWithReconnect(
 		logger.Warnw(ctx, "log stream interrupted", "error", err, "source", source.ID)
 	}
 
+	ss.mu.Lock()
+	if ctx.Err() != nil {
+		ss.mu.Unlock()
+		return
+	}
+	ss.session.Status = LogSessionStatusError
+	ss.mu.Unlock()
 	m.emitEvent(ss.session.ID, LogStreamEvent{
 		Type:      StreamEventStreamError,
 		SourceID:  source.ID,
@@ -948,7 +956,6 @@ func (m *Manager) readStream(
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, scannerInitBuf), MaxScannerBuffer)
 
-	firstLine := true
 	for scanner.Scan() {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -975,17 +982,6 @@ func (m *Manager) readStream(
 				Origin:    LogLineOriginCurrent,
 			})
 		}
-
-		if firstLine {
-			firstLine = false
-			m.markSourceReady(ss, source.ID)
-		}
-	}
-
-	// If we never received a line, still mark ready so we don't block
-	// the ACTIVE transition (the source simply has no output).
-	if firstLine {
-		m.markSourceReady(ss, source.ID)
 	}
 
 	return scanner.Err()
@@ -1011,8 +1007,15 @@ func (m *Manager) markSourceReady(ss *sessionState, sourceID string) {
 		}
 	}
 	ready := ss.readySources.Add(1)
-	if ready >= ss.totalSources && ss.readied.CompareAndSwap(false, true) {
-		ss.transition(LogSessionStatusInitializing, LogSessionStatusActive)
+	if ready >= ss.totalSources {
+		ss.mu.Lock()
+		if ss.ctx.Err() != nil || ss.session.Status != LogSessionStatusInitializing ||
+			!ss.readied.CompareAndSwap(false, true) {
+			ss.mu.Unlock()
+			return
+		}
+		ss.session.Status = LogSessionStatusActive
+		ss.mu.Unlock()
 		m.emitEvent(ss.session.ID, LogStreamEvent{
 			Type:      StreamEventSessionReady,
 			Message:   "All sources connected",
