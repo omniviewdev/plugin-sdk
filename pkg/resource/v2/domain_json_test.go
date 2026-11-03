@@ -46,6 +46,11 @@ func TestDomainJSONTaggedValueDepthBoundary(t *testing.T) {
 			}
 		})
 	}
+	record.Body = Value{Kind: "map", Map: map[string]Value{"child": body}}
+	overDepth := SourcePage{Records: []Record{record}, Count: Count{Kind: "unknown"}, Coverage: record.Coverage, Consistency: ConsistencyBestEffort}
+	if _, err := json.Marshal(overDepth); ErrorCode(err) != "RESOURCE_LIMIT" {
+		t.Fatalf("over-depth source page: %v", err)
+	}
 	native := strings.Repeat("[", MaxValueDepth+1) + "null" + strings.Repeat("]", MaxValueDepth+1)
 	if err := ValidateJSON([]byte(native)); ErrorCode(err) != "RESOURCE_LIMIT" {
 		t.Fatalf("native JSON depth limit: %v", err)

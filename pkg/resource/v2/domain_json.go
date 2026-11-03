@@ -728,5 +728,12 @@ func (v SourcePage) MarshalJSON() ([]byte, error) {
 	if out.Records == nil {
 		out.Records = []Record{}
 	}
-	return marshalDomainJSON(out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := readJSON(data, MaxMessageBytes, jsonReadDomain); err != nil {
+		return nil, err
+	}
+	return data, nil
 }
