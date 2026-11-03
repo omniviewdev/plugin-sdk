@@ -106,7 +106,6 @@ type jsonReadMode uint8
 const (
 	jsonReadTree jsonReadMode = iota
 	jsonReadValidate
-	jsonReadNative
 	jsonReadDomain
 )
 
@@ -120,23 +119,12 @@ func readJSON(data []byte, byteLimit int, mode jsonReadMode) (any, error) {
 	d := json.NewDecoder(bytes.NewReader(data))
 	d.UseNumber()
 	reader := jsonTreeReader{decoder: d, mode: mode}
-	var v any
-	var err error
-	if mode == jsonReadNative {
-		var value Value
-		value, err = reader.readNative(0)
-		v = value
-	} else {
-		v, err = reader.read(0)
-	}
+	v, err := reader.read(0)
 	if err != nil {
 		return nil, err
 	}
 	if _, err = d.Token(); !errors.Is(err, io.EOF) {
 		return nil, invalid("trailing JSON")
-	}
-	if reader.semanticErr != nil {
-		return nil, reader.semanticErr
 	}
 	return v, nil
 }
@@ -145,7 +133,6 @@ type jsonTreeReader struct {
 	decoder       *json.Decoder
 	mode          jsonReadMode
 	nodes, fields int
-	semanticErr   error
 }
 
 func (r *jsonTreeReader) read(depth int) (any, error) {
@@ -250,92 +237,6 @@ func (r *jsonTreeReader) array(depth int) (any, error) {
 		return a, nil
 	}
 	return true, nil
-}
-
-// readNative keeps recursive Values typed: returning each through an interface
-// would allocate a box for every scalar and container in the document.
-func (r *jsonTreeReader) readNative(depth int) (Value, error) {
-	r.nodes++
-	if depth > maxDomainDepth || r.nodes > maxDomainNodes {
-		return Value{}, limited("JSON complexity limit")
-	}
-	token, err := r.decoder.Token()
-	if err != nil {
-		return Value{}, invalid("invalid JSON")
-	}
-	switch x := token.(type) {
-	case json.Delim:
-		switch x {
-		case '{':
-			return r.nativeObject(depth)
-		case '[':
-			return r.nativeArray(depth)
-		default:
-			return Value{}, invalid("unexpected JSON delimiter")
-		}
-	case string:
-		return Value{Kind: valueKindString, String: x}, nil
-	case json.Number:
-		value, err := nativeJSONNumber(x)
-		// Finish raw admission before reporting the first semantic error.
-		if err != nil && r.semanticErr == nil {
-			r.semanticErr = err
-		}
-		return value, nil
-	default:
-		return nativeScalarValue(token)
-	}
-}
-
-func (r *jsonTreeReader) nativeObject(depth int) (Value, error) {
-	values := make(map[string]Value)
-	for r.decoder.More() {
-		r.fields++
-		if r.fields > maxDomainFields {
-			return Value{}, limited("JSON field limit")
-		}
-		key, err := r.decoder.Token()
-		if err != nil {
-			return Value{}, invalid("invalid JSON member")
-		}
-		name, ok := key.(string)
-		if !ok {
-			return Value{}, invalid("invalid JSON key")
-		}
-		if _, exists := values[name]; exists {
-			return Value{}, invalid("duplicate JSON member")
-		}
-		value, err := r.readNative(depth + 1)
-		if err != nil {
-			return Value{}, err
-		}
-		values[name] = value
-	}
-	end, err := r.decoder.Token()
-	if err != nil || end != json.Delim('}') {
-		return Value{}, invalid("invalid JSON object")
-	}
-	return Value{Kind: valueKindMap, Map: values}, nil
-}
-
-func (r *jsonTreeReader) nativeArray(depth int) (Value, error) {
-	values := []Value{}
-	for r.decoder.More() {
-		r.fields++
-		if r.fields > maxDomainFields {
-			return Value{}, limited("JSON field limit")
-		}
-		value, err := r.readNative(depth + 1)
-		if err != nil {
-			return Value{}, err
-		}
-		values = append(values, value)
-	}
-	end, err := r.decoder.Token()
-	if err != nil || end != json.Delim(']') {
-		return Value{}, invalid("invalid JSON array")
-	}
-	return Value{Kind: valueKindList, List: values}, nil
 }
 
 // ValidateJSON applies the raw message ceiling and exact structural budgets.
@@ -609,12 +510,11 @@ func (v Value) MarshalJSON() ([]byte, error) {
 // exact signed/unsigned intent; only fractional/exponent tokens become doubles.
 // Native JSON strings never acquire timestamp intent.
 func JSONToValue(data []byte) (Value, error) {
-	raw, err := readJSON(data, MaxDocumentBytes, jsonReadNative)
+	raw, err := parseJSON(data)
 	if err != nil {
 		return Value{}, err
 	}
-	v := raw.(Value)
-	err = ValidateValue(v)
+	v, err := ValueFromNative(raw)
 	if err != nil {
 		return Value{}, err
 	}

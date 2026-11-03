@@ -249,9 +249,11 @@ native `protoc` binary.
 ### Admission performance
 
 Raw JSON validation walks tokens without retaining a generic document tree.
-Native JSON conversion builds `Value` directly, while structural errors retain
-precedence over numeric conversion errors. Duplicate decoded keys, Unicode
-validation, exact numbers, and independent resource limits remain enforced.
+Domain-object admission retains root presence information without child trees.
+Native JSON conversion keeps its existing sized map/list conversion path to
+avoid wide-container allocation regressions. Structural admission still precedes
+numeric conversion; strict Unicode, duplicate keys, exact numbers, and independent
+resource limits remain enforced.
 
 Protobuf map decoding reuses destination storage for duplicate detection without
 changing entry-error precedence or mutable ownership. Generic metadata traversal
