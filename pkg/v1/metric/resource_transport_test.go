@@ -303,6 +303,65 @@ func TestMetricOldServerNoNativeEffects(t *testing.T) {
 	}
 }
 
+type eofMetricClient struct {
+	metricpb.MetricPluginClient
+	stream *eofMetricStream
+}
+
+func (c *eofMetricClient) StreamResourceMetrics(ctx context.Context, _ ...grpc.CallOption) (metricpb.MetricPlugin_StreamResourceMetricsClient, error) {
+	c.stream.ctx = ctx
+	return c.stream, nil
+}
+
+type eofMetricStream struct {
+	grpc.ClientStream
+	ctx context.Context
+	received bool
+}
+
+func (*eofMetricStream) Send(*metricpb.MetricStreamInput) error { return io.EOF }
+
+func (s *eofMetricStream) Recv() (*metricpb.ResourceMetricStreamOutput, error) {
+	s.received = true
+	if err := s.ctx.Err(); err != nil {
+		return nil, err
+	}
+	return nil, status.Error(codes.Unimplemented, "old server")
+}
+
+func TestMetricHandshakeSendEOFReceivesStatus(t *testing.T) {
+	stream := &eofMetricStream{}
+	client := &PluginClient{client: &eofMetricClient{stream: stream}}
+	_, err := client.StreamResourceMetrics(context.Background(), make(chan StreamInput))
+	if !stream.received || resourcev2.ErrorCode(err) != "UNSUPPORTED" {
+		t.Fatalf("received=%t error=%v", stream.received, err)
+	}
+}
+
+func TestMetricStreamSendEOFReceivesStatus(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	input := make(chan StreamInput, 1)
+	input <- StreamInput{}
+	sent := make(chan struct{})
+	out := clientStream(ctx, cancel, input, false,
+		func(*metricpb.MetricStreamInput) error { close(sent); return io.EOF },
+		func() (StreamOutput, error) {
+			<-sent
+			return StreamOutput{}, status.Error(codes.Unimplemented, "old server")
+		},
+		func() error { return nil },
+	)
+	select {
+	case result, ok := <-out:
+		if !ok || result.OperationError == nil || result.OperationError.Code != "UNSUPPORTED" {
+			t.Fatalf("stream result: %#v, open=%t", result, ok)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("missing final receive status")
+	}
+}
+
 type metricRawCodec struct{ data []byte }
 
 func (metricRawCodec) Name() string { return "proto" }

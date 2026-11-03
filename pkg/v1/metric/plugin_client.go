@@ -172,7 +172,7 @@ func (c *PluginClient) StreamResourceMetrics(ctx context.Context, in chan Stream
 	if err = stream.Send(&metricpb.MetricStreamInput{
 		ResourceWireVersion: ResourceWireVersion,
 		ResourceOpen:        true,
-	}); err != nil {
+	}); err != nil && !errors.Is(err, io.EOF) {
 		timer.Stop()
 		cancel()
 		return nil, metricDomainError(err)
@@ -316,6 +316,10 @@ func clientStream(
 			case <-ctx.Done():
 				return
 			case e := <-failure:
+				if errors.Is(e.err, io.EOF) {
+					// Send EOF only signals stream closure; Recv reports the final status.
+					continue
+				}
 				publishMetricStreamError(ctx, out, e.subscriptionID, e.err)
 				return
 			case r := <-received:
