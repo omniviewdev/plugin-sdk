@@ -62,7 +62,7 @@ type wireMessage struct {
 
 	schemaUnavailable, schemaReason bool
 
-	keys map[wireKey]struct{}
+	keys wireKeys
 
 	records, relationshipTargets int
 }
@@ -458,15 +458,38 @@ type wireKey struct {
 	key   string
 }
 
-func duplicateWireKey(keys *map[wireKey]struct{}, field protoreflect.FieldNumber, key string) bool {
-	if *keys == nil {
-		*keys = make(map[wireKey]struct{})
-	}
+// Keep the common one- and two-key cases off the heap. Larger collections
+// switch once to a map, keeping wide-input duplicate checks linear overall.
+type wireKeys struct {
+	inline   [2]wireKey
+	count    uint8
+	overflow map[wireKey]struct{}
+}
+
+func duplicateWireKey(keys *wireKeys, field protoreflect.FieldNumber, key string) bool {
 	k := wireKey{field: field, key: key}
-	if _, ok := (*keys)[k]; ok {
-		return true
+	if keys.overflow != nil {
+		if _, ok := keys.overflow[k]; ok {
+			return true
+		}
+		keys.overflow[k] = struct{}{}
+		return false
 	}
-	(*keys)[k] = struct{}{}
+	for i := range keys.count {
+		if keys.inline[i] == k {
+			return true
+		}
+	}
+	if int(keys.count) < len(keys.inline) {
+		keys.inline[keys.count] = k
+		keys.count++
+		return false
+	}
+	keys.overflow = make(map[wireKey]struct{}, len(keys.inline)+1)
+	for _, existing := range keys.inline {
+		keys.overflow[existing] = struct{}{}
+	}
+	keys.overflow[k] = struct{}{}
 	return false
 }
 
