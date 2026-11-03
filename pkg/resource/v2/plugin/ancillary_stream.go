@@ -403,7 +403,7 @@ func decodeActionEvent(p *resourcepb.ActionStreamEvent, ready *bool) (resourcev2
 	}
 	v := resourcev2.ActionEvent{Type: p.Type}
 	if len(p.ActivityJson) != 0 {
-		if len(p.ActivityJson) > 131072 {
+		if len(p.ActivityJson) > resourcev2.MaxActivityPresentationBytes {
 			return resourcev2.ActionEvent{}, invalid("activity presentation exceeds limit")
 		}
 		var presentation resourcev2.ActivityPresentation

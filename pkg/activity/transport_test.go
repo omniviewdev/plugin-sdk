@@ -2,8 +2,10 @@ package activity
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
+	"strings"
 	"testing"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -90,5 +92,77 @@ func TestMalformedReportsNeverReachProducer(t *testing.T) {
 	}
 	if reporter.received.Presentation.Title != "" {
 		t.Fatal("invalid report reached producer")
+	}
+}
+
+type budgetReporter struct {
+	Reporter
+	record Record
+}
+
+func (r *budgetReporter) BeginTask(context.Context, Spec) (Record, error)      { return r.record, nil }
+func (r *budgetReporter) PublishMessage(context.Context, Spec) (Record, error) { return r.record, nil }
+func (r *budgetReporter) ReportTask(context.Context, ReportTaskRequest) (Record, error) {
+	return r.record, nil
+}
+func (r *budgetReporter) FinishTask(context.Context, FinishTaskRequest) (Record, error) {
+	return r.record, nil
+}
+func (r *budgetReporter) UpsertAlert(context.Context, AlertRequest) (Record, error) {
+	return r.record, nil
+}
+func (r *budgetReporter) ResolveAlert(context.Context, ResolveAlertRequest) (Record, error) {
+	return r.record, nil
+}
+
+func TestAllReporterResponsesReservePersistedMetadata(t *testing.T) {
+	reporter := &budgetReporter{record: Record{
+		ID:           "persisted-task",
+		Source:       Source{PluginID: "authenticated-plugin", ConnectionID: strings.Repeat("s", maxRequestBytes-1024)},
+		Presentation: Presentation{Title: "Copy", Details: strings.Repeat("d", 65536)},
+		Task:         &Task{State: "running"},
+	}}
+	server := &reporterServer{reporter: reporter}
+	for operation, request := range map[string]any{
+		"begin-task":      Spec{Presentation: Presentation{Title: "Copy"}},
+		"publish-message": Spec{Presentation: Presentation{Title: "Copy"}},
+		"report-task":     ReportTaskRequest{ID: "persisted-task", Presentation: Presentation{Title: "Copy"}},
+		"finish-task":     FinishTaskRequest{ID: "persisted-task", State: "succeeded"},
+		"upsert-alert":    AlertRequest{Spec: Spec{Presentation: Presentation{Title: "Copy"}}, Key: "key", ObservedAt: "2026-11-03T00:00:00Z"},
+		"resolve-alert":   ResolveAlertRequest{Key: "key", ObservedAt: "2026-11-03T00:00:00Z"},
+	} {
+		t.Run(operation, func(t *testing.T) {
+			payload, err := json.Marshal(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := server.Report(context.Background(), &pb.ReportRequest{Version: Version, Operation: operation, Payload: payload})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Record) <= maxRequestBytes {
+				t.Fatal("fixture did not exceed request budget")
+			}
+			var received Record
+			if err := decodeLimit(response.Record, &received, maxResponseBytes); err != nil {
+				t.Fatal(err)
+			}
+			if received.ID != reporter.record.ID || received.Source.ConnectionID != reporter.record.Source.ConnectionID {
+				t.Fatal("lost persisted identity or source")
+			}
+		})
+	}
+}
+
+func TestActivityFrameBudgets(t *testing.T) {
+	for _, limit := range []int{maxRequestBytes, maxResponseBytes} {
+		payload := append([]byte(`{}`), []byte(strings.Repeat(" ", limit-2))...)
+		var decoded map[string]any
+		if err := decodeLimit(payload, &decoded, limit); err != nil {
+			t.Fatal(err)
+		}
+		if err := decodeLimit(append(payload, ' '), &decoded, limit); err == nil {
+			t.Fatal("accepted oversized activity frame")
+		}
 	}
 }

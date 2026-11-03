@@ -1,6 +1,12 @@
 package resourcev2
 
-import "math/big"
+import (
+	"encoding/json"
+	"math/big"
+)
+
+// MaxActivityPresentationBytes bounds the JSON representation on every activity transport.
+const MaxActivityPresentationBytes = 131072
 
 // ValidateActivityPresentation checks presentation without interpreting business output.
 func ValidateActivityPresentation(p ActivityPresentation) error {
@@ -71,6 +77,10 @@ func ValidateActivityPresentation(p ActivityPresentation) error {
 		default:
 			return NewError("INVALID_REQUEST", "Unknown activity action kind.")
 		}
+	}
+	encoded, err := json.Marshal(p)
+	if err != nil || len(encoded) > MaxActivityPresentationBytes {
+		return NewError("INVALID_REQUEST", "Activity presentation exceeds limit.")
 	}
 	return nil
 }

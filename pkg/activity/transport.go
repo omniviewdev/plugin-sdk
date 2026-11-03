@@ -17,6 +17,13 @@ import (
 
 const Version uint32 = 1
 
+// Requests reserve room for independently persisted source and presentation data.
+// Responses also include host identity, timestamps, task/alert state, and visibility.
+const (
+	maxRequestBytes  = 262144
+	maxResponseBytes = 1048576
+)
+
 var ErrUnavailable = errors.New("activity reporter is unavailable")
 
 // Binding owns exactly one callback connection for the plugin process lifetime.
@@ -67,6 +74,9 @@ func (b *Binding) call(ctx context.Context, operation string, request any) (Reco
 	if err != nil {
 		return Record{}, err
 	}
+	if len(payload) > maxRequestBytes {
+		return Record{}, errors.New("activity payload exceeds limit")
+	}
 	response, err := pb.NewActivityReporterClient(conn).Report(ctx, &pb.ReportRequest{
 		Version:   Version,
 		Operation: operation,
@@ -76,7 +86,7 @@ func (b *Binding) call(ctx context.Context, operation string, request any) (Reco
 		return Record{}, err
 	}
 	var record Record
-	if err := decode(response.Record, &record); err != nil {
+	if err := decodeLimit(response.Record, &record, maxResponseBytes); err != nil {
 		return Record{}, err
 	}
 	return record, nil
@@ -116,7 +126,11 @@ func RegisterServer(reg grpc.ServiceRegistrar, reporter Reporter) {
 }
 
 func decode(data []byte, out any) error {
-	if len(data) > 262144 {
+	return decodeLimit(data, out, maxRequestBytes)
+}
+
+func decodeLimit(data []byte, out any, limit int) error {
+	if len(data) > limit {
 		return errors.New("activity payload exceeds limit")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -186,7 +200,7 @@ func (s *reporterServer) Report(ctx context.Context, req *pb.ReportRequest) (*pb
 		return nil, status.Error(codes.InvalidArgument, "Activity report rejected.")
 	}
 	data, err := json.Marshal(record)
-	if err != nil {
+	if err != nil || len(data) > maxResponseBytes {
 		return nil, status.Error(codes.Internal, "Activity response unavailable.")
 	}
 	return &pb.ReportResponse{Record: data}, nil
