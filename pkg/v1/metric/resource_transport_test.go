@@ -315,7 +315,7 @@ func (c *eofMetricClient) StreamResourceMetrics(ctx context.Context, _ ...grpc.C
 
 type eofMetricStream struct {
 	grpc.ClientStream
-	ctx context.Context
+	ctx      context.Context
 	received bool
 }
 
