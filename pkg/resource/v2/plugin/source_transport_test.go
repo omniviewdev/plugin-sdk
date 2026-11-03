@@ -954,6 +954,16 @@ func TestSourceEmitterRejectsWireComplexityOversize(t *testing.T) {
 			}
 		})
 	}
+	t.Run("single observation aggregate value admission", func(t *testing.T) {
+		observation := makeObservation(resourcev2.MaxValueNodes + 1)
+		ctx := context.Background()
+		request := transportSourceRequest()
+		emitter := &sourceEmitter{ctx: ctx, request: request, sequence: 1}
+		err := emitter.Snapshot(ctx, []resourcev2.SourceObservation{observation})
+		if resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {
+			t.Fatalf("got %v, want RESOURCE_LIMIT", err)
+		}
+	})
 }
 
 type sourceStatusStream struct {
