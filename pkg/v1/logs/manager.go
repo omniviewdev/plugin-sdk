@@ -142,7 +142,7 @@ type ManagerConfig struct {
 	Settings  settings.Provider
 	Handlers  map[string]Handler
 	Resolvers map[string]SourceResolver
-	Sink      OutputSink     // optional: nil → ChannelSink created by Stream()
+	Sink      OutputSink     // optional: nil → bounded shared output channel
 	Clock     timeutil.Clock // optional: nil → timeutil.RealClock
 }
 
@@ -180,6 +180,11 @@ func NewManager(cfg ManagerConfig) *Manager {
 		clk = timeutil.RealClock{}
 	}
 
+	var out chan StreamOutput
+	if cfg.Sink == nil {
+		out = make(chan StreamOutput, streamOutputBuffer)
+	}
+
 	return &Manager{
 		log:      logger.Named("logs.manager"),
 		settings: cfg.Settings,
@@ -187,6 +192,7 @@ func NewManager(cfg ManagerConfig) *Manager {
 		sink:     cfg.Sink,
 		clock:    clk,
 		sessions: make(map[string]*sessionState),
+		out:      out,
 	}
 }
 
@@ -467,17 +473,9 @@ func (m *Manager) UpdateSessionOptions(
 // Stream starts command handling and returns the shared output channel.
 // With a configured sink, output is nil. Cancellation or closed input cancels sessions.
 func (m *Manager) Stream(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
-	m.mu.Lock()
-	if m.sink == nil {
-		m.out = make(chan StreamOutput, streamOutputBuffer)
-		m.sink = NewChannelSink(ctx, m.out)
-	}
-	out := m.out
-	m.mu.Unlock()
-
 	go m.handleCommands(ctx, in)
 
-	return out, nil
+	return m.out, nil
 }
 
 // Wait blocks until all session goroutines finish.
@@ -969,18 +967,23 @@ func (m *Manager) readStream(
 		line := scanner.Bytes()
 		ts, content := extractTimestamp(line)
 
-		m.mu.RLock()
 		sink := m.sink
-		m.mu.RUnlock()
+		entry := LogLine{
+			SessionID: ss.session.ID,
+			SourceID:  source.ID,
+			Labels:    source.Labels,
+			Timestamp: ts,
+			Content:   content,
+			Origin:    LogLineOriginCurrent,
+		}
 		if sink != nil {
-			sink.OnLine(LogLine{
-				SessionID: ss.session.ID,
-				SourceID:  source.ID,
-				Labels:    source.Labels,
-				Timestamp: ts,
-				Content:   content,
-				Origin:    LogLineOriginCurrent,
-			})
+			sink.OnLine(entry)
+		} else {
+			select {
+			case m.out <- StreamOutput{SessionID: entry.SessionID, Line: &entry}:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 	}
 
@@ -1009,12 +1012,14 @@ func (m *Manager) markSourceReady(ss *sessionState, sourceID string) {
 	ready := ss.readySources.Add(1)
 	if ready >= ss.totalSources {
 		ss.mu.Lock()
-		if ss.ctx.Err() != nil || ss.session.Status != LogSessionStatusInitializing ||
-			!ss.readied.CompareAndSwap(false, true) {
+		if ss.ctx.Err() != nil || ss.session.Status == LogSessionStatusError ||
+			ss.session.Status == LogSessionStatusClosed || !ss.readied.CompareAndSwap(false, true) {
 			ss.mu.Unlock()
 			return
 		}
-		ss.session.Status = LogSessionStatusActive
+		if ss.session.Status == LogSessionStatusInitializing {
+			ss.session.Status = LogSessionStatusActive
+		}
 		ss.mu.Unlock()
 		m.emitEvent(ss.session.ID, LogStreamEvent{
 			Type:      StreamEventSessionReady,
@@ -1131,10 +1136,17 @@ func (m *Manager) emitEvent(sessionID string, event LogStreamEvent) {
 	sink := m.sink
 	ss := m.sessions[sessionID]
 	m.mu.RUnlock()
-	if sink == nil || ss == nil || ss.ctx.Err() != nil {
+	if ss == nil || ss.ctx.Err() != nil {
 		return
 	}
-	sink.OnEvent(sessionID, event)
+	if sink != nil {
+		sink.OnEvent(sessionID, event)
+	} else {
+		select {
+		case m.out <- StreamOutput{SessionID: sessionID, Event: &event}:
+		case <-ss.ctx.Done():
+		}
+	}
 }
 
 func (m *Manager) closeAll() {

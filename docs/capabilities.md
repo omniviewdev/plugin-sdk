@@ -185,6 +185,11 @@ producers finish, the session reports `CLOSED`; exhausted stream retries report
 finish; a later source opening does not announce readiness for a failed session.
 Acquisition and read failures remain in local diagnostic logs.
 `STREAM_ENDED` marks producer completion, including a finite read with zero lines.
+Readiness remains observable if the caller pauses or resumes before a reader
+opens; becoming ready does not override a paused session. The default output
+channel retains bounded early output before the transport attaches. A slow or
+unattached consumer applies backpressure, and session cancellation unblocks
+output delivery rather than waiting for the transport to drain.
 
 ## Next
 
