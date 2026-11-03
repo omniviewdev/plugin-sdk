@@ -344,12 +344,12 @@ func (b *metadataBudget) valueContainer(length, depth int) error {
 }
 
 func (b *metadataBudget) sequence(v reflect.Value, depth int) error {
+	if v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
+		return b.byteSlice(v)
+	}
 	b.fields += v.Len()
 	if b.fields > maxDomainFields {
 		return limited("domain field limit")
-	}
-	if v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
-		return b.byteSlice(v)
 	}
 	for i := range v.Len() {
 		if err := b.visit(v.Index(i), depth+1); err != nil {
