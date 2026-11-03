@@ -246,6 +246,22 @@ not a consumable release receipt.
 Use `make proto` for regeneration; remote Buf generators require no ambient
 native `protoc` binary.
 
+### Admission performance
+
+Raw JSON validation walks tokens without retaining a generic document tree.
+Native JSON conversion builds `Value` directly, while structural errors retain
+precedence over numeric conversion errors. Duplicate decoded keys, Unicode
+validation, exact numbers, and independent resource limits remain enforced.
+
+Protobuf map decoding reuses destination storage for duplicate detection without
+changing entry-error precedence or mutable ownership. Generic metadata traversal
+uses immutable field plans for fixed SDK types; arbitrary caller-defined types
+retain uncached admission, so dynamic types cannot grow a global plan cache.
+
+Profile host and plugin processes separately when evaluating these paths.
+Allocation savings from catalog batching and JSON validation overlap; do not add
+inclusive profile percentages or infer application-wide gains from microprobes.
+
 ## Settings value reads
 
 The v1 RPC client's `GetSettingValue` returns the decoded setting value, not a

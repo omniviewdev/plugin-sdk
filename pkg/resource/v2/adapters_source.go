@@ -27,22 +27,19 @@ func (d *adapterDecoder) metadata(p *resourcepb.ResourceMetadata) ResourceMetada
 	if p == nil {
 		return ResourceMetadata{Labels: map[string]string{}}
 	}
-	keys := make(map[string]struct{}, len(p.GetLabels()))
+	v := ResourceMetadata{Labels: make(map[string]string, len(p.GetLabels()))}
 	for _, entry := range p.GetLabels() {
 		if entry == nil {
 			d.fail("missing label entry")
 			return ResourceMetadata{}
 		}
-		if _, ok := keys[entry.GetKey()]; ok {
+		if _, ok := v.Labels[entry.GetKey()]; ok {
 			d.fail("duplicate metadata label")
 			return ResourceMetadata{}
 		}
-		keys[entry.GetKey()] = struct{}{}
-	}
-	v := ResourceMetadata{Labels: make(map[string]string, len(p.GetLabels())), CreatedAt: d.optionalTimestamp(p.GetCreatedAt())}
-	for _, entry := range p.GetLabels() {
 		v.Labels[entry.GetKey()] = entry.GetValue()
 	}
+	v.CreatedAt = d.optionalTimestamp(p.GetCreatedAt())
 	return v
 }
 
