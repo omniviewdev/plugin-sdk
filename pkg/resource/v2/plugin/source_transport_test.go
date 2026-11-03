@@ -876,6 +876,82 @@ func TestSourceSnapshotWireNodeBudget(t *testing.T) {
 	}
 }
 
+func TestSourceEmitterRejectsWireComplexityOversize(t *testing.T) {
+	record, err := (&qualifiedProvider{}).Get(context.Background(), testGet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeObservation := func(count int) resourcev2.SourceObservation {
+		values := make([]resourcev2.Value, count)
+		for i := range values {
+			values[i].Kind = "null"
+		}
+		item := record
+		item.Body = resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{
+			"items": {Kind: "list", List: values},
+		}}
+		return resourcev2.SourceObservation{Record: resourcev2.CompactSourceRecord(item)}
+	}
+	for _, tc := range []struct {
+		name string
+		observations int
+		values int
+	}{
+		{"single snapshot observation", 1, 132000},
+		{"atomic changes", 2, 70000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			observation := makeObservation(tc.values)
+			encoded, err := resourcev2.ToProtoSourceObservation(observation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nodes, _ := protoWireCost(encoded.ProtoReflect())
+			if nodes*tc.observations <= MaxNodes {
+				t.Fatalf("fixture has %d nodes, want over %d", nodes*tc.observations, MaxNodes)
+			}
+			request := transportSourceRequest()
+			request.Limits.MaxBatchItems = 256
+			request.Limits.MaxFrameBytes = resourcev2.MaxSourceFrameBytes
+			request.Mode = resourcev2.SourceModeSnapshotAndUpdates
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			emitter := &sourceEmitter{ctx: ctx, request: request, tracker: resourcev2.NewSourcePhaseTracker(request, ""), queue: make(chan sourceDelivery), stalled: make(chan struct{})}
+			deliveries := make(chan *resourcepb.SourceFrame, 4)
+			go func() {
+				for {
+					select {
+					case delivery := <-emitter.queue:
+						deliveries <- delivery.frame
+						delivery.ack <- nil
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+			if tc.observations == 1 {
+				err = emitter.Snapshot(ctx, []resourcev2.SourceObservation{observation})
+			} else {
+				coverage := resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}
+				if err = emitter.EndSnapshot(ctx, coverage, resourcev2.ContinuityBestEffort); err != nil {
+					t.Fatal(err)
+				}
+				change := resourcev2.SourceChange{Kind: resourcev2.SourceChangeUpsert, Observation: &observation}
+				err = emitter.Changes(ctx, []resourcev2.SourceChange{change, change}, nil)
+			}
+			if resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {
+				t.Fatalf("got %v, want RESOURCE_LIMIT", err)
+			}
+			close(deliveries)
+			for frame := range deliveries {
+				if frame.GetSnapshot() != nil || frame.GetChanges() != nil {
+					t.Fatal("oversized payload was delivered")
+				}
+			}
+		})
+	}
+}
+
 type sourceStatusStream struct {
 	grpc.ClientStream
 	err error
