@@ -7,16 +7,18 @@ import (
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
-func validateSourceRecord(r SourceRecord) error {
-	if err := validateReference(r.Reference); err != nil { return err }
-	if r.Body.Kind != valueKindMap { return invalid("resource body root must be map") }
-	if err := ValidateValue(r.Body); err != nil { return err }
-	if err := text(r.Representation.ID, true); err != nil { return err }
-	if err := text(r.Representation.Revision, true); err != nil { return err }
-	if err := token(r.Representation.SchemaRevision); err != nil { return err }
-	if len(r.Coverage.Paths) > 256 { return limited("coverage path limit") }
-	if err := validateCoverage(r.Coverage); err != nil { return err }
-	return token(r.SourceRevision)
+func validateSourceRecordSize(r SourceRecord) (int, error) {
+	if err := validateReference(r.Reference); err != nil { return 0, err }
+	if r.Body.Kind != valueKindMap { return 0, invalid("resource body root must be map") }
+	bodySize, err := validatedValueSize(&r.Body)
+	if err != nil { return 0, err }
+	if err := text(r.Representation.ID, true); err != nil { return 0, err }
+	if err := text(r.Representation.Revision, true); err != nil { return 0, err }
+	if err := token(r.Representation.SchemaRevision); err != nil { return 0, err }
+	if len(r.Coverage.Paths) > 256 { return 0, limited("coverage path limit") }
+	if err := validateCoverage(r.Coverage); err != nil { return 0, err }
+	if err := token(r.SourceRevision); err != nil { return 0, err }
+	return bodySize, nil
 }
 
 func validateDocumentCoverage(c DocumentCoverage, body Value) error {
@@ -90,10 +92,16 @@ func (d *adapterDecoder) documentCoverage(p *resourcepb.DocumentCoverage) Docume
 
 // SourceObservationWireSize reports protobuf bytes without materializing a wire tree.
 func SourceObservationWireSize(observation SourceObservation) (int, error) {
-	if err := validateSourceObservationAdapter(observation); err != nil { return 0, err }
+	bodySize, err := validateSourceObservationSize(observation)
+	if err != nil { return 0, err }
+	return sourceObservationWireSize(observation, bodySize), nil
+}
+
+// sourceObservationWireSize consumes the body size from this observation's validation.
+func sourceObservationWireSize(observation SourceObservation, bodySize int) int {
 	r := observation.Record
 	ref := stringFieldSize(r.Representation.ID) + stringFieldSize(r.Representation.Revision) + optionalStringFieldSize(r.Representation.SchemaRevision)
-	record := messageFieldSize(referenceWireSize(r.Reference)) + messageFieldSize(valueWireSize(r.Body)) + messageFieldSize(ref) + messageFieldSize(coverageWireSize(r.Coverage)) + optionalStringFieldSize(r.SourceRevision)
+	record := messageFieldSize(referenceWireSize(r.Reference)) + messageFieldSize(bodySize) + messageFieldSize(ref) + messageFieldSize(coverageWireSize(r.Coverage)) + optionalStringFieldSize(r.SourceRevision)
 	size := messageFieldSize(record) + optionalStringFieldSize(observation.DisplayName)
 	if observation.Metadata != nil {
 		metadata := 0
@@ -122,10 +130,10 @@ func SourceObservationWireSize(observation SourceObservation) (int, error) {
 		}
 		coverage += messageFieldSize(pathSize)
 	}
-	return size + messageFieldSize(coverage), nil
+	return size + messageFieldSize(coverage)
 }
 
-func sourceOpenWireSize(r SourceOpenRequest) int {
+func sourceOpenWireSize(r SourceOpenRequest, querySize int) int {
 	scope := 0
 	for _, constraint := range r.Target.Scope {
 		selection := 0
@@ -138,7 +146,7 @@ func sourceOpenWireSize(r SourceOpenRequest) int {
 	target := messageFieldSize(stringFieldSize(t.Route.Connection)) + stringFieldSize(t.Provider) + stringFieldSize(t.Authority) + stringFieldSize(t.Type) + messageFieldSize(scope) + stringFieldSize(t.Representation)
 	acquisition := messageFieldSize(0)
 	if r.Acquisition.Kind == SourceAcquisitionNativeQuery {
-		acquisition = messageFieldSize(stringFieldSize(r.Acquisition.Language) + messageFieldSize(valueWireSize(*r.Acquisition.Query)))
+		acquisition = messageFieldSize(stringFieldSize(r.Acquisition.Language) + messageFieldSize(querySize))
 	}
 	representation := r.Binding.Representation
 	schema := schemaWireSize(representation.Schema)
@@ -149,20 +157,22 @@ func sourceOpenWireSize(r SourceOpenRequest) int {
 
 // SourceChangesWireSize reports the exact protobuf payload size before encoding.
 func SourceChangesWireSize(changes SourceChanges) (int, error) {
-	if err := validateSourceChangesAdapter(changes); err != nil { return 0, err }
+	if len(changes.Changes) > MaxSourceBatchItems { return 0, limited("source batch limit") }
+	if len(changes.Changes) == 0 && changes.Coverage == nil { return 0, invalid("source changes contain no information") }
 	size := 0
 	for _, change := range changes.Changes {
+		bodySize, err := validateSourceChangeSize(change)
+		if err != nil { return 0, err }
 		var inner int
 		if change.Kind == SourceChangeUpsert {
-			observationSize, err := SourceObservationWireSize(*change.Observation)
-			if err != nil { return 0, err }
-			inner = messageFieldSize(observationSize)
+			inner = messageFieldSize(sourceObservationWireSize(*change.Observation, bodySize))
 		} else {
 			inner = messageFieldSize(messageFieldSize(referenceWireSize(*change.Reference)) + optionalStringFieldSize(change.SourceRevision))
 		}
 		size += messageFieldSize(inner)
 	}
 	if changes.Coverage != nil {
+		if err := validateSourceCoverageAdapter(*changes.Coverage); err != nil { return 0, err }
 		coverage := stringFieldSize(changes.Coverage.Enumeration) + stringFieldSize(changes.Coverage.Consistency)
 		for _, limitation := range changes.Coverage.Limitations { coverage += messageFieldSize(len(limitation)) }
 		size += messageFieldSize(coverage)

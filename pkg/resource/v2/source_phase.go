@@ -85,6 +85,7 @@ func ValidateSourceOpenRequest(r SourceOpenRequest) error {
 	if r.Mode != SourceModeSnapshot && r.Mode != SourceModeSnapshotAndUpdates {
 		return invalid("invalid source mode")
 	}
+	querySize := 0
 	switch r.Acquisition.Kind {
 	case SourceAcquisitionEnumerate:
 		if r.Acquisition.Language != "" || r.Acquisition.Query != nil {
@@ -100,13 +101,15 @@ func ValidateSourceOpenRequest(r SourceOpenRequest) error {
 		if r.Acquisition.Query == nil {
 			return invalid("native query is required")
 		}
-		if err := ValidateValue(*r.Acquisition.Query); err != nil {
+		var err error
+		querySize, err = validatedValueSize(r.Acquisition.Query)
+		if err != nil {
 			return err
 		}
 	default:
 		return invalid("invalid source acquisition")
 	}
-	if sourceOpenWireSize(r) > 256<<10 {
+	if sourceOpenWireSize(r, querySize) > 256<<10 {
 		return limited("source open exceeds byte limit")
 	}
 	return nil

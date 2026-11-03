@@ -93,39 +93,49 @@ func validateSourceCoverageAdapter(v SourceCoverage) error {
 	return nil
 }
 func validateSourceObservationAdapter(v SourceObservation) error {
-	if err := validateSourceRecord(v.Record); err != nil {
-		return err
+	_, err := validateSourceObservationSize(v)
+	return err
+}
+func validateSourceObservationSize(v SourceObservation) (int, error) {
+	bodySize, err := validateSourceRecordSize(v.Record)
+	if err != nil {
+		return 0, err
 	}
 	if err := validateDocumentCoverage(v.DocumentCoverage, v.Record.Body); err != nil {
-		return err
+		return 0, err
 	}
 	if v.Metadata != nil {
 		if err := validateMetadata(*v.Metadata); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	if v.DisplayName != nil {
-		return text(*v.DisplayName, false)
+		if err := text(*v.DisplayName, false); err != nil { return 0, err }
 	}
-	return nil
+	return bodySize, nil
 }
 func validateSourceChangeAdapter(v SourceChange) error {
+	_, err := validateSourceChangeSize(v)
+	return err
+}
+func validateSourceChangeSize(v SourceChange) (int, error) {
 	switch v.Kind {
 	case SourceChangeUpsert:
 		if v.Observation == nil || v.Reference != nil || v.SourceRevision != nil {
-			return invalid("invalid source upsert")
+			return 0, invalid("invalid source upsert")
 		}
-		return validateSourceObservationAdapter(*v.Observation)
+		return validateSourceObservationSize(*v.Observation)
 	case SourceChangeRemove:
 		if v.Observation != nil || v.Reference == nil {
-			return invalid("invalid source remove")
+			return 0, invalid("invalid source remove")
 		}
 		if err := validateReference(*v.Reference); err != nil {
-			return err
+			return 0, err
 		}
-		return token(v.SourceRevision)
+		if err := token(v.SourceRevision); err != nil { return 0, err }
+		return 0, nil
 	default:
-		return invalid("invalid source change")
+		return 0, invalid("invalid source change")
 	}
 }
 func validateSourceBeginAdapter(v SourceBegin) error {
