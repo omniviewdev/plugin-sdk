@@ -108,6 +108,7 @@ const (
 	jsonReadTagged
 	jsonReadValidate
 	jsonReadDomain
+	jsonReadResourceOptions
 )
 
 func readJSON(data []byte, byteLimit int, mode jsonReadMode) (any, error) {
@@ -134,6 +135,7 @@ type jsonTreeReader struct {
 	decoder       *json.Decoder
 	mode          jsonReadMode
 	nodes, fields int
+	inResourceData bool
 }
 
 func (r *jsonTreeReader) read(depth int) (any, error) {
@@ -147,7 +149,7 @@ func (r *jsonTreeReader) read(depth int) (any, error) {
 	}
 	delim, ok := t.(json.Delim)
 	if !ok {
-		if r.mode == jsonReadValidate || (r.mode == jsonReadDomain && depth > 1) {
+		if r.mode == jsonReadValidate || r.mode == jsonReadResourceOptions || (r.mode == jsonReadDomain && depth > 1) {
 			return nil, nil
 		}
 		return t, nil
@@ -163,6 +165,9 @@ func (r *jsonTreeReader) read(depth int) (any, error) {
 }
 
 func (r *jsonTreeReader) depthLimit() int {
+	if r.mode == jsonReadResourceOptions && r.inResourceData {
+		return taggedChildDepth*MaxValueDepth + 2
+	}
 	if r.mode == jsonReadTagged {
 		return taggedChildDepth*MaxValueDepth + 1
 	}
@@ -203,7 +208,12 @@ func (r *jsonTreeReader) object(depth int) (any, error) {
 		if exists {
 			return nil, invalid("duplicate JSON member")
 		}
+		previous := r.inResourceData
+		if r.mode == jsonReadResourceOptions && depth == 0 && k == "resource_data" {
+			r.inResourceData = true
+		}
 		v, err := r.read(depth + 1)
+		r.inResourceData = previous
 		if err != nil {
 			return nil, err
 		}
@@ -257,6 +267,13 @@ func (r *jsonTreeReader) array(depth int) (any, error) {
 // the smaller body ceiling before their semantic admission.
 func ValidateJSON(data []byte) error {
 	_, err := readJSON(data, MaxMessageBytes, jsonReadValidate)
+	return err
+}
+
+// ValidateResourceOptionsJSON validates option envelopes containing a tagged
+// resource_data Value. Other fields retain the ordinary JSON depth limit.
+func ValidateResourceOptionsJSON(data []byte) error {
+	_, err := readJSON(data, MaxMessageBytes, jsonReadResourceOptions)
 	return err
 }
 

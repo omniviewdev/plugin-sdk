@@ -112,7 +112,7 @@ func validateStream(r StreamInput) error {
 func ValidateStreamInput(input StreamInput) error { return validateStream(input) }
 
 func strictJSON(data []byte, target any) error {
-	if err := resourcev2.ValidateJSON(data); err != nil {
+	if err := resourcev2.ValidateResourceOptionsJSON(data); err != nil {
 		return err
 	}
 	trimmed := bytes.TrimSpace(data)

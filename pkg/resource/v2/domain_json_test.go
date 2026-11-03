@@ -26,6 +26,7 @@ func TestDomainJSONTaggedValueDepthBoundary(t *testing.T) {
 		{"record", record, &Record{}},
 		{"source page", SourcePage{Records: []Record{record}, Count: Count{Kind: "unknown"}, Coverage: record.Coverage, Consistency: ConsistencyBestEffort}, &SourcePage{}},
 		{"native query", NativeQueryRequest{Target: target, Language: "native.v1", Query: body, PageSize: 1}, &NativeQueryRequest{}},
+		{"action", ActionRequest{Route: route, Reference: record.Reference, Action: "inspect", Input: body}, &ActionRequest{}},
 		{"mutation", MutationRequest{Route: route, Reference: record.Reference, Operation: "patch", Input: body}, &MutationRequest{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -51,6 +52,9 @@ func TestDomainJSONTaggedValueDepthBoundary(t *testing.T) {
 	}
 	if _, err := parseJSON([]byte(native)); ErrorCode(err) != "RESOURCE_LIMIT" {
 		t.Fatalf("schema JSON depth limit: %v", err)
+	}
+	if err := ValidateResourceOptionsJSON([]byte(`{"other":` + native + `}`)); ErrorCode(err) != "RESOURCE_LIMIT" {
+		t.Fatalf("non-resource option JSON depth limit: %v", err)
 	}
 }
 

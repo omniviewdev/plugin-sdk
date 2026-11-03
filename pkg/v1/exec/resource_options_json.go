@@ -18,7 +18,7 @@ func (o *SessionOptions) UnmarshalJSON(data []byte) error {
 	if o == nil {
 		return optionError("INVALID_REQUEST", "Nil exec option receiver.")
 	}
-	if err := resourcev2.ValidateJSON(data); err != nil {
+	if err := resourcev2.ValidateResourceOptionsJSON(data); err != nil {
 		return err
 	}
 	d := json.NewDecoder(bytes.NewReader(data))
