@@ -135,9 +135,8 @@ func TestSourceTransportValueDepth(t *testing.T) {
 					}
 				}
 				if depth > resourcev2.MaxValueDepth {
-					// Invalid provider observations are reported as PROVIDER_ERROR;
-					// unary record admission separately exposes RESOURCE_LIMIT.
-					if failure != "PROVIDER_ERROR" || len(records) != 0 {
+					// Observations exceeding the value depth limit fail as RESOURCE_LIMIT.
+					if failure != "RESOURCE_LIMIT" || len(records) != 0 {
 						t.Fatalf("over-depth source: records=%d failure=%q", len(records), failure)
 					}
 					return
