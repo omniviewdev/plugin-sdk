@@ -632,55 +632,83 @@ func validateTimestampZone(s string) error {
 // ValidateValue checks the active tagged payload, exact scalar syntax, and tree budgets.
 // Inactive negative zero is a payload; list/map nil containers remain valid empty values.
 func ValidateValue(v Value) error {
+	_, err := validatedValueSize(&v)
+	return err
+}
+
+// Keep the encoded-size check after the complete semantic walk: a later
+// malformed child must still win over an earlier encoded-size overflow.
+func validatedValueSize(v *Value) (int, error) {
 	budget := valueValidationBudget{}
-	if err := budget.walk(&v, 0); err != nil {
-		return err
+	size, err := budget.walk(v, 0)
+	if err != nil {
+		return 0, err
 	}
-	if valueWireSize(v) > maxDocumentBytes {
-		return limited("encoded value byte limit")
+	if size > maxDocumentBytes {
+		return 0, limited("encoded value byte limit")
 	}
-	return nil
+	return size, nil
 }
 
 type valueValidationBudget struct{ nodes, bytes int }
 
-func (b *valueValidationBudget) walk(v *Value, depth int) error {
+func (b *valueValidationBudget) walk(v *Value, depth int) (int, error) {
 	b.nodes++
 	if depth > maxDomainDepth || b.nodes > maxDomainNodes {
-		return limited("value complexity limit")
+		return 0, limited("value complexity limit")
 	}
 	b.bytes += len(v.String)
 	if b.bytes > maxDocumentBytes {
-		return limited("value byte limit")
+		return 0, limited("value byte limit")
 	}
 	if !utf8.ValidString(v.String) {
-		return invalid("invalid UTF-8 value")
+		return 0, invalid("invalid UTF-8 value")
 	}
 	if inactiveValuePayload(v) {
-		return invalid("inactive value payload")
+		return 0, invalid("inactive value payload")
 	}
 	switch v.Kind {
-	case valueKindNull, valueKindBool, valueKindString:
-		return nil
+	case valueKindNull, valueKindBool:
+		return protobufBoolBytes, nil
+	case valueKindString:
+		return messageFieldSize(len(v.String)), nil
 	case valueKindInt64:
-		return canonicalInt(v.Int, false)
+		if err := canonicalInt(v.Int, false); err != nil {
+			return 0, err
+		}
+		n, _ := strconv.ParseInt(v.Int, 10, 64)
+		return protobufTagBytes + protowire.SizeVarint(protowire.EncodeZigZag(n)), nil
 	case valueKindUint64:
-		return canonicalInt(v.Uint, true)
+		if err := canonicalInt(v.Uint, true); err != nil {
+			return 0, err
+		}
+		n, _ := strconv.ParseUint(v.Uint, 10, 64)
+		return protobufTagBytes + varintSize(n), nil
 	case valueKindDouble:
 		if math.IsNaN(v.Double) || math.IsInf(v.Double, 0) {
-			return invalid("nonfinite double")
+			return 0, invalid("nonfinite double")
 		}
+		return protobufDoubleBytes, nil
 	case valueKindTimestamp:
-		_, err := timestamp(v.Timestamp)
-		return err
+		t, err := timestamp(v.Timestamp)
+		if err != nil {
+			return 0, err
+		}
+		size := 0
+		if n := t.Unix(); n != 0 {
+			size += protobufTagBytes + protowire.SizeVarint(protowire.EncodeZigZag(n))
+		}
+		if n := t.Nanosecond(); n > 0 {
+			size += protobufTagBytes + varintSize(uint64(n))
+		}
+		return messageFieldSize(size), nil
 	case valueKindList:
 		return b.list(v.List, depth)
 	case valueKindMap:
 		return b.mapEntries(v.Map, depth)
 	default:
-		return invalid("unknown value kind")
+		return 0, invalid("unknown value kind")
 	}
-	return nil
 }
 
 func inactiveValuePayload(v *Value) bool {
@@ -694,36 +722,46 @@ func inactiveValuePayload(v *Value) bool {
 		(v.Kind != valueKindMap && v.Map != nil)
 }
 
-func (b *valueValidationBudget) list(values []Value, depth int) error {
+func (b *valueValidationBudget) list(values []Value, depth int) (int, error) {
 	if len(values) > maxDomainNodes-b.nodes {
-		return limited("value node limit")
+		return 0, limited("value node limit")
 	}
+	size := 0
 	for i := range values {
-		if err := b.walk(&values[i], depth+1); err != nil {
-			return err
+		child, err := b.walk(&values[i], depth+1)
+		if err != nil {
+			return 0, err
 		}
+		size += messageFieldSize(child)
 	}
-	return nil
+	return messageFieldSize(size), nil
 }
 
-func (b *valueValidationBudget) mapEntries(values map[string]Value, depth int) error {
+func (b *valueValidationBudget) mapEntries(values map[string]Value, depth int) (int, error) {
 	if len(values) > maxDomainNodes-b.nodes {
-		return limited("value node limit")
+		return 0, limited("value node limit")
 	}
+	size := 0
 	for k := range values {
 		b.bytes += len(k)
 		if b.bytes > maxDocumentBytes {
-			return limited("value byte limit")
+			return 0, limited("value byte limit")
 		}
 		if err := text(k, false); err != nil {
-			return err
+			return 0, err
 		}
 		v := values[k]
-		if err := b.walk(&v, depth+1); err != nil {
-			return err
+		child, err := b.walk(&v, depth+1)
+		if err != nil {
+			return 0, err
 		}
+		entry := messageFieldSize(child)
+		if k != "" {
+			entry += messageFieldSize(len(k))
+		}
+		size += messageFieldSize(entry)
 	}
-	return nil
+	return messageFieldSize(size), nil
 }
 
 func validateReference(r ResourceReference) error {
@@ -1115,25 +1153,34 @@ func ValidateActionRequest(v ActionRequest) error {
 
 // ValidateRecord requires a map-root body plus valid identity, representation, and coverage.
 func ValidateRecord(r Record) error {
-	if err := admission(r); err != nil {
-		return err
+	_, err := validateRecordBodySize(&r)
+	return err
+}
+
+func validateRecordBodySize(r *Record) (int, error) {
+	if err := admission(*r); err != nil {
+		return 0, err
 	}
 	if err := validateReference(r.Reference); err != nil {
-		return err
+		return 0, err
 	}
 	if r.Body.Kind != valueKindMap {
-		return invalid("resource body root must be map")
+		return 0, invalid("resource body root must be map")
 	}
-	if err := ValidateValue(r.Body); err != nil {
-		return err
+	bodySize, err := validatedValueSize(&r.Body)
+	if err != nil {
+		return 0, err
 	}
 	if err := validateRepresentation(r.Representation); err != nil {
-		return err
+		return 0, err
 	}
 	if err := validateCoverage(r.Coverage); err != nil {
-		return err
+		return 0, err
 	}
-	return token(r.SourceRevision)
+	if err := token(r.SourceRevision); err != nil {
+		return 0, err
+	}
+	return bodySize, nil
 }
 
 // ValidateSourcePage bounds records and aggregate protobuf frame size.
@@ -1148,11 +1195,12 @@ func ValidateSourcePage(p SourcePage) error {
 	bodyBytes, pageBytes := 0, 0
 	for i := range p.Records {
 		r := &p.Records[i]
-		if err := ValidateRecord(*r); err != nil {
+		bodySize, err := validateRecordBodySize(r)
+		if err != nil {
 			return err
 		}
-		bodyBytes += valueWireSize(r.Body)
-		pageBytes += messageFieldSize(recordWireSize(*r))
+		bodyBytes += bodySize
+		pageBytes += messageFieldSize(recordWireSize(*r, bodySize))
 		if bodyBytes > MaxPageBodyBytes || pageBytes > MaxMessageBytes {
 			return limited("page byte limit")
 		}
@@ -1214,62 +1262,11 @@ func messageFieldSize(n int) int {
 	return protobufTagBytes + varintSize(uint64(n)) + n
 }
 
-func valueWireSize(v Value) int {
-	switch v.Kind {
-	case valueKindNull, valueKindBool:
-		return protobufBoolBytes
-	case valueKindString:
-		return messageFieldSize(len(v.String))
-	case valueKindInt64:
-		n, _ := strconv.ParseInt(v.Int, 10, 64)
-		return protobufTagBytes + protowire.SizeVarint(protowire.EncodeZigZag(n))
-	case valueKindUint64:
-		n, _ := strconv.ParseUint(v.Uint, 10, 64)
-		return 1 + varintSize(n)
-	case valueKindDouble:
-		return protobufDoubleBytes
-	case valueKindTimestamp:
-		t, _ := timestamp(v.Timestamp)
-		size := 0
-		if n := t.Unix(); n != 0 {
-			size += protobufTagBytes + protowire.SizeVarint(protowire.EncodeZigZag(n))
-		}
-		if n := t.Nanosecond(); n > 0 {
-			size += protobufTagBytes + varintSize(uint64(n))
-		}
-		return messageFieldSize(size)
-	case valueKindList:
-		size := 0
-		for i := range v.List {
-			size += messageFieldSize(valueWireSize(v.List[i]))
-		}
-		return messageFieldSize(size)
-	case valueKindMap:
-		size := 0
-		for k := range v.Map {
-			entry := messageFieldSize(valueWireSize(v.Map[k]))
-			if k != "" {
-				entry += messageFieldSize(len(k))
-			}
-			size += messageFieldSize(entry)
-		}
-		return messageFieldSize(size)
-	}
-	panic("validated value has no protobuf mapping")
-}
-
 // ValueWireSize reports the exact generated protobuf Value size without
 // allocating transport messages. Acquisition adapters can sum sizes before
 // retaining another record, then apply ValidateSourcePage to the complete page.
 func ValueWireSize(v Value) (int, error) {
-	if err := ValidateValue(v); err != nil {
-		return 0, err
-	}
-	size := valueWireSize(v)
-	if size > maxDocumentBytes {
-		return 0, limited("encoded value byte limit")
-	}
-	return size, nil
+	return validatedValueSize(&v)
 }
 
 func validateNativeAuthorityHint(v NativeAuthorityHint) error {
@@ -1402,7 +1399,7 @@ func coverageWireSize(c Coverage) int {
 	return size
 }
 
-func recordWireSize(r Record) int {
+func recordWireSize(r Record, bodySize int) int {
 	representation := stringFieldSize(
 		r.Representation.ID,
 	) + stringFieldSize(
@@ -1413,7 +1410,7 @@ func recordWireSize(r Record) int {
 	return messageFieldSize(
 		referenceWireSize(r.Reference),
 	) + messageFieldSize(
-		valueWireSize(r.Body),
+		bodySize,
 	) + messageFieldSize(
 		representation,
 	) + messageFieldSize(
@@ -1426,10 +1423,11 @@ func recordWireSize(r Record) int {
 // RecordWireSize reports exact protobuf Record bytes without building a second
 // record tree. The enclosing page/frame still includes its own metadata.
 func RecordWireSize(r Record) (int, error) {
-	if err := ValidateRecord(r); err != nil {
+	bodySize, err := validateRecordBodySize(&r)
+	if err != nil {
 		return 0, err
 	}
-	size := recordWireSize(r)
+	size := recordWireSize(r, bodySize)
 	if size > MaxMessageBytes {
 		return 0, limited("record wire byte limit")
 	}
