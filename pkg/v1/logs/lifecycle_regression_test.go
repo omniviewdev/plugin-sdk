@@ -58,44 +58,85 @@ func TestSilentFollowReadyAndCancellationClosesReader(t *testing.T) {
 	}
 }
 
-func TestFiniteSessionEmitsEndAfterAllOutput(t *testing.T) {
-	for _, content := range []string{"", "first\nsecond\n"} {
-		t.Run(map[bool]string{true: "empty", false: "lines"}[content == ""], func(t *testing.T) {
+func TestCleanEOFEmitsEndAfterAllOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		follow  bool
+	}{
+		{name: "finite-empty"},
+		{name: "finite-lines", content: "first\nsecond\n"},
+		{name: "follow-empty", follow: true},
+		{name: "follow-lines", content: "first\nsecond\n", follow: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			output := logtest.NewRecordingOutput()
+			opens := 0
 			mgr := logs.NewManager(logs.ManagerConfig{
 				Handlers: map[string]logs.Handler{
 					"test/pod": {Handler: func(_ *types.PluginContext, _ logs.LogStreamRequest) (io.ReadCloser, error) {
-						return io.NopCloser(strings.NewReader(content)), nil
+						opens++
+						return io.NopCloser(strings.NewReader(tc.content)), nil
 					}},
 				},
-				Sink: output,
+				Sink: output, Clock: timeutil.NewInstantFakeClock(),
 			})
 			defer mgr.Close()
 			ctx := types.NewPluginContext(context.Background(), "log", nil, nil, nil)
-			session, err := mgr.CreateResourceSession(ctx, logs.CreateSessionOptions{ResourceKey: "pod", ResourceID: "finite"})
+			session, err := mgr.CreateResourceSession(ctx, logs.CreateSessionOptions{
+				ResourceKey: "pod", ResourceID: "closed", Options: logs.LogSessionOptions{Follow: tc.follow},
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if output.WaitForEvent(logs.StreamEventStreamEnded, time.Second) == nil {
-				t.Fatal("finite stream never emitted STREAM_ENDED")
+				t.Fatal("closed stream never emitted STREAM_ENDED")
 			}
 			mgr.Wait()
 			got, err := mgr.GetSession(ctx, session.ID)
 			if err != nil || got.Status != logs.LogSessionStatusClosed {
 				t.Fatalf("session = %+v, error = %v; want CLOSED", got, err)
 			}
-			want := strings.Count(content, "\n")
-			if lines := output.Lines(); len(lines) != want {
+			if opens != 1 {
+				t.Fatalf("opened source %d times, want once", opens)
+			}
+			want := strings.Count(tc.content, "\n")
+			lines := output.Lines()
+			if len(lines) != want {
 				t.Fatalf("received %d lines, want %d", len(lines), want)
+			}
+			for i, content := range strings.Fields(tc.content) {
+				if lines[i].Content != content {
+					t.Fatalf("line %d = %q, want %q", i, lines[i].Content, content)
+				}
+			}
+			ready, ended := 0, 0
+			for _, event := range output.Events() {
+				switch event.Type {
+				case logs.StreamEventSessionReady:
+					ready++
+				case logs.StreamEventStreamEnded:
+					ended++
+				case logs.StreamEventReconnecting, logs.StreamEventReconnected, logs.StreamEventStreamError:
+					t.Fatalf("clean EOF emitted %v", event.Type)
+				}
+			}
+			if ready != 1 || ended != 1 {
+				t.Fatalf("ready=%d, ended=%d; want one each", ready, ended)
 			}
 		})
 	}
 }
 
-type failedLogReader struct{}
+type failedLogReader struct{ err error }
 
-func (failedLogReader) Read([]byte) (int, error) { return 0, errors.New("read failed") }
-func (failedLogReader) Close() error             { return nil }
+func (r failedLogReader) Read([]byte) (int, error) {
+	if r.err != nil {
+		return 0, r.err
+	}
+	return 0, errors.New("read failed")
+}
+func (failedLogReader) Close() error { return nil }
 
 func TestExhaustedLogRetriesSetErrorStatus(t *testing.T) {
 	for _, mode := range []string{"open", "read", "nil"} {

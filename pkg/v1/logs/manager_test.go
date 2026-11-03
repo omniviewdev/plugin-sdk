@@ -117,26 +117,53 @@ func TestPartialSourceReadiness(t *testing.T) {
 	}
 }
 
-// SM-006: RECONNECTING/RECONNECTED after source close (regression).
+// SM-006: A transient read failure reconnects, then clean EOF completes the source.
 func TestReconnectionFlowRegression(t *testing.T) {
-	src := logtest.NewTestLogSource()
-	h := logtest.Mount(t, logtest.WithSource("container-1", src))
-
-	h.CreateSession("container-1")
-
-	h.FeedLine("container-1", "first line")
-	h.WaitForLines(1, 2*time.Second)
-
-	// Close the source to trigger reconnection
-	h.CloseSource("container-1")
-
-	// Wait a bit for reconnection attempt
-	time.Sleep(200 * time.Millisecond)
-
-	events := h.Output().Events()
-	t.Logf("received %d events after source close", len(events))
-	if len(events) == 0 {
-		t.Fatal("expected at least one event after source close (e.g. RECONNECTING), got 0")
+	attempts := 0
+	output := logtest.NewRecordingOutput()
+	mgr := logs.NewManager(logs.ManagerConfig{
+		Handlers: map[string]logs.Handler{
+			"test/pod": {Handler: func(_ *types.PluginContext, _ logs.LogStreamRequest) (io.ReadCloser, error) {
+				attempts++
+				if attempts == 1 {
+					return failedLogReader{}, nil
+				}
+				return io.NopCloser(strings.NewReader("recovered\n")), nil
+			}},
+		},
+		Sink: output, Clock: timeutil.NewInstantFakeClock(),
+	})
+	defer mgr.Close()
+	ctx := types.NewPluginContext(context.Background(), "test", nil, nil, nil)
+	_, err := mgr.CreateResourceSession(ctx, logs.CreateSessionOptions{
+		ResourceKey: "pod", ResourceID: "transient", Options: logs.LogSessionOptions{Follow: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.WaitForEvent(logs.StreamEventStreamEnded, time.Second) == nil {
+		t.Fatal("recovered stream did not end")
+	}
+	mgr.Wait()
+	if attempts != 2 {
+		t.Fatalf("opened source %d times, want two", attempts)
+	}
+	if lines := output.Lines(); len(lines) != 1 || lines[0].Content != "recovered" {
+		t.Fatalf("recovered lines = %v", lines)
+	}
+	reconnecting, reconnected := 0, 0
+	for _, event := range output.Events() {
+		switch event.Type {
+		case logs.StreamEventReconnecting:
+			reconnecting++
+		case logs.StreamEventReconnected:
+			reconnected++
+		case logs.StreamEventStreamError:
+			t.Fatal("recovered stream emitted STREAM_ERROR")
+		}
+	}
+	if reconnecting != 1 || reconnected != 1 {
+		t.Fatalf("reconnecting=%d, reconnected=%d; want one each", reconnecting, reconnected)
 	}
 }
 
@@ -1717,13 +1744,12 @@ func TestHandleCommandsClosedChannelNoSpin(t *testing.T) {
 	mgr.Close()
 }
 
-// SPIN-002: streamWithReconnect with instantly-EOF reader + Follow=true is bounded.
-// If a handler returns a reader that immediately returns EOF, the reconnect loop
-// must exhaust MaxAttempts and stop — it must NOT loop forever.
-func TestReconnectWithInstantEOFReaderBounded(t *testing.T) {
-	// Handler returns a reader that immediately returns EOF.
+// SPIN-002: Truncated follow streams retry, then stop after exhausting attempts.
+func TestReconnectWithUnexpectedEOFReaderBounded(t *testing.T) {
+	attempts := 0
 	handler := logs.LogHandlerFunc(func(_ *types.PluginContext, _ logs.LogStreamRequest) (io.ReadCloser, error) {
-		return io.NopCloser(strings.NewReader("")), nil
+		attempts++
+		return failedLogReader{err: io.ErrUnexpectedEOF}, nil
 	})
 
 	output := logtest.NewRecordingOutput()
@@ -1761,9 +1787,12 @@ func TestReconnectWithInstantEOFReaderBounded(t *testing.T) {
 
 	select {
 	case <-done:
-		// Good — reconnect loop terminated after exhausting attempts
+		// Retry loop terminated after exhausting attempts.
 	case <-time.After(5 * time.Second):
-		t.Fatal("SPIN DETECTED: streamWithReconnect did not terminate with instant-EOF reader")
+		t.Fatal("retry loop did not terminate after unexpected EOF")
+	}
+	if attempts != logs.ReconnectMaxAttempts+1 {
+		t.Fatalf("opened source %d times, want %d", attempts, logs.ReconnectMaxAttempts+1)
 	}
 
 	// Verify the STREAM_ERROR event was emitted (reconnect exhaustion)
