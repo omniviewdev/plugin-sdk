@@ -916,7 +916,7 @@ func TestSourceEmitterRejectsWireComplexityOversize(t *testing.T) {
 			request.Mode = resourcev2.SourceModeSnapshotAndUpdates
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			emitter := &sourceEmitter{ctx: ctx, request: request, tracker: resourcev2.NewSourcePhaseTracker(request, ""), queue: make(chan sourceDelivery), stalled: make(chan struct{})}
+			emitter := &sourceEmitter{ctx: ctx, request: request, tracker: resourcev2.NewSourcePhaseTracker(request, resourcev2.ContinuityBestEffort), queue: make(chan sourceDelivery), stalled: make(chan struct{})}
 			deliveries := make(chan *resourcepb.SourceFrame, 4)
 			go func() {
 				for {

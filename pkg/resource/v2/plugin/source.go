@@ -234,9 +234,6 @@ func (e *sourceEmitter) send(ctx context.Context, f resourcev2.SourceFrame) erro
 	if f.Changes != nil {
 		size, err := resourcev2.SourceChangesWireSize(*f.Changes)
 		if err != nil {
-			if resourcev2.ErrorCode(err) == "RESOURCE_LIMIT" {
-				return limited("source changes exceed frame limit")
-			}
 			return resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
 		}
 		header := &resourcepb.SourceFrame{Version: resourcev2.WireVersion, SessionId: f.SessionID, Generation: f.Generation, Sequence: f.Sequence}
@@ -246,9 +243,6 @@ func (e *sourceEmitter) send(ctx context.Context, f resourcev2.SourceFrame) erro
 	}
 	p, err := resourcev2.ToProtoSourceFrame(f)
 	if err != nil {
-		if f.Changes != nil && resourcev2.ErrorCode(err) == "RESOURCE_LIMIT" {
-			return limited("source changes exceed frame limit")
-		}
 		return resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
 	}
 	if f.Changes != nil {
