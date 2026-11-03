@@ -11,6 +11,15 @@ import (
 	"google.golang.org/grpc"
 )
 
+func emptyBindingEnumeration(context.Context, *string, resourcev2.EnumerateRequest) (resourcev2.SourcePage, error) {
+	return resourcev2.SourcePage{
+		Records: []resourcev2.Record{},
+		Count: resourcev2.Count{Kind: "unknown"},
+		Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}},
+		Consistency: resourcev2.ConsistencyBestEffort,
+	}, nil
+}
+
 func TestControllerSourceStopResetsBindingOverTransport(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -28,7 +37,7 @@ func TestControllerSourceStopResetsBindingOverTransport(t *testing.T) {
 			},
 			DestroyClient: func(context.Context, *string) error { return nil },
 		},
-		Registrations: []resourcev2.Registration[string]{{Type: "opaque/type", Source: func(ctx context.Context, _ *string, _ resourcev2.SourceRequest, emitter resourcev2.SourceEmitter) error {
+		Registrations: []resourcev2.Registration[string]{{Type: "opaque/type", Enumerate: emptyBindingEnumeration, Source: func(ctx context.Context, _ *string, _ resourcev2.SourceRequest, emitter resourcev2.SourceEmitter) error {
 			if err := emitter.EndSnapshot(ctx, resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}, resourcev2.ContinuityBestEffort); err != nil {
 				return err
 			}
@@ -105,7 +114,7 @@ func TestControllerSourceEndWithTransientCatalogErrorResets(t *testing.T) {
 			},
 			DestroyClient: func(context.Context, *string) error { return nil },
 		},
-		Registrations: []resourcev2.Registration[string]{{Type: "opaque/type", Source: func(ctx context.Context, _ *string, _ resourcev2.SourceRequest, emitter resourcev2.SourceEmitter) error {
+		Registrations: []resourcev2.Registration[string]{{Type: "opaque/type", Enumerate: emptyBindingEnumeration, Source: func(ctx context.Context, _ *string, _ resourcev2.SourceRequest, emitter resourcev2.SourceEmitter) error {
 			if err := emitter.EndSnapshot(ctx, resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}, resourcev2.ContinuityBestEffort); err != nil {
 				return err
 			}

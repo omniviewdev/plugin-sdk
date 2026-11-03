@@ -10,9 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
@@ -23,18 +25,30 @@ import (
 )
 
 func transportSourceRequest() resourcev2.SourceOpenRequest {
-	return resourcev2.SourceOpenRequest{SessionID: "session", Generation: "generation", Target: resourcev2.ReadTarget{Route: resourcev2.AccessRoute{Connection: "explicit"}, Provider: "test", Authority: "authority", Type: "opaque/type", Scope: resourcev2.QueryScope{}, Representation: "document"}, Mode: resourcev2.SourceModeSnapshot, Acquisition: resourcev2.SourceAcquisition{Kind: resourcev2.SourceAcquisitionEnumerate}, Limits: resourcev2.SourceLimits{MaxFrameBytes: resourcev2.MinSourceFrameBytes, MaxBatchItems: 2}}
+	return resourcev2.SourceOpenRequest{SessionID: "session", Generation: "generation", Target: resourcev2.ReadTarget{Route: resourcev2.AccessRoute{Connection: "explicit"}, Provider: "test", Authority: "authority", Type: "opaque/type", Scope: resourcev2.QueryScope{}, Representation: "document"}, Mode: resourcev2.SourceModeSnapshot, Acquisition: resourcev2.SourceAcquisition{Kind: resourcev2.SourceAcquisitionEnumerate}, Limits: resourcev2.SourceLimits{MaxFrameBytes: 64 << 10, MaxBatchItems: 2}, Binding: resourcev2.RepresentationBinding{Representation: testRepresentation()}}
 }
 
 type transportSourceProvider struct {
 	qualifiedProvider
 	callback     func(context.Context, resourcev2.SourceEmitter) error
 	capabilities []resourcev2.Capability
+	features     *resourcev2.FeatureSet
+	noSourceUpdates bool
+}
+
+func (p *transportSourceProvider) Features(context.Context) (resourcev2.FeatureSet, error) {
+	if p.features != nil {
+		return *p.features, nil
+	}
+	return resourcev2.FeatureSet{Traits: []resourcev2.Feature{resourcev2.FeatureSourceSessions}}, nil
 }
 
 func (p *transportSourceProvider) Catalog(ctx context.Context, r resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
 	c, err := p.qualifiedProvider.Catalog(ctx, r)
 	c.Types[0].Capabilities = []resourcev2.Capability{{Operation: resourcev2.OperationEnumerate, Scope: resourcev2.QueryScope{}}, {Operation: resourcev2.OperationSourceUpdates, Scope: resourcev2.QueryScope{}, Guarantee: resourcev2.ContinuityBestEffort}}
+	if p.noSourceUpdates {
+		c.Types[0].Capabilities = c.Types[0].Capabilities[:1]
+	}
 	if p.capabilities != nil {
 		c.Types[0].QueryDimensions = []resourcev2.Dimension{{Name: "region"}}
 		c.Types[0].Capabilities = p.capabilities
@@ -86,7 +100,7 @@ func TestSourceTransportValueDepth(t *testing.T) {
 				}
 				record.Body = nestedDepthValue(shape, depth)
 				p := &transportSourceProvider{callback: func(ctx context.Context, e resourcev2.SourceEmitter) error {
-					if err := e.Snapshot(ctx, []resourcev2.SourceObservation{{Record: record}}); err != nil {
+					if err := e.Snapshot(ctx, []resourcev2.SourceObservation{{Record: resourcev2.CompactSourceRecord(record)}}); err != nil {
 						return err
 					}
 					return e.EndSnapshot(ctx, resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}, resourcev2.ContinuityNotApplicable)
@@ -101,7 +115,7 @@ func TestSourceTransportValueDepth(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer stream.Close()
-				var records []resourcev2.Record
+				var records []resourcev2.SourceRecord
 				var failure string
 				for {
 					frame, err := stream.Recv()
@@ -198,74 +212,6 @@ func TestSourceWireRejectsOversizedBatchBeforeDecode(t *testing.T) {
 	}
 }
 
-type stalledSourceServerStream struct {
-	ctx     context.Context
-	request *resourcepb.SourceOpenRequest
-	sends   int
-	blocked chan struct{}
-	release chan struct{}
-}
-
-func (s *stalledSourceServerStream) SetHeader(metadata.MD) error  { return nil }
-func (s *stalledSourceServerStream) SendHeader(metadata.MD) error { return nil }
-func (s *stalledSourceServerStream) SetTrailer(metadata.MD)       {}
-func (s *stalledSourceServerStream) Context() context.Context     { return s.ctx }
-func (s *stalledSourceServerStream) RecvMsg(v any) error {
-	proto.Merge(v.(*envelope).message, s.request)
-	return nil
-}
-func (s *stalledSourceServerStream) SendMsg(any) error {
-	s.sends++
-	if s.sends == 2 {
-		close(s.blocked)
-		<-s.release
-	}
-	return nil
-}
-func TestSourceStallCancelsProviderWithoutReturningDuringSend(t *testing.T) {
-	old := sourceSendStallTimeout
-	sourceSendStallTimeout = 20 * time.Millisecond
-	defer func() { sourceSendStallTimeout = old }()
-	r := transportSourceRequest()
-	wire, err := resourcev2.ToProtoSourceOpenRequest(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cancelled := make(chan error, 1)
-	p := &transportSourceProvider{callback: func(ctx context.Context, e resourcev2.SourceEmitter) error {
-		err := e.EndSnapshot(ctx, resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}, resourcev2.ContinuityNotApplicable)
-		cancelled <- err
-		return err
-	}}
-	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(catalogRevisionMetadata, "cat-1"))
-	stream := &stalledSourceServerStream{ctx: ctx, request: wire, blocked: make(chan struct{}), release: make(chan struct{})}
-	done := make(chan error, 1)
-	go func() { done <- sourceOpenHandler(&sourceServer{owner: &server{impl: p}}, stream) }()
-	select {
-	case <-stream.blocked:
-	case <-time.After(time.Second):
-		t.Fatal("send did not block")
-	}
-	select {
-	case err := <-cancelled:
-		if resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {
-			t.Fatalf("emitter: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("provider not cancelled")
-	}
-	select {
-	case <-done:
-		t.Fatal("handler returned during send")
-	default:
-	}
-	close(stream.release)
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("handler did not finish")
-	}
-}
 
 type hostileSourceServer struct {
 	resourcepb.UnimplementedResourceSourcesServer
@@ -276,7 +222,7 @@ func (hostileSourceServer) Open(r *resourcepb.SourceOpenRequest, stream resource
 }
 func TestSourceHostileServerSequence(t *testing.T) {
 	server := grpc.NewServer()
-	resourcepb.RegisterResourceProviderServer(server, &maliciousServer{provider: &qualifiedProvider{allowed: true}})
+	resourcepb.RegisterResourceProviderServer(server, &sourceCatalogServer{provider: &transportSourceProvider{}})
 	resourcepb.RegisterResourceSourcesServer(server, hostileSourceServer{})
 	client := NewClient(pipe(t, server))
 	r := transportSourceRequest()
@@ -296,7 +242,18 @@ type sourceCatalogServer struct {
 	provider *transportSourceProvider
 }
 
-func (s *sourceCatalogServer) Call(ctx context.Context, _ *resourcepb.Request) (*resourcepb.Response, error) {
+func (s *sourceCatalogServer) Call(ctx context.Context, request *resourcepb.Request) (*resourcepb.Response, error) {
+	if request.GetFeatures() != nil {
+		features, err := s.provider.Features(ctx)
+		if err != nil {
+			return nil, err
+		}
+		traits := make([]string, len(features.Traits))
+		for i, trait := range features.Traits {
+			traits[i] = string(trait)
+		}
+		return &resourcepb.Response{Version: resourcev2.WireVersion, Result: &resourcepb.Response_Features{Features: &resourcepb.FeatureSet{Traits: traits}}}, nil
+	}
 	catalog, err := s.provider.Catalog(ctx, resourcev2.CatalogRequest{})
 	if err != nil {
 		return nil, err
@@ -375,7 +332,7 @@ func TestSourceHostileTCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	record.Reference.Address.Authority = "escape"
-	escaped, err := resourcev2.ToProtoSourceObservation(resourcev2.SourceObservation{Record: record})
+	escaped, err := resourcev2.ToProtoSourceObservation(resourcev2.SourceObservation{Record: resourcev2.CompactSourceRecord(record)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +360,7 @@ func TestSourceHostileTCP(t *testing.T) {
 		{"echo", []*resourcepb.SourceFrame{echo}, "PROVIDER_ERROR"},
 		{"scope escape", []*resourcepb.SourceFrame{begin(1), makeFrame(2, &resourcepb.SourceSnapshot{Observations: []*resourcepb.SourceObservation{escaped}})}, "PROVIDER_ERROR"},
 		{"continuity", []*resourcepb.SourceFrame{begin(1), end(2, resourcev2.ContinuityGapFree)}, "PROVIDER_ERROR"},
-		{"session batch", []*resourcepb.SourceFrame{begin(1), makeFrame(2, &resourcepb.SourceSnapshot{Observations: items})}, "PROVIDER_ERROR"},
+		{"session batch", []*resourcepb.SourceFrame{begin(1), makeFrame(2, &resourcepb.SourceSnapshot{Observations: items})}, "RESOURCE_LIMIT"},
 		{"wire batch", []*resourcepb.SourceFrame{begin(1), makeFrame(2, &resourcepb.SourceSnapshot{Observations: many})}, "RESOURCE_LIMIT"},
 		{"following EOF", []*resourcepb.SourceFrame{begin(1), end(2, resourcev2.ContinuityBestEffort)}, "RESET_REQUIRED"},
 	} {
@@ -447,6 +404,19 @@ func TestSourceHostileOversizedTCP(t *testing.T) {
 	}
 }
 
+type observedSourceServerStream struct {
+	grpc.ServerStream
+	sendExited chan struct{}
+}
+
+func (s *observedSourceServerStream) SendMsg(v any) error {
+	err := s.ServerStream.SendMsg(v)
+	if err != nil && s.Context().Err() != nil {
+		close(s.sendExited)
+	}
+	return err
+}
+
 func TestSourceTCPStalledHost(t *testing.T) {
 	old := sourceSendStallTimeout
 	sourceSendStallTimeout = 200 * time.Millisecond
@@ -459,7 +429,7 @@ func TestSourceTCPStalledHost(t *testing.T) {
 	record.Body = resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{"payload": {Kind: "string", String: strings.Repeat("x", 16<<10)}}}
 	p := &transportSourceProvider{callback: func(ctx context.Context, e resourcev2.SourceEmitter) error {
 		for {
-			if err := e.Snapshot(ctx, []resourcev2.SourceObservation{{Record: record}}); err != nil {
+			if err := e.Snapshot(ctx, []resourcev2.SourceObservation{{Record: resourcev2.CompactSourceRecord(record)}}); err != nil {
 				cancelled <- err
 				return err
 			}
@@ -467,6 +437,7 @@ func TestSourceTCPStalledHost(t *testing.T) {
 	}}
 	handlerDone := make(chan struct{})
 	transportDone := make(chan struct{})
+	sendExited := make(chan struct{})
 	options := append(ServerOptions(), grpc.ChainStreamInterceptor(func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if info.FullMethod != resourcepb.ResourceSources_Open_FullMethodName {
 			return handler(srv, stream)
@@ -476,7 +447,7 @@ func TestSourceTCPStalledHost(t *testing.T) {
 			close(transportDone)
 		}()
 		defer close(handlerDone)
-		return handler(srv, stream)
+		return handler(srv, &observedSourceServerStream{ServerStream: stream, sendExited: sendExited})
 	}))
 	server := grpc.NewServer(options...)
 	RegisterServer(server, p)
@@ -497,23 +468,21 @@ func TestSourceTCPStalledHost(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Error("stalled host did not cancel provider")
 	}
-	// The watchdog cancels provider work, but cannot cancel the underlying gRPC
-	// send. The host owns transport cancellation and must close abandoned streams.
-	select {
-	case <-handlerDone:
-		t.Fatal("stalled source handler returned while its send remained blocked")
-	default:
-	}
-	stream.Close()
+	// The server must close the RPC without waiting for the host to read.
 	select {
 	case <-handlerDone:
 	case <-time.After(time.Second):
-		t.Fatal("stalled source handler retained after client close")
+		t.Fatal("stalled source handler retained")
 	}
 	select {
 	case <-transportDone:
 	case <-time.After(time.Second):
-		t.Fatal("stalled source transport retained after client close")
+		t.Fatal("stalled source transport retained")
+	}
+	select {
+	case <-sendExited:
+	case <-time.After(time.Second):
+		t.Fatal("blocked SendMsg did not exit after RPC termination")
 	}
 	// The stalled source must not tear down other RPCs on the same connection.
 	_ = acceptedCatalogContext(context.Background(), t, client, r.Target.Route)
@@ -559,13 +528,141 @@ func TestSourceTCPCloseCancelsProvider(t *testing.T) {
 	}
 }
 
+func TestSourceTCPReceiveCancellation(t *testing.T) {
+	for _, closeStream := range []bool{false, true} {
+		t.Run(map[bool]string{false: "context", true: "close"}[closeStream], func(t *testing.T) {
+			started := make(chan struct{})
+			providerDone := make(chan struct{})
+			server := grpc.NewServer(ServerOptions()...)
+			RegisterServer(server, &transportSourceProvider{callback: func(ctx context.Context, e resourcev2.SourceEmitter) error {
+				if err := e.Snapshot(ctx, nil); err != nil {
+					return err
+				}
+				close(started)
+				<-ctx.Done()
+				close(providerDone)
+				return ctx.Err()
+			}})
+			client := sourceTCP(t, server)
+			r := transportSourceRequest()
+			ctx := acceptedCatalogContext(context.Background(), t, client, r.Target.Route)
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			stream, err := client.OpenSourceStream(ctx, r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			if _, err = stream.Recv(); err != nil {
+				t.Fatal(err)
+			}
+			<-started
+			received := make(chan error, 1)
+			go func() { _, err := stream.Recv(); received <- err }()
+			if closeStream {
+				stream.Close()
+			} else {
+				cancel()
+			}
+			select {
+			case err := <-received:
+				if resourcev2.ErrorCode(err) != "CANCELLED" {
+					t.Fatalf("receive: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("receive did not unblock")
+			}
+			select {
+			case <-providerDone:
+			case <-time.After(time.Second):
+				t.Fatal("provider did not cancel")
+			}
+		})
+	}
+}
+
+func TestSourceTCPPhaseDeadlines(t *testing.T) {
+	oldBegin := sourceBeginTimeout
+	sourceBeginTimeout = 250 * time.Millisecond
+	const progressTimeout = 250 * time.Millisecond
+	defer func() { sourceBeginTimeout = oldBegin }()
+	for _, phase := range []string{"begin", "snapshot", "following"} {
+		t.Run(phase, func(t *testing.T) {
+			providerDone := make(chan struct{})
+			server := grpc.NewServer(ServerOptions()...)
+			RegisterServer(server, &transportSourceProvider{callback: func(ctx context.Context, e resourcev2.SourceEmitter) error {
+				if phase != "begin" {
+					if err := e.Snapshot(ctx, nil); err != nil {
+						return err
+					}
+				}
+				if phase == "following" {
+					if err := e.EndSnapshot(ctx, resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}, resourcev2.ContinuityBestEffort); err != nil {
+						return err
+					}
+				}
+				<-ctx.Done()
+				close(providerDone)
+				return ctx.Err()
+			}})
+			client := sourceTCP(t, server)
+			r := transportSourceRequest()
+			r.Mode = resourcev2.SourceModeSnapshotAndUpdates
+			ctx := acceptedCatalogContext(context.Background(), t, client, r.Target.Route)
+			ctx, err := WithSourceSnapshotProgressTimeout(ctx, progressTimeout)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream, err := client.OpenSourceStream(ctx, r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			if phase != "begin" {
+				if frame, err := stream.Recv(); err != nil || frame.Begin == nil {
+					t.Fatalf("begin: %#v %v", frame, err)
+				}
+			}
+			if phase == "following" {
+				if frame, err := stream.Recv(); err != nil || frame.SnapshotEnd == nil {
+					t.Fatalf("boundary: %#v %v", frame, err)
+				}
+			}
+			received := make(chan error, 1)
+			go func() { _, err := stream.Recv(); received <- err }()
+			if phase == "following" {
+				select {
+				case err := <-received:
+					t.Fatalf("idle following ended: %v", err)
+				case <-time.After(2 * progressTimeout):
+				}
+				stream.Close()
+			} else {
+				select {
+				case err := <-received:
+					if resourcev2.ErrorCode(err) != "TIMEOUT" {
+						t.Fatalf("deadline: %v", err)
+					}
+				case <-time.After(2 * time.Second):
+					t.Fatal("deadline did not cancel receive")
+				}
+			}
+			select {
+			case <-providerDone:
+			case <-time.After(time.Second):
+				t.Fatal("deadline did not cancel provider")
+			}
+		})
+	}
+}
+
 func TestSourceCallbackTerminationTCP(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		callback func(context.Context, resourcev2.SourceEmitter) error
 		kind     string
 	}{
-		{"before boundary", func(context.Context, resourcev2.SourceEmitter) error { return nil }, "failed"},
+		{"before boundary", func(ctx context.Context, e resourcev2.SourceEmitter) error { return e.Snapshot(ctx, nil) }, "failed"},
 		{"after boundary", func(ctx context.Context, e resourcev2.SourceEmitter) error {
 			return e.EndSnapshot(ctx, resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}, resourcev2.ContinuityBestEffort)
 		}, "reset"},
@@ -616,7 +713,7 @@ func TestSourceEmitterLimitsAndPhases(t *testing.T) {
 		t.Fatal(err)
 	}
 	large := record
-	large.Body = resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{"payload": {Kind: "string", String: strings.Repeat("x", resourcev2.MinSourceFrameBytes)}}}
+	large.Body = resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{"payload": {Kind: "string", String: strings.Repeat("x", 64<<10)}}}
 	medium := record
 	medium.Body = resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{"payload": {Kind: "string", String: strings.Repeat("x", 40<<10)}}}
 	coverage := resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}
@@ -630,7 +727,7 @@ func TestSourceEmitterLimitsAndPhases(t *testing.T) {
 		{"snapshot batch splitting", resourcev2.SourceModeSnapshot, func(ctx context.Context, e resourcev2.SourceEmitter) error {
 			observations := make([]resourcev2.SourceObservation, 5)
 			for i := range observations {
-				observations[i].Record = record
+				observations[i].Record = resourcev2.CompactSourceRecord(record)
 			}
 			if err := e.Snapshot(ctx, observations); err != nil {
 				return err
@@ -638,14 +735,14 @@ func TestSourceEmitterLimitsAndPhases(t *testing.T) {
 			return e.EndSnapshot(ctx, coverage, resourcev2.ContinuityNotApplicable)
 		}, []int{2, 2, 1}, ""},
 		{"snapshot byte splitting", resourcev2.SourceModeSnapshot, func(ctx context.Context, e resourcev2.SourceEmitter) error {
-			observations := []resourcev2.SourceObservation{{Record: medium}, {Record: medium}}
+			observations := []resourcev2.SourceObservation{{Record: resourcev2.CompactSourceRecord(medium)}, {Record: resourcev2.CompactSourceRecord(medium)}}
 			if err := e.Snapshot(ctx, observations); err != nil {
 				return err
 			}
 			return e.EndSnapshot(ctx, coverage, resourcev2.ContinuityNotApplicable)
 		}, []int{1, 1}, ""},
 		{"oversized observation", resourcev2.SourceModeSnapshot, func(ctx context.Context, e resourcev2.SourceEmitter) error {
-			return e.Snapshot(ctx, []resourcev2.SourceObservation{{Record: large}})
+			return e.Snapshot(ctx, []resourcev2.SourceObservation{{Record: resourcev2.CompactSourceRecord(large)}})
 		}, nil, "RESOURCE_LIMIT"},
 		{"changes before boundary", resourcev2.SourceModeSnapshotAndUpdates, func(ctx context.Context, e resourcev2.SourceEmitter) error {
 			return e.Changes(ctx, nil, nil)
@@ -654,7 +751,7 @@ func TestSourceEmitterLimitsAndPhases(t *testing.T) {
 			if err := e.EndSnapshot(ctx, coverage, resourcev2.ContinuityBestEffort); err != nil {
 				return err
 			}
-			observation := resourcev2.SourceObservation{Record: record}
+			observation := resourcev2.SourceObservation{Record: resourcev2.CompactSourceRecord(record)}
 			change := resourcev2.SourceChange{Kind: resourcev2.SourceChangeUpsert, Observation: &observation}
 			return e.Changes(ctx, []resourcev2.SourceChange{change, change, change}, nil)
 		}, nil, "RESOURCE_LIMIT"},
@@ -720,6 +817,131 @@ func TestSourceOpenStatusBeforeBegin(t *testing.T) {
 			s := &sourceClientStream{stream: &sourceStatusStream{err: rpcError(resourcev2.NewError(code, "rejected"))}, cancel: func() {}, tracker: resourcev2.NewSourcePhaseTracker(r, "")}
 			if _, err := s.Recv(); resourcev2.ErrorCode(err) != code {
 				t.Fatalf("got %v, want %s", err, code)
+			}
+		})
+	}
+}
+
+func TestSourceFatalFramingCause(t *testing.T) {
+	statusWithCause, err := status.New(codes.Unavailable, "transport closed").WithDetails(&errdetails.ErrorInfo{Domain: grpc.ReceivePolicyErrorDomain, Reason: grpc.PartialHTTP2DataFrameTimeoutReason})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := transportSourceRequest()
+	stream := &sourceClientStream{stream: &sourceStatusStream{err: statusWithCause.Err()}, cancel: func() {}, tracker: resourcev2.NewSourcePhaseTracker(request, "")}
+	_, err = stream.Recv()
+	if resourcev2.ErrorCode(err) != "RESET_REQUIRED" || !IsFatalSourceTransportError(err) {
+		t.Fatalf("fatal framing cause lost: %v", err)
+	}
+	if IsFatalSourceTransportError(status.Error(codes.DeadlineExceeded, "partial message timeout")) {
+		t.Fatal("ordinary per-RPC timeout classified as fatal framing")
+	}
+}
+
+func TestSourceOpenFailureBeforeBeginTCP(t *testing.T) {
+	for _, code := range []string{"INVALID_REQUEST", "UNSUPPORTED", "RESOURCE_LIMIT"} {
+		t.Run(code, func(t *testing.T) {
+			server := grpc.NewServer(ServerOptions()...)
+			RegisterServer(server, &transportSourceProvider{callback: func(context.Context, resourcev2.SourceEmitter) error {
+				return resourcev2.NewError(code, "rejected")
+			}})
+			client := sourceTCP(t, server)
+			r := transportSourceRequest()
+			ctx := acceptedCatalogContext(context.Background(), t, client, r.Target.Route)
+			stream, err := client.OpenSourceStream(ctx, r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			if _, err := stream.Recv(); resourcev2.ErrorCode(err) != code {
+				t.Fatalf("got %v, want %s", err, code)
+			}
+		})
+	}
+}
+
+func TestSourceBindingMismatchTCP(t *testing.T) {
+	server := grpc.NewServer(ServerOptions()...)
+	RegisterServer(server, &transportSourceProvider{callback: func(context.Context, resourcev2.SourceEmitter) error {
+		t.Error("provider called for mismatched binding")
+		return nil
+	}})
+	client := sourceTCP(t, server)
+	r := transportSourceRequest()
+	r.Binding.Representation.Revision = "other-revision"
+	ctx := acceptedCatalogContext(context.Background(), t, client, r.Target.Route)
+	if _, err := client.OpenSourceStream(ctx, r); resourcev2.ErrorCode(err) != "RESET_REQUIRED" {
+		t.Fatalf("client admission: %v", err)
+	}
+	wire, err := resourcev2.ToProtoSourceOpenRequest(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, err = outgoingSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := client.conn.NewStream(ctx, &resourcepb.ResourceSources_ServiceDesc.Streams[0], resourcepb.ResourceSources_Open_FullMethodName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = stream.SendMsg(wire); err != nil {
+		t.Fatal(err)
+	}
+	if err = stream.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+	err = stream.RecvMsg(&resourcepb.SourceFrame{})
+	if resourcev2.ErrorCode(domainError(err)) != "RESET_REQUIRED" {
+		t.Fatalf("server admission: %v", err)
+	}
+}
+
+func TestSourceFeatureAndCapabilityAdmissionTCP(t *testing.T) {
+	legacy := resourcev2.FeatureSet{Traits: []resourcev2.Feature{"bestEffortUpdates"}}
+	for _, tc := range []struct {
+		name string
+		provider transportSourceProvider
+		mode string
+	}{
+		{"legacy snapshot", transportSourceProvider{features: &legacy}, resourcev2.SourceModeSnapshot},
+		{"legacy updates", transportSourceProvider{features: &legacy}, resourcev2.SourceModeSnapshotAndUpdates},
+		{"missing update capability", transportSourceProvider{noSourceUpdates: true}, resourcev2.SourceModeSnapshotAndUpdates},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.provider.callback = func(context.Context, resourcev2.SourceEmitter) error {
+				t.Error("provider called without source admission")
+				return nil
+			}
+			server := grpc.NewServer(ServerOptions()...)
+			RegisterServer(server, &tc.provider)
+			client := sourceTCP(t, server)
+			r := transportSourceRequest()
+			r.Mode = tc.mode
+			ctx := acceptedCatalogContext(context.Background(), t, client, r.Target.Route)
+			if _, err := client.OpenSourceStream(ctx, r); resourcev2.ErrorCode(err) != "UNSUPPORTED" {
+				t.Fatalf("client admission: %v", err)
+			}
+			wire, err := resourcev2.ToProtoSourceOpenRequest(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, err = outgoingSession(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream, err := client.conn.NewStream(ctx, &resourcepb.ResourceSources_ServiceDesc.Streams[0], resourcepb.ResourceSources_Open_FullMethodName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = stream.SendMsg(wire); err != nil {
+				t.Fatal(err)
+			}
+			if err = stream.CloseSend(); err != nil {
+				t.Fatal(err)
+			}
+			if err = stream.RecvMsg(&resourcepb.SourceFrame{}); resourcev2.ErrorCode(domainError(err)) != "UNSUPPORTED" {
+				t.Fatalf("server admission: %v", err)
 			}
 		})
 	}
@@ -815,7 +1037,7 @@ func BenchmarkSourceSnapshotSplit(b *testing.B) {
 	record.Body = resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{"payload": {Kind: "string", String: strings.Repeat("x", 2<<10)}}}
 	observations := make([]resourcev2.SourceObservation, 5120)
 	for i := range observations {
-		observations[i].Record = record
+		observations[i].Record = resourcev2.CompactSourceRecord(record)
 	}
 	r := transportSourceRequest()
 	r.Limits.MaxBatchItems = 256
@@ -923,7 +1145,7 @@ func TestSourceTransportHostileValueDepth(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			observation, err := resourcev2.ToProtoSourceObservation(resourcev2.SourceObservation{Record: record})
+			observation, err := resourcev2.ToProtoSourceObservation(resourcev2.SourceObservation{Record: resourcev2.CompactSourceRecord(record)})
 			if err != nil {
 				t.Fatal(err)
 			}

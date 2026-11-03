@@ -3,6 +3,7 @@ package resourceconformance
 import (
 	"context"
 	"net"
+	"sort"
 	"strconv"
 	"sync"
 	"testing"
@@ -62,7 +63,7 @@ func (s *profileStore) write(r resource.Record, remove bool) {
 		change = resource.SourceChange{Kind: resource.SourceChangeRemove, Reference: &ref, SourceRevision: &rev}
 	} else {
 		s.objects[r.Reference.Address.ID] = r
-		obs := resource.SourceObservation{Record: r}
+		obs := resource.SourceObservation{Record: resource.CompactSourceRecord(r)}
 		change = resource.SourceChange{Kind: resource.SourceChangeUpsert, Observation: &obs}
 	}
 	e := profileChange{revision: s.rev, change: change}
@@ -110,9 +111,29 @@ func TestSourceRaceProfiles(t *testing.T) {
 				continuity = resource.ContinuityBestEffort
 			}
 			cfg := resource.Config[struct{}]{Catalog: func(context.Context, resource.CatalogRequest) (resource.Catalog, error) {
-				return resource.Catalog{Provider: initial.Reference.Address.Provider, Revision: "race-catalog", Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}, Types: []resource.ResourceType{{Type: s.Type, IdentityDimensions: []resource.Dimension{{Name: scopeAccount}, {Name: scopeRegion}}, QueryDimensions: []resource.Dimension{{Name: scopeAccount}, {Name: scopeRegion}}, Representations: []resource.Representation{representation(s)}, Capabilities: []resource.Capability{{Operation: resource.OperationSourceUpdates, Scope: queryScope(s), Guarantee: continuity}}}}}, nil
+				return resource.Catalog{Provider: initial.Reference.Address.Provider, Revision: "race-catalog", Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}, Types: []resource.ResourceType{{Type: s.Type, IdentityDimensions: []resource.Dimension{{Name: scopeAccount}, {Name: scopeRegion}}, QueryDimensions: []resource.Dimension{{Name: scopeAccount}, {Name: scopeRegion}}, Representations: []resource.Representation{representation(s)}, Capabilities: []resource.Capability{{Operation: resource.OperationEnumerate, Scope: queryScope(s)}, {Operation: resource.OperationSourceUpdates, Scope: queryScope(s), Guarantee: continuity}}}}}, nil
 			}}
-			cfg.Registrations = []resource.Registration[struct{}]{{Type: s.Type, Source: func(ctx context.Context, _ *struct{}, _ resource.SourceRequest, out resource.SourceEmitter) error {
+			cfg.Registrations = []resource.Registration[struct{}]{{Type: s.Type, Enumerate: func(_ context.Context, _ *struct{}, request resource.EnumerateRequest) (resource.SourcePage, error) {
+				records, _ := store.snapshotAt()
+				sort.Slice(records, func(i, j int) bool { return records[i].Reference.Address.ID < records[j].Reference.Address.ID })
+				offset := 0
+				if request.Cursor != nil {
+					var err error
+					offset, err = strconv.Atoi(*request.Cursor)
+					if err != nil || offset < 0 || offset > len(records) {
+						return resource.SourcePage{}, nativeError("INVALID_REQUEST", "invalid cursor")
+					}
+				}
+				end := len(records)
+				if request.PageSize > 0 && uint64(end-offset) > uint64(request.PageSize) {
+					end = offset + int(request.PageSize)
+				}
+				var next *string
+				if end < len(records) {
+					next = token(strconv.Itoa(end))
+				}
+				return resource.SourcePage{Records: records[offset:end], NextCursor: next, Count: resource.Count{Kind: "unknown"}, Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}, Consistency: resource.ConsistencyBestEffort}, nil
+			}, Source: func(ctx context.Context, _ *struct{}, _ resource.SourceRequest, out resource.SourceEmitter) error {
 				var records []resource.Record
 				var events <-chan profileChange
 				if profile == "cursor" {
@@ -122,7 +143,7 @@ func TestSourceRaceProfiles(t *testing.T) {
 				} else {
 					events = store.follow(0)
 				}
-				if err := out.Snapshot(ctx, []resource.SourceObservation{{Record: stable}}); err != nil {
+				if err := out.Snapshot(ctx, []resource.SourceObservation{{Record: resource.CompactSourceRecord(stable)}}); err != nil {
 					return err
 				}
 				close(snapshotStarted)
@@ -137,7 +158,7 @@ func TestSourceRaceProfiles(t *testing.T) {
 				observations := make([]resource.SourceObservation, 0, len(records))
 				for _, r := range records {
 					if r.Reference.Address.ID != stable.Reference.Address.ID {
-						observations = append(observations, resource.SourceObservation{Record: r})
+						observations = append(observations, resource.SourceObservation{Record: resource.CompactSourceRecord(r)})
 					}
 				}
 				if err := out.Snapshot(ctx, observations); err != nil {
@@ -180,12 +201,12 @@ func TestSourceRaceProfiles(t *testing.T) {
 			stream, err := client.OpenSourceStream(ctx, sourceRequest(s, corpus, resource.SourceModeSnapshotAndUpdates))
 			require.NoError(t, err)
 			defer stream.Close()
-			state := map[string]resource.Record{}
+			state := map[string]resource.SourceRecord{}
 			last := map[string]uint64{}
 			var seq uint64
 			changes := 0
 			stale := false
-			apply := func(r resource.Record) {
+			apply := func(r resource.SourceRecord) {
 				id := r.Reference.Address.ID
 				revision, e := strconv.ParseUint(*r.SourceRevision, 10, 64)
 				require.NoError(t, e)
@@ -226,7 +247,7 @@ func TestSourceRaceProfiles(t *testing.T) {
 				final, _ := store.snapshotAt()
 				require.Len(t, final, len(state))
 				for _, r := range final {
-					require.Equal(t, r, state[r.Reference.Address.ID])
+					require.Equal(t, resource.CompactSourceRecord(r), state[r.Reference.Address.ID])
 				}
 				require.False(t, stale)
 				t.Logf("cursor continuity=%s per-object revisions monotonic; final state matches native", continuity)

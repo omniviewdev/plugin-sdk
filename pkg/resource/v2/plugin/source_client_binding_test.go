@@ -24,8 +24,6 @@ func TestSourceClientRejectsUnboundPeerRecords(t *testing.T) {
 				switch mutation {
 				case "revision":
 					record.Representation.Revision = "unaccepted-revision"
-				case "schema":
-					record.Representation.Schema.State = "unavailable"
 				case "identity":
 					record.Reference.Address.Scope = []resourcev2.ScopeEntry{{Dimension: "undeclared", Value: "value"}}
 				}
@@ -33,7 +31,11 @@ func TestSourceClientRejectsUnboundPeerRecords(t *testing.T) {
 					t.Fatalf("regression requires a structurally valid record: %v", err)
 				}
 				frames := []resourcev2.SourceFrame{{Begin: &resourcev2.SourceBegin{Mode: request.Mode}}}
-				observation := resourcev2.SourceObservation{Record: record}
+				observation := resourcev2.SourceObservation{Record: resourcev2.CompactSourceRecord(record)}
+				if mutation == "schema" {
+					revision := "unaccepted-schema"
+					observation.Record.Representation.SchemaRevision = &revision
+				}
 				if phase == "snapshot" {
 					frames = append(frames, resourcev2.SourceFrame{Snapshot: &resourcev2.SourceSnapshot{Observations: []resourcev2.SourceObservation{observation}}})
 				} else {
@@ -63,7 +65,11 @@ func TestSourceClientRejectsUnboundPeerRecords(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if _, err = stream.Recv(); resourcev2.ErrorCode(err) != "PROVIDER_ERROR" {
+				want := "RESET_REQUIRED"
+				if mutation == "identity" {
+					want = "PROVIDER_ERROR"
+				}
+				if _, err = stream.Recv(); resourcev2.ErrorCode(err) != want {
 					t.Fatalf("hostile unbound record: %v", err)
 				}
 			})

@@ -161,7 +161,7 @@ func (c *Controller[T]) Catalog(ctx context.Context, request CatalogRequest) (ca
 	if err = ctx.Err(); err != nil {
 		return Catalog{}, err
 	}
-	if err = ValidateCatalog(catalog); err != nil {
+	if err = ValidateProviderCatalog(ctx, c, catalog); err != nil {
 		return Catalog{}, err
 	}
 	catalog.Types = append([]ResourceType(nil), catalog.Types...)
@@ -529,7 +529,7 @@ func admitProviderTarget(ctx context.Context, provider Provider, target operatio
 	if err = ctx.Err(); err != nil {
 		return ResourceType{}, &ResourceOperationError{Code: ErrorCode(err), Err: err}
 	}
-	if err = ValidateCatalog(catalog); err != nil {
+	if err = ValidateProviderCatalog(ctx, provider, catalog); err != nil {
 		return ResourceType{}, err
 	}
 	if err = CheckCatalogRevisionForRoute(ctx, catalog, target.route); err != nil {

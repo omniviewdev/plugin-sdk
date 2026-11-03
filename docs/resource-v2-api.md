@@ -337,7 +337,49 @@ Negotiate remote features through [`FeatureNegotiator`](../pkg/resource/v2/featu
 
 Source sessions begin with a framework-issued `begin` frame. Providers emit snapshot observations and call `EndSnapshot` with coverage and continuity before sending changes. Snapshot-only sessions terminate at the boundary; update sessions terminate with reset or failure. Catalog `sourceUpdates` capabilities declare `gapFree` or `bestEffort` continuity. `AcquireOnConnect` requires that capability. Hosts supply session and generation tokens and frame limits, and must reopen after a reset.
 
+`SourceOpenRequest.Binding` supplies the admitted representation once per generation. Observations carry a compact `RepresentationRef`, the tagged `Value` body, per-record coverage, and independent `DocumentCoverage.KnownAbsent` paths. The reference must match the binding's ID, revision, and schema-revision presence and value. Frame sequences use unsigned decimal strings in JSON; protobuf retains `uint64`. `CompactSourceRecord` converts a P45 record after the caller verifies its full representation against the admitted binding.
+
+The legacy finite-response compatibility path does not accept retired schema claims in ancillary editor-schema responses. Such responses are unsupported; the exercised Proxmox SDK v0.10.0 provider does not advertise editor schemas.
+
 Framework owns stream channels and completion. Send events and return; never close framework-owned channels. See [stream lifetime contracts](resource-v2-contracts.md#utility-and-stream-lifetime).
+
+### Source-session transport
+
+This SDK uses scoped receive controls from the maintained
+[`omniviewdev/grpc-go`](https://github.com/omniviewdev/grpc-go) fork.
+Its module path remains `google.golang.org/grpc`.
+
+Go does not inherit dependency replacements. Each application or plugin module
+that consumes this SDK must select the same fork in its own root `go.mod`:
+
+```sh
+grpc_fork=github.com/omniviewdev/grpc-go
+grpc_version=v1.79.3-0.20261103012409-4c6f1d1c4e10
+go mod edit \
+  "-replace=google.golang.org/grpc=${grpc_fork}@${grpc_version}"
+go mod tidy
+```
+
+The host and Kubernetes plugin have independent module roots. An unchanged
+provider that uses SDK v0.10.0 can retain stock gRPC.
+
+For this SDK, compilation fails without the root replacement because stock
+gRPC does not provide the scoped receive APIs.
+
+The controls require native `grpc.Server.Serve`. Configured methods fail with
+`FailedPrecondition` under `ServeHTTP`; that transport cannot enforce these
+ingress bounds.
+
+A partial message has a five-second deadline. A healthy wait between complete
+messages has no partial-read timer. An ordinary message timeout cancels only its
+RPC. A physical HTTP/2 DATA frame has a separate absolute five-second deadline;
+progress does not extend it. If that frame remains incomplete, the transport
+closes the broken connection because HTTP/2 cannot parse another frame through
+missing bytes.
+
+Use `IsFatalSourceTransportError` from `pkg/resource/v2/plugin` to identify this
+local transport failure. Retire the unhealthy provider transport. Do not infer
+the failure from an error message or treat every RPC timeout as connection loss.
 
 ### Resource log-session ownership
 

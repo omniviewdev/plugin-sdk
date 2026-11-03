@@ -10,6 +10,12 @@ message SourceLimits { uint32 max_frame_bytes = 1; uint32 max_batch_items = 2; }
 message SourceEnumerate {}
 message SourceNativeQuery { string language = 1; Value query = 2; }
 message SourceAcquisition { oneof kind { SourceEnumerate enumerate = 1; SourceNativeQuery native_query = 2; } }
+message RepresentationBinding { Representation representation = 1; }
+message RepresentationRef {
+  string id = 1;
+  string revision = 2;
+  optional string schema_revision = 3;
+}
 message SourceOpenRequest {
   uint32 version = 1;
   string session_id = 2;
@@ -18,10 +24,29 @@ message SourceOpenRequest {
   string mode = 5;
   SourceAcquisition acquisition = 6;
   SourceLimits limits = 7;
+  RepresentationBinding binding = 8;
 }
 message LabelEntry { string key = 1; string value = 2; }
 message ResourceMetadata { repeated LabelEntry labels = 1; TimestampValue created_at = 2; }
-message SourceObservation { Record record = 1; ResourceMetadata metadata = 2; optional string display_name = 3; }
+message FieldPathMember { string name = 1; }
+message FieldPathIndex { uint32 index = 1; }
+message FieldPathSegment { oneof segment { FieldPathMember member = 1; FieldPathIndex index = 2; } }
+message DocumentFieldPath { repeated FieldPathSegment segments = 1; }
+message DocumentCoverage { repeated DocumentFieldPath known_absent = 1; }
+message SourceRecord {
+  ResourceReference reference = 1;
+  Value body = 2;
+  RepresentationRef representation = 3;
+  Coverage coverage = 4;
+  optional string source_revision = 5;
+}
+message SourceObservation {
+  reserved 1;
+  SourceRecord record = 5;
+  ResourceMetadata metadata = 2;
+  optional string display_name = 3;
+  DocumentCoverage document_coverage = 4;
+}
 message SourceCoverage { string enumeration = 1; string consistency = 2; repeated string limitations = 3; }
 message SourceBegin { string mode = 1; }
 message SourceSnapshot { repeated SourceObservation observations = 1; }

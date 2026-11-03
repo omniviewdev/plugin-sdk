@@ -74,7 +74,7 @@ func newSessionController(p *nativeProvider) *sessionController {
 				for _, name := range page.Records {
 					r := nativeRecord(p.corpus.Record(name), s)
 					r.Reference.Address.Authority = in.Target.Authority
-					observations = append(observations, resource.SourceObservation{Record: r, Metadata: &resource.ResourceMetadata{Labels: map[string]string{"fixture": "container"}}})
+					observations = append(observations, resource.SourceObservation{Record: resource.CompactSourceRecord(r), Metadata: &resource.ResourceMetadata{Labels: map[string]string{"fixture": "container"}}})
 				}
 			}
 			if err = out.Snapshot(ctx, observations); err != nil {
@@ -87,7 +87,7 @@ func newSessionController(p *nativeProvider) *sessionController {
 				r := p.corpus.Record(update.Record)
 				r.Body = update.Body
 				r.Revision = update.Revision
-				obs := resource.SourceObservation{Record: nativeRecord(r, s), Metadata: &resource.ResourceMetadata{Labels: map[string]string{"fixture": "container"}}}
+				obs := resource.SourceObservation{Record: resource.CompactSourceRecord(nativeRecord(r, s)), Metadata: &resource.ResourceMetadata{Labels: map[string]string{"fixture": "container"}}}
 				obs.Record.Reference.Address.Authority = in.Target.Authority
 				if err = out.Changes(ctx, []resource.SourceChange{{Kind: resource.SourceChangeUpsert, Observation: &obs}}, nil); err != nil {
 					return err
@@ -108,7 +108,7 @@ func newSessionController(p *nativeProvider) *sessionController {
 }
 
 func sourceRequest(s Scenario, c Corpus, mode string) resource.SourceOpenRequest {
-	return resource.SourceOpenRequest{SessionID: "session-1", Generation: "generation-1", Target: target(s, c), Mode: mode, Acquisition: resource.SourceAcquisition{Kind: resource.SourceAcquisitionEnumerate}, Limits: resource.SourceLimits{MaxFrameBytes: resource.MaxSourceFrameBytes, MaxBatchItems: resource.MaxSourceBatchItems}}
+	return resource.SourceOpenRequest{SessionID: "session-1", Generation: "generation-1", Target: target(s, c), Binding: resource.RepresentationBinding{Representation: representation(s)}, Mode: mode, Acquisition: resource.SourceAcquisition{Kind: resource.SourceAcquisitionEnumerate}, Limits: resource.SourceLimits{MaxFrameBytes: resource.MaxSourceFrameBytes, MaxBatchItems: resource.MaxSourceBatchItems}}
 }
 
 func TestCurrentSDKSourceSessions(t *testing.T) {
@@ -226,13 +226,8 @@ func TestCurrentSDKSourceSessions(t *testing.T) {
 				require.GreaterOrEqual(t, snapshotFrames, 3)
 			}
 			if s.Profile == providerHypervisor {
-				stream2, e := opener.OpenSourceStream(ctx, sourceRequest(s, c, resource.SourceModeSnapshotAndUpdates))
-				require.NoError(t, e)
-				defer stream2.Close()
-				f, e := stream2.Recv()
-				require.NoError(t, e)
-				require.NotNil(t, f.Failed)
-				require.Equal(t, "UNSUPPORTED", f.Failed.Code)
+				_, e := opener.OpenSourceStream(ctx, sourceRequest(s, c, resource.SourceModeSnapshotAndUpdates))
+				require.Equal(t, "UNSUPPORTED", resource.ErrorCode(e))
 			}
 		})
 	}

@@ -15,8 +15,8 @@ func TestSourceAdapterRoundTrips(t *testing.T) {
 	record.Body.Map["unsigned"] = Value{Kind: "uint64", Uint: "18446744073709551615"}
 	created := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
 	name := ""
-	bare := SourceObservation{Record: record}
-	present := SourceObservation{Record: record, Metadata: &ResourceMetadata{Labels: map[string]string{"app": "test"}, CreatedAt: &created}, DisplayName: &name}
+	bare := SourceObservation{Record: CompactSourceRecord(record)}
+	present := SourceObservation{Record: CompactSourceRecord(record), Metadata: &ResourceMetadata{Labels: map[string]string{"app": "test"}, CreatedAt: &created}, DisplayName: &name}
 	coverage := SourceCoverage{Enumeration: EnumerationExhausted, Consistency: ConsistencyPointInTime, Limitations: []string{"limited"}}
 	remove := SourceChange{Kind: SourceChangeRemove, Reference: &record.Reference, SourceRevision: codecToken("revision")}
 	upsert := SourceChange{Kind: SourceChangeUpsert, Observation: &present}
@@ -63,8 +63,8 @@ func TestSourceAdapterPreservesOptionalAndExactValues(t *testing.T) {
 	record.Body.Map["unsigned"] = Value{Kind: "uint64", Uint: "18446744073709551615"}
 	name := ""
 	input := SourceChanges{Changes: []SourceChange{
-		{Kind: SourceChangeUpsert, Observation: &SourceObservation{Record: record}},
-		{Kind: SourceChangeUpsert, Observation: &SourceObservation{Record: record, Metadata: &ResourceMetadata{Labels: map[string]string{"a": "b"}}, DisplayName: &name}},
+		{Kind: SourceChangeUpsert, Observation: &SourceObservation{Record: CompactSourceRecord(record)}},
+		{Kind: SourceChangeUpsert, Observation: &SourceObservation{Record: CompactSourceRecord(record), Metadata: &ResourceMetadata{Labels: map[string]string{"a": "b"}}, DisplayName: &name}},
 		{Kind: SourceChangeRemove, Reference: &record.Reference},
 	}, Coverage: &SourceCoverage{Enumeration: EnumerationPartial, Consistency: ConsistencyUnknown}}
 	p, err := ToProtoSourceChanges(input)
@@ -117,6 +117,7 @@ func TestSourceOpenAndWireVersion(t *testing.T) {
 			Scope:          QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &values}},
 			Representation: r.Representation.ID,
 		},
+		Binding: RepresentationBinding{Representation: r.Representation},
 		Mode: SourceModeSnapshot, Acquisition: SourceAcquisition{Kind: SourceAcquisitionEnumerate},
 		Limits: SourceLimits{MaxFrameBytes: MinSourceFrameBytes, MaxBatchItems: 1},
 	}
@@ -147,7 +148,7 @@ func TestSourceOpenAndWireVersion(t *testing.T) {
 
 func TestSourceObservationRejectsDuplicateMetadataLabels(t *testing.T) {
 	observation, err := ToProtoSourceObservation(SourceObservation{
-		Record:   codecRecord(),
+		Record:   CompactSourceRecord(codecRecord()),
 		Metadata: &ResourceMetadata{Labels: map[string]string{"x": "1"}},
 	})
 	if err != nil {

@@ -1,6 +1,7 @@
 package resourcev2
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"math"
@@ -903,6 +904,36 @@ func ValidateCatalog(c Catalog) error {
 		}
 	}
 	return nil
+}
+
+// ValidateCatalogFeatures validates declarations in the context of negotiated provider features.
+// Legacy updates remain inert and are valid only without source sessions.
+func ValidateCatalogFeatures(c Catalog, features FeatureSet) error {
+	if err := ValidateFeatures(features); err != nil {
+		return err
+	}
+	if err := ValidateCatalog(c); err != nil {
+		return err
+	}
+	if features.Has(FeatureSourceSessions) {
+		for _, typ := range c.Types {
+			for _, capability := range typ.Capabilities {
+				if capability.Operation == "update" {
+					return invalid("legacy update conflicts with source sessions")
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// ValidateProviderCatalog checks a catalog against its provider's reported features.
+func ValidateProviderCatalog(ctx context.Context, provider Provider, catalog Catalog) error {
+	features, err := DetectFeatures(ctx, provider)
+	if err != nil {
+		return err
+	}
+	return ValidateCatalogFeatures(catalog, features)
 }
 
 func validateResourceType(t *ResourceType) error {

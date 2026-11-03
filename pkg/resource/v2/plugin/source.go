@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
 
-var sourceSendStallTimeout = 30 * time.Second
+var sourceSendStallTimeout = 5 * time.Second
 
 type sourceServer struct {
 	resourcepb.UnimplementedResourceSourcesServer
@@ -41,16 +42,44 @@ type sourceEmitter struct {
 }
 
 func sourceAdmission(ctx context.Context, p resourcev2.Provider, r resourcev2.SourceOpenRequest) (resourcev2.ResourceType, error) {
+	features, err := resourcev2.DetectFeatures(ctx, p)
+	if err != nil {
+		return resourcev2.ResourceType{}, err
+	}
+	if !features.Has(resourcev2.FeatureSourceSessions) {
+		return resourcev2.ResourceType{}, unsupported("source sessions unsupported")
+	}
 	catalog, err := p.Catalog(ctx, resourcev2.CatalogRequest{Route: r.Target.Route})
 	if err != nil {
 		return resourcev2.ResourceType{}, err
 	}
-	for _, typ := range catalog.Types {
-		if typ.Type == r.Target.Type {
+	var acquisition any = resourcev2.EnumerateRequest{Target: r.Target}
+	var native *resourcev2.NativeQueryRequest
+	if r.Acquisition.Kind == resourcev2.SourceAcquisitionNativeQuery {
+		native = &resourcev2.NativeQueryRequest{Target: r.Target, Language: r.Acquisition.Language, Query: *r.Acquisition.Query}
+		acquisition = *native
+	}
+	typ, err := resourcev2.AdmitCatalogOperation(catalog, acquisition)
+	if err != nil {
+		return resourcev2.ResourceType{}, err
+	}
+	if native != nil {
+		if err := resourcev2.ValidateNativeQueryInput(typ, *native); err != nil {
+			return resourcev2.ResourceType{}, err
+		}
+	}
+	if r.Mode == resourcev2.SourceModeSnapshotAndUpdates {
+		typ, err = resourcev2.AdmitCatalogOperation(catalog, r.Target)
+		if err != nil {
+			return resourcev2.ResourceType{}, err
+		}
+	}
+	for _, candidate := range typ.Representations {
+		if candidate.ID == r.Target.Representation && reflect.DeepEqual(candidate, r.Binding.Representation) {
 			return typ, nil
 		}
 	}
-	return resourcev2.ResourceType{}, nil
+	return resourcev2.ResourceType{}, resourcev2.NewError("RESET_REQUIRED", "source binding changed")
 }
 
 func registerSources(s *grpc.Server, owner *server) {
@@ -89,7 +118,7 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
 	queue := make(chan sourceDelivery, 1)
 	stalled := make(chan struct{})
 	e := &sourceEmitter{ctx: ctx, request: r, queue: queue, stalled: stalled}
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
 		defer close(done)
 		descriptor, err := sourceAdmission(ctx, s.owner.impl, r)
@@ -108,27 +137,50 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
 		if ctx.Err() != nil {
 			return
 		}
-		if err != nil {
-			_ = e.failure(ctx, s.owner.classify(err))
-			return
+		if err == nil {
+			e.mu.Lock()
+			ended, terminal := e.ended, e.terminal
+			e.mu.Unlock()
+			if terminal {
+				return
+			}
+			if ended {
+				_ = e.Reset(ctx, resourcev2.SourceResetSourceInvalidated, "source ended")
+				return
+			}
+			err = resourcev2.NewError("INTERNAL", "source ended before snapshot boundary")
+		} else {
+			err = s.owner.classify(err)
 		}
 		e.mu.Lock()
-		ended, terminal := e.ended, e.terminal
+		begun := e.sequence != 0
 		e.mu.Unlock()
-		if terminal {
+		if !begun {
+			done <- rpcError(err)
 			return
 		}
-		if !ended {
-			_ = e.failure(ctx, resourcev2.NewError("INTERNAL", "source ended before snapshot boundary"))
-			return
+		_ = e.failure(ctx, err)
+	}()
+	frames := make(chan *resourcepb.SourceFrame)
+	sent := make(chan error, 1)
+	go func() {
+		for {
+			select {
+			case frame := <-frames:
+				sent <- stream.SendMsg(frame)
+			case <-ctx.Done():
+				return
+			}
 		}
-		_ = e.Reset(ctx, resourcev2.SourceResetSourceInvalidated, "source ended")
 	}()
 	for {
 		select {
 		case d := <-queue:
-			sent := make(chan error, 1)
-			go func() { sent <- stream.SendMsg(d.frame) }()
+			select {
+			case frames <- d.frame:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 			timer := time.NewTimer(sourceSendStallTimeout)
 			select {
 			case err := <-sent:
@@ -148,20 +200,18 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
 				close(stalled)
 				cancel()
 				d.ack <- limited("source host stalled")
-				// The watchdog bounds provider work, not transport lifetime. A
-				// derived context cannot abort SendMsg; the host must close or
-				// cancel abandoned streams. Join before releasing stream ownership.
-				return <-sent
+				// Returning lets gRPC terminate the RPC and unblock SendMsg.
+				return rpcError(limited("source host stalled"))
 			case <-stream.Context().Done():
 				if !timer.Stop() {
 					<-timer.C
 				}
 				cancel()
 				d.ack <- stream.Context().Err()
-				return <-sent
+				return stream.Context().Err()
 			}
-		case <-done:
-			return nil
+		case err := <-done:
+			return err
 		case <-stream.Context().Done():
 			return stream.Context().Err()
 		}
@@ -181,6 +231,16 @@ func (e *sourceEmitter) send(ctx context.Context, f resourcev2.SourceFrame) erro
 		return err
 	}
 	f.SessionID, f.Generation, f.Sequence = e.request.SessionID, e.request.Generation, e.sequence+1
+	if f.Changes != nil {
+		size, err := resourcev2.SourceChangesWireSize(*f.Changes)
+		if err != nil {
+			return resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
+		}
+		header := &resourcepb.SourceFrame{Version: resourcev2.WireVersion, SessionId: f.SessionID, Generation: f.Generation, Sequence: f.Sequence}
+		if proto.Size(header)+protowire.SizeTag(8)+protowire.SizeBytes(size) > int(e.request.Limits.MaxFrameBytes) {
+			return limited("source changes exceed frame limit")
+		}
+	}
 	p, err := resourcev2.ToProtoSourceFrame(f)
 	if err != nil {
 		return resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
@@ -261,14 +321,17 @@ func (e *sourceEmitter) Snapshot(ctx context.Context, observations []resourcev2.
 		snapshot := &resourcepb.SourceSnapshot{}
 		payloadSize := 0
 		for len(snapshot.Observations) < len(observations) && len(snapshot.Observations) < int(e.request.Limits.MaxBatchItems) {
-			observation, err := resourcev2.ToProtoSourceObservation(observations[len(snapshot.Observations)])
+			itemSize, err := resourcev2.SourceObservationWireSize(observations[len(snapshot.Observations)])
 			if err != nil {
 				return resourcev2.NewError("PROVIDER_ERROR", "invalid source observation")
 			}
-			itemSize := proto.Size(observation)
 			nextSize := payloadSize + protowire.SizeTag(1) + protowire.SizeBytes(itemSize)
 			if headerSize+protowire.SizeTag(6)+protowire.SizeBytes(nextSize) > int(e.request.Limits.MaxFrameBytes) {
 				break
+			}
+			observation, err := resourcev2.ToProtoSourceObservation(observations[len(snapshot.Observations)])
+			if err != nil {
+				return resourcev2.NewError("PROVIDER_ERROR", "invalid source observation")
 			}
 			snapshot.Observations = append(snapshot.Observations, observation)
 			payloadSize = nextSize

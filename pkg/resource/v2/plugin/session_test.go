@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -39,6 +40,34 @@ func TestActualGRPCFeaturesAreProviderTruth(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestActualGRPCFeaturesRemainIsolated(t *testing.T) {
+	server := grpc.NewServer()
+	RegisterServer(server, &sourcePinProvider{})
+	client := NewClient(pipe(t, server))
+	features, err := client.Features(context.Background())
+	if err != nil || !features.Has(resourcev2.FeatureSourceSessions) {
+		t.Fatalf("features: %+v, %v", features, err)
+	}
+	features.Traits[0] = "corrupted"
+	var group sync.WaitGroup
+	for range 16 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			got, err := client.Features(context.Background())
+			if err != nil || !got.Has(resourcev2.FeatureSourceSessions) {
+				t.Errorf("cached features changed: %+v, %v", got, err)
+			}
+		}()
+	}
+	group.Wait()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := client.Features(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled caller: %v", err)
 	}
 }
 

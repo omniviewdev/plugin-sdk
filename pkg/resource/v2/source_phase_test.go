@@ -9,7 +9,7 @@ import (
 
 func phaseRequest(mode string) SourceOpenRequest {
 	values := []string{"雪"}
-	return SourceOpenRequest{SessionID: "session-1", Generation: "generation:1", Target: ReadTarget{Route: AccessRoute{Connection: "route"}, Provider: "provider", Authority: "opaque-authority", Type: "resource/type", Representation: "native", Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &values}}}, Mode: mode, Acquisition: SourceAcquisition{Kind: SourceAcquisitionEnumerate}, Limits: SourceLimits{MaxFrameBytes: MinSourceFrameBytes, MaxBatchItems: 2}}
+	return SourceOpenRequest{SessionID: "session-1", Generation: "generation:1", Target: ReadTarget{Route: AccessRoute{Connection: "route"}, Provider: "provider", Authority: "opaque-authority", Type: "resource/type", Representation: "native", Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &values}}}, Binding: RepresentationBinding{Representation: codecRecord().Representation}, Mode: mode, Acquisition: SourceAcquisition{Kind: SourceAcquisitionEnumerate}, Limits: SourceLimits{MaxFrameBytes: 64 << 10, MaxBatchItems: 2}}
 }
 func phaseFrame(sequence uint64) SourceFrame {
 	return SourceFrame{SessionID: "session-1", Generation: "generation:1", Sequence: sequence}
@@ -127,7 +127,7 @@ func TestSourcePhaseRules(t *testing.T) {
 		}(), "PROVIDER_ERROR"},
 		{"long limitation", []SourceFrame{begin}, func() SourceFrame {
 			f := phaseEnd(2, ContinuityBestEffort)
-			f.SnapshotEnd.Coverage.Limitations = []string{strings.Repeat("a", 257)}
+			f.SnapshotEnd.Coverage.Limitations = []string{strings.Repeat("a", 64<<10+1)}
 			return f
 		}(), "PROVIDER_ERROR"},
 		{"many limitations", []SourceFrame{begin}, func() SourceFrame {
@@ -155,7 +155,7 @@ func TestSourcePhaseRules(t *testing.T) {
 			f.Reset = &SourceReset{Reason: SourceResetOverflow, Message: strings.Repeat("a", MaxSourceMessageBytes+1)}
 			return f
 		}(), "PROVIDER_ERROR"},
-		{"failed open", nil, func() SourceFrame { f := phaseFrame(1); f.Failed = &SourceFailure{Code: "UNSUPPORTED"}; return f }(), ""},
+		{"failed open", nil, func() SourceFrame { f := phaseFrame(1); f.Failed = &SourceFailure{Code: "UNSUPPORTED"}; return f }(), "PROVIDER_ERROR"},
 		{"failure code", nil, func() SourceFrame { f := phaseFrame(1); f.Failed = &SourceFailure{Code: "other"}; return f }(), "PROVIDER_ERROR"},
 		{"failure message", nil, func() SourceFrame {
 			f := phaseFrame(1)
@@ -165,8 +165,8 @@ func TestSourcePhaseRules(t *testing.T) {
 		{"frame bytes", []SourceFrame{begin}, func() SourceFrame {
 			f := phaseFrame(2)
 			r := codecRecord()
-			r.Body.Map["large"] = Value{Kind: "string", String: strings.Repeat("x", MinSourceFrameBytes)}
-			f.Snapshot = &SourceSnapshot{Observations: []SourceObservation{{Record: r}}}
+			r.Body.Map["large"] = Value{Kind: "string", String: strings.Repeat("x", 64 << 10)}
+			f.Snapshot = &SourceSnapshot{Observations: []SourceObservation{{Record: CompactSourceRecord(r)}}}
 			return f
 		}(), "RESOURCE_LIMIT"},
 	} {
@@ -184,7 +184,7 @@ var codecRecordReference = codecRecord().Reference
 
 func TestSourceObservationBinding(t *testing.T) {
 	target := phaseRequest(SourceModeSnapshot).Target
-	o := SourceObservation{Record: codecRecord()}
+	o := SourceObservation{Record: CompactSourceRecord(codecRecord())}
 	if err := ValidateSourceObservation(target, "native", o); err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestSourceObservationBinding(t *testing.T) {
 		func(o *SourceObservation) { o.Record.Representation.ID = "other" },
 		func(o *SourceObservation) { o.Record.Body.Kind = "null" },
 	} {
-		o := SourceObservation{Record: codecRecord()}
+		o := SourceObservation{Record: CompactSourceRecord(codecRecord())}
 		change(&o)
 		if ValidateSourceObservation(target, "native", o) == nil {
 			t.Fatal("invalid observation admitted")
@@ -205,7 +205,7 @@ func TestSourceObservationBinding(t *testing.T) {
 	tr := NewSourcePhaseTracker(phaseRequest(SourceModeSnapshotAndUpdates), ContinuityGapFree)
 	phaseAdmit(t, tr, phaseBegin(1, SourceModeSnapshotAndUpdates))
 	f := phaseFrame(2)
-	f.Snapshot = &SourceSnapshot{Observations: []SourceObservation{{Record: codecRecord()}}}
+	f.Snapshot = &SourceSnapshot{Observations: []SourceObservation{{Record: CompactSourceRecord(codecRecord())}}}
 	phaseAdmit(t, tr, f)
 	phaseAdmit(t, tr, phaseEnd(3, ContinuityGapFree))
 	r := codecRecord().Reference
@@ -218,7 +218,12 @@ func TestSourceObservationBinding(t *testing.T) {
 func TestSourceTermination(t *testing.T) {
 	tr := NewSourcePhaseTracker(phaseRequest(SourceModeSnapshot), "")
 	phaseCode(t, tr.TransportError(io.EOF), "RESET_REQUIRED")
-	phaseCode(t, tr.TransportError(errors.New("connection lost")), "RESET_REQUIRED")
+	cause := errors.New("connection lost")
+	err := tr.TransportError(cause)
+	phaseCode(t, err, "RESET_REQUIRED")
+	if !errors.Is(err, cause) {
+		t.Fatal("transport cause was lost")
+	}
 	phaseAdmit(t, tr, phaseBegin(1, SourceModeSnapshot))
 	phaseCode(t, tr.Admit(phaseEnd(2, ContinuityBestEffort)), "PROVIDER_ERROR")
 	phaseAdmit(t, tr, phaseEnd(2, ContinuityNotApplicable))

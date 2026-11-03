@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"time"
 
 	goplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
@@ -33,7 +34,12 @@ func (p *GRPCPlugin) GRPCClient(_ context.Context, _ *goplugin.GRPCBroker, c *gr
 
 // ServerOptions bounds incoming and outgoing resource frames.
 func ServerOptions() []grpc.ServerOption {
-	return []grpc.ServerOption{grpc.MaxRecvMsgSize(MaxWireBytes), grpc.MaxSendMsgSize(MaxWireBytes)}
+	return []grpc.ServerOption{
+		grpc.MaxRecvMsgSize(MaxWireBytes),
+		grpc.MaxSendMsgSize(MaxWireBytes),
+		grpc.MethodMaxRecvMsgSize(resourcepb.ResourceSources_Open_FullMethodName, 256<<10),
+		grpc.MethodPartialMessageReadTimeout(resourcepb.ResourceSources_Open_FullMethodName, 5*time.Second),
+	}
 }
 
 // RegisterServer registers resource services without a settings provider.
@@ -209,6 +215,9 @@ func (s *server) dispatchCatalog(ctx context.Context, op *resourcepb.Request_Cat
 	}
 	value, err := s.impl.Catalog(ctx, in)
 	if err != nil {
+		return nil, err
+	}
+	if err = resourcev2.ValidateProviderCatalog(ctx, s.impl, value); err != nil {
 		return nil, err
 	}
 	p, err := resourcev2.ToProtoCatalog(value)
