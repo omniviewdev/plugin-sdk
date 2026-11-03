@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"reflect"
 	"sync/atomic"
@@ -102,6 +103,76 @@ func bytesField(n protowire.Number, v []byte) []byte {
 func requestValue(v []byte) []byte {
 	action := append(bytesField(4, v), bytesField(3, []byte("a"))...)
 	return append([]byte{8, 2}, bytesField(7, action)...)
+}
+
+func TestWireMapKeyTrackingAdmission(t *testing.T) {
+	request := func(v []byte) []byte {
+		action := append(bytesField(2, nil), bytesField(4, v)...)
+		return append([]byte{8, 2}, bytesField(7, action)...)
+	}
+	entry := func(key string, explicit bool) []byte {
+		var data []byte
+		if explicit {
+			data = bytesField(1, []byte(key))
+		}
+		return append(data, bytesField(2, []byte{16, 1})...)
+	}
+	for _, size := range []int{1, 2, 3, 8, 64} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			var entries []byte
+			// Empty keys are valid and must survive the inline-to-map transition.
+			entries = append(entries, bytesField(1, entry("", false))...)
+			for i := 1; i < size; i++ {
+				entries = append(entries, bytesField(1, entry(fmt.Sprint(i), true))...)
+			}
+			admit := func(data []byte) error {
+				return ValidateWire(request(bytesField(9, data)), (&resourcepb.Request{}).ProtoReflect().Descriptor())
+			}
+			if err := admit(entries); err != nil {
+				t.Fatalf("distinct keys rejected: %v", err)
+			}
+			for _, duplicate := range []string{"", fmt.Sprint(size - 1)} {
+				if size == 1 && duplicate != "" {
+					continue
+				}
+				data := append(append([]byte(nil), entries...), bytesField(1, entry(duplicate, true))...)
+				if err := admit(data); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+					t.Fatalf("duplicate %q: %v", duplicate, err)
+				}
+			}
+		})
+	}
+	// Key comparison uses exact protobuf string bytes, not Unicode normalization.
+	var entries []byte
+	for _, key := range []string{"é", "e\u0301", "x", "y"} {
+		entries = append(entries, bytesField(1, entry(key, true))...)
+	}
+	if err := ValidateWire(request(bytesField(9, entries)), (&resourcepb.Request{}).ProtoReflect().Descriptor()); err != nil {
+		t.Fatalf("byte-distinct Unicode keys rejected: %v", err)
+	}
+}
+
+func TestWireRelationshipDimensionTracking(t *testing.T) {
+	for _, size := range []int{1, 2, 3, 8} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			var data []byte
+			for i := range size {
+				data = append(data, bytesField(8, bytesField(1, []byte(fmt.Sprint(i))))...)
+			}
+			descriptor := (&resourcepb.RelationshipDescriptor{}).ProtoReflect().Descriptor()
+			budget := wireBudget{}
+			if err := budget.message(data, descriptor, 0); err != nil {
+				t.Fatalf("distinct dimensions rejected: %v", err)
+			}
+			for _, dimension := range []string{"0", fmt.Sprint(size - 1)} {
+				duplicate := append(append([]byte(nil), data...), bytesField(9, bytesField(1, []byte(dimension)))...)
+				budget = wireBudget{}
+				if err := budget.message(duplicate, descriptor, 0); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+					t.Fatalf("cross-field duplicate %q: %v", dimension, err)
+				}
+			}
+		})
+	}
 }
 
 func TestRawRequestAdmissionDefaultProto(t *testing.T) {
