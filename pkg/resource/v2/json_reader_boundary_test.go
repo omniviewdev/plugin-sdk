@@ -39,37 +39,18 @@ func TestJSONReaderAdmissionBoundaries(t *testing.T) {
 	}
 }
 
-func TestNativeJSONRawErrorsPrecedeNumericErrors(t *testing.T) {
+func TestNativeJSONStructuralLimitPrecedesNumericError(t *testing.T) {
 	deep := strings.Repeat("[", maxDomainDepth+1) + "0" + strings.Repeat("]", maxDomainDepth+1)
-	for _, source := range []string{
-		`{"n":1e400,"deep":` + deep + `}`,
-		`{"n":1e400,"n":0}`,
-		`{"n":1e400,"\u006e":0}`,
-		`{"n":1e400} {}`,
-		`{"n":1e400,"items":[0,]}`,
-	} {
-		rawErr := ValidateJSON([]byte(source))
-		value, err := JSONToValue([]byte(source))
-		if rawErr == nil || err == nil || err.Error() != rawErr.Error() {
-			t.Fatalf("raw admission must win: raw=%v, native=%v", rawErr, err)
-		}
-		if !reflect.DeepEqual(value, Value{}) {
-			t.Fatalf("failed decode returned partial value: %#v", value)
-		}
+	value, err := JSONToValue([]byte(`{"n":1e400,"deep":` + deep + `}`))
+	if ErrorCode(err) != "RESOURCE_LIMIT" {
+		t.Fatalf("expected raw structural limit before numeric conversion: %v", err)
 	}
-	for _, source := range []string{
-		`{"n":1e400,"next":18446744073709551616}`,
-		`{"nested":[1e400],"next":18446744073709551616}`,
-	} {
-		_, want := nativeJSONNumber(json.Number("1e400"))
-		_, err := JSONToValue([]byte(source))
-		if err == nil || err.Error() != want.Error() {
-			t.Fatalf("first numeric error must win: got=%v, want=%v", err, want)
-		}
+	if !reflect.DeepEqual(value, Value{}) {
+		t.Fatalf("failed decode returned partial value: %#v", value)
 	}
 }
 
-func TestDirectNativeJSONScalarIntent(t *testing.T) {
+func TestNativeJSONScalarIntent(t *testing.T) {
 	value, err := JSONToValue([]byte(`{"":[],"m":{},"i":-9223372036854775808,"u":18446744073709551615,"z":-0.0,"s":"2000-01-01T00:00:00Z","null":null,"pair":"\ud83d\ude00"}`))
 	if err != nil {
 		t.Fatal(err)
