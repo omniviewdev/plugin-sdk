@@ -105,6 +105,7 @@ type jsonReadMode uint8
 
 const (
 	jsonReadTree jsonReadMode = iota
+	jsonReadTagged
 	jsonReadValidate
 	jsonReadDomain
 )
@@ -137,7 +138,7 @@ type jsonTreeReader struct {
 
 func (r *jsonTreeReader) read(depth int) (any, error) {
 	r.nodes++
-	if depth > maxDomainDepth || r.nodes > maxDomainNodes {
+	if depth > r.depthLimit() || r.nodes > maxDomainNodes {
 		return nil, limited("JSON complexity limit")
 	}
 	t, err := r.decoder.Token()
@@ -161,11 +162,18 @@ func (r *jsonTreeReader) read(depth int) (any, error) {
 	}
 }
 
+func (r *jsonTreeReader) depthLimit() int {
+	if r.mode == jsonReadTagged {
+		return taggedChildDepth*MaxValueDepth + 1
+	}
+	return maxDomainDepth
+}
+
 func (r *jsonTreeReader) object(depth int) (any, error) {
 	var m map[string]any
 	var keys map[string]struct{}
 	switch {
-	case r.mode == jsonReadTree || (r.mode == jsonReadDomain && depth == 0):
+	case r.mode == jsonReadTree || r.mode == jsonReadTagged || (r.mode == jsonReadDomain && depth == 0):
 		m = make(map[string]any)
 	default:
 		keys = make(map[string]struct{})
@@ -213,7 +221,7 @@ func (r *jsonTreeReader) object(depth int) (any, error) {
 
 func (r *jsonTreeReader) array(depth int) (any, error) {
 	var a []any
-	if r.mode == jsonReadTree {
+	if r.mode == jsonReadTree || r.mode == jsonReadTagged {
 		a = []any{}
 	}
 	for r.decoder.More() {
@@ -225,7 +233,7 @@ func (r *jsonTreeReader) array(depth int) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if r.mode == jsonReadTree {
+		if r.mode == jsonReadTree || r.mode == jsonReadTagged {
 			a = append(a, v)
 		}
 	}
@@ -233,7 +241,7 @@ func (r *jsonTreeReader) array(depth int) (any, error) {
 	if err != nil || end != json.Delim(']') {
 		return nil, invalid("invalid JSON array")
 	}
-	if r.mode == jsonReadTree {
+	if r.mode == jsonReadTree || r.mode == jsonReadTagged {
 		return a, nil
 	}
 	return true, nil
@@ -361,7 +369,7 @@ func (v *Value) UnmarshalJSON(data []byte) error {
 	if v == nil {
 		return invalid("nil value receiver")
 	}
-	raw, err := parseJSON(data)
+	raw, err := readJSON(data, MaxDocumentBytes, jsonReadTagged)
 	if err != nil {
 		return err
 	}
@@ -746,7 +754,7 @@ func taggedJSONSize(v Value, depth int, budget *jsonValueBudget) (int, error) {
 		budget.nodes++
 		budget.fields++
 	}
-	if depth+1 > MaxValueDepth || budget.nodes > MaxValueNodes || budget.fields > MaxWireFields {
+	if depth+1 > taggedChildDepth*MaxValueDepth+1 || budget.nodes > MaxValueNodes || budget.fields > MaxWireFields {
 		return 0, limited("tagged JSON structural limit")
 	}
 	size := taggedObjectBytes + quotedJSONSize(v.Kind)

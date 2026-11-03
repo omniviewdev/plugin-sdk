@@ -189,6 +189,36 @@ func TestNativeReciprocalKeepsTypes(t *testing.T) {
 	}
 }
 
+func TestTaggedJSONValueDepthBoundary(t *testing.T) {
+	for _, shape := range []string{"map", "list", "mixed"} {
+		t.Run(shape, func(t *testing.T) {
+			value := Value{Kind: "string", String: "leaf"}
+			for i := range MaxValueDepth {
+				if shape == "list" || shape == "mixed" && i%2 == 0 {
+					value = Value{Kind: "list", List: []Value{value}}
+				} else {
+					value = Value{Kind: "map", Map: map[string]Value{"child": value}}
+				}
+			}
+			data, err := value.MarshalJSON()
+			if err != nil {
+				t.Fatalf("depth %d marshal: %v", MaxValueDepth, err)
+			}
+			var got Value
+			if err := got.UnmarshalJSON(data); err != nil {
+				t.Fatalf("depth %d unmarshal: %v", MaxValueDepth, err)
+			}
+			if !reflect.DeepEqual(value, got) {
+				t.Fatal("depth boundary round trip changed value")
+			}
+			value = Value{Kind: "list", List: []Value{value}}
+			if _, err := value.MarshalJSON(); ErrorCode(err) != "RESOURCE_LIMIT" {
+				t.Fatalf("depth %d marshal: %v", MaxValueDepth+1, err)
+			}
+		})
+	}
+}
+
 func TestJSONAndValueBounds(t *testing.T) {
 	if err := ValidateJSON([]byte(strings.Repeat(" ", MaxMessageBytes+1))); ErrorCode(err) != "RESOURCE_LIMIT" {
 		t.Fatalf("JSON frame byte limit: %v", err)
@@ -224,13 +254,21 @@ func TestTaggedJSONRawStructuralBounds(t *testing.T) {
 	if decodeErr := got.UnmarshalJSON(encoded); decodeErr != nil {
 		t.Fatal(decodeErr)
 	}
-	for range 12 {
+	for range MaxValueDepth - 20 {
 		v = Value{Kind: "list", List: []Value{v}}
 	}
-	if _, marshalErr := v.MarshalJSON(); ErrorCode(marshalErr) != "RESOURCE_LIMIT" {
-		t.Fatalf("raw wrapper depth not bounded before output: %v", marshalErr)
+	encoded, err = v.MarshalJSON()
+	if err != nil {
+		t.Fatalf("maximum value depth: %v", err)
 	}
-	raw := strings.Repeat(`{"kind":"list","value":[`, 32) + `{"kind":"null"}` + strings.Repeat(`]}`, 32)
+	if decodeErr := got.UnmarshalJSON(encoded); decodeErr != nil {
+		t.Fatalf("maximum value depth round trip: %v", decodeErr)
+	}
+	v = Value{Kind: "list", List: []Value{v}}
+	if _, marshalErr := v.MarshalJSON(); ErrorCode(marshalErr) != "RESOURCE_LIMIT" {
+		t.Fatalf("value depth not bounded before output: %v", marshalErr)
+	}
+	raw := strings.Repeat(`{"kind":"list","value":[`, MaxValueDepth+1) + `{"kind":"null"}` + strings.Repeat(`]}`, MaxValueDepth+1)
 	if decodeErr := got.UnmarshalJSON([]byte(raw)); ErrorCode(decodeErr) != "RESOURCE_LIMIT" {
 		t.Fatalf("raw input depth: %v", decodeErr)
 	}
