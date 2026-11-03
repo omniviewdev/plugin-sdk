@@ -8,6 +8,52 @@ import (
 	"time"
 )
 
+func TestDomainJSONTaggedValueDepthBoundary(t *testing.T) {
+	body := Value{Kind: "string", String: "leaf"}
+	for range MaxValueDepth - 1 {
+		body = Value{Kind: "list", List: []Value{body}}
+	}
+	body = Value{Kind: "map", Map: map[string]Value{"child": body}}
+	record := codecRecord()
+	record.Body = body
+	route := AccessRoute{Connection: "route"}
+	target := ReadTarget{Route: route, Provider: record.Reference.Address.Provider, Authority: record.Reference.Address.Authority, Type: record.Reference.Address.Type, Scope: QueryScope{}, Representation: record.Representation.ID}
+	for _, tc := range []struct {
+		name string
+		input any
+		output any
+	}{
+		{"record", record, &Record{}},
+		{"source page", SourcePage{Records: []Record{record}, Count: Count{Kind: "unknown"}, Coverage: record.Coverage, Consistency: ConsistencyBestEffort}, &SourcePage{}},
+		{"native query", NativeQueryRequest{Target: target, Language: "native.v1", Query: body, PageSize: 1}, &NativeQueryRequest{}},
+		{"mutation", MutationRequest{Route: route, Reference: record.Reference, Operation: "patch", Input: body}, &MutationRequest{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(data, tc.output); err != nil {
+				t.Fatalf("depth %d decode: %v", MaxValueDepth, err)
+			}
+			roundtrip, err := json.Marshal(tc.output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != string(roundtrip) {
+				t.Fatal("domain round trip changed JSON")
+			}
+		})
+	}
+	native := strings.Repeat("[", MaxValueDepth+1) + "null" + strings.Repeat("]", MaxValueDepth+1)
+	if err := ValidateJSON([]byte(native)); ErrorCode(err) != "RESOURCE_LIMIT" {
+		t.Fatalf("native JSON depth limit: %v", err)
+	}
+	if _, err := parseJSON([]byte(native)); ErrorCode(err) != "RESOURCE_LIMIT" {
+		t.Fatalf("schema JSON depth limit: %v", err)
+	}
+}
+
 func TestPublicDomainJSONRejectsMalformedIdentity(t *testing.T) {
 	cases := []struct {
 		name, source string

@@ -166,6 +166,11 @@ func (r *jsonTreeReader) depthLimit() int {
 	if r.mode == jsonReadTagged {
 		return taggedChildDepth*MaxValueDepth + 1
 	}
+	if r.mode == jsonReadDomain {
+		// Domain envelopes may contain tagged Values, each semantic level
+		// expanding to two JSON levels. Nested Values still validate themselves.
+		return taggedChildDepth*MaxValueDepth + maxDomainDepth + 1
+	}
 	return maxDomainDepth
 }
 
