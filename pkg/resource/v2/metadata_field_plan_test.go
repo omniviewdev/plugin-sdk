@@ -61,7 +61,7 @@ func TestMetadataFieldPlanBudgetParity(t *testing.T) {
 	}
 }
 
-func TestMetadataFieldPlanVisibilityAndOmit(t *testing.T) {
+func TestMetadataCallerTypeVisibilityAndOmit(t *testing.T) {
 	type metadata struct {
 		Visible string  `json:"visible"`
 		Omitted string  `json:"omitted,omitempty"`

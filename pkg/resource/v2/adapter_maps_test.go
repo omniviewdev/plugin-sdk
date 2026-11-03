@@ -62,7 +62,7 @@ func TestMetadataDecoderRejectsMalformedLabels(t *testing.T) {
 		{"nil", []*resourcepb.LabelEntry{{Key: ""}, nil}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p := &resourcepb.ResourceMetadata{Labels: tc.labels, CreatedAt: &resourcepb.TimestampValue{Nanos: 1000000000}}
+			p := &resourcepb.ResourceMetadata{Labels: tc.labels, CreatedAt: &resourcepb.TimestampValue{Nanos: 1}}
 			got, err := fromProto(p, (*adapterDecoder).metadata, validateMetadata)
 			if ErrorCode(err) != "INVALID_REQUEST" {
 				t.Fatalf("expected INVALID_REQUEST, got %v", err)
