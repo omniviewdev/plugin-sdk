@@ -53,4 +53,4 @@ require (
 )
 
 // Source-session receive controls require the scoped grpc-go fork.
-replace google.golang.org/grpc => github.com/omniviewdev/grpc-go v1.79.3-0.20261102213527-236d3bce77a1
+replace google.golang.org/grpc => github.com/omniviewdev/grpc-go v1.79.3-0.20261103012409-4c6f1d1c4e10
