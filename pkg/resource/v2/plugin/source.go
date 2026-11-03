@@ -234,6 +234,9 @@ func (e *sourceEmitter) send(ctx context.Context, f resourcev2.SourceFrame) erro
 	if f.Changes != nil {
 		size, err := resourcev2.SourceChangesWireSize(*f.Changes)
 		if err != nil {
+			if resourcev2.ErrorCode(err) == "RESOURCE_LIMIT" {
+				return limited("source changes exceed frame limit")
+			}
 			return resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
 		}
 		header := &resourcepb.SourceFrame{Version: resourcev2.WireVersion, SessionId: f.SessionID, Generation: f.Generation, Sequence: f.Sequence}
@@ -243,7 +246,16 @@ func (e *sourceEmitter) send(ctx context.Context, f resourcev2.SourceFrame) erro
 	}
 	p, err := resourcev2.ToProtoSourceFrame(f)
 	if err != nil {
+		if f.Changes != nil && resourcev2.ErrorCode(err) == "RESOURCE_LIMIT" {
+			return limited("source changes exceed frame limit")
+		}
 		return resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
+	}
+	if f.Changes != nil {
+		nodes, fields := protoWireCost(p.ProtoReflect())
+		if nodes > MaxNodes || fields > MaxFields {
+			return limited("source changes exceed frame limit")
+		}
 	}
 	return e.sendEncoded(f, p)
 }
@@ -318,11 +330,17 @@ func (e *sourceEmitter) Snapshot(ctx context.Context, observations []resourcev2.
 		f := resourcev2.SourceFrame{SessionID: e.request.SessionID, Generation: e.request.Generation, Sequence: e.sequence + 1}
 		p := &resourcepb.SourceFrame{Version: resourcev2.WireVersion, SessionId: f.SessionID, Generation: f.Generation, Sequence: f.Sequence}
 		headerSize := proto.Size(p)
+		nodes, fields := protoWireCost(p.ProtoReflect())
+		nodes++  // snapshot payload
+		fields++ // snapshot payload field
 		snapshot := &resourcepb.SourceSnapshot{}
 		payloadSize := 0
 		for len(snapshot.Observations) < len(observations) && len(snapshot.Observations) < int(e.request.Limits.MaxBatchItems) {
 			itemSize, err := resourcev2.SourceObservationWireSize(observations[len(snapshot.Observations)])
 			if err != nil {
+				if resourcev2.ErrorCode(err) == "RESOURCE_LIMIT" {
+					return limited("source observation exceeds frame limit")
+				}
 				return resourcev2.NewError("PROVIDER_ERROR", "invalid source observation")
 			}
 			nextSize := payloadSize + protowire.SizeTag(1) + protowire.SizeBytes(itemSize)
@@ -331,8 +349,17 @@ func (e *sourceEmitter) Snapshot(ctx context.Context, observations []resourcev2.
 			}
 			observation, err := resourcev2.ToProtoSourceObservation(observations[len(snapshot.Observations)])
 			if err != nil {
+				if resourcev2.ErrorCode(err) == "RESOURCE_LIMIT" {
+					return limited("source observation exceeds frame limit")
+				}
 				return resourcev2.NewError("PROVIDER_ERROR", "invalid source observation")
 			}
+			itemNodes, itemFields := protoWireCost(observation.ProtoReflect())
+			if nodes+itemNodes > MaxNodes || fields+1+itemFields > MaxFields {
+				break
+			}
+			nodes += itemNodes
+			fields += 1 + itemFields
 			snapshot.Observations = append(snapshot.Observations, observation)
 			payloadSize = nextSize
 		}

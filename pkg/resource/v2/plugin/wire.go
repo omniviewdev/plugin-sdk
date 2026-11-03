@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	"github.com/omniviewdev/plugin-sdk/pkg/resource/v2/internal/wirecost"
 )
 
 // WirePolicy is an implementation-candidate transport ceiling, not predicate policy or an SLO.
@@ -52,6 +53,10 @@ type wireBudget struct {
 	fields, nodes, sourceBatchLimit int
 	source bool
 	legacySchemaClaims bool
+}
+
+func protoWireCost(m protoreflect.Message) (nodes, fields int) {
+	return wirecost.Count(m)
 }
 
 type wireMessage struct {

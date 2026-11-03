@@ -135,9 +135,8 @@ func TestSourceTransportValueDepth(t *testing.T) {
 					}
 				}
 				if depth > resourcev2.MaxValueDepth {
-					// Invalid provider observations are reported as PROVIDER_ERROR;
-					// unary record admission separately exposes RESOURCE_LIMIT.
-					if failure != "PROVIDER_ERROR" || len(records) != 0 {
+					// Observations exceeding the value depth limit fail as RESOURCE_LIMIT.
+					if failure != "RESOURCE_LIMIT" || len(records) != 0 {
 						t.Fatalf("over-depth source: records=%d failure=%q", len(records), failure)
 					}
 					return
@@ -798,6 +797,221 @@ func TestSourceEmitterLimitsAndPhases(t *testing.T) {
 				if sizes[i] != tc.sizes[i] {
 					t.Fatalf("batch sizes %v, want %v", sizes, tc.sizes)
 				}
+			}
+		})
+	}
+}
+
+func TestSourceSnapshotWireNodeBudget(t *testing.T) {
+	record, err := (&qualifiedProvider{}).Get(context.Background(), testGet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	managedFields := make(map[string]any, 1000)
+	for i := range 1000 {
+		managedFields[fmt.Sprintf("field-%04d", i)] = map[string]any{"owner": "controller"}
+	}
+	record.Body, err = resourcev2.ValueFromNative(map[string]any{
+		"metadata": map[string]any{"managedFields": []any{managedFields}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observations := make([]resourcev2.SourceObservation, 191)
+	for i := range observations {
+		observations[i].Record = resourcev2.CompactSourceRecord(record)
+	}
+	request := transportSourceRequest()
+	request.Limits.MaxBatchItems = 256
+	request.Limits.MaxFrameBytes = resourcev2.MaxSourceFrameBytes
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	emitter := &sourceEmitter{ctx: ctx, request: request, tracker: resourcev2.NewSourcePhaseTracker(request, ""), queue: make(chan sourceDelivery), stalled: make(chan struct{})}
+	deliveries := make(chan *resourcepb.SourceFrame, 192)
+	go func() {
+		for {
+			select {
+			case delivery := <-emitter.queue:
+				deliveries <- delivery.frame
+				delivery.ack <- nil
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	if err := emitter.Snapshot(ctx, observations); err != nil {
+		t.Fatal(err)
+	}
+	close(deliveries)
+	var sequence uint64
+	var snapshots, count int
+	for frame := range deliveries {
+		sequence++
+		if frame.Sequence != sequence {
+			t.Fatalf("sequence = %d, want %d", frame.Sequence, sequence)
+		}
+		data, err := proto.Marshal(frame)
+		if err != nil {
+			t.Fatal(err)
+		}
+		budget := wireBudget{source: true, sourceBatchLimit: resourcev2.MaxSourceBatchItems}
+		if err := budget.message(data, frame.ProtoReflect().Descriptor(), 0); err != nil {
+			t.Fatal(err)
+		}
+		nodes, fields := protoWireCost(frame.ProtoReflect())
+		if nodes != budget.nodes || fields != budget.fields {
+			t.Fatalf("cost = (%d, %d), receiver = (%d, %d)", nodes, fields, budget.nodes, budget.fields)
+		}
+		if err := ValidateWire(data, frame.ProtoReflect().Descriptor()); err != nil {
+			t.Fatal(err)
+		}
+		if frame.GetSnapshot() != nil {
+			snapshots++
+			count += len(frame.GetSnapshot().Observations)
+		}
+	}
+	if snapshots < 2 || count != len(observations) {
+		t.Fatalf("got %d snapshots and %d observations", snapshots, count)
+	}
+}
+
+func TestSourceEmitterRejectsWireComplexityOversize(t *testing.T) {
+	record, err := (&qualifiedProvider{}).Get(context.Background(), testGet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeObservation := func(count int) resourcev2.SourceObservation {
+		values := make([]resourcev2.Value, count)
+		for i := range values {
+			values[i].Kind = "null"
+		}
+		item := record
+		item.Body = resourcev2.Value{Kind: "map", Map: map[string]resourcev2.Value{
+			"items": {Kind: "list", List: values},
+		}}
+		return resourcev2.SourceObservation{Record: resourcev2.CompactSourceRecord(item)}
+	}
+	for _, tc := range []struct {
+		name string
+		observations int
+		values int
+	}{
+		{"single snapshot observation", 1, 132000},
+		{"atomic changes", 2, 70000},
+		{"aggregate value admission", 3, 90000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			observation := makeObservation(tc.values)
+			encoded, err := resourcev2.ToProtoSourceObservation(observation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			nodes, _ := protoWireCost(encoded.ProtoReflect())
+			if nodes*tc.observations <= MaxNodes {
+				t.Fatalf("fixture has %d nodes, want over %d", nodes*tc.observations, MaxNodes)
+			}
+			request := transportSourceRequest()
+			request.Limits.MaxBatchItems = 256
+			request.Limits.MaxFrameBytes = resourcev2.MaxSourceFrameBytes
+			request.Mode = resourcev2.SourceModeSnapshotAndUpdates
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			emitter := &sourceEmitter{ctx: ctx, request: request, tracker: resourcev2.NewSourcePhaseTracker(request, resourcev2.ContinuityBestEffort), queue: make(chan sourceDelivery), stalled: make(chan struct{})}
+			deliveries := make(chan *resourcepb.SourceFrame, 4)
+			go func() {
+				for {
+					select {
+					case delivery := <-emitter.queue:
+						deliveries <- delivery.frame
+						delivery.ack <- nil
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+			if tc.observations == 1 {
+				err = emitter.Snapshot(ctx, []resourcev2.SourceObservation{observation})
+			} else {
+				coverage := resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}
+				if err = emitter.EndSnapshot(ctx, coverage, resourcev2.ContinuityBestEffort); err != nil {
+					t.Fatal(err)
+				}
+				changes := make([]resourcev2.SourceChange, tc.observations)
+				for i := range changes {
+					changes[i] = resourcev2.SourceChange{Kind: resourcev2.SourceChangeUpsert, Observation: &observation}
+				}
+				err = emitter.Changes(ctx, changes, nil)
+			}
+			if resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {
+				t.Fatalf("got %v, want RESOURCE_LIMIT", err)
+			}
+			close(deliveries)
+			for frame := range deliveries {
+				if frame.GetSnapshot() != nil || frame.GetChanges() != nil {
+					t.Fatal("oversized payload was delivered")
+				}
+			}
+		})
+	}
+	t.Run("single observation aggregate value admission", func(t *testing.T) {
+		observation := makeObservation(resourcev2.MaxValueNodes + 1)
+		ctx := context.Background()
+		request := transportSourceRequest()
+		emitter := &sourceEmitter{ctx: ctx, request: request, sequence: 1}
+		err := emitter.Snapshot(ctx, []resourcev2.SourceObservation{observation})
+		if resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {
+			t.Fatalf("got %v, want RESOURCE_LIMIT", err)
+		}
+	})
+}
+
+func TestFinitePageIncrementalWireCost(t *testing.T) {
+	record, err := (&qualifiedProvider{}).Get(context.Background(), testGet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Body, err = resourcev2.ValueFromNative(map[string]any{
+		"metadata": map[string]any{"managedFields": []any{map[string]any{"manager": "controller", "fields": []any{"spec", "status"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cursorSize := range []int{0, 1, 127, 128, 16384} {
+		t.Run(fmt.Sprintf("cursor-%d", cursorSize), func(t *testing.T) {
+			page := resourcev2.SourcePage{Count: resourcev2.Count{Kind: "unknown"}, Coverage: resourcev2.Coverage{Kind: "complete"}, Consistency: resourcev2.ConsistencyBestEffort}
+			if cursorSize > 0 {
+				cursor := strings.Repeat("c", cursorSize)
+				page.NextCursor = &cursor
+			}
+			payload, nodes, fields, err := resourcev2.SourcePageWireCost(page)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range 3 {
+				bytes, n, f, err := resourcev2.SourceRecordWireCost(record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				payload += bytes
+				nodes += n
+				fields += f
+				page.Records = append(page.Records, record)
+			}
+			wirePage, err := resourcev2.ToProtoSourcePage(page)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := &resourcepb.Response{Version: resourcev2.WireVersion, Result: &resourcepb.Response_Page{Page: wirePage}}
+			data, err := proto.Marshal(response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			budget := wireBudget{}
+			if err := budget.message(data, response.ProtoReflect().Descriptor(), 0); err != nil {
+				t.Fatal(err)
+			}
+			if payload != proto.Size(wirePage) || resourcev2.SourcePageResponseWireSize(payload) != len(data) || nodes != budget.nodes || fields != budget.fields {
+				t.Fatalf("incremental=(%d,%d,%d,%d), encoded=(%d,%d,%d,%d)", payload, resourcev2.SourcePageResponseWireSize(payload), nodes, fields, proto.Size(wirePage), len(data), budget.nodes, budget.fields)
 			}
 		})
 	}

@@ -3,6 +3,9 @@ package resourcev2
 import (
 	"encoding/json"
 	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/resource/v2/internal/wirecost"
 
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
@@ -168,4 +171,36 @@ func SourceChangesWireSize(changes SourceChanges) (int, error) {
 		size += messageFieldSize(coverage)
 	}
 	return size, nil
+}
+
+// SourcePageWireCost reports the page payload bytes and the complete Response
+// node and field counts, including page metadata, cursor, and response wrapper.
+// Use an empty Records slice to compute the envelope for incremental assembly.
+func SourcePageWireCost(page SourcePage) (payloadBytes, nodes, fields int, err error) {
+	p, err := ToProtoSourcePage(page)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	response := &resourcepb.Response{Version: WireVersion, Result: &resourcepb.Response_Page{Page: p}}
+	nodes, fields = wirecost.Count(response.ProtoReflect())
+	return proto.Size(p), nodes, fields, nil
+}
+
+// SourceRecordWireCost reports a finite Record's incremental contribution to
+// the page payload bytes and Response node and field counts.
+func SourceRecordWireCost(record Record) (payloadBytes, nodes, fields int, err error) {
+	p, err := ToProtoRecord(record)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	nodes, fields = wirecost.Count(p.ProtoReflect())
+	size := proto.Size(p)
+	return protowire.SizeTag(1) + protowire.SizeBytes(size), nodes, fields + 1, nil
+}
+
+// SourcePageResponseWireSize reports the complete Response size from the sum
+// of page payload bytes, including the page envelope and record contributions.
+func SourcePageResponseWireSize(payloadBytes int) int {
+	return protowire.SizeTag(1) + protowire.SizeVarint(uint64(WireVersion)) +
+		protowire.SizeTag(4) + protowire.SizeBytes(payloadBytes)
 }
