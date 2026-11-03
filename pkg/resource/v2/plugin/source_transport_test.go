@@ -899,6 +899,7 @@ func TestSourceEmitterRejectsWireComplexityOversize(t *testing.T) {
 	}{
 		{"single snapshot observation", 1, 132000},
 		{"atomic changes", 2, 70000},
+		{"aggregate value admission", 3, 90000},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			observation := makeObservation(tc.values)
@@ -936,8 +937,11 @@ func TestSourceEmitterRejectsWireComplexityOversize(t *testing.T) {
 				if err = emitter.EndSnapshot(ctx, coverage, resourcev2.ContinuityBestEffort); err != nil {
 					t.Fatal(err)
 				}
-				change := resourcev2.SourceChange{Kind: resourcev2.SourceChangeUpsert, Observation: &observation}
-				err = emitter.Changes(ctx, []resourcev2.SourceChange{change, change}, nil)
+				changes := make([]resourcev2.SourceChange, tc.observations)
+				for i := range changes {
+					changes[i] = resourcev2.SourceChange{Kind: resourcev2.SourceChangeUpsert, Observation: &observation}
+				}
+				err = emitter.Changes(ctx, changes, nil)
 			}
 			if resourcev2.ErrorCode(err) != "RESOURCE_LIMIT" {
 				t.Fatalf("got %v, want RESOURCE_LIMIT", err)
