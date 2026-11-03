@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -92,5 +93,40 @@ func TestDomainRootAdmissionRemainsAtomic(t *testing.T) {
 		if !reflect.DeepEqual(got, original) {
 			t.Fatalf("failed decode mutated receiver: %#v", got)
 		}
+	}
+}
+
+var nativeJSONBenchmarkSink Value
+
+func BenchmarkJSONToValueWideContainers(b *testing.B) {
+	object := make(map[string]string, 1024)
+	for i := range 1024 {
+		object["key-"+strconv.Itoa(i)] = "payload"
+	}
+	array := make([]int, 4096)
+	for i := range array {
+		array[i] = i
+	}
+	for _, fixture := range []struct {
+		name  string
+		value any
+	}{
+		{"object1024", object},
+		{"array4096", map[string]any{"items": array}},
+	} {
+		data, err := json.Marshal(fixture.value)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.Run(fixture.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(data)))
+			for b.Loop() {
+				nativeJSONBenchmarkSink, err = JSONToValue(data)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
