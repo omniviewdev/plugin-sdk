@@ -15,6 +15,15 @@ Use `log` for plugin runtime/internal logging. This is separate from the log cap
 
 See [docs/internal-logging.md](docs/internal-logging.md).
 
+## Log capability readers
+
+`pkg/v1/logs` treats clean reader EOF as source completion, including follow
+requests. Completed sources do not reopen or replay their history. Genuine
+reader-open failures and read errors, including unexpected EOF, retain bounded
+reconnection. Cancellation closes readers and ends their session normally.
+Handlers must return a streaming reader promptly; do not buffer follow responses
+until EOF before returning the reader.
+
 ## Settings validation
 
 Register `settings.Setting.Validator` with a
