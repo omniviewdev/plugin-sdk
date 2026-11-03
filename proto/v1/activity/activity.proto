@@ -1,0 +1,9 @@
+syntax = "proto3";
+package omniview.activity.v1;
+option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/activity;activitypb";
+message BindRequest { uint32 version = 1; uint32 broker_id = 2; }
+message BindResponse { uint32 version = 1; }
+message ReportRequest { uint32 version = 1; string operation = 2; bytes payload = 3; }
+message ReportResponse { bytes record = 1; }
+service ActivityBinding { rpc Bind(BindRequest) returns (BindResponse); }
+service ActivityReporter { rpc Report(ReportRequest) returns (ReportResponse); }

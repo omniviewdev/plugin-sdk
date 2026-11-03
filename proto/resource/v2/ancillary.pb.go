@@ -1239,6 +1239,7 @@ type ActionStreamEvent struct {
 	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
 	Data          *Value                 `protobuf:"bytes,3,opt,name=data,proto3" json:"data,omitempty"`
 	ErrorCode     string                 `protobuf:"bytes,4,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	ActivityJson  []byte                 `protobuf:"bytes,5,opt,name=activity_json,json=activityJson,proto3" json:"activity_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1299,6 +1300,13 @@ func (x *ActionStreamEvent) GetErrorCode() string {
 		return x.ErrorCode
 	}
 	return ""
+}
+
+func (x *ActionStreamEvent) GetActivityJson() []byte {
+	if x != nil {
+		return x.ActivityJson
+	}
+	return nil
 }
 
 type ConnectionStreamEvent struct {
@@ -1450,13 +1458,14 @@ const file_proto_resource_v2_ancillary_proto_rawDesc = "" +
 	"\x06events\x18\x01 \x03(\v2#.omniview.resource.v2.ResourceEventR\x06events\"j\n" +
 	"\x13ActionStreamRequest\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x129\n" +
-	"\x06action\x18\x02 \x01(\v2!.omniview.resource.v2.ActionInputR\x06action\"\x91\x01\n" +
+	"\x06action\x18\x02 \x01(\v2!.omniview.resource.v2.ActionInputR\x06action\"\xb6\x01\n" +
 	"\x11ActionStreamEvent\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12/\n" +
 	"\x04data\x18\x03 \x01(\v2\x1b.omniview.resource.v2.ValueR\x04data\x12\x1d\n" +
 	"\n" +
-	"error_code\x18\x04 \x01(\tR\terrorCode\"\\\n" +
+	"error_code\x18\x04 \x01(\tR\terrorCode\x12#\n" +
+	"\ractivity_json\x18\x05 \x01(\fR\factivityJson\"\\\n" +
 	"\x15ConnectionStreamEvent\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12)\n" +
 	"\x10connections_json\x18\x02 \x01(\fR\x0fconnectionsJson2\xaf\x03\n" +
