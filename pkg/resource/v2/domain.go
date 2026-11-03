@@ -192,8 +192,11 @@ type NativeQueryDescriptor struct {
 // ResourceType declares identity, query space, formats, and independent support.
 // Query-only dimensions cannot be inferred from an object's identity scope.
 type ResourceType struct {
-	Type               string           `json:"type"`
-	DisplayName        string           `json:"displayName"`
+	Type        string `json:"type"`
+	DisplayName string `json:"displayName"`
+	// Description optionally explains the resource type to human or model consumers.
+	// It is descriptive metadata, not a capability or execution instruction.
+	Description        string           `json:"description,omitempty"`
 	IdentityDimensions []Dimension      `json:"identityDimensions"`
 	QueryDimensions    []Dimension      `json:"queryDimensions"`
 	Representations    []Representation `json:"representations"`

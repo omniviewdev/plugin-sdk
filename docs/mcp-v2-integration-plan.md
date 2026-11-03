@@ -278,7 +278,7 @@ Native log APIs do not necessarily support atomic incarnation preconditions. Sup
 | SDK-B5 — static discovery | Implemented: route catalog/inventory refresh; no general custom subscription RPC is promised. | W2, W4, W6 |
 | SDK-B6 — duplicate resource tools | Implemented: host-generated resource operations; obsolete Kubernetes tools removed after native parity proof. | W4, W5 |
 | SDK-C01 — typed filters | Roadmap: typed query-field/operator metadata remains separate from native query schemas. | Roadmap/P07/P13 |
-| SDK-C02 — resource description | Roadmap: optional descriptive enrichment does not block truthful capability discovery. | Roadmap |
+| SDK-C02 — resource description | Implemented in SDK: optional `ResourceType.Description` survives catalog transport. Host tool-description consumption remains separate; omission does not block discovery. | SDK #34 |
 | SDK-C03 — per-type capabilities | Implemented: consume scoped, independent create/update/delete and read capabilities. | W4 |
 | SDK-C04 — action schemas/danger | Implemented: retain supported schema assertions; hints never grant authorization. | W3, D4–D5 |
 | SDK-C05 — scale hints | Roadmap: no hint can override finite acquisition budgets. | Roadmap |
@@ -373,7 +373,7 @@ The original [plans13–19][plans] contain useful intent and historical APIs. Th
 
 | Source | Keep for this integration | Separate work; do not claim implemented |
 | --- | --- | --- |
-| Plan13 — query/filter introspection | Truthful schema/capability discovery; explicit unsupported results. | Typed query-field/operator metadata, optional descriptions/scale hints; P07/P13 ownership. |
+| Plan13 — query/filter introspection | Truthful schema/capability discovery; explicit unsupported results; optional SDK resource descriptions. | Typed query-field/operator metadata, host description consumption and scale hints; P07/P13 ownership. |
 | Plan14 — MCP runtime | Host resource path, explicit routes, admission, readiness, safe errors, cancellation. | Broader transports, subscriptions, progress/polling. Replace namespace/GVK-centric and unlimited-name assumptions. |
 | Plan15 — query execution | Provider-native knowledge and bounded acquisition. | Historical `Find`/universal plugin predicates are not current APIs. No silent filter dropping or unbounded post-filtering. |
 | Plan16 — natural-language translation | Metadata remains data; SDK never interprets prompts. | NL authoring over accepted host query contracts; not an agent-side authoritative query engine. |

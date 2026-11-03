@@ -587,7 +587,7 @@ func (v *ResourceType) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	if err := rejectNullTokens(object, "nativeAuthorityHint", "nativeQueries", "modelRepresentation"); err != nil {
+	if err := rejectNullTokens(object, "nativeAuthorityHint", "nativeQueries", "modelRepresentation", "description"); err != nil {
 		return err
 	}
 	value := ResourceType(out)
