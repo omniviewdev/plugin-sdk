@@ -97,7 +97,7 @@ func preflightSessions(sessions []*PortForwardSession, resourceResponse bool) er
 }
 
 func strictNetworkJSON(data []byte, target any) error {
-	if err := resourcev2.ValidateJSON(data); err != nil {
+	if err := resourcev2.ValidateResourceOptionsJSON(data); err != nil {
 		return err
 	}
 	if len(bytes.TrimSpace(data)) == 0 || bytes.TrimSpace(data)[0] != '{' {

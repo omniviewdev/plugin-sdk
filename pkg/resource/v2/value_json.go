@@ -105,8 +105,11 @@ type jsonReadMode uint8
 
 const (
 	jsonReadTree jsonReadMode = iota
+	jsonReadTagged
 	jsonReadValidate
 	jsonReadDomain
+	jsonReadDomainValue
+	jsonReadResourceOptions
 )
 
 func readJSON(data []byte, byteLimit int, mode jsonReadMode) (any, error) {
@@ -133,11 +136,14 @@ type jsonTreeReader struct {
 	decoder       *json.Decoder
 	mode          jsonReadMode
 	nodes, fields int
+	inResourceData bool
+	inConnection bool
+	resourceDataDepth int
 }
 
 func (r *jsonTreeReader) read(depth int) (any, error) {
 	r.nodes++
-	if depth > maxDomainDepth || r.nodes > maxDomainNodes {
+	if depth > r.depthLimit() || r.nodes > maxDomainNodes {
 		return nil, limited("JSON complexity limit")
 	}
 	t, err := r.decoder.Token()
@@ -146,7 +152,7 @@ func (r *jsonTreeReader) read(depth int) (any, error) {
 	}
 	delim, ok := t.(json.Delim)
 	if !ok {
-		if r.mode == jsonReadValidate || (r.mode == jsonReadDomain && depth > 1) {
+		if r.mode == jsonReadValidate || r.mode == jsonReadResourceOptions || ((r.mode == jsonReadDomain || r.mode == jsonReadDomainValue) && depth > 1) {
 			return nil, nil
 		}
 		return t, nil
@@ -161,11 +167,26 @@ func (r *jsonTreeReader) read(depth int) (any, error) {
 	}
 }
 
+func (r *jsonTreeReader) depthLimit() int {
+	if r.mode == jsonReadResourceOptions && r.inResourceData {
+		return taggedChildDepth*MaxValueDepth + 1 + r.resourceDataDepth
+	}
+	if r.mode == jsonReadTagged {
+		return taggedChildDepth*MaxValueDepth + 1
+	}
+	if r.mode == jsonReadDomainValue {
+		// Domain envelopes may contain tagged Values, each semantic level
+		// expanding to two JSON levels. Nested Values still validate themselves.
+		return taggedChildDepth*MaxValueDepth + maxDomainDepth + 1
+	}
+	return maxDomainDepth
+}
+
 func (r *jsonTreeReader) object(depth int) (any, error) {
 	var m map[string]any
 	var keys map[string]struct{}
 	switch {
-	case r.mode == jsonReadTree || (r.mode == jsonReadDomain && depth == 0):
+	case r.mode == jsonReadTree || r.mode == jsonReadTagged || ((r.mode == jsonReadDomain || r.mode == jsonReadDomainValue) && depth == 0):
 		m = make(map[string]any)
 	default:
 		keys = make(map[string]struct{})
@@ -190,7 +211,18 @@ func (r *jsonTreeReader) object(depth int) (any, error) {
 		if exists {
 			return nil, invalid("duplicate JSON member")
 		}
+		previous, previousConnection, previousDepth := r.inResourceData, r.inConnection, r.resourceDataDepth
+		if r.mode == jsonReadResourceOptions {
+			if depth == 0 && k == "connection" {
+				r.inConnection = true
+			}
+			if k == "resource_data" && (depth == 0 || depth == 1 && r.inConnection) {
+				r.inResourceData = true
+				r.resourceDataDepth = depth + 1
+			}
+		}
 		v, err := r.read(depth + 1)
+		r.inResourceData, r.inConnection, r.resourceDataDepth = previous, previousConnection, previousDepth
 		if err != nil {
 			return nil, err
 		}
@@ -213,7 +245,7 @@ func (r *jsonTreeReader) object(depth int) (any, error) {
 
 func (r *jsonTreeReader) array(depth int) (any, error) {
 	var a []any
-	if r.mode == jsonReadTree {
+	if r.mode == jsonReadTree || r.mode == jsonReadTagged {
 		a = []any{}
 	}
 	for r.decoder.More() {
@@ -225,7 +257,7 @@ func (r *jsonTreeReader) array(depth int) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if r.mode == jsonReadTree {
+		if r.mode == jsonReadTree || r.mode == jsonReadTagged {
 			a = append(a, v)
 		}
 	}
@@ -233,7 +265,7 @@ func (r *jsonTreeReader) array(depth int) (any, error) {
 	if err != nil || end != json.Delim(']') {
 		return nil, invalid("invalid JSON array")
 	}
-	if r.mode == jsonReadTree {
+	if r.mode == jsonReadTree || r.mode == jsonReadTagged {
 		return a, nil
 	}
 	return true, nil
@@ -244,6 +276,13 @@ func (r *jsonTreeReader) array(depth int) (any, error) {
 // the smaller body ceiling before their semantic admission.
 func ValidateJSON(data []byte) error {
 	_, err := readJSON(data, MaxMessageBytes, jsonReadValidate)
+	return err
+}
+
+// ValidateResourceOptionsJSON validates option envelopes containing a tagged
+// resource_data Value. Other fields retain the ordinary JSON depth limit.
+func ValidateResourceOptionsJSON(data []byte) error {
+	_, err := readJSON(data, MaxMessageBytes, jsonReadResourceOptions)
 	return err
 }
 
@@ -361,7 +400,7 @@ func (v *Value) UnmarshalJSON(data []byte) error {
 	if v == nil {
 		return invalid("nil value receiver")
 	}
-	raw, err := parseJSON(data)
+	raw, err := readJSON(data, MaxDocumentBytes, jsonReadTagged)
 	if err != nil {
 		return err
 	}
@@ -746,7 +785,7 @@ func taggedJSONSize(v Value, depth int, budget *jsonValueBudget) (int, error) {
 		budget.nodes++
 		budget.fields++
 	}
-	if depth+1 > MaxValueDepth || budget.nodes > MaxValueNodes || budget.fields > MaxWireFields {
+	if depth+1 > taggedChildDepth*MaxValueDepth+1 || budget.nodes > MaxValueNodes || budget.fields > MaxWireFields {
 		return 0, limited("tagged JSON structural limit")
 	}
 	size := taggedObjectBytes + quotedJSONSize(v.Kind)

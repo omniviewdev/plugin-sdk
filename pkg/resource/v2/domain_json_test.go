@@ -8,6 +8,105 @@ import (
 	"time"
 )
 
+func TestCatalogJSONSchemaDepthRemainsSymmetric(t *testing.T) {
+	catalog := Catalog{
+		Provider: "provider",
+		Revision: "revision",
+		Coverage: Coverage{Kind: "complete"},
+		Types: []ResourceType{{
+			Type: "type",
+			IdentityDimensions: []Dimension{},
+			QueryDimensions: []Dimension{},
+			Representations: []Representation{{ID: "document", Revision: "revision", Schema: SchemaBinding{State: "absent"}}},
+			Capabilities: []Capability{},
+		}},
+	}
+	base, err := json.Marshal(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		depth int
+		accepted bool
+	}{{58, true}, {59, false}} {
+		document := strings.Repeat("[", tc.depth) + "null" + strings.Repeat("]", tc.depth)
+		binding := `{"state":"available","revision":"revision","dialect":"fixture","document":` + document + `}`
+		input := strings.Replace(string(base), `{"state":"absent"}`, binding, 1)
+		if input == string(base) {
+			t.Fatal("schema binding fixture not found")
+		}
+		var decoded Catalog
+		err := json.Unmarshal([]byte(input), &decoded)
+		if !tc.accepted {
+			if ErrorCode(err) != "RESOURCE_LIMIT" {
+				t.Fatalf("schema depth %d: %v", tc.depth, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("schema depth %d: %v", tc.depth, err)
+		}
+		if _, err := json.Marshal(decoded); err != nil {
+			t.Fatalf("schema depth %d re-encode: %v", tc.depth, err)
+		}
+	}
+}
+
+func TestDomainJSONTaggedValueDepthBoundary(t *testing.T) {
+	body := Value{Kind: "string", String: "leaf"}
+	for range MaxValueDepth - 1 {
+		body = Value{Kind: "list", List: []Value{body}}
+	}
+	body = Value{Kind: "map", Map: map[string]Value{"child": body}}
+	record := codecRecord()
+	record.Body = body
+	route := AccessRoute{Connection: "route"}
+	target := ReadTarget{Route: route, Provider: record.Reference.Address.Provider, Authority: record.Reference.Address.Authority, Type: record.Reference.Address.Type, Scope: QueryScope{}, Representation: record.Representation.ID}
+	for _, tc := range []struct {
+		name string
+		input any
+		output any
+	}{
+		{"record", record, &Record{}},
+		{"source page", SourcePage{Records: []Record{record}, Count: Count{Kind: "unknown"}, Coverage: record.Coverage, Consistency: ConsistencyBestEffort}, &SourcePage{}},
+		{"native query", NativeQueryRequest{Target: target, Language: "native.v1", Query: body, PageSize: 1}, &NativeQueryRequest{}},
+		{"action", ActionRequest{Route: route, Reference: record.Reference, Action: "inspect", Input: body}, &ActionRequest{}},
+		{"mutation", MutationRequest{Route: route, Reference: record.Reference, Operation: "patch", Input: body}, &MutationRequest{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(data, tc.output); err != nil {
+				t.Fatalf("depth %d decode: %v", MaxValueDepth, err)
+			}
+			roundtrip, err := json.Marshal(tc.output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != string(roundtrip) {
+				t.Fatal("domain round trip changed JSON")
+			}
+		})
+	}
+	record.Body = Value{Kind: "map", Map: map[string]Value{"child": body}}
+	overDepth := SourcePage{Records: []Record{record}, Count: Count{Kind: "unknown"}, Coverage: record.Coverage, Consistency: ConsistencyBestEffort}
+	if _, err := json.Marshal(overDepth); ErrorCode(err) != "RESOURCE_LIMIT" {
+		t.Fatalf("over-depth source page: %v", err)
+	}
+	native := strings.Repeat("[", MaxValueDepth+1) + "null" + strings.Repeat("]", MaxValueDepth+1)
+	if err := ValidateJSON([]byte(native)); ErrorCode(err) != "RESOURCE_LIMIT" {
+		t.Fatalf("native JSON depth limit: %v", err)
+	}
+	if _, err := parseJSON([]byte(native)); ErrorCode(err) != "RESOURCE_LIMIT" {
+		t.Fatalf("schema JSON depth limit: %v", err)
+	}
+	if err := ValidateResourceOptionsJSON([]byte(`{"other":` + native + `}`)); ErrorCode(err) != "RESOURCE_LIMIT" {
+		t.Fatalf("non-resource option JSON depth limit: %v", err)
+	}
+}
+
 func TestPublicDomainJSONRejectsMalformedIdentity(t *testing.T) {
 	cases := []struct {
 		name, source string

@@ -14,7 +14,7 @@ func (o *CreateSessionOptions) UnmarshalJSON(data []byte) error {
 	if o == nil {
 		return resourceError("INVALID_REQUEST", "Nil logs options receiver.")
 	}
-	if err := resourcev2.ValidateJSON(data); err != nil {
+	if err := resourcev2.ValidateResourceOptionsJSON(data); err != nil {
 		return err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))

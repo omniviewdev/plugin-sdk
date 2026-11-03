@@ -12,7 +12,15 @@ import (
 // Root members retain presence and null information; aliased destination structs
 // avoid their own UnmarshalJSON method while retaining strict nested admission.
 func decodeDomainObject(data []byte, out any, required ...string) (map[string]any, error) {
-	raw, err := readJSON(data, MaxMessageBytes, jsonReadDomain)
+	return decodeDomainObjectMode(data, out, jsonReadDomain, required...)
+}
+
+func decodeDomainValueObject(data []byte, out any, required ...string) (map[string]any, error) {
+	return decodeDomainObjectMode(data, out, jsonReadDomainValue, required...)
+}
+
+func decodeDomainObjectMode(data []byte, out any, mode jsonReadMode, required ...string) (map[string]any, error) {
+	raw, err := readJSON(data, MaxMessageBytes, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +315,7 @@ func (v *EnumerateRequest) UnmarshalJSON(data []byte) error {
 func (v *NativeQueryRequest) UnmarshalJSON(data []byte) error {
 	type plain NativeQueryRequest
 	var out plain
-	object, err := decodeDomainObject(data, &out, "target", "language", "query")
+	object, err := decodeDomainValueObject(data, &out, "target", "language", "query")
 	if err != nil {
 		return err
 	}
@@ -326,7 +334,7 @@ func (v *NativeQueryRequest) UnmarshalJSON(data []byte) error {
 func (v *MutationRequest) UnmarshalJSON(data []byte) error {
 	type plain MutationRequest
 	var out plain
-	object, err := decodeDomainObject(data, &out, "route", "reference", "operation", "input")
+	object, err := decodeDomainValueObject(data, &out, "route", "reference", "operation", "input")
 	if err != nil {
 		return err
 	}
@@ -364,7 +372,7 @@ func (v ActionRequest) MarshalJSON() ([]byte, error) {
 func (v *ActionRequest) UnmarshalJSON(data []byte) error {
 	type plain ActionRequest
 	var out plain
-	object, err := decodeDomainObject(data, &out, "route", "action", "input")
+	object, err := decodeDomainValueObject(data, &out, "route", "action", "input")
 	if err != nil {
 		return err
 	}
@@ -507,7 +515,7 @@ func (v *Count) UnmarshalJSON(data []byte) error {
 func (v *Record) UnmarshalJSON(data []byte) error {
 	type plain Record
 	var out plain
-	object, err := decodeDomainObject(data, &out, "reference", "body", "representation", "coverage")
+	object, err := decodeDomainValueObject(data, &out, "reference", "body", "representation", "coverage")
 	if err != nil {
 		return err
 	}
@@ -526,7 +534,7 @@ func (v *Record) UnmarshalJSON(data []byte) error {
 func (v *SourcePage) UnmarshalJSON(data []byte) error {
 	type plain SourcePage
 	var out plain
-	object, err := decodeDomainObject(data, &out, "records", "count", "coverage", "consistency")
+	object, err := decodeDomainValueObject(data, &out, "records", "count", "coverage", "consistency")
 	if err != nil {
 		return err
 	}
@@ -728,5 +736,12 @@ func (v SourcePage) MarshalJSON() ([]byte, error) {
 	if out.Records == nil {
 		out.Records = []Record{}
 	}
-	return marshalDomainJSON(out)
+	data, err := json.Marshal(out)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := readJSON(data, MaxMessageBytes, jsonReadDomainValue); err != nil {
+		return nil, err
+	}
+	return data, nil
 }
