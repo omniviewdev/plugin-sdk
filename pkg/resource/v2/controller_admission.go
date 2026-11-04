@@ -196,17 +196,29 @@ func (c *Controller[T]) catalogCapabilities(ctx context.Context, route AccessRou
 		return err
 	}
 	caps := make([]Capability, 0, len(typ.Capabilities))
+	// Validate lazily in capability/registration order so unsupported handlers do
+	// not expose scope errors, and the first supported invalid scope still wins.
+	validated := make([]bool, len(registrations))
 	for _, capability := range typ.Capabilities {
-		for _, registration := range registrations {
-			candidate, ok, candidateErr := registeredCapability(capability, registration, typ.QueryDimensions)
-			if candidateErr != nil {
-				return candidateErr
+		for i, registration := range registrations {
+			if !handles(registration, capability.Operation) {
+				continue
 			}
+			if !validated[i] {
+				if registration.Scope != nil {
+					if err := ValidateScope(registration.Scope, typ.QueryDimensions); err != nil {
+						return err
+					}
+				}
+				validated[i] = true
+			}
+			scope, ok := intersectScope(capability.Scope, registration.Scope)
+			candidate := Capability{Operation: capability.Operation, Scope: scope, Guarantee: capability.Guarantee}
 			if !ok {
 				continue
 			}
 			if !slices.ContainsFunc(caps, func(previous Capability) bool {
-				return reflect.DeepEqual(previous, candidate)
+				return equalCatalogCapability(previous, candidate)
 			}) {
 				caps = append(caps, candidate)
 			}
@@ -216,21 +228,26 @@ func (c *Controller[T]) catalogCapabilities(ctx context.Context, route AccessRou
 	return nil
 }
 
-func registeredCapability[T any](
-	capability Capability,
-	registration Registration[T],
-	dimensions []Dimension,
-) (Capability, bool, error) {
-	if !handles(registration, capability.Operation) {
-		return Capability{}, false, nil
+// equalCatalogCapability preserves structural equality, including slice order,
+// nil slices, and pointers to nil versus empty value slices.
+func equalCatalogCapability(a, b Capability) bool {
+	if a.Operation != b.Operation || a.Guarantee != b.Guarantee ||
+		(a.Scope == nil) != (b.Scope == nil) || len(a.Scope) != len(b.Scope) {
+		return false
 	}
-	if registration.Scope != nil {
-		if err := ValidateScope(registration.Scope, dimensions); err != nil {
-			return Capability{}, false, err
+	for i, ac := range a.Scope {
+		bc := b.Scope[i]
+		if ac.Dimension != bc.Dimension || ac.Match != bc.Match ||
+			(ac.Values == nil) != (bc.Values == nil) {
+			return false
+		}
+		if ac.Values != nil {
+			if (*ac.Values == nil) != (*bc.Values == nil) || !slices.Equal(*ac.Values, *bc.Values) {
+				return false
+			}
 		}
 	}
-	scope, ok := intersectScope(capability.Scope, registration.Scope)
-	return Capability{Operation: capability.Operation, Scope: scope, Guarantee: capability.Guarantee}, ok, nil
+	return true
 }
 
 // ScopeForAddress projects validated identity onto declared query dimensions.
