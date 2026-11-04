@@ -281,6 +281,16 @@ numbers decode as `float64`, objects as `map[string]any`, arrays as `[]any`, and
 JSON null as `nil`. Malformed or unsupported wire payloads return decoding errors;
 RPC status errors propagate unchanged.
 
+## Activity transport budgets
+
+Activity reporter requests allow 256 KiB of JSON. Responses allow 1 MiB so that
+persisted source data, later presentation updates, and host-owned record metadata
+do not compete for the request budget. All reporter operations use these bounds.
+Activity presentations additionally allow at most 128 KiB of encoded JSON,
+including JSON/HTML escaping, alongside their existing field limits. Shared
+validation rejects oversized presentations before reporter calls or stream sends;
+stream receivers enforce the same encoded limit.
+
 
 ## Releasing the Go module
 

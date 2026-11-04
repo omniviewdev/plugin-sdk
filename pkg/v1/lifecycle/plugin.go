@@ -6,6 +6,7 @@ import (
 	"github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 
+	activitypb "github.com/omniviewdev/plugin-sdk/proto/v1/activity"
 	lifecyclepb "github.com/omniviewdev/plugin-sdk/proto/v1/lifecycle"
 )
 
@@ -23,6 +24,7 @@ type Plugin struct {
 func (p *Plugin) GRPCServer(broker *plugin.GRPCBroker, s *grpc.Server) error {
 	p.Impl.broker = broker
 	lifecyclepb.RegisterPluginLifecycleServer(s, p.Impl)
+	activitypb.RegisterActivityBindingServer(s, &activityBindingServer{owner: p.Impl})
 	return nil
 }
 
@@ -34,5 +36,6 @@ func (p *Plugin) GRPCClient(
 ) (any, error) {
 	client := NewClient(lifecyclepb.NewPluginLifecycleClient(c))
 	client.broker = broker
+	client.activityClient = activitypb.NewActivityBindingClient(c)
 	return client, nil
 }

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 
@@ -297,13 +298,23 @@ func (s *ancillaryServer) sendActionEvent(
 		return invalid("action event before native readiness")
 	}
 	out := &resourcepb.ActionStreamEvent{Version: resourcev2.WireVersion, Type: v.Type}
+	if v.Activity != nil {
+		if err := resourcev2.ValidateActivityPresentation(*v.Activity); err != nil {
+			return err
+		}
+		payload, err := json.Marshal(v.Activity)
+		if err != nil {
+			return err
+		}
+		out.ActivityJson = payload
+	}
 	if v.Type == "" {
 		return invalid("missing action event type")
 	}
 	if v.Error != nil {
 		out.ErrorCode = resourcev2.ErrorCode(v.Error)
 	}
-	if (v.Type == "progress" || v.Type == actionEventOutput) && v.Data == nil {
+	if (v.Type == "progress" && v.Data == nil && v.Activity == nil) || (v.Type == actionEventOutput && v.Data == nil) {
 		return invalid("action data required")
 	}
 	if v.Data != nil {
@@ -387,10 +398,23 @@ func decodeActionEvent(p *resourcepb.ActionStreamEvent, ready *bool) (resourcev2
 	if p.Type == "" {
 		return resourcev2.ActionEvent{}, invalid("missing action event type")
 	}
-	if (p.Type == "progress" || p.Type == actionEventOutput) && p.Data == nil {
+	if (p.Type == "progress" && p.Data == nil && len(p.ActivityJson) == 0) || (p.Type == actionEventOutput && p.Data == nil) {
 		return resourcev2.ActionEvent{}, invalid("action data required")
 	}
 	v := resourcev2.ActionEvent{Type: p.Type}
+	if len(p.ActivityJson) != 0 {
+		if len(p.ActivityJson) > resourcev2.MaxActivityPresentationBytes {
+			return resourcev2.ActionEvent{}, invalid("activity presentation exceeds limit")
+		}
+		var presentation resourcev2.ActivityPresentation
+		if err := json.Unmarshal(p.ActivityJson, &presentation); err != nil {
+			return resourcev2.ActionEvent{}, invalid("invalid activity presentation")
+		}
+		if err := resourcev2.ValidateActivityPresentation(presentation); err != nil {
+			return resourcev2.ActionEvent{}, err
+		}
+		v.Activity = &presentation
+	}
 	if p.Data != nil {
 		data, err := resourcev2.FromProtoValue(p.Data)
 		if err != nil {

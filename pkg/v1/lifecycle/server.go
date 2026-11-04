@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/hashicorp/go-plugin"
+	"github.com/omniviewdev/plugin-sdk/pkg/activity"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/hostconnections"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -28,6 +29,7 @@ type Server struct {
 	Capabilities       []string
 	ProfilingStatus    func() profiling.Status
 	HostConnections    *hostconnections.Binding
+	Activities         *activity.Binding
 	broker             *plugin.GRPCBroker
 	mu                 sync.Mutex
 	bound              bool

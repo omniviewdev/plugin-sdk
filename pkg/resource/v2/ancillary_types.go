@@ -181,15 +181,17 @@ type ActionDescriptor struct {
 }
 
 // ActionEvent carries native readiness or subsequent action output.
-// Emit exactly one ready before progress/output; both require Data. Return setup
-// errors before readiness rather than claiming native establishment.
+// Emit exactly one ready before progress/output; output requires Data, while
+// progress may carry Data, Activity, or both.
+// Return setup errors before readiness rather than claiming native establishment.
 // Errors use typed public-safe classification, never raw diagnostics in Data.
-// Producers must not mutate nested Data after sending or close caller-owned
-// channels; observe cancellation while sending and return to signal completion.
+// Producers must not mutate nested Data or Activity after sending or close
+// caller-owned channels; observe cancellation while sending and return to complete.
 type ActionEvent struct {
-	Type  string                  `json:"type"`
-	Data  *Value                  `json:"data,omitempty"`
-	Error *ResourceOperationError `json:"error,omitempty"`
+	Type     string                  `json:"type"`
+	Data     *Value                  `json:"data,omitempty"`
+	Error    *ResourceOperationError `json:"error,omitempty"`
+	Activity *ActivityPresentation   `json:"activity,omitempty"`
 }
 
 // HealthStatus describes observed resource health, not connection readiness.

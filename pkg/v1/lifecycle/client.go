@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/go-plugin"
 	rp "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/hostconnections"
+	activitypb "github.com/omniviewdev/plugin-sdk/proto/v1/activity"
 	"google.golang.org/grpc"
 
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -18,8 +19,9 @@ import (
 
 // Client wraps the generated gRPC client for the PluginLifecycle service.
 type Client struct {
-	client lifecyclepb.PluginLifecycleClient
-	broker *plugin.GRPCBroker
+	client         lifecyclepb.PluginLifecycleClient
+	broker         *plugin.GRPCBroker
+	activityClient activitypb.ActivityBindingClient
 }
 
 // NewClient creates a properly initialized lifecycle Client.

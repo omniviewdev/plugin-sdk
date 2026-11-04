@@ -17,6 +17,30 @@ You will:
 
 This example has no cloud service, Kubernetes dependency, client lifecycle, enumeration, writes, or watch stream. `native` means this provider's JSON representation.
 
+### Report process-owned activity
+
+Use `plugin.Activities()` to obtain an `activity.Reporter`. Call `BeginTask`,
+`ReportTask`, and `FinishTask` for real work; use `PublishMessage`, `UpsertAlert`,
+and `ResolveAlert` for independent observations. These methods return host-owned
+records. Calls return an unavailable error until the host binds the reporting
+service. Do not fabricate success when reporting fails.
+
+The host calls `lifecycle.Client.ServeActivities(ctx, reporter)` once for each
+plugin process and invokes the returned stop function when that process retires.
+The context bounds negotiation, not task execution. This backchannel is separate
+from delegated host connections and does not need a delegation token. The host
+injects plugin identity and enforces ownership; payload identity is not authority.
+Old SDKs return gRPC `Unimplemented` during activity negotiation.
+
+Resource action streams may attach `*resourcev2.ActivityPresentation` to
+`ActionEvent.Activity`. Presentation is validated separately from business
+`Data`; a progress event may carry presentation alone, while output still needs
+its typed business value. Presentations contain plain text, typed navigation or
+resource action intents, metrics, and progress, never callbacks or executable
+URLs. Unit counts and bounded step indices both use decimal strings.
+Hiding a notification does not cancel work. Only report terminal cancellation
+after the producer observes that outcome.
+
 ## Prerequisites
 
 - A checkout of this repository.

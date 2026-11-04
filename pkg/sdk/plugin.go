@@ -14,6 +14,7 @@ import (
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
 
+	"github.com/omniviewdev/plugin-sdk/pkg/activity"
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
 	"github.com/omniviewdev/plugin-sdk/pkg/profiling"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -56,6 +57,7 @@ type Plugin struct {
 	runtimeBackend  *logging.HCLBackend
 	profiler        *profiling.Service
 	hostConnections *hostconnections.Binding
+	activities      activity.Binding
 	// meta holds metadata for the plugin, found inside of the plugin.yaml
 	// file in the same directory as the plugin.
 	meta config.PluginMeta
@@ -250,6 +252,7 @@ func (p *Plugin) Serve() {
 		p.hostConnections = &hostconnections.Binding{}
 	}
 	defer p.hostConnections.Close()
+	defer p.activities.Close()
 	defer p.profiler.Close()
 
 	telemetryProvider, err := telemetry.InitFromEnv()
@@ -293,9 +296,16 @@ func (p *Plugin) registerLifecycle() {
 			SDKProtocolVersion: int32(version),
 			Capabilities:       caps,
 			HostConnections:    p.hostConnections,
+			Activities:         &p.activities,
 			ProfilingStatus:    p.profilingStatus,
 		},
 	}
+}
+
+// Activities returns the process-scoped reporter. Calls fail until the host binds
+// the callback service; reporting never grants access to delegated connections.
+func (p *Plugin) Activities() activity.Reporter {
+	return &p.activities
 }
 
 // RegisterResourcePlugin registers the resource-v2 provider. The catalog is

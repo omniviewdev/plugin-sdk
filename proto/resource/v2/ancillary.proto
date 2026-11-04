@@ -149,6 +149,7 @@ message ActionStreamEvent {
   string type = 2;
   Value data = 3;
   string error_code = 4;
+  bytes activity_json = 5;
 }
 
 message ConnectionStreamEvent {
