@@ -601,8 +601,7 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	}
 
 	// Watch for dynamic source changes BEFORE the blocking fanOutSources call,
-	// because fanOutSources blocks until all source goroutines complete (which
-	// for Follow=true sessions, only happens when the context is cancelled).
+	// because fanOutSources blocks until all source goroutines complete.
 	if opts.Options.Follow && result.Events != nil {
 		ss.sourceWg.Go(func() {
 			m.watchSourceEvents(ss, h, result.Events, logger)
@@ -858,7 +857,9 @@ func (m *Manager) streamWithReconnect(
 			return
 		}
 
-		if !req.Follow && (err == nil || errors.Is(err, io.EOF)) {
+		// Clean EOF completes a source even in follow mode. Reopening would replay
+		// the unchanged history request; only acquisition or read errors retry.
+		if err == nil || errors.Is(err, io.EOF) {
 			return
 		}
 
