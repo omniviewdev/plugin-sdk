@@ -84,7 +84,7 @@ func TestCatalogRegistrationScopeValidationOrder(t *testing.T) {
 	}
 	err := c.catalogCapabilities(context.Background(), controllerTarget().Route, &typ)
 	want := ValidateScope(cfg.Registrations[1].Scope, typ.QueryDimensions)
-	if err == nil || want == nil || err.Error() != want.Error() {
+	if err == nil || want == nil || ErrorCode(err) != ErrorCode(want) {
 		t.Fatalf("scope error order changed: got %v, want %v", err, want)
 	}
 }
@@ -120,5 +120,38 @@ func TestCatalogQualificationRefreshesRegistrationScope(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("registration resolver calls: got %d, want 2", calls)
+	}
+}
+
+func TestCatalogCapabilityEqualityMatchesStructuralEquality(t *testing.T) {
+	var nilValues []string
+	emptyValues := []string{}
+	east := []string{"east"}
+	sameEast := []string{"east"}
+	west := []string{"west"}
+	ordered := []string{"east", "west"}
+	reversed := []string{"west", "east"}
+	capabilities := []Capability{
+		{Operation: OperationGet},
+		{Operation: OperationGet, Scope: QueryScope{}},
+		{Operation: OperationDelete},
+		{Operation: OperationGet, Guarantee: "unknown"},
+		{Operation: OperationGet, Scope: QueryScope{{Dimension: "region", Match: ScopeAny}}},
+		{Operation: OperationGet, Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf}}},
+		{Operation: OperationGet, Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &nilValues}}},
+		{Operation: OperationGet, Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &emptyValues}}},
+		{Operation: OperationGet, Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &east}}},
+		{Operation: OperationGet, Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &sameEast}}},
+		{Operation: OperationGet, Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &west}}},
+		{Operation: OperationGet, Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &ordered}}},
+		{Operation: OperationGet, Scope: QueryScope{{Dimension: "region", Match: ScopeOneOf, Values: &reversed}}},
+		{Operation: OperationGet, Scope: QueryScope{{Dimension: "zone", Match: ScopeOneOf, Values: &east}}},
+	}
+	for i, a := range capabilities {
+		for j, b := range capabilities {
+			if got, want := equalCatalogCapability(a, b), reflect.DeepEqual(a, b); got != want {
+				t.Fatalf("capabilities[%d] and capabilities[%d]: got %v, want %v", i, j, got, want)
+			}
+		}
 	}
 }
