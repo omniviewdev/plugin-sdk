@@ -19,8 +19,9 @@ import (
 
 // PluginClient forwards metric queries and streams to a remote plugin.
 type PluginClient struct {
-	client metricpb.MetricPluginClient
-	log    logging.Logger
+	client            metricpb.MetricPluginClient
+	log               logging.Logger
+	resourceSetClient metricpb.MetricResourceSetClient
 }
 
 var _ Provider = (*PluginClient)(nil)

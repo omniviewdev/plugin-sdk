@@ -28,6 +28,12 @@ type PluginOpts struct {
 	// StreamFunc is the optional function that streams metrics. If nil,
 	// the SDK will poll QueryFunc at the requested interval.
 	StreamFunc StreamFunc `json:"-"`
+
+	// ResourceSetProvider executes explicit finite resource batches.
+	ResourceSetProvider ResourceSetProvider     `json:"-"`
+	Configuration       ProviderConfiguration   `json:"-"`
+	Catalog             MetricCatalogProvider   `json:"-"`
+	Discovery           MetricDiscoveryProvider `json:"-"`
 }
 
 // QueryFunc queries metrics for a resource.

@@ -1,0 +1,27 @@
+syntax = "proto3";
+package omniview.sdk.metric.v1;
+option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/metric;metricpb";
+
+// Versioned strict JSON preserves resourcev2 canonical Value encoding. Unknown
+// fields, duplicate keys, oversized inputs and invalid domain values are errors.
+message MetricContractRequest {
+ uint32 version = 1;
+ bytes json = 2;
+ // Saved provider identity is independent of a resource registry profile.
+ string provider_connection_id = 3;
+}
+message MetricContractResponse {
+ uint32 version = 1;
+ bytes json = 2;
+}
+service MetricResourceSet {
+ rpc QueryResources(MetricContractRequest) returns (MetricContractResponse);
+ rpc GetMetricDefinitions(MetricContractRequest) returns (MetricContractResponse);
+ rpc GetProviderConnections(MetricContractRequest) returns (MetricContractResponse);
+ rpc SaveProviderConnection(MetricContractRequest) returns (MetricContractResponse);
+ rpc DeleteProviderConnection(MetricContractRequest) returns (MetricContractResponse);
+ rpc GetDataSources(MetricContractRequest) returns (MetricContractResponse);
+ rpc TestProviderConnection(MetricContractRequest) returns (MetricContractResponse);
+ rpc ValidateMetricDefinition(MetricContractRequest) returns (MetricContractResponse);
+ rpc DiscoverMetricLabels(MetricContractRequest) returns (MetricContractResponse);
+}

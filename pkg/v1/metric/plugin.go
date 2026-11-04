@@ -52,6 +52,7 @@ func (p *Plugin) BindConnectionContextProvider(provider resourcev2.ConnectionCon
 // GRPCServer registers the metric service on the supplied server.
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {
 	RegisterMetricPluginServer(s, &PluginServer{Impl: p.Impl})
+	metricpb.RegisterMetricResourceSetServer(s, &resourceSetServer{impl: p.Impl})
 	return nil
 }
 
@@ -62,8 +63,9 @@ func (p *Plugin) GRPCClient(
 	c *grpc.ClientConn,
 ) (any, error) {
 	return &PluginClient{
-		client: metricpb.NewMetricPluginClient(c),
-		log:    logging.Default().Named("metric.plugin.client"),
+		client:            metricpb.NewMetricPluginClient(c),
+		log:               logging.Default().Named("metric.plugin.client"),
+		resourceSetClient: metricpb.NewMetricResourceSetClient(c),
 	}, nil
 }
 
@@ -86,6 +88,10 @@ func RegisterPlugin(
 		opts.QueryFunc,
 		opts.StreamFunc,
 	)
+	impl.resourceSetProvider = opts.ResourceSetProvider
+	impl.configuration = opts.Configuration
+	impl.catalog = opts.Catalog
+	impl.discovery = opts.Discovery
 
 	p.RegisterCapability("metric", &Plugin{Impl: impl})
 	return nil
