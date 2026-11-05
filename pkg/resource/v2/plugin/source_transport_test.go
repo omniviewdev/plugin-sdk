@@ -1114,13 +1114,13 @@ func TestSourceBindingMismatchTCP(t *testing.T) {
 func TestSourceFeatureAndCapabilityAdmissionTCP(t *testing.T) {
 	legacy := resourcev2.FeatureSet{Traits: []resourcev2.Feature{"bestEffortUpdates"}}
 	for _, tc := range []struct {
-		name string
-		provider transportSourceProvider
-		mode string
+		name     string
+		provider *transportSourceProvider
+		mode     string
 	}{
-		{"legacy snapshot", transportSourceProvider{features: &legacy}, resourcev2.SourceModeSnapshot},
-		{"legacy updates", transportSourceProvider{features: &legacy}, resourcev2.SourceModeSnapshotAndUpdates},
-		{"missing update capability", transportSourceProvider{noSourceUpdates: true}, resourcev2.SourceModeSnapshotAndUpdates},
+		{"legacy snapshot", &transportSourceProvider{features: &legacy}, resourcev2.SourceModeSnapshot},
+		{"legacy updates", &transportSourceProvider{features: &legacy}, resourcev2.SourceModeSnapshotAndUpdates},
+		{"missing update capability", &transportSourceProvider{noSourceUpdates: true}, resourcev2.SourceModeSnapshotAndUpdates},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.provider.callback = func(context.Context, resourcev2.SourceEmitter) error {
@@ -1128,7 +1128,7 @@ func TestSourceFeatureAndCapabilityAdmissionTCP(t *testing.T) {
 				return nil
 			}
 			server := grpc.NewServer(ServerOptions()...)
-			RegisterServer(server, &tc.provider)
+			RegisterServer(server, tc.provider)
 			client := sourceTCP(t, server)
 			r := transportSourceRequest()
 			r.Mode = tc.mode
