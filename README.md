@@ -166,24 +166,24 @@ The shared `pkg/profiling` package also serves host pprof. Requests require the 
 `state_isolation`. Missing metadata means isolation support is **unverified**.
 Its v1 fields are `schema_version: 1`, `capability: state-root-v1`,
 `sdk_module: github.com/omniviewdev/plugin-sdk`, a fully resolved lowercase
-`sdk_revision` known-fixed capability-base commit hash, `binary_sha256`, and
-optional `sdk_source_sha256` identifying the exact selected SDK source snapshot.
+`sdk_revision` checkout commit hash observed by the builder, `binary_sha256`,
+and optional `sdk_source_sha256` identifying the exact selected SDK source snapshot.
 
 A trusted host-owned builder calls
 `config.BuildStateIsolationProvenance(binaryPath, sdkRevision, sdkSourceSHA256)`
-**after** validating the selected SDK module/path, known-fixed reviewed baseline,
-and actual build inputs. For live editable SDK worktrees, it computes a stable
-lowercase SHA-256 source snapshot before/after the build and rejects a changing
-snapshot. Dirty feature edits are supported without requiring a commit per edit;
-the reviewed commit establishes the capability base and the source digest
-identifies the exact editable build. The SDK does not define a second source-tree
-hashing algorithm: the trusted host builder owns that snapshot contract.
+**after** validating the selected SDK module/path and actual build inputs. It
+records the selected checkout's resolved commit. For live editable SDK
+worktrees, it computes a stable lowercase SHA-256 source snapshot before and
+after the build and rejects a changing snapshot. Dirty edits are supported
+without requiring a commit per edit; the source digest identifies the exact
+editable build. The SDK does not define a second source-tree hashing algorithm:
+the trusted host builder owns that snapshot contract.
 
 The host stores the attestation and independent expected source digest in its
 owned artifact/install record, or accepts independently authenticated registry
 provenance. Before launch, it calls
 `provenance.VerifyArtifact(binaryPath, expectedSDKRevision, expectedSDKSourceSHA256)`
-to check capability, schema, module, trusted capability base, source snapshot,
+to check capability, schema, module, expected SDK checkout commit, source snapshot,
 and exact artifact bytes without executing the plugin. A supplied snapshot must
 be lowercase 64-hex and match the trusted expectation exactly. Empty source
 digests are permitted only when both expectation and attestation are empty for a

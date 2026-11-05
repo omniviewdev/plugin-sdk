@@ -24,16 +24,17 @@ type StateIsolationProvenance struct {
 	SchemaVersion int    `json:"schema_version" yaml:"schema_version"`
 	Capability    string `json:"capability"     yaml:"capability"`
 	SDKModule     string `json:"sdk_module"     yaml:"sdk_module"`
+	// SDKRevision identifies the selected SDK checkout commit observed by the builder.
 	SDKRevision   string `json:"sdk_revision"   yaml:"sdk_revision"`
 	// SDKSourceSHA256 identifies the trusted builder's exact selected working-tree
-	// snapshot, permitting live feature edits above the reviewed capability base.
+	// snapshot, including live edits to that checkout.
 	// Empty is reserved for immutable, clean, commit-only trusted builds.
 	SDKSourceSHA256 string `json:"sdk_source_sha256,omitempty" yaml:"sdk_source_sha256,omitempty"`
 	BinarySHA256    string `json:"binary_sha256"               yaml:"binary_sha256"`
 }
 
 // BuildStateIsolationProvenance is called only by a trusted build pipeline after
-// validating the selected SDK module/source and known-fixed capability base.
+// validating the selected SDK module/source and observing its checkout commit.
 // For editable sources the caller supplies the same stable source snapshot digest
 // observed before and after building. Hashes do NOT prove SDK source inclusion.
 func BuildStateIsolationProvenance(binaryPath, sdkRevision, sdkSourceSHA256 string) (*StateIsolationProvenance, error) {
@@ -58,7 +59,7 @@ func BuildStateIsolationProvenance(binaryPath, sdkRevision, sdkSourceSHA256 stri
 }
 
 // VerifyArtifact binds a trusted attestation to artifact bytes, the host's
-// expected known-fixed SDK capability base, and its expected source snapshot.
+// expected SDK checkout commit, and its expected source snapshot.
 // An empty expected snapshot accepts only a commit-only attestation; source-bound
 // attestations cannot downgrade. It never starts the plugin, authenticates a
 // registry/source, proves source inclusion, or trusts plugin.yaml.

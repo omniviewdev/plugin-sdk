@@ -164,4 +164,4 @@ Retirement or timeout can reject a result after a native side effect has started
 
 The tools service uses only `omniview.sdk.tools.v2` and contract version 2. Existing Go utility package paths remain unchanged; the service namespace is the wire contract.
 
-Older metadata-only peers do not receive a fallback call. Upgrade the SDK and host consumer together through the reviewed candidate cohort. Do not assume an older published SDK tag contains these APIs.
+Older metadata-only peers do not receive a fallback call. Upgrade the SDK and host consumer together using their declared dependencies. Do not assume an older published SDK tag contains these APIs.
