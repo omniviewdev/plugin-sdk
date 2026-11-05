@@ -195,13 +195,13 @@ Ownership below names repository roles, not assigned people. Source writers must
 - Keep both host insertions: `resourceController.SetConnectionChangeHook(metricController.BeginConnectionChange)` and tools controller construction. Preserve resource-v2 and tools loader registration.
 - Reconcile Kubernetes registration as W5 describes. Report historical conflict receipts as historical. Issue62’s prose baseline and command output disagree; no fresh conflict count is claimed here.
 - Record both committed dependencies and effective managed replacements. Relay requires SDK `v0.8.0`/Go `1.26.0`; committed host-v2 and Kubernetes-v2 require SDK `v0.7.1`/Go `1.25.0`. Existing tags do not constitute resource-v2 acceptance.
-- Decide CI trust policy explicitly. [Alex’s release-gate explanation][ci-comment] says PR218 gives up the separately reviewed isolation-core baseline in CI, replacing it with release-tag publisher trust. That is not merely a version bump.
-- Reconcile resolver, both workflows, reviewed candidate path, source cohort, Kubernetes gitlink, cache fixtures, and toolchain as one reviewable integration. Candidate testing must not force publication of an unaccepted SDK.
-- Only after explicit future API acceptance and release authorization: select publication versions, publish compatible artifacts, and update downstream modules/checksums/cohort. This plan selects no next tag.
+- CI uses declared dependencies rather than a separate source approval gate. Ordinary host builds use `go.mod` and `go.sum`.
+- Workspace E2E resolves the SDK commit from the host `go.mod`, uses UI packages from the host lockfile, and uses Kubernetes from the host gitlink. Managed builds observe the selected SDK checkout commit and source digest.
+- Publication remains a separate release decision; update downstream declared dependencies when publishing compatible artifacts. This plan selects no next tag.
 - Name the relay as a consumer of existing resource/invocation seams in the roadmap. Do not retroactively mark query, history, diagnostics, or autonomous writes implemented.
 - Link later P01 acceptance where historical holds remain. Do not reopen accepted foundation decisions or require an upstream CLA/PR that later acceptance made optional.
 
-**Accept when:** an explicitly authorized candidate cohort can be tested without misleading release claims; release validation resolves the authorized published SDK and exact plugin cohort; isolation-core trust has an explicit approval record; managed workspaces retain their replacements.
+**Accept when:** integration checks use the declared dependency graph, workspace builds record the selected SDK identity, and managed workspaces retain their replacements.
 
 ## Contract decisions
 
@@ -218,7 +218,7 @@ The user accepted the SDK direction. The table below remains the implementation 
 | D7 — Results | Tagged resource envelope and citations versus unchanged custom JSON results; truncation/count/cursor semantics. |
 | D8 — Actions and logs | Type-only action target contract; streaming handle owner/cancel rules; finite logs selection/budgets; issue23 session-generation ownership. |
 | D9 — Discovery readiness | Usable-only versus status-bearing unavailable routes; unsupported readiness for native work; `Listed` zero-connection behavior. |
-| D10 — CI trust and publication | Independent reviewed isolation baseline versus tag-derived trust; approved candidate path; later publication authorization. |
+| D10 — CI and publication | Declared dependencies define CI inputs; publication remains a separate release decision. |
 | D11 — Confirmation windows | Visible workspace activation versus eligible panel ownership; truthful principal/target display. |
 | D12 — Legacy tool-peer admission | Negotiate the explicit-route/native-admission tool contract and reject unsupported peers; a new protobuf field alone does not establish support. |
 
@@ -230,7 +230,7 @@ The user accepted the SDK direction. The table below remains the implementation 
 - **Native ownership:** connection-scoped handlers use the existing bound connection-context provider and registry. Missing admission support fails closed; no tools-owned client registry or fabricated resource catalog is introduced. Native-client reuse remains the adapter's responsibility through its existing typed controller.
 - **Lifecycle:** handler execution and accepted unary results remain fenced by the leased generation. A callback lease ends on return; this does not redefine asynchronous log/session ownership.
 - **Wire cutover:** migrate SDK transport and host custom-tool callers together. Do not reconstruct missing body routes from metadata as a compatibility fallback.
-- **Candidate composition:** port the MCP feature onto an isolated resource-v2 host branch, preserving the metric hook and current resource services. Keep the separately reviewed CI isolation baseline; do not import the release-tag trust replacement.
+- **Candidate composition:** port the MCP feature onto an isolated resource-v2 host branch, preserving the metric hook and current resource services. CI uses declared dependencies without a separate isolation baseline gate.
 - **Historical scope:** authorization/catalog generation, annotation/schema expansion, result envelopes, UI recovery, and remaining lifecycle items were left for later implementation waves. A working candidate composition alone was not production acceptance.
 
 Do not automatically retry writes after retirement, timeout, or post-dispatch rejection. A rejected result is not proof that a native side effect rolled back.
@@ -257,7 +257,7 @@ The user authorized completing the remaining integration before any PR merges. T
 | Debug write outcomes | Kubernetes debug creation uses the existing public-safe `PROVIDER_ERROR` code for uncertain native outcomes. Preserve the bound Pod UID and reserved container identity for inspection; never infer rollback or automatically submit again. |
 | Installation ownership | Route and retire host controllers by installation ID. Keep native handler selectors and resource references on their canonical provider and type, including alternate plugin installations. |
 | Confirmation windows | Restore and focus the host-owned main window before prompting. Mount the consent provider above both workspace and panel shells; a window does not become an agent principal. Actual native visibility remains a separate acceptance check. |
-| CI and publication | Preserve independent isolation review and managed replacements. Test exact candidate source revisions without publishing, selecting release tags, or treating old SDK tags as the new API. |
+| CI and publication | Use declared dependencies and managed replacements. Workspace builds record the observed SDK checkout and source digest. |
 
 Native log APIs do not necessarily support atomic incarnation preconditions. Supplied reference/body validation remains mandatory, but documentation must not invent a stronger native guarantee or introduce a hidden prerequisite Get.
 
@@ -270,7 +270,7 @@ Native log APIs do not necessarily support atomic incarnation preconditions. Sup
 | Source item | Disposition | Work |
 | --- | --- | --- |
 | SDK-A1 — existing tools inheritance | Implemented: preserve non-resource tools through the negotiated v2 transport. | W2, W8 |
-| SDK-A2 — release/module pins | Publication hold: exact source cohorts replace guessed release versions for candidate verification. | W8 |
+| SDK-A2 — release/module pins | Publication hold: downstream modules declare their SDK dependencies; workspace builds record the selected checkout identity. | W8 |
 | SDK-B1 — connection selection | Implemented: explicit body route, trusted profile, shared native lease. | W1, W2 |
 | SDK-B2 — action/tool vocabulary and schemas | Implemented: distinct scopes, optional safety hints, independently validated restricted schemas. | W3, D4–D5 |
 | SDK-B3 — errors | Implemented: classified fixed public-safe custom errors; diagnostic causes stay local. | W3 |
@@ -297,7 +297,7 @@ Source: [full SDK audit][sdk-issue]. C numbers follow its feature-table row orde
 
 | Source item | Disposition | Work |
 | --- | --- | --- |
-| HOST-A — composition conflict/cohort | Implemented source integration: retain main window/performance features and the resource-v2 metric hook; final immutable pins remain an integration gate. | W8 |
+| HOST-A — composition conflict/cohort | Implemented source integration: retain main window/performance features and the resource-v2 metric hook; integration uses declared dependencies. | W8 |
 | HOST-B1 — invocation boundary | Implemented: host-issued agent origin, one authorizer, fresh bound consent, and correlated redacted audit events. | W1 |
 | HOST-B2 — readiness | Implemented: native generation admission without fabricated universal lifecycle requirements. | W1, D9 |
 | HOST-B3 — generated resource tools | Implemented: actual host service dispatch and native five-tool parity proof. | W4, W5 |
@@ -356,7 +356,7 @@ These are [review5706913275 notes][relay-review], not extra inline comments or p
 | N5 — pending snapshot failure lacks recovery | Implemented: visible failure and explicit reload/retry. | W7 |
 | N6 — replacement-path public errors are not uniformly safe | Implemented: preserve resource-wire sanitization and repair producers and async logs separately. | W3, W5 |
 | N7 — argument extraction changes numeric values | Implemented: exact custom JSON tokens and canonical resource scalar kinds. | W3, W4 |
-| N8 — CI change alters isolation trust | Implemented policy: keep the independently reviewed isolation minimum and separate immutable candidate-source approval; no publication fallback. | W8 |
+| N8 — CI change alters isolation trust | Current policy: use declared dependencies without a separate isolation baseline or source approval gate. | W8 |
 | N9 — type-scoped action/request mismatch | Implemented: genuine type target and expected-descriptor native fence; no invented object identity. | W4, D8 |
 | N10 — CRD discovery is not an automatic watcher | Implemented contract: eligible demand refresh reacquires discovery/OpenAPI; no watcher guarantee. | W4, W5 |
 | N11 — legacy tool contract is not negotiated | Implemented: exclusive v2 RPC namespace and contract version; unsupported peers cannot execute a fallback handler. | W2, W3, D12 |
@@ -391,7 +391,7 @@ The [P01 acceptance record][p01-acceptance] supersedes earlier numeric holds. Co
 2. **Safety wave:** W1/W2/W3 plus W6 startup/lifecycle hardening. Keep source writers package/file-owned; serialize shared files.
 3. **Integration wave:** W4 resource tools/results and W6 coherent refresh. W7 can proceed on independent UI files once view/event contracts are agreed.
 4. **Parity/cutover wave:** exercise all five replacements, then W5 deletes obsolete plugin tools. No silent feature loss or permanent compatibility shim.
-5. **Cohort wave:** W8 reconciles composition, approved candidate CI, bindings, toolchain, and documentation. Future release pins require separate authorization.
+5. **Integration wave:** W8 reconciles composition, declared dependencies, bindings, toolchain, and documentation. Publication remains a separate release decision.
 
 ### Evidence required from implementation
 
@@ -495,7 +495,7 @@ The native proof first used the real Kubernetes entrypoint with only obsolete to
 
 ### Final integration gate
 
-Immutable source pins, the dedicated reviewed-candidate SDK variable, final normal/race/frontend checks, independent combined-tree review, and actual native multi-window Allow/Deny evidence must be recorded before merge on [PR220](https://github.com/omniviewdev/omniview/pull/220) and its linked foundation/plugin PRs. This SDK ledger does not claim an unobserved final native-window pass.
+Final normal/race/frontend checks, independent combined-tree review, and actual native multi-window Allow/Deny evidence must be recorded before merge on [PR220](https://github.com/omniviewdev/omniview/pull/220) and its linked foundation/plugin PRs. CI uses declared dependencies, not a separate SDK approval variable. This SDK ledger does not claim an unobserved final native-window pass.
 
 No merge, ready transition, API freeze, tag, release, or publication follows from these checks. The accepted direction does not make all plugin-sdk work complete. Deferred query/search/history products remain the explicit roadmap above, not hidden findings or fabricated implementations.
 
