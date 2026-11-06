@@ -190,6 +190,66 @@ message ResourceMetricStreamOutput {
   }
 }
 
+// Finite execution is independent of the legacy query/stream protocol.
+message MetricSourceRef {
+  string plugin_id = 1;
+  string connection_id = 2;
+  string datasource_uid = 3;
+  string datasource_kind = 4;
+}
+message FiniteMetricDescriptor {
+  string id = 1;
+  string name = 2;
+  string resource_key = 3;
+  string unit = 4;
+  repeated string shapes = 5;
+  string description = 6;
+}
+message ResourceMetricTarget {
+  string token = 1;
+  omniview.resource.v2.ResourceReference reference = 2;
+  omniview.resource.v2.AccessRoute route = 3;
+}
+message ResourceMetricsQuery {
+  MetricSourceRef source = 1;
+  repeated ResourceMetricTarget targets = 2;
+  repeated string metric_ids = 3;
+  string shape = 4;
+  google.protobuf.Timestamp start_time = 5;
+  google.protobuf.Timestamp end_time = 6;
+  google.protobuf.Duration step = 7;
+}
+message ResourceMetricPoint {
+  google.protobuf.Timestamp time = 1;
+  optional double value = 2;
+}
+message ResourceMetricResult {
+  string resource_token = 1;
+  string metric_id = 2;
+  string status = 3;
+  optional double value = 4;
+  repeated ResourceMetricPoint points = 5;
+  map<string,string> dimensions = 6;
+  google.protobuf.Timestamp observed_at = 7;
+  google.protobuf.Duration window = 8;
+  string message = 9;
+  string identity_scope = 10;
+}
+message ResourceMetricsResponse {
+  repeated ResourceMetricResult results = 1;
+  bool complete = 2;
+  repeated string warnings = 3;
+}
+message ResourceMetricsCatalog {
+  MetricSourceRef source = 1;
+  repeated FiniteMetricDescriptor metrics = 2;
+  int32 max_targets = 3;
+  // Live source-age policy; absent/zero is unknown, never a cache deadline.
+  google.protobuf.Duration max_sample_age = 4;
+}
+message ResourceMetricsCatalogRequest { string resource_key = 1; }
+message FiniteMetricCapabilities { uint32 version = 1; }
+
 // ===================== SERVICE ===================== //
 
 service MetricPlugin {
@@ -198,4 +258,7 @@ service MetricPlugin {
   rpc StreamMetrics(stream MetricStreamInput) returns (stream MetricStreamOutput);
   rpc QueryResource(QueryMetricsRequest) returns (ResourceQueryMetricsResponse);
   rpc StreamResourceMetrics(stream MetricStreamInput) returns (stream ResourceMetricStreamOutput);
+  rpc GetFiniteCapabilities(google.protobuf.Empty) returns (FiniteMetricCapabilities);
+  rpc GetResourceMetricsCatalog(ResourceMetricsCatalogRequest) returns (ResourceMetricsCatalog);
+  rpc QueryResources(ResourceMetricsQuery) returns (ResourceMetricsResponse);
 }

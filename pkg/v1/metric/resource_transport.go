@@ -5,6 +5,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
@@ -29,6 +30,8 @@ func RegisterMetricPluginServer(registrar grpc.ServiceRegistrar, server metricpb
 			d.Methods[i].Handler = metricQueryHandler(false)
 		case "QueryResource":
 			d.Methods[i].Handler = metricQueryHandler(true)
+		case "QueryResources", "GetResourceMetricsCatalog", "GetFiniteCapabilities":
+			d.Methods[i].Handler = finiteAdmissionHandler(d.Methods[i])
 		}
 	}
 	for i := range d.Streams {
@@ -92,6 +95,22 @@ func metricQueryHandler(
 			},
 			handler,
 		)
+	}
+}
+
+func finiteAdmissionHandler(method grpc.MethodDesc) func(any, context.Context, func(any) error, grpc.UnaryServerInterceptor) (any, error) {
+	return func(server any, ctx context.Context, decode func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+		return method.Handler(server, ctx, func(message any) error {
+			p, ok := message.(proto.Message)
+			if !ok {
+				return resourceplugin.ResourceRPCError(metricError("INTERNAL", "Invalid finite transport message."))
+			}
+			envelope := resourceplugin.NewUtilityTransportEnvelope(p, nil)
+			if err := decode(envelope); err != nil {
+				return err
+			}
+			return resourceplugin.ResourceRPCError(envelope.AdmissionError())
+		}, interceptor)
 	}
 }
 
