@@ -78,6 +78,18 @@ type MetricSourceDefaults struct {
 	Revision string           `json:"revision"`
 }
 
+// MetricViewSourceSelection is profile-durable source configuration for one
+// owner connection and resource view, independent of presentation preferences.
+// Mode is inherit, native, or external. Only external carries Source.
+type MetricViewSourceSelection struct {
+	OwnerPluginID     string           `json:"owner_plugin_id"`
+	OwnerConnectionID string           `json:"owner_connection_id"`
+	ResourceKey       string           `json:"resource_key"`
+	Mode              string           `json:"mode"`
+	Source            *MetricSourceRef `json:"source,omitempty"`
+	Revision          string           `json:"revision"`
+}
+
 // MetricQueryContext is host-resolved mapping state, not caller resource authority.
 // MappingRevision fences source configuration; ProjectionRevision fences approved fields.
 type MetricQueryContext struct {
