@@ -1,76 +1,143 @@
-# Finite resource metrics API
+# Build a metrics provider
 
-`pkg/v1/metric.FiniteQueryProvider` is an optional finite execution capability. It does not embed legacy `Provider`, and a finite-only provider need not implement Query or Stream. Existing legacy consumers retain their real implementations. `metric.Plugin{Impl: provider}` accepts finite-only implementations; unsupported legacy RPCs fail explicitly.
+A metrics provider connects a resource view to a measurement source. Implement two callbacks: **describe the available metrics**, then **fetch a batch of values**.
 
-## Registration
+Omniview handles refresh scheduling and sharing requests between views. Your provider performs one bounded read when called.
 
-Native plugins normally use `metric.RegisterPlugin` and set both optional `PluginOpts.ResourceMetricsCatalogFunc` and `PluginOpts.QueryResourcesFunc`. Setting only one is an error. The manager binds the resource connection registry through existing capability setup. Registration must finish before concurrent dispatch.
+[Register](#1-register-your-provider) · [Describe metrics](#2-describe-your-metrics) · [Return values](#3-return-measurements) · [Reference](finite-resource-metrics-reference.md)
+
+## 1. Register your provider
+
+Pass your real batch collector to this helper during plugin setup:
 
 ```go
-opts := metric.PluginOpts{
-    ProviderInfo: metric.ProviderInfo{ID: "k8s-metrics", Name: "Kubernetes"},
-    ResourceMetricsCatalogFunc: func(pc *types.PluginContext, key string) (*metric.ResourceMetricsCatalog, error) {
-        // Return only descriptors this source implements for key.
-        return nativeCatalog(pc, key)
-    },
-    QueryResourcesFunc: func(pc *types.PluginContext, query metric.ResourceMetricsQuery) (*metric.ResourceMetricsResponse, error) {
-        // pc.Connection is the configured source profile, not request metadata.
-        // Honor pc.Context cancellation and use actual source timestamps.
-        return collectNativeMetrics(pc, query)
-    },
+import (
+    "github.com/omniviewdev/plugin-sdk/pkg/sdk"
+    "github.com/omniviewdev/plugin-sdk/pkg/v1/metric"
+)
+
+func RegisterMetrics(plugin *sdk.Plugin, collect metric.QueryResourcesFunc) error {
+    return metric.RegisterPlugin(plugin, metric.PluginOpts{
+        ProviderInfo: metric.ProviderInfo{
+            ID:   "k8s-metrics",
+            Name: "Kubernetes",
+        },
+        ResourceMetricsCatalogFunc: PodCatalog,
+        QueryResourcesFunc:        collect,
+    })
 }
-err := metric.RegisterPlugin(plugin, opts)
 ```
 
-The example delegates collection to the plugin's real native collector; it is not a fallback implementation. Both callback signatures receive `*types.PluginContext`. Catalog additionally receives the canonical resource key; query receives the entire finite batch. No resource body is accepted.
+Use your existing provider ID and name. Both callbacks are required together; you do not need dummy legacy query or stream methods.
 
-## Authority and source identity
+| Callback | What it does |
+| --- | --- |
+| `GetResourceMetricsCatalog(ctx, resourceKey)` | Lists the metrics this source supports for a resource type |
+| `QueryResources(ctx, query)` | Fetches the requested measurements for all supplied resources |
 
-`MetricSourceRef` contains `PluginID`, `ConnectionID`, `DatasourceUID`, and `DatasourceKind`. It identifies the selected metric source, not necessarily the resource owner. Native sources use `DatasourceKind: "metrics-server"` and an empty UID. The manager requires PluginID to equal the actual plugin manifest ID captured by `RegisterPlugin`, and ConnectionID to equal the selected configured connection. Legacy ProviderInfo.ID remains independent; existing provider selection IDs must not change for finite registration.
+Here, `ctx` is a `*types.PluginContext`. Its `Context` supports cancellation; its `Connection` contains the selected source's configured connection.
 
-Each `ResourceMetricTarget` contains a unique nonempty `Token`, an actual `resourcev2.ResourceReference`, and an actual `resourcev2.AccessRoute`. Tokens correlate delivery and confer no authority. Host callers must authorize every reference and preserve the existing principal/session and catalog observation context. The manager validates every route against the selected connection and nests `WithUtilityConnection` for **every target**. Every lease remains live through collection; every target's catalog and connection generation are checked before and after collection. One valid first target never admits the remaining batch. Existing utility admission checks catalog observations; it does not perform a native GET or establish resource-incarnation attribution on behalf of the source.
+## 2. Describe your metrics
 
-Source context must contain a nonnil caller context and selected connection. Honor cancellation; never replace it with Background. Do not synchronously retire the generation whose lease the callback holds.
+A catalog tells views what they can request. This example describes native Pod CPU:
 
-## Catalog
+```go
+import (
+    "time"
 
-`GetResourceMetricsCatalog(pc, resourceKey)` returns `ResourceMetricsCatalog{Source, Metrics, MaxTargets, MaxSampleAge}`. Every descriptor has ID, Name, ResourceKey, Unit, Shapes, and Description. IDs must be unique and nonempty. ResourceKey must match the requested canonical type. Units are physical bases `cores` and `bytes`, not display scales or legacy numeric enums. Shapes are explicit strings `current` and `range`. A source must not advertise a shape it cannot execute.
+    "github.com/omniviewdev/plugin-sdk/pkg/types"
+    "github.com/omniviewdev/plugin-sdk/pkg/v1/metric"
+)
 
-Native Pod IDs are `kubernetes.pod.cpu.usage` in cores and `kubernetes.pod.memory.working_set` in bytes. Native metrics-server supports current only. It does not fabricate history from polling.
+func PodCatalog(ctx *types.PluginContext, resourceKey string) (*metric.ResourceMetricsCatalog, error) {
+    catalog := &metric.ResourceMetricsCatalog{
+        Source: metric.MetricSourceRef{
+            PluginID:       "kubernetes",
+            ConnectionID:   ctx.Connection.ID,
+            DatasourceKind: "metrics-server",
+        },
+        MaxTargets:   256,
+        MaxSampleAge: 2 * time.Minute,
+    }
+    if resourceKey == "k8s:/pods" {
+        catalog.Metrics = []metric.FiniteMetricDescriptor{{
+            ID:          "kubernetes.pod.cpu.usage",
+            Name:        "CPU usage",
+            ResourceKey: resourceKey,
+            Unit:        "cores",
+            Shapes:      []string{"current"},
+        }}
+    }
+    return catalog, nil
+}
+```
 
-The latest source catalog is authoritative. The manager rejects unadvertised metric IDs or shapes with UNSUPPORTED before collection. Catalog MaxTargets must be 1–256; the manager enforces the catalog's lower bound as well as the protocol bound.
+| Catalog choice | Meaning |
+| --- | --- |
+| `Source` | Actual plugin, connection, and backend supplying the measurements |
+| `Metrics` | Stable IDs, display names, units, and supported query shapes |
+| `MaxTargets` | Maximum resources your provider accepts in one batch |
+| `MaxSampleAge` | How old a live sample can be before it is delayed; zero means unknown |
 
-`MaxSampleAge` is the source's freshness policy for current samples, expressed as a nonnegative Go duration (nanoseconds in JSON). Zero means freshness is unknown, not that samples expire immediately. With a positive policy and a known `ObservedAt`, a current sample becomes delayed after `ObservedAt + MaxSampleAge`; refresh or cache reuse must not renew that deadline. Native metrics-server advertises two minutes. This policy is not a cache TTL, polling cadence, or freshness rule for historical range points. Observation snapshots carry the authoritative catalog used to interpret their samples.
+Use the plugin's manifest ID in `Source.PluginID`, not `ProviderInfo.ID`. Advertise only metrics and query shapes your collector actually supports.
 
-## Query domains and bounds
+## 3. Return measurements
 
-`ResourceMetricsQuery` contains Source, Targets, MetricIDs, Shape, StartTime, EndTime, and Step. JSON names use snake_case; Go durations encode as nanoseconds. The protobuf transport uses typed Timestamp and Duration messages and presence-aware optional doubles.
+`QueryResources` receives a resource list and a metric list. Return a result for each requested resource/metric pair, including explicit results for missing measurements.
 
-- Targets: 1–256; tokens must be unique.
-- MetricIDs: 1–32 unique nonempty IDs.
-- Current: StartTime and EndTime must be zero; Step must be zero.
-- Range: nonzero ordered times, duration at most 31 days, positive Step at most 31 days, and at most 10,000 implied samples.
-- Response: at most one result per requested pair and at most 10,000 total points.
-- Existing resource metadata byte/depth/node admission applies to all domain messages. These limits supplement transport message limits; limit overflow is explicit, never silently truncated.
+For example, a query for **24 Pods × CPU and memory** expects **48 results**. Group collection by the source's batch API, not by individual table cells.
 
-A query evaluates the Cartesian product of its own targets and metric IDs. A coordinator combining requests must preserve each observer's requested pair set, not accidentally widen that product.
+This helper builds a CPU result from a real backend measurement:
 
-## Results, time, and completeness
+```go
+import (
+    "time"
 
-`ResourceMetricsResponse` contains Results, Complete, and Warnings. Each `ResourceMetricResult` names exactly one ResourceToken/MetricID pair. Unknown pairs and duplicate pairs are invalid. `Complete: true` requires every requested pair, including explicit missing/error results. `Complete: false` may omit pairs; it does not change any individual result status.
+    "github.com/omniviewdev/plugin-sdk/pkg/v1/metric"
+)
 
-Statuses are `ok`, `missing`, `unsupported`, `denied`, `invalid_context`, `invalid_mapping`, `ambiguous`, and `failed`. Non-ok results carry no Value or Points. Missing is never zero. Current ok results require a finite Value; zero remains a real sample. Range points contain Time and nullable Value; nil is a gap. NaN and infinity are invalid. Range point times must be ordered, unique, and inside the requested inclusive domain.
+func CPUSample(token string, cores float64, observedAt time.Time, window time.Duration) metric.ResourceMetricResult {
+    return metric.ResourceMetricResult{
+        ResourceToken: token,
+        MetricID:      "kubernetes.pod.cpu.usage",
+        Status:        "ok",
+        Value:         &cores,
+        ObservedAt:    &observedAt,
+        Window:        window,
+        IdentityScope: "name",
+    }
+}
+```
 
-ObservedAt is the source observation time, when known. It is optional even for ok/current: an evaluation timestamp from a future query backend is not necessarily a raw sample timestamp. Never replace missing observation time with fetch completion, receipt time, or evaluation time. Native metrics-server collectors specifically use the actual metrics-server timestamp. Window is a nonnegative source measurement duration, not a UI polling interval. Negative windows and explicitly zero observation timestamps are invalid.
+Pass the source timestamp and measurement window, not the request completion time. This helper uses name-based attribution; use `incarnation` only when the source actually verifies the resource UID.
 
-IdentityScope is source provenance: `incarnation` means the source actually verified the resource UID; `name` means the source attributed by name only. Empty means unspecified. This field is not an aggregation dimension. Metrics-server often omits UID/creation metadata, so native collection normally uses `name`; do not invent incarnation proof or add per-target GETs. The host still fences cache and delivery by the authoritative resource incarnation. Host cache fencing does not strengthen backend attribution.
+### Result checklist
 
-Dimensions are source labels, not authority or source selectors. Message and Warnings contain safe diagnostics, never credentials. Permission-denied delivery must remove sensitive prior data at the host boundary.
+- Preserve each target's `Token` in `ResourceToken`.
+- Return CPU in **cores** and memory in **bytes**; leave display formatting to the UI.
+- A measured zero is valid. An unavailable measurement has no numeric value.
+- Honor `ctx.Context` cancellation; do not start a polling loop.
+- Set `Complete: true` only when every requested pair has a result. A `missing` result still counts.
 
-## Transport and errors
+| Situation | `Status` | Numeric data |
+| --- | --- | --- |
+| Measurement available | `ok` | Value for live queries; points for history |
+| No matching measurement | `missing` | None |
+| Access refused | `denied` | None |
+| Collection failed | `failed` | None |
 
-The typed `GetFiniteCapabilities` RPC negotiates version 1. `GetResourceMetricsCatalog` and `QueryResources` use generated finite messages. Old processes or providers lacking finite support return explicit UNSUPPORTED; the client never loops through legacy per-resource calls. Session/catalog context crosses the existing resource session transport. Remote classified resource errors retain their domain codes.
+Additional statuses and exact validation rules are in the [contract reference](finite-resource-metrics-reference.md#results-time-and-completeness).
 
-INVALID_REQUEST denotes invalid source identity, duplicate tokens/IDs, domains, units, statuses, result shape, or numeric values. RESOURCE_LIMIT denotes count/metadata/sample bounds. UNSUPPORTED denotes absent finite capability or an unadvertised metric/shape. Connection retirement, catalog reset, authority, and cancellation retain existing resource registry error semantics. No compatibility adapter or synthetic sample converts these failures into successful data.
+## Live values or history?
 
-Exported `ValidateResourceMetricsQuery`, `ValidateResourceMetricsCatalog`, and `ValidateResourceMetricsResponse` allow callers to reject invalid domain data before dispatch or publication. They do not authorize references or substitute for connection leases.
+| Shape | Return | Request fields |
+| --- | --- | --- |
+| `current` | Latest value | No range fields |
+| `range` | Time-ordered points | `StartTime`, `EndTime`, `Step` |
+
+Native metrics-server supports live values only. Repeated refreshes must not become invented history.
+
+## Next steps
+
+- See the [Kubernetes collector](https://github.com/omniviewdev/omniview-plugin-kubernetes/blob/66f90b5/pkg/plugin/metric/native.go) for a real bounded batch implementation.
+- See the [contract reference](finite-resource-metrics-reference.md) for limits, permissions, errors, and transport details.
