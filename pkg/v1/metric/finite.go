@@ -17,12 +17,13 @@ const (
 )
 
 // MetricSourceRef identifies the selected source, not the resource owner.
-// Native sources use kind metrics-server and an empty datasource UID.
+// Native sources have no datasource kind or UID.
 type MetricSourceRef struct {
 	PluginID       string `json:"plugin_id"`
 	ConnectionID   string `json:"connection_id"`
 	DatasourceUID  string `json:"datasource_uid"`
 	DatasourceKind string `json:"datasource_kind"`
+	Native         bool   `json:"native,omitempty"`
 }
 
 // FiniteMetricDescriptor declares physical base units and supported evaluations.
@@ -86,7 +87,9 @@ type ResourceMetricResult struct {
 	// \"incarnation\" means source verified UID; \"name\" means name-only attribution.
 	IdentityScope string `json:"identity_scope"`
 	Message       string `json:"message"`
-	// Source is exact provenance. The host fills it after validating each lane.
+	// Source is exact provenance. The host fills external and mixed-source results.
+	// A single owner-native lane may omit this redundant field; use its catalog
+	// source. Consumers resolve result, descriptor, then catalog source.
 	Source *MetricSourceRef `json:"source,omitempty"`
 }
 
@@ -123,11 +126,15 @@ type ResourceMetricsCatalogFunc func(*types.PluginContext, ResourceMetricsCatalo
 type QueryResourcesFunc func(*types.PluginContext, ResourceMetricsQuery) (*ResourceMetricsResponse, error)
 
 func validateFiniteSource(s MetricSourceRef) error {
-	if s.PluginID == "" || s.ConnectionID == "" || s.DatasourceKind == "" {
+	if s.PluginID == "" || s.ConnectionID == "" {
 		return metricError("INVALID_REQUEST", "Finite source identity is required.")
 	}
-	if s.DatasourceKind == "metrics-server" && s.DatasourceUID != "" {
-		return metricError("INVALID_REQUEST", "Native source cannot have a datasource UID.")
+	if s.Native {
+		if s.DatasourceKind != "" || s.DatasourceUID != "" {
+			return metricError("INVALID_REQUEST", "Native source cannot have a datasource kind or UID.")
+		}
+	} else if s.DatasourceKind == "" || s.DatasourceUID == "" {
+		return metricError("INVALID_REQUEST", "External source requires a datasource kind and UID.")
 	}
 	return resourcev2.ValidateMetadata(s)
 }

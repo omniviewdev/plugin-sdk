@@ -15,10 +15,10 @@ import (
 const finiteWireVersion = 2
 
 func sourceToProto(s MetricSourceRef) *metricpb.MetricSourceRef {
-	return &metricpb.MetricSourceRef{PluginId: s.PluginID, ConnectionId: s.ConnectionID, DatasourceUid: s.DatasourceUID, DatasourceKind: s.DatasourceKind}
+	return &metricpb.MetricSourceRef{PluginId: s.PluginID, ConnectionId: s.ConnectionID, DatasourceUid: s.DatasourceUID, DatasourceKind: s.DatasourceKind, Native: s.Native}
 }
 func sourceFromProto(s *metricpb.MetricSourceRef) MetricSourceRef {
-	return MetricSourceRef{PluginID: s.GetPluginId(), ConnectionID: s.GetConnectionId(), DatasourceUID: s.GetDatasourceUid(), DatasourceKind: s.GetDatasourceKind()}
+	return MetricSourceRef{PluginID: s.GetPluginId(), ConnectionID: s.GetConnectionId(), DatasourceUID: s.GetDatasourceUid(), DatasourceKind: s.GetDatasourceKind(), Native: s.GetNative()}
 }
 func finiteTime(t time.Time) *timestamppb.Timestamp {
 	if t.IsZero() {
@@ -211,13 +211,17 @@ func finiteResponseFromProto(q ResourceMetricsQuery, p *metricpb.ResourceMetrics
 
 // GetFiniteCapabilities negotiates the typed finite protocol without legacy calls.
 func (s *PluginServer) GetFiniteCapabilities(_ context.Context, _ *emptypb.Empty) (*metricpb.FiniteMetricCapabilities, error) {
-	if _, ok := s.Impl.(FiniteQueryProvider); !ok {
-		return nil, resourceplugin.ResourceRPCError(metricError("UNSUPPORTED", "Finite metrics are unsupported."))
+	_, finite := s.Impl.(FiniteQueryProvider)
+	_, owner := s.Impl.(MetricOwnerCatalogProvider)
+	if m, ok := s.Impl.(*Manager); ok {
+		finite = m.queryResourcesFunc != nil && m.resourceMetricsCatalogFunc != nil
+		owner = m.getMetricOwnerCatalogFunc != nil
 	}
-	if m, ok := s.Impl.(*Manager); ok && (m.queryResourcesFunc == nil || m.resourceMetricsCatalogFunc == nil) {
-		return nil, resourceplugin.ResourceRPCError(metricError("UNSUPPORTED", "Finite metrics are unsupported."))
+	var version uint32
+	if finite {
+		version = finiteWireVersion
 	}
-	return &metricpb.FiniteMetricCapabilities{Version: finiteWireVersion}, nil
+	return &metricpb.FiniteMetricCapabilities{Version: version, OwnerCatalog: owner}, nil
 }
 func (s *PluginServer) GetResourceMetricsCatalog(ctx context.Context, p *metricpb.ResourceMetricsCatalogRequest) (*metricpb.ResourceMetricsCatalog, error) {
 	impl, ok := s.Impl.(FiniteQueryProvider)

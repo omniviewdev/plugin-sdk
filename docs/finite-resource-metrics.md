@@ -55,7 +55,7 @@ func PodCatalog(ctx *types.PluginContext, request metric.ResourceMetricsCatalogR
         Source: metric.MetricSourceRef{
             PluginID:       "kubernetes",
             ConnectionID:   ctx.Connection.ID,
-            DatasourceKind: "metrics-server",
+            Native:         true,
         },
         MaxTargets:   256,
         MaxSampleAge: 2 * time.Minute,

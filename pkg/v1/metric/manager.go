@@ -194,6 +194,7 @@ type Manager struct {
 	connectionProvider         resourcev2.ConnectionContextProvider
 	resourceMetricsCatalogFunc ResourceMetricsCatalogFunc
 	queryResourcesFunc         QueryResourcesFunc
+	getMetricOwnerCatalogFunc  GetMetricOwnerCatalogFunc
 	sourcePluginID             string
 }
 

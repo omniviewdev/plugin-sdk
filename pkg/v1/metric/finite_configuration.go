@@ -147,10 +147,25 @@ type ProviderConfiguration interface {
 	ValidateMetricDefinition(*types.PluginContext, MetricSourceRef, MetricDefinition) (*MetricValidationResult, error)
 }
 
-// MetricCatalogProvider exposes reusable public definitions, never credentials.
-type MetricCatalogProvider interface {
-	GetMetricDefinitions(*types.PluginContext) ([]MetricDefinition, error)
+// MetricOwnerCatalog exposes owner-authored definitions and public scope metadata.
+type MetricOwnerCatalog struct {
+	Definitions []MetricDefinition `json:"definitions"`
+	ScopeFields []MetricScopeField `json:"scope_fields"`
 }
+
+// MetricScopeField describes one owner-approved public scope entry.
+type MetricScopeField struct {
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// MetricOwnerCatalogProvider is independent of finite execution and legacy metrics.
+type MetricOwnerCatalogProvider interface {
+	GetMetricOwnerCatalog(*types.PluginContext) (*MetricOwnerCatalog, error)
+}
+
+type GetMetricOwnerCatalogFunc func(*types.PluginContext) (*MetricOwnerCatalog, error)
 
 // MetricDiscoveryRequest permits bounded exact-match discovery, not arbitrary selectors.
 type MetricDiscoveryRequest struct {

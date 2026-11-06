@@ -28,6 +28,9 @@ func ValidateMetricDefinitionContract(d MetricDefinition) error {
 		if b.Source != "resource" && b.Source != "scope" {
 			return metricError("INVALID_REQUEST", "Unsupported finite field source.")
 		}
+		if b.Source == "resource" && b.ResourcePath == "" {
+			return metricError("INVALID_REQUEST", "Resource bindings require an explicit resource JSON pointer.")
+		}
 		if b.ResourcePath != "" {
 			if b.Source != "resource" || b.ResourcePath[0] != '/' {
 				return metricError("INVALID_REQUEST", "Resource paths require an owner resource JSON pointer.")
@@ -59,12 +62,12 @@ func ValidateMetricDefinitionContract(d MetricDefinition) error {
 
 // ValidateMetricQueryContext bounds host-provided mapping material before execution.
 func ValidateMetricQueryContext(c MetricQueryContext) error {
-	if len(c.Definitions) > MaxFiniteMetrics || len(c.PublicScope) > 1 {
+	if len(c.Definitions) > MaxFiniteMetrics || len(c.PublicScope) > 32 {
 		return metricError("RESOURCE_LIMIT", "Finite mapping context exceeds limits.")
 	}
-	for k := range c.PublicScope {
-		if k != "cluster" {
-			return metricError("INVALID_REQUEST", "Only approved public cluster scope is supported.")
+	for k, v := range c.PublicScope {
+		if k == "" || len(v) > 1024 {
+			return metricError("INVALID_REQUEST", "Invalid public metric scope entry.")
 		}
 	}
 	ids := map[string]bool{}

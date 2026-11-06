@@ -91,6 +91,7 @@ func RegisterPlugin(
 	}
 	impl.resourceMetricsCatalogFunc = opts.ResourceMetricsCatalogFunc
 	impl.queryResourcesFunc = opts.QueryResourcesFunc
+	impl.getMetricOwnerCatalogFunc = opts.GetMetricOwnerCatalogFunc
 	impl.sourcePluginID = p.GetPluginID()
 
 	p.RegisterCapability("metric", &Plugin{Impl: impl})

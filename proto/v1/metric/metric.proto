@@ -196,6 +196,7 @@ message MetricSourceRef {
   string connection_id = 2;
   string datasource_uid = 3;
   string datasource_kind = 4;
+  bool native = 5;
 }
 message FiniteMetricDescriptor {
   string id = 1;
@@ -288,7 +289,19 @@ message ResourceMetricsCatalogRequest {
   MetricSourceRef source = 2;
   MetricQueryContext context = 3;
 }
-message FiniteMetricCapabilities { uint32 version = 1; }
+message FiniteMetricCapabilities {
+  uint32 version = 1;
+  bool owner_catalog = 2;
+}
+message MetricScopeField {
+  string key = 1;
+  string name = 2;
+  string description = 3;
+}
+message MetricOwnerCatalog {
+  repeated MetricDefinition definitions = 1;
+  repeated MetricScopeField scope_fields = 2;
+}
 
 // ===================== SERVICE ===================== //
 
@@ -301,4 +314,5 @@ service MetricPlugin {
   rpc GetFiniteCapabilities(google.protobuf.Empty) returns (FiniteMetricCapabilities);
   rpc GetResourceMetricsCatalog(ResourceMetricsCatalogRequest) returns (ResourceMetricsCatalog);
   rpc QueryResources(ResourceMetricsQuery) returns (ResourceMetricsResponse);
+  rpc GetMetricOwnerCatalog(google.protobuf.Empty) returns (MetricOwnerCatalog);
 }

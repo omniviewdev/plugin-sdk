@@ -9,7 +9,7 @@ import (
 )
 
 func finiteMappingFixture() MetricDefinition {
-	return MetricDefinition{ID: "cpu", Name: "CPU usage", ResourceKeys: []string{"opaque::type"}, Unit: "cores", SupportedShapes: []string{"current", "range"}, QueryLanguage: "promql", Query: "sum by (cluster,namespace,pod,uid) (rate(container_cpu_usage_seconds_total{${matchers}}[5m]))", FieldBindings: []MetricFieldBinding{{Field: "name", Label: "pod", Source: "resource", Required: true}, {Field: "cluster", Label: "cluster", Source: "scope", Required: true}}, IdentityLabels: []string{"cluster", "namespace", "pod", "uid"}, Reducer: "sum", BatchStrategy: "vector", Revision: "mapping-1"}
+	return MetricDefinition{ID: "cpu", Name: "CPU usage", ResourceKeys: []string{"opaque::type"}, Unit: "cores", SupportedShapes: []string{"current", "range"}, QueryLanguage: "promql", Query: "sum by (cluster,namespace,pod,uid) (rate(container_cpu_usage_seconds_total{${matchers}}[5m]))", FieldBindings: []MetricFieldBinding{{Field: "name", Label: "pod", Source: "resource", ResourcePath: "/metadata/name", Required: true}, {Field: "cluster", Label: "cluster", Source: "scope", Required: true}}, IdentityLabels: []string{"cluster", "namespace", "pod", "uid"}, Reducer: "sum", BatchStrategy: "vector", Revision: "mapping-1"}
 }
 
 func TestFiniteMappingAndProjectionSurviveTypedWire(t *testing.T) {
@@ -37,9 +37,9 @@ func TestFiniteMappingAndProjectionSurviveTypedWire(t *testing.T) {
 	}
 }
 
-func TestFiniteMappingContextRejectsUnapprovedScopeAndDuplicateMappings(t *testing.T) {
+func TestFiniteMappingContextRejectsEmptyScopeAndDuplicateMappings(t *testing.T) {
 	for _, c := range []MetricQueryContext{
-		{PublicScope: map[string]string{"token": "secret"}},
+		{PublicScope: map[string]string{"": "invalid"}},
 		{Definitions: []MetricDefinition{finiteMappingFixture(), finiteMappingFixture()}},
 	} {
 		if ValidateMetricQueryContext(c) == nil {
@@ -105,7 +105,7 @@ func TestFiniteCatalogRequestRequiresExactSourceBeforeCallback(t *testing.T) {
 		return nil, nil
 	}
 	pc := &types.PluginContext{Context: t.Context(), Connection: &types.Connection{ID: "one"}}
-	for _, source := range []MetricSourceRef{{}, {PluginID: "other", ConnectionID: "one", DatasourceKind: "metrics-server"}, {PluginID: "metric", ConnectionID: "other", DatasourceKind: "metrics-server"}} {
+	for _, source := range []MetricSourceRef{{}, {PluginID: "other", ConnectionID: "one", Native: true}, {PluginID: "metric", ConnectionID: "other", Native: true}} {
 		if _, err := m.GetResourceMetricsCatalog(pc, ResourceMetricsCatalogRequest{Source: source, ResourceKey: "opaque::type"}); err == nil {
 			t.Fatal("unselected source reached catalog")
 		}

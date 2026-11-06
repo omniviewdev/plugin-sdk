@@ -12,7 +12,7 @@ import (
 )
 
 func finiteTestQuery() ResourceMetricsQuery {
-	return ResourceMetricsQuery{Source: MetricSourceRef{PluginID: "metric", ConnectionID: "one", DatasourceKind: "metrics-server"}, Targets: []ResourceMetricTarget{{Token: "pod", Reference: *metricReference(), Route: resourcev2.AccessRoute{Connection: "one"}}}, MetricIDs: []string{"cpu"}, Shape: "current"}
+	return ResourceMetricsQuery{Source: MetricSourceRef{PluginID: "metric", ConnectionID: "one", Native: true}, Targets: []ResourceMetricTarget{{Token: "pod", Reference: *metricReference(), Route: resourcev2.AccessRoute{Connection: "one"}}}, MetricIDs: []string{"cpu"}, Shape: "current"}
 }
 func TestFiniteQueryRejectsAmbiguousTokensAndDomains(t *testing.T) {
 	for _, test := range []struct {

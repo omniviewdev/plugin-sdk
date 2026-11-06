@@ -1585,6 +1585,7 @@ type MetricSourceRef struct {
 	ConnectionId   string                 `protobuf:"bytes,2,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
 	DatasourceUid  string                 `protobuf:"bytes,3,opt,name=datasource_uid,json=datasourceUid,proto3" json:"datasource_uid,omitempty"`
 	DatasourceKind string                 `protobuf:"bytes,4,opt,name=datasource_kind,json=datasourceKind,proto3" json:"datasource_kind,omitempty"`
+	Native         bool                   `protobuf:"varint,5,opt,name=native,proto3" json:"native,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1645,6 +1646,13 @@ func (x *MetricSourceRef) GetDatasourceKind() string {
 		return x.DatasourceKind
 	}
 	return ""
+}
+
+func (x *MetricSourceRef) GetNative() bool {
+	if x != nil {
+		return x.Native
+	}
+	return false
 }
 
 type FiniteMetricDescriptor struct {
@@ -2584,6 +2592,7 @@ func (x *ResourceMetricsCatalogRequest) GetContext() *MetricQueryContext {
 type FiniteMetricCapabilities struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Version       uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	OwnerCatalog  bool                   `protobuf:"varint,2,opt,name=owner_catalog,json=ownerCatalog,proto3" json:"owner_catalog,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2623,6 +2632,125 @@ func (x *FiniteMetricCapabilities) GetVersion() uint32 {
 		return x.Version
 	}
 	return 0
+}
+
+func (x *FiniteMetricCapabilities) GetOwnerCatalog() bool {
+	if x != nil {
+		return x.OwnerCatalog
+	}
+	return false
+}
+
+type MetricScopeField struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MetricScopeField) Reset() {
+	*x = MetricScopeField{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricScopeField) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricScopeField) ProtoMessage() {}
+
+func (x *MetricScopeField) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricScopeField.ProtoReflect.Descriptor instead.
+func (*MetricScopeField) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *MetricScopeField) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *MetricScopeField) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *MetricScopeField) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+type MetricOwnerCatalog struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Definitions   []*MetricDefinition    `protobuf:"bytes,1,rep,name=definitions,proto3" json:"definitions,omitempty"`
+	ScopeFields   []*MetricScopeField    `protobuf:"bytes,2,rep,name=scope_fields,json=scopeFields,proto3" json:"scope_fields,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MetricOwnerCatalog) Reset() {
+	*x = MetricOwnerCatalog{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricOwnerCatalog) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricOwnerCatalog) ProtoMessage() {}
+
+func (x *MetricOwnerCatalog) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricOwnerCatalog.ProtoReflect.Descriptor instead.
+func (*MetricOwnerCatalog) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *MetricOwnerCatalog) GetDefinitions() []*MetricDefinition {
+	if x != nil {
+		return x.Definitions
+	}
+	return nil
+}
+
+func (x *MetricOwnerCatalog) GetScopeFields() []*MetricScopeField {
+	if x != nil {
+		return x.ScopeFields
+	}
+	return nil
 }
 
 var File_proto_v1_metric_metric_proto protoreflect.FileDescriptor
@@ -2765,12 +2893,13 @@ const file_proto_v1_metric_metric_proto_rawDesc = "" +
 	"\x15resource_wire_version\x18\x01 \x01(\rR\x13resourceWireVersion\x12D\n" +
 	"\x06output\x18\x02 \x01(\v2*.omniview.sdk.metric.v1.MetricStreamOutputH\x00R\x06output\x12\x16\n" +
 	"\x05ready\x18\x03 \x01(\bH\x00R\x05readyB\t\n" +
-	"\apayload\"\xa3\x01\n" +
+	"\apayload\"\xbb\x01\n" +
 	"\x0fMetricSourceRef\x12\x1b\n" +
 	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12#\n" +
 	"\rconnection_id\x18\x02 \x01(\tR\fconnectionId\x12%\n" +
 	"\x0edatasource_uid\x18\x03 \x01(\tR\rdatasourceUid\x12'\n" +
-	"\x0fdatasource_kind\x18\x04 \x01(\tR\x0edatasourceKind\"\xee\x01\n" +
+	"\x0fdatasource_kind\x18\x04 \x01(\tR\x0edatasourceKind\x12\x16\n" +
+	"\x06native\x18\x05 \x01(\bR\x06native\"\xee\x01\n" +
 	"\x16FiniteMetricDescriptor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12!\n" +
@@ -2870,9 +2999,17 @@ const file_proto_v1_metric_metric_proto_rawDesc = "" +
 	"\x1dResourceMetricsCatalogRequest\x12!\n" +
 	"\fresource_key\x18\x01 \x01(\tR\vresourceKey\x12?\n" +
 	"\x06source\x18\x02 \x01(\v2'.omniview.sdk.metric.v1.MetricSourceRefR\x06source\x12D\n" +
-	"\acontext\x18\x03 \x01(\v2*.omniview.sdk.metric.v1.MetricQueryContextR\acontext\"4\n" +
+	"\acontext\x18\x03 \x01(\v2*.omniview.sdk.metric.v1.MetricQueryContextR\acontext\"Y\n" +
 	"\x18FiniteMetricCapabilities\x12\x18\n" +
-	"\aversion\x18\x01 \x01(\rR\aversion*\xce\x02\n" +
+	"\aversion\x18\x01 \x01(\rR\aversion\x12#\n" +
+	"\rowner_catalog\x18\x02 \x01(\bR\fownerCatalog\"Z\n" +
+	"\x10MetricScopeField\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\"\xad\x01\n" +
+	"\x12MetricOwnerCatalog\x12J\n" +
+	"\vdefinitions\x18\x01 \x03(\v2(.omniview.sdk.metric.v1.MetricDefinitionR\vdefinitions\x12K\n" +
+	"\fscope_fields\x18\x02 \x03(\v2(.omniview.sdk.metric.v1.MetricScopeFieldR\vscopeFields*\xce\x02\n" +
 	"\n" +
 	"MetricUnit\x12\x14\n" +
 	"\x10METRIC_UNIT_NONE\x10\x00\x12\x15\n" +
@@ -2896,7 +3033,7 @@ const file_proto_v1_metric_metric_proto_rawDesc = "" +
 	"\x13MetricStreamCommand\x12#\n" +
 	"\x1fMETRIC_STREAM_COMMAND_SUBSCRIBE\x10\x00\x12%\n" +
 	"!METRIC_STREAM_COMMAND_UNSUBSCRIBE\x10\x01\x12\x1f\n" +
-	"\x1bMETRIC_STREAM_COMMAND_CLOSE\x10\x022\x95\a\n" +
+	"\x1bMETRIC_STREAM_COMMAND_CLOSE\x10\x022\xf2\a\n" +
 	"\fMetricPlugin\x12l\n" +
 	"\x15GetSupportedResources\x12\x16.google.protobuf.Empty\x1a;.omniview.sdk.metric.v1.GetSupportedMetricResourcesResponse\x12b\n" +
 	"\x05Query\x12+.omniview.sdk.metric.v1.QueryMetricsRequest\x1a,.omniview.sdk.metric.v1.QueryMetricsResponse\x12j\n" +
@@ -2905,7 +3042,8 @@ const file_proto_v1_metric_metric_proto_rawDesc = "" +
 	"\x15StreamResourceMetrics\x12).omniview.sdk.metric.v1.MetricStreamInput\x1a2.omniview.sdk.metric.v1.ResourceMetricStreamOutput(\x010\x01\x12a\n" +
 	"\x15GetFiniteCapabilities\x12\x16.google.protobuf.Empty\x1a0.omniview.sdk.metric.v1.FiniteMetricCapabilities\x12\x82\x01\n" +
 	"\x19GetResourceMetricsCatalog\x125.omniview.sdk.metric.v1.ResourceMetricsCatalogRequest\x1a..omniview.sdk.metric.v1.ResourceMetricsCatalog\x12o\n" +
-	"\x0eQueryResources\x12,.omniview.sdk.metric.v1.ResourceMetricsQuery\x1a/.omniview.sdk.metric.v1.ResourceMetricsResponseB<Z:github.com/omniviewdev/plugin-sdk/proto/v1/metric;metricpbb\x06proto3"
+	"\x0eQueryResources\x12,.omniview.sdk.metric.v1.ResourceMetricsQuery\x1a/.omniview.sdk.metric.v1.ResourceMetricsResponse\x12[\n" +
+	"\x15GetMetricOwnerCatalog\x12\x16.google.protobuf.Empty\x1a*.omniview.sdk.metric.v1.MetricOwnerCatalogB<Z:github.com/omniviewdev/plugin-sdk/proto/v1/metric;metricpbb\x06proto3"
 
 var (
 	file_proto_v1_metric_metric_proto_rawDescOnce sync.Once
@@ -2920,7 +3058,7 @@ func file_proto_v1_metric_metric_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_v1_metric_metric_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_proto_v1_metric_metric_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
+var file_proto_v1_metric_metric_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_proto_v1_metric_metric_proto_goTypes = []any{
 	(MetricUnit)(0),                             // 0: omniview.sdk.metric.v1.MetricUnit
 	(MetricShape)(0),                            // 1: omniview.sdk.metric.v1.MetricShape
@@ -2955,106 +3093,112 @@ var file_proto_v1_metric_metric_proto_goTypes = []any{
 	(*ResourceMetricsCatalog)(nil),              // 30: omniview.sdk.metric.v1.ResourceMetricsCatalog
 	(*ResourceMetricsCatalogRequest)(nil),       // 31: omniview.sdk.metric.v1.ResourceMetricsCatalogRequest
 	(*FiniteMetricCapabilities)(nil),            // 32: omniview.sdk.metric.v1.FiniteMetricCapabilities
-	nil,                                         // 33: omniview.sdk.metric.v1.DataPoint.LabelsEntry
-	nil,                                         // 34: omniview.sdk.metric.v1.TimeSeries.LabelsEntry
-	nil,                                         // 35: omniview.sdk.metric.v1.CurrentValue.LabelsEntry
-	nil,                                         // 36: omniview.sdk.metric.v1.AggregateValue.LabelsEntry
-	nil,                                         // 37: omniview.sdk.metric.v1.QueryMetricsRequest.ParamsEntry
-	nil,                                         // 38: omniview.sdk.metric.v1.MetricStreamInput.ParamsEntry
-	nil,                                         // 39: omniview.sdk.metric.v1.MetricQueryContext.PublicScopeEntry
-	nil,                                         // 40: omniview.sdk.metric.v1.ResourceMetricTarget.PublicDataEntry
-	nil,                                         // 41: omniview.sdk.metric.v1.ResourceMetricResult.DimensionsEntry
-	(*timestamppb.Timestamp)(nil),               // 42: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),                 // 43: google.protobuf.Duration
-	(*v2.Value)(nil),                            // 44: omniview.resource.v2.Value
-	(*v2.ResourceReference)(nil),                // 45: omniview.resource.v2.ResourceReference
-	(*v2.AccessRoute)(nil),                      // 46: omniview.resource.v2.AccessRoute
-	(*emptypb.Empty)(nil),                       // 47: google.protobuf.Empty
+	(*MetricScopeField)(nil),                    // 33: omniview.sdk.metric.v1.MetricScopeField
+	(*MetricOwnerCatalog)(nil),                  // 34: omniview.sdk.metric.v1.MetricOwnerCatalog
+	nil,                                         // 35: omniview.sdk.metric.v1.DataPoint.LabelsEntry
+	nil,                                         // 36: omniview.sdk.metric.v1.TimeSeries.LabelsEntry
+	nil,                                         // 37: omniview.sdk.metric.v1.CurrentValue.LabelsEntry
+	nil,                                         // 38: omniview.sdk.metric.v1.AggregateValue.LabelsEntry
+	nil,                                         // 39: omniview.sdk.metric.v1.QueryMetricsRequest.ParamsEntry
+	nil,                                         // 40: omniview.sdk.metric.v1.MetricStreamInput.ParamsEntry
+	nil,                                         // 41: omniview.sdk.metric.v1.MetricQueryContext.PublicScopeEntry
+	nil,                                         // 42: omniview.sdk.metric.v1.ResourceMetricTarget.PublicDataEntry
+	nil,                                         // 43: omniview.sdk.metric.v1.ResourceMetricResult.DimensionsEntry
+	(*timestamppb.Timestamp)(nil),               // 44: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),                 // 45: google.protobuf.Duration
+	(*v2.Value)(nil),                            // 46: omniview.resource.v2.Value
+	(*v2.ResourceReference)(nil),                // 47: omniview.resource.v2.ResourceReference
+	(*v2.AccessRoute)(nil),                      // 48: omniview.resource.v2.AccessRoute
+	(*emptypb.Empty)(nil),                       // 49: google.protobuf.Empty
 }
 var file_proto_v1_metric_metric_proto_depIdxs = []int32{
 	0,  // 0: omniview.sdk.metric.v1.MetricDescriptor.unit:type_name -> omniview.sdk.metric.v1.MetricUnit
 	4,  // 1: omniview.sdk.metric.v1.MetricDescriptor.color_ranges:type_name -> omniview.sdk.metric.v1.MetricColorRange
 	1,  // 2: omniview.sdk.metric.v1.MetricDescriptor.supported_shapes:type_name -> omniview.sdk.metric.v1.MetricShape
 	5,  // 3: omniview.sdk.metric.v1.MetricHandler.metrics:type_name -> omniview.sdk.metric.v1.MetricDescriptor
-	42, // 4: omniview.sdk.metric.v1.DataPoint.timestamp:type_name -> google.protobuf.Timestamp
-	33, // 5: omniview.sdk.metric.v1.DataPoint.labels:type_name -> omniview.sdk.metric.v1.DataPoint.LabelsEntry
+	44, // 4: omniview.sdk.metric.v1.DataPoint.timestamp:type_name -> google.protobuf.Timestamp
+	35, // 5: omniview.sdk.metric.v1.DataPoint.labels:type_name -> omniview.sdk.metric.v1.DataPoint.LabelsEntry
 	7,  // 6: omniview.sdk.metric.v1.TimeSeries.data_points:type_name -> omniview.sdk.metric.v1.DataPoint
-	34, // 7: omniview.sdk.metric.v1.TimeSeries.labels:type_name -> omniview.sdk.metric.v1.TimeSeries.LabelsEntry
-	42, // 8: omniview.sdk.metric.v1.CurrentValue.timestamp:type_name -> google.protobuf.Timestamp
-	35, // 9: omniview.sdk.metric.v1.CurrentValue.labels:type_name -> omniview.sdk.metric.v1.CurrentValue.LabelsEntry
-	43, // 10: omniview.sdk.metric.v1.AggregateValue.window:type_name -> google.protobuf.Duration
-	36, // 11: omniview.sdk.metric.v1.AggregateValue.labels:type_name -> omniview.sdk.metric.v1.AggregateValue.LabelsEntry
+	36, // 7: omniview.sdk.metric.v1.TimeSeries.labels:type_name -> omniview.sdk.metric.v1.TimeSeries.LabelsEntry
+	44, // 8: omniview.sdk.metric.v1.CurrentValue.timestamp:type_name -> google.protobuf.Timestamp
+	37, // 9: omniview.sdk.metric.v1.CurrentValue.labels:type_name -> omniview.sdk.metric.v1.CurrentValue.LabelsEntry
+	45, // 10: omniview.sdk.metric.v1.AggregateValue.window:type_name -> google.protobuf.Duration
+	38, // 11: omniview.sdk.metric.v1.AggregateValue.labels:type_name -> omniview.sdk.metric.v1.AggregateValue.LabelsEntry
 	8,  // 12: omniview.sdk.metric.v1.MetricResult.time_series:type_name -> omniview.sdk.metric.v1.TimeSeries
 	9,  // 13: omniview.sdk.metric.v1.MetricResult.current_value:type_name -> omniview.sdk.metric.v1.CurrentValue
 	10, // 14: omniview.sdk.metric.v1.MetricResult.aggregate_value:type_name -> omniview.sdk.metric.v1.AggregateValue
 	3,  // 15: omniview.sdk.metric.v1.GetSupportedMetricResourcesResponse.provider:type_name -> omniview.sdk.metric.v1.MetricProviderInfo
 	6,  // 16: omniview.sdk.metric.v1.GetSupportedMetricResourcesResponse.handlers:type_name -> omniview.sdk.metric.v1.MetricHandler
-	44, // 17: omniview.sdk.metric.v1.QueryMetricsRequest.resource_data:type_name -> omniview.resource.v2.Value
-	45, // 18: omniview.sdk.metric.v1.QueryMetricsRequest.reference:type_name -> omniview.resource.v2.ResourceReference
-	46, // 19: omniview.sdk.metric.v1.QueryMetricsRequest.route:type_name -> omniview.resource.v2.AccessRoute
+	46, // 17: omniview.sdk.metric.v1.QueryMetricsRequest.resource_data:type_name -> omniview.resource.v2.Value
+	47, // 18: omniview.sdk.metric.v1.QueryMetricsRequest.reference:type_name -> omniview.resource.v2.ResourceReference
+	48, // 19: omniview.sdk.metric.v1.QueryMetricsRequest.route:type_name -> omniview.resource.v2.AccessRoute
 	1,  // 20: omniview.sdk.metric.v1.QueryMetricsRequest.shape:type_name -> omniview.sdk.metric.v1.MetricShape
-	42, // 21: omniview.sdk.metric.v1.QueryMetricsRequest.start_time:type_name -> google.protobuf.Timestamp
-	42, // 22: omniview.sdk.metric.v1.QueryMetricsRequest.end_time:type_name -> google.protobuf.Timestamp
-	43, // 23: omniview.sdk.metric.v1.QueryMetricsRequest.step:type_name -> google.protobuf.Duration
-	37, // 24: omniview.sdk.metric.v1.QueryMetricsRequest.params:type_name -> omniview.sdk.metric.v1.QueryMetricsRequest.ParamsEntry
+	44, // 21: omniview.sdk.metric.v1.QueryMetricsRequest.start_time:type_name -> google.protobuf.Timestamp
+	44, // 22: omniview.sdk.metric.v1.QueryMetricsRequest.end_time:type_name -> google.protobuf.Timestamp
+	45, // 23: omniview.sdk.metric.v1.QueryMetricsRequest.step:type_name -> google.protobuf.Duration
+	39, // 24: omniview.sdk.metric.v1.QueryMetricsRequest.params:type_name -> omniview.sdk.metric.v1.QueryMetricsRequest.ParamsEntry
 	11, // 25: omniview.sdk.metric.v1.QueryMetricsResponse.results:type_name -> omniview.sdk.metric.v1.MetricResult
 	2,  // 26: omniview.sdk.metric.v1.MetricStreamInput.command:type_name -> omniview.sdk.metric.v1.MetricStreamCommand
-	44, // 27: omniview.sdk.metric.v1.MetricStreamInput.resource_data:type_name -> omniview.resource.v2.Value
-	45, // 28: omniview.sdk.metric.v1.MetricStreamInput.reference:type_name -> omniview.resource.v2.ResourceReference
-	46, // 29: omniview.sdk.metric.v1.MetricStreamInput.route:type_name -> omniview.resource.v2.AccessRoute
-	38, // 30: omniview.sdk.metric.v1.MetricStreamInput.params:type_name -> omniview.sdk.metric.v1.MetricStreamInput.ParamsEntry
-	43, // 31: omniview.sdk.metric.v1.MetricStreamInput.interval:type_name -> google.protobuf.Duration
+	46, // 27: omniview.sdk.metric.v1.MetricStreamInput.resource_data:type_name -> omniview.resource.v2.Value
+	47, // 28: omniview.sdk.metric.v1.MetricStreamInput.reference:type_name -> omniview.resource.v2.ResourceReference
+	48, // 29: omniview.sdk.metric.v1.MetricStreamInput.route:type_name -> omniview.resource.v2.AccessRoute
+	40, // 30: omniview.sdk.metric.v1.MetricStreamInput.params:type_name -> omniview.sdk.metric.v1.MetricStreamInput.ParamsEntry
+	45, // 31: omniview.sdk.metric.v1.MetricStreamInput.interval:type_name -> google.protobuf.Duration
 	11, // 32: omniview.sdk.metric.v1.MetricStreamOutput.results:type_name -> omniview.sdk.metric.v1.MetricResult
-	42, // 33: omniview.sdk.metric.v1.MetricStreamOutput.timestamp:type_name -> google.protobuf.Timestamp
+	44, // 33: omniview.sdk.metric.v1.MetricStreamOutput.timestamp:type_name -> google.protobuf.Timestamp
 	17, // 34: omniview.sdk.metric.v1.MetricStreamOutput.operation_error:type_name -> omniview.sdk.metric.v1.MetricOperationError
 	14, // 35: omniview.sdk.metric.v1.ResourceQueryMetricsResponse.response:type_name -> omniview.sdk.metric.v1.QueryMetricsResponse
 	16, // 36: omniview.sdk.metric.v1.ResourceMetricStreamOutput.output:type_name -> omniview.sdk.metric.v1.MetricStreamOutput
 	20, // 37: omniview.sdk.metric.v1.FiniteMetricDescriptor.source:type_name -> omniview.sdk.metric.v1.MetricSourceRef
 	22, // 38: omniview.sdk.metric.v1.MetricDefinition.field_bindings:type_name -> omniview.sdk.metric.v1.MetricFieldBinding
 	23, // 39: omniview.sdk.metric.v1.MetricQueryContext.definitions:type_name -> omniview.sdk.metric.v1.MetricDefinition
-	39, // 40: omniview.sdk.metric.v1.MetricQueryContext.public_scope:type_name -> omniview.sdk.metric.v1.MetricQueryContext.PublicScopeEntry
-	45, // 41: omniview.sdk.metric.v1.ResourceMetricTarget.reference:type_name -> omniview.resource.v2.ResourceReference
-	46, // 42: omniview.sdk.metric.v1.ResourceMetricTarget.route:type_name -> omniview.resource.v2.AccessRoute
-	40, // 43: omniview.sdk.metric.v1.ResourceMetricTarget.public_data:type_name -> omniview.sdk.metric.v1.ResourceMetricTarget.PublicDataEntry
+	41, // 40: omniview.sdk.metric.v1.MetricQueryContext.public_scope:type_name -> omniview.sdk.metric.v1.MetricQueryContext.PublicScopeEntry
+	47, // 41: omniview.sdk.metric.v1.ResourceMetricTarget.reference:type_name -> omniview.resource.v2.ResourceReference
+	48, // 42: omniview.sdk.metric.v1.ResourceMetricTarget.route:type_name -> omniview.resource.v2.AccessRoute
+	42, // 43: omniview.sdk.metric.v1.ResourceMetricTarget.public_data:type_name -> omniview.sdk.metric.v1.ResourceMetricTarget.PublicDataEntry
 	20, // 44: omniview.sdk.metric.v1.ResourceMetricsQuery.source:type_name -> omniview.sdk.metric.v1.MetricSourceRef
 	25, // 45: omniview.sdk.metric.v1.ResourceMetricsQuery.targets:type_name -> omniview.sdk.metric.v1.ResourceMetricTarget
-	42, // 46: omniview.sdk.metric.v1.ResourceMetricsQuery.start_time:type_name -> google.protobuf.Timestamp
-	42, // 47: omniview.sdk.metric.v1.ResourceMetricsQuery.end_time:type_name -> google.protobuf.Timestamp
-	43, // 48: omniview.sdk.metric.v1.ResourceMetricsQuery.step:type_name -> google.protobuf.Duration
+	44, // 46: omniview.sdk.metric.v1.ResourceMetricsQuery.start_time:type_name -> google.protobuf.Timestamp
+	44, // 47: omniview.sdk.metric.v1.ResourceMetricsQuery.end_time:type_name -> google.protobuf.Timestamp
+	45, // 48: omniview.sdk.metric.v1.ResourceMetricsQuery.step:type_name -> google.protobuf.Duration
 	24, // 49: omniview.sdk.metric.v1.ResourceMetricsQuery.context:type_name -> omniview.sdk.metric.v1.MetricQueryContext
-	42, // 50: omniview.sdk.metric.v1.ResourceMetricPoint.time:type_name -> google.protobuf.Timestamp
+	44, // 50: omniview.sdk.metric.v1.ResourceMetricPoint.time:type_name -> google.protobuf.Timestamp
 	27, // 51: omniview.sdk.metric.v1.ResourceMetricResult.points:type_name -> omniview.sdk.metric.v1.ResourceMetricPoint
-	41, // 52: omniview.sdk.metric.v1.ResourceMetricResult.dimensions:type_name -> omniview.sdk.metric.v1.ResourceMetricResult.DimensionsEntry
-	42, // 53: omniview.sdk.metric.v1.ResourceMetricResult.observed_at:type_name -> google.protobuf.Timestamp
-	43, // 54: omniview.sdk.metric.v1.ResourceMetricResult.window:type_name -> google.protobuf.Duration
+	43, // 52: omniview.sdk.metric.v1.ResourceMetricResult.dimensions:type_name -> omniview.sdk.metric.v1.ResourceMetricResult.DimensionsEntry
+	44, // 53: omniview.sdk.metric.v1.ResourceMetricResult.observed_at:type_name -> google.protobuf.Timestamp
+	45, // 54: omniview.sdk.metric.v1.ResourceMetricResult.window:type_name -> google.protobuf.Duration
 	20, // 55: omniview.sdk.metric.v1.ResourceMetricResult.source:type_name -> omniview.sdk.metric.v1.MetricSourceRef
 	28, // 56: omniview.sdk.metric.v1.ResourceMetricsResponse.results:type_name -> omniview.sdk.metric.v1.ResourceMetricResult
 	20, // 57: omniview.sdk.metric.v1.ResourceMetricsCatalog.source:type_name -> omniview.sdk.metric.v1.MetricSourceRef
 	21, // 58: omniview.sdk.metric.v1.ResourceMetricsCatalog.metrics:type_name -> omniview.sdk.metric.v1.FiniteMetricDescriptor
-	43, // 59: omniview.sdk.metric.v1.ResourceMetricsCatalog.max_sample_age:type_name -> google.protobuf.Duration
+	45, // 59: omniview.sdk.metric.v1.ResourceMetricsCatalog.max_sample_age:type_name -> google.protobuf.Duration
 	20, // 60: omniview.sdk.metric.v1.ResourceMetricsCatalogRequest.source:type_name -> omniview.sdk.metric.v1.MetricSourceRef
 	24, // 61: omniview.sdk.metric.v1.ResourceMetricsCatalogRequest.context:type_name -> omniview.sdk.metric.v1.MetricQueryContext
-	47, // 62: omniview.sdk.metric.v1.MetricPlugin.GetSupportedResources:input_type -> google.protobuf.Empty
-	13, // 63: omniview.sdk.metric.v1.MetricPlugin.Query:input_type -> omniview.sdk.metric.v1.QueryMetricsRequest
-	15, // 64: omniview.sdk.metric.v1.MetricPlugin.StreamMetrics:input_type -> omniview.sdk.metric.v1.MetricStreamInput
-	13, // 65: omniview.sdk.metric.v1.MetricPlugin.QueryResource:input_type -> omniview.sdk.metric.v1.QueryMetricsRequest
-	15, // 66: omniview.sdk.metric.v1.MetricPlugin.StreamResourceMetrics:input_type -> omniview.sdk.metric.v1.MetricStreamInput
-	47, // 67: omniview.sdk.metric.v1.MetricPlugin.GetFiniteCapabilities:input_type -> google.protobuf.Empty
-	31, // 68: omniview.sdk.metric.v1.MetricPlugin.GetResourceMetricsCatalog:input_type -> omniview.sdk.metric.v1.ResourceMetricsCatalogRequest
-	26, // 69: omniview.sdk.metric.v1.MetricPlugin.QueryResources:input_type -> omniview.sdk.metric.v1.ResourceMetricsQuery
-	12, // 70: omniview.sdk.metric.v1.MetricPlugin.GetSupportedResources:output_type -> omniview.sdk.metric.v1.GetSupportedMetricResourcesResponse
-	14, // 71: omniview.sdk.metric.v1.MetricPlugin.Query:output_type -> omniview.sdk.metric.v1.QueryMetricsResponse
-	16, // 72: omniview.sdk.metric.v1.MetricPlugin.StreamMetrics:output_type -> omniview.sdk.metric.v1.MetricStreamOutput
-	18, // 73: omniview.sdk.metric.v1.MetricPlugin.QueryResource:output_type -> omniview.sdk.metric.v1.ResourceQueryMetricsResponse
-	19, // 74: omniview.sdk.metric.v1.MetricPlugin.StreamResourceMetrics:output_type -> omniview.sdk.metric.v1.ResourceMetricStreamOutput
-	32, // 75: omniview.sdk.metric.v1.MetricPlugin.GetFiniteCapabilities:output_type -> omniview.sdk.metric.v1.FiniteMetricCapabilities
-	30, // 76: omniview.sdk.metric.v1.MetricPlugin.GetResourceMetricsCatalog:output_type -> omniview.sdk.metric.v1.ResourceMetricsCatalog
-	29, // 77: omniview.sdk.metric.v1.MetricPlugin.QueryResources:output_type -> omniview.sdk.metric.v1.ResourceMetricsResponse
-	70, // [70:78] is the sub-list for method output_type
-	62, // [62:70] is the sub-list for method input_type
-	62, // [62:62] is the sub-list for extension type_name
-	62, // [62:62] is the sub-list for extension extendee
-	0,  // [0:62] is the sub-list for field type_name
+	23, // 62: omniview.sdk.metric.v1.MetricOwnerCatalog.definitions:type_name -> omniview.sdk.metric.v1.MetricDefinition
+	33, // 63: omniview.sdk.metric.v1.MetricOwnerCatalog.scope_fields:type_name -> omniview.sdk.metric.v1.MetricScopeField
+	49, // 64: omniview.sdk.metric.v1.MetricPlugin.GetSupportedResources:input_type -> google.protobuf.Empty
+	13, // 65: omniview.sdk.metric.v1.MetricPlugin.Query:input_type -> omniview.sdk.metric.v1.QueryMetricsRequest
+	15, // 66: omniview.sdk.metric.v1.MetricPlugin.StreamMetrics:input_type -> omniview.sdk.metric.v1.MetricStreamInput
+	13, // 67: omniview.sdk.metric.v1.MetricPlugin.QueryResource:input_type -> omniview.sdk.metric.v1.QueryMetricsRequest
+	15, // 68: omniview.sdk.metric.v1.MetricPlugin.StreamResourceMetrics:input_type -> omniview.sdk.metric.v1.MetricStreamInput
+	49, // 69: omniview.sdk.metric.v1.MetricPlugin.GetFiniteCapabilities:input_type -> google.protobuf.Empty
+	31, // 70: omniview.sdk.metric.v1.MetricPlugin.GetResourceMetricsCatalog:input_type -> omniview.sdk.metric.v1.ResourceMetricsCatalogRequest
+	26, // 71: omniview.sdk.metric.v1.MetricPlugin.QueryResources:input_type -> omniview.sdk.metric.v1.ResourceMetricsQuery
+	49, // 72: omniview.sdk.metric.v1.MetricPlugin.GetMetricOwnerCatalog:input_type -> google.protobuf.Empty
+	12, // 73: omniview.sdk.metric.v1.MetricPlugin.GetSupportedResources:output_type -> omniview.sdk.metric.v1.GetSupportedMetricResourcesResponse
+	14, // 74: omniview.sdk.metric.v1.MetricPlugin.Query:output_type -> omniview.sdk.metric.v1.QueryMetricsResponse
+	16, // 75: omniview.sdk.metric.v1.MetricPlugin.StreamMetrics:output_type -> omniview.sdk.metric.v1.MetricStreamOutput
+	18, // 76: omniview.sdk.metric.v1.MetricPlugin.QueryResource:output_type -> omniview.sdk.metric.v1.ResourceQueryMetricsResponse
+	19, // 77: omniview.sdk.metric.v1.MetricPlugin.StreamResourceMetrics:output_type -> omniview.sdk.metric.v1.ResourceMetricStreamOutput
+	32, // 78: omniview.sdk.metric.v1.MetricPlugin.GetFiniteCapabilities:output_type -> omniview.sdk.metric.v1.FiniteMetricCapabilities
+	30, // 79: omniview.sdk.metric.v1.MetricPlugin.GetResourceMetricsCatalog:output_type -> omniview.sdk.metric.v1.ResourceMetricsCatalog
+	29, // 80: omniview.sdk.metric.v1.MetricPlugin.QueryResources:output_type -> omniview.sdk.metric.v1.ResourceMetricsResponse
+	34, // 81: omniview.sdk.metric.v1.MetricPlugin.GetMetricOwnerCatalog:output_type -> omniview.sdk.metric.v1.MetricOwnerCatalog
+	73, // [73:82] is the sub-list for method output_type
+	64, // [64:73] is the sub-list for method input_type
+	64, // [64:64] is the sub-list for extension type_name
+	64, // [64:64] is the sub-list for extension extendee
+	0,  // [0:64] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_metric_metric_proto_init() }
@@ -3079,7 +3223,7 @@ func file_proto_v1_metric_metric_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_metric_metric_proto_rawDesc), len(file_proto_v1_metric_metric_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   39,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

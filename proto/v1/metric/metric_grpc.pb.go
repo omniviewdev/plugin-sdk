@@ -28,6 +28,7 @@ const (
 	MetricPlugin_GetFiniteCapabilities_FullMethodName     = "/omniview.sdk.metric.v1.MetricPlugin/GetFiniteCapabilities"
 	MetricPlugin_GetResourceMetricsCatalog_FullMethodName = "/omniview.sdk.metric.v1.MetricPlugin/GetResourceMetricsCatalog"
 	MetricPlugin_QueryResources_FullMethodName            = "/omniview.sdk.metric.v1.MetricPlugin/QueryResources"
+	MetricPlugin_GetMetricOwnerCatalog_FullMethodName     = "/omniview.sdk.metric.v1.MetricPlugin/GetMetricOwnerCatalog"
 )
 
 // MetricPluginClient is the client API for MetricPlugin service.
@@ -42,6 +43,7 @@ type MetricPluginClient interface {
 	GetFiniteCapabilities(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*FiniteMetricCapabilities, error)
 	GetResourceMetricsCatalog(ctx context.Context, in *ResourceMetricsCatalogRequest, opts ...grpc.CallOption) (*ResourceMetricsCatalog, error)
 	QueryResources(ctx context.Context, in *ResourceMetricsQuery, opts ...grpc.CallOption) (*ResourceMetricsResponse, error)
+	GetMetricOwnerCatalog(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MetricOwnerCatalog, error)
 }
 
 type metricPluginClient struct {
@@ -168,6 +170,15 @@ func (c *metricPluginClient) QueryResources(ctx context.Context, in *ResourceMet
 	return out, nil
 }
 
+func (c *metricPluginClient) GetMetricOwnerCatalog(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MetricOwnerCatalog, error) {
+	out := new(MetricOwnerCatalog)
+	err := c.cc.Invoke(ctx, MetricPlugin_GetMetricOwnerCatalog_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MetricPluginServer is the server API for MetricPlugin service.
 // All implementations should embed UnimplementedMetricPluginServer
 // for forward compatibility
@@ -180,6 +191,7 @@ type MetricPluginServer interface {
 	GetFiniteCapabilities(context.Context, *emptypb.Empty) (*FiniteMetricCapabilities, error)
 	GetResourceMetricsCatalog(context.Context, *ResourceMetricsCatalogRequest) (*ResourceMetricsCatalog, error)
 	QueryResources(context.Context, *ResourceMetricsQuery) (*ResourceMetricsResponse, error)
+	GetMetricOwnerCatalog(context.Context, *emptypb.Empty) (*MetricOwnerCatalog, error)
 }
 
 // UnimplementedMetricPluginServer should be embedded to have forward compatible implementations.
@@ -209,6 +221,9 @@ func (UnimplementedMetricPluginServer) GetResourceMetricsCatalog(context.Context
 }
 func (UnimplementedMetricPluginServer) QueryResources(context.Context, *ResourceMetricsQuery) (*ResourceMetricsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method QueryResources not implemented")
+}
+func (UnimplementedMetricPluginServer) GetMetricOwnerCatalog(context.Context, *emptypb.Empty) (*MetricOwnerCatalog, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMetricOwnerCatalog not implemented")
 }
 
 // UnsafeMetricPluginServer may be embedded to opt out of forward compatibility for this service.
@@ -382,6 +397,24 @@ func _MetricPlugin_QueryResources_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MetricPlugin_GetMetricOwnerCatalog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MetricPluginServer).GetMetricOwnerCatalog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MetricPlugin_GetMetricOwnerCatalog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MetricPluginServer).GetMetricOwnerCatalog(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MetricPlugin_ServiceDesc is the grpc.ServiceDesc for MetricPlugin service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -412,6 +445,10 @@ var MetricPlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "QueryResources",
 			Handler:    _MetricPlugin_QueryResources_Handler,
+		},
+		{
+			MethodName: "GetMetricOwnerCatalog",
+			Handler:    _MetricPlugin_GetMetricOwnerCatalog_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

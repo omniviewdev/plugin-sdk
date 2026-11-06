@@ -33,6 +33,7 @@ type PluginOpts struct {
 	// Both must be set together; legacy callbacks remain independently optional.
 	ResourceMetricsCatalogFunc ResourceMetricsCatalogFunc `json:"-"`
 	QueryResourcesFunc         QueryResourcesFunc         `json:"-"`
+	GetMetricOwnerCatalogFunc  GetMetricOwnerCatalogFunc  `json:"-"`
 }
 
 // QueryFunc queries metrics for a resource.
