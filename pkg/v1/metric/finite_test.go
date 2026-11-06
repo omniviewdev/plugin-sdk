@@ -134,7 +134,8 @@ func TestFiniteManagerAdmitsEveryTargetBeforeCollection(t *testing.T) {
 	m := NewManager(nil, nil, ProviderInfo{ID: "legacy-id"}, nil, nil, nil)
 	m.sourcePluginID = "metric"
 	m.BindConnectionContextProvider(registry)
-	m.resourceMetricsCatalogFunc = func(pc *types.PluginContext, key string) (*ResourceMetricsCatalog, error) {
+	m.resourceMetricsCatalogFunc = func(pc *types.PluginContext, request ResourceMetricsCatalogRequest) (*ResourceMetricsCatalog, error) {
+		key := request.ResourceKey
 		if pc.Connection.Data["endpoint"] != "configured" {
 			t.Fatal("caller metadata replaced configured profile")
 		}
@@ -176,7 +177,7 @@ func TestFiniteOldProcessNeverFallsBackToLegacyCollection(t *testing.T) {
 	if _, err := client.QueryResources(pc, finiteTestQuery()); resourcev2.ErrorCode(err) != "UNSUPPORTED" {
 		t.Fatal("missing finite query capability not explicit", err)
 	}
-	if _, err := client.GetResourceMetricsCatalog(pc, "opaque::type"); resourcev2.ErrorCode(err) != "UNSUPPORTED" {
+	if _, err := client.GetResourceMetricsCatalog(pc, ResourceMetricsCatalogRequest{Source: finiteTestQuery().Source, ResourceKey: "opaque::type"}); resourcev2.ErrorCode(err) != "UNSUPPORTED" {
 		t.Fatal("missing finite catalog capability not explicit", err)
 	}
 	if old.calls.Load() != 0 {

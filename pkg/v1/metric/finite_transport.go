@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const finiteWireVersion = 1
+const finiteWireVersion = 2
 
 func sourceToProto(s MetricSourceRef) *metricpb.MetricSourceRef {
 	return &metricpb.MetricSourceRef{PluginId: s.PluginID, ConnectionId: s.ConnectionID, DatasourceUid: s.DatasourceUID, DatasourceKind: s.DatasourceKind}
@@ -51,7 +51,11 @@ func decodeFiniteDuration(d *durationpb.Duration) (time.Duration, error) {
 func catalogToProto(c *ResourceMetricsCatalog) *metricpb.ResourceMetricsCatalog {
 	p := &metricpb.ResourceMetricsCatalog{Source: sourceToProto(c.Source), MaxTargets: int32(c.MaxTargets), MaxSampleAge: durationpb.New(c.MaxSampleAge)}
 	for _, d := range c.Metrics {
-		p.Metrics = append(p.Metrics, &metricpb.FiniteMetricDescriptor{Id: d.ID, Name: d.Name, ResourceKey: d.ResourceKey, Unit: d.Unit, Shapes: d.Shapes, Description: d.Description})
+		v := &metricpb.FiniteMetricDescriptor{Id: d.ID, Name: d.Name, ResourceKey: d.ResourceKey, Unit: d.Unit, Shapes: d.Shapes, Description: d.Description}
+		if d.Source != nil {
+			v.Source = sourceToProto(*d.Source)
+		}
+		p.Metrics = append(p.Metrics, v)
 	}
 	return p
 }
@@ -68,7 +72,12 @@ func catalogFromProto(p *metricpb.ResourceMetricsCatalog) (*ResourceMetricsCatal
 		if d == nil {
 			return nil, metricError("INVALID_REQUEST", "Nil finite descriptor.")
 		}
-		c.Metrics = append(c.Metrics, FiniteMetricDescriptor{ID: d.Id, Name: d.Name, ResourceKey: d.ResourceKey, Unit: d.Unit, Shapes: d.Shapes, Description: d.Description})
+		v := FiniteMetricDescriptor{ID: d.Id, Name: d.Name, ResourceKey: d.ResourceKey, Unit: d.Unit, Shapes: d.Shapes, Description: d.Description}
+		if d.Source != nil {
+			source := sourceFromProto(d.Source)
+			v.Source = &source
+		}
+		c.Metrics = append(c.Metrics, v)
 	}
 	return c, ValidateResourceMetricsCatalog(c)
 }
@@ -76,7 +85,7 @@ func finiteQueryToProto(q ResourceMetricsQuery) (*metricpb.ResourceMetricsQuery,
 	if err := ValidateResourceMetricsQuery(q); err != nil {
 		return nil, err
 	}
-	p := &metricpb.ResourceMetricsQuery{Source: sourceToProto(q.Source), MetricIds: q.MetricIDs, Shape: q.Shape, StartTime: finiteTime(q.StartTime), EndTime: finiteTime(q.EndTime)}
+	p := &metricpb.ResourceMetricsQuery{Source: sourceToProto(q.Source), MetricIds: q.MetricIDs, Shape: q.Shape, StartTime: finiteTime(q.StartTime), EndTime: finiteTime(q.EndTime), Context: finiteContextToProto(q.Context)}
 	if q.Step != 0 {
 		p.Step = durationpb.New(q.Step)
 	}
@@ -89,7 +98,7 @@ func finiteQueryToProto(q ResourceMetricsQuery) (*metricpb.ResourceMetricsQuery,
 		if err != nil {
 			return nil, err
 		}
-		p.Targets = append(p.Targets, &metricpb.ResourceMetricTarget{Token: t.Token, Reference: ref, Route: route})
+		p.Targets = append(p.Targets, &metricpb.ResourceMetricTarget{Token: t.Token, Reference: ref, Route: route, PublicData: t.PublicData})
 	}
 	return p, nil
 }
@@ -102,6 +111,10 @@ func finiteQueryFromProto(p *metricpb.ResourceMetricsQuery) (ResourceMetricsQuer
 	q.MetricIDs = p.MetricIds
 	q.Shape = p.Shape
 	var err error
+	q.Context, err = finiteContextFromProto(p.Context)
+	if err != nil {
+		return q, err
+	}
 	q.StartTime, err = decodeFiniteTime(p.StartTime)
 	if err != nil {
 		return q, err
@@ -129,7 +142,7 @@ func finiteQueryFromProto(p *metricpb.ResourceMetricsQuery) (ResourceMetricsQuer
 		if err != nil {
 			return q, err
 		}
-		q.Targets = append(q.Targets, ResourceMetricTarget{Token: t.Token, Reference: ref, Route: route})
+		q.Targets = append(q.Targets, ResourceMetricTarget{Token: t.Token, Reference: ref, Route: route, PublicData: t.PublicData})
 	}
 	return q, ValidateResourceMetricsQuery(q)
 }
@@ -137,6 +150,9 @@ func finiteResponseToProto(r *ResourceMetricsResponse) *metricpb.ResourceMetrics
 	p := &metricpb.ResourceMetricsResponse{Complete: r.Complete, Warnings: r.Warnings}
 	for _, v := range r.Results {
 		out := &metricpb.ResourceMetricResult{ResourceToken: v.ResourceToken, MetricId: v.MetricID, Status: v.Status, Value: v.Value, Dimensions: v.Dimensions, Window: durationpb.New(v.Window), Message: v.Message, IdentityScope: v.IdentityScope}
+		if v.Source != nil {
+			out.Source = sourceToProto(*v.Source)
+		}
 		if v.ObservedAt != nil {
 			out.ObservedAt = finiteTime(*v.ObservedAt)
 		}
@@ -158,6 +174,10 @@ func finiteResponseFromProto(q ResourceMetricsQuery, p *metricpb.ResourceMetrics
 			return nil, metricError("INVALID_REQUEST", "Nil finite result.")
 		}
 		out := ResourceMetricResult{ResourceToken: v.ResourceToken, MetricID: v.MetricId, Status: v.Status, Value: v.Value, Dimensions: v.Dimensions, Message: v.Message, IdentityScope: v.IdentityScope}
+		if v.Source != nil {
+			source := sourceFromProto(v.Source)
+			out.Source = &source
+		}
 		var err error
 		out.Window, err = decodeFiniteDuration(v.Window)
 		if err != nil {
@@ -211,7 +231,15 @@ func (s *PluginServer) GetResourceMetricsCatalog(ctx context.Context, p *metricp
 	if err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
-	c, err := impl.GetResourceMetricsCatalog(metricPluginContext(ctx), p.ResourceKey)
+	mapping, err := finiteContextFromProto(p.Context)
+	if err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	request := ResourceMetricsCatalogRequest{Source: sourceFromProto(p.Source), ResourceKey: p.ResourceKey, Context: mapping}
+	if err := ValidateResourceMetricsCatalogRequest(request); err != nil {
+		return nil, resourceplugin.ResourceRPCError(err)
+	}
+	c, err := impl.GetResourceMetricsCatalog(metricPluginContext(ctx), request)
 	if err == nil {
 		err = ValidateResourceMetricsCatalog(c)
 	}
@@ -258,7 +286,10 @@ func (c *PluginClient) negotiateFinite(ctx context.Context) error {
 }
 
 // GetResourceMetricsCatalog negotiates finite support; old processes return UNSUPPORTED.
-func (c *PluginClient) GetResourceMetricsCatalog(pc *types.PluginContext, key string) (*ResourceMetricsCatalog, error) {
+func (c *PluginClient) GetResourceMetricsCatalog(pc *types.PluginContext, request ResourceMetricsCatalogRequest) (*ResourceMetricsCatalog, error) {
+	if err := ValidateResourceMetricsCatalogRequest(request); err != nil {
+		return nil, err
+	}
 	ctx, err := resourceplugin.OutgoingSessionContext(pluginCallContext(pc))
 	if err != nil {
 		return nil, err
@@ -267,14 +298,26 @@ func (c *PluginClient) GetResourceMetricsCatalog(pc *types.PluginContext, key st
 		return nil, err
 	}
 	option, admission := resourceplugin.ResponseAdmission()
-	p, err := c.client.GetResourceMetricsCatalog(ctx, &metricpb.ResourceMetricsCatalogRequest{ResourceKey: key}, option)
+	p, err := c.client.GetResourceMetricsCatalog(ctx, &metricpb.ResourceMetricsCatalogRequest{ResourceKey: request.ResourceKey, Source: sourceToProto(request.Source), Context: finiteContextToProto(request.Context)}, option)
 	if e := admission(); e != nil {
 		return nil, e
 	}
 	if err != nil {
 		return nil, metricDomainError(err)
 	}
-	return catalogFromProto(p)
+	catalog, err := catalogFromProto(p)
+	if err != nil {
+		return nil, err
+	}
+	if catalog.Source != request.Source {
+		return nil, metricError("INVALID_REQUEST", "Catalog response conflicts with selected source.")
+	}
+	for _, descriptor := range catalog.Metrics {
+		if descriptor.ResourceKey != request.ResourceKey || descriptor.Source != nil && *descriptor.Source != request.Source {
+			return nil, metricError("INVALID_REQUEST", "Catalog descriptor conflicts with selected source or resource type.")
+		}
+	}
+	return catalog, nil
 }
 
 // QueryResources makes one typed batch RPC, never a per-resource fallback loop.

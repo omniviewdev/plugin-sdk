@@ -96,6 +96,8 @@ func strictUtilityRoot(d protoreflect.MessageDescriptor) bool {
 		"CreateLogSessionRequest", "ResourceLogSessionResponse",
 		"QueryMetricsRequest", utilityMetricStreamInputName,
 		"ResourceQueryMetricsResponse", "ResourceMetricStreamOutput",
+		"FiniteMetricCapabilities", "ResourceMetricsCatalogRequest",
+		"ResourceMetricsCatalog", "ResourceMetricsQuery", "ResourceMetricsResponse",
 		"PortForwardSessionOptions", "PortForwardResourceConnection",
 		utilityPortForwardSessionName, "ResourcePortForwardSessionResponse",
 		utilityPortForwardByIDResponseName, utilityPortForwardListResponseName:

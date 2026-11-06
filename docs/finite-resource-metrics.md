@@ -32,7 +32,7 @@ Use your existing provider ID and name. Both callbacks are required together; yo
 
 | Callback | What it does |
 | --- | --- |
-| `GetResourceMetricsCatalog(ctx, resourceKey)` | Lists the metrics this source supports for a resource type |
+| `GetResourceMetricsCatalog(ctx, request)` | Lists metrics for the exact source, resource type and host-resolved mappings |
 | `QueryResources(ctx, query)` | Fetches the requested measurements for all supplied resources |
 
 Here, `ctx` is a `*types.PluginContext`. Its `Context` supports cancellation; its `Connection` contains the selected source's configured connection.
@@ -49,7 +49,8 @@ import (
     "github.com/omniviewdev/plugin-sdk/pkg/v1/metric"
 )
 
-func PodCatalog(ctx *types.PluginContext, resourceKey string) (*metric.ResourceMetricsCatalog, error) {
+func PodCatalog(ctx *types.PluginContext, request metric.ResourceMetricsCatalogRequest) (*metric.ResourceMetricsCatalog, error) {
+    resourceKey := request.ResourceKey
     catalog := &metric.ResourceMetricsCatalog{
         Source: metric.MetricSourceRef{
             PluginID:       "kubernetes",
@@ -80,6 +81,8 @@ func PodCatalog(ctx *types.PluginContext, resourceKey string) (*metric.ResourceM
 | `MaxSampleAge` | How old a live sample can be before it is delayed; zero means unknown |
 
 Use the plugin's manifest ID in `Source.PluginID`, not `ProviderInfo.ID`. Advertise only metrics and query shapes your collector actually supports.
+
+Native providers validate `request.Source` against the leased configured source. External providers also validate the datasource UID and kind. Resource targets retain their owner's references and routes; a Grafana connection is not a Kubernetes owner connection. The host admits those targets and supplies only approved scalar projections in `PublicData`, never owner credentials or caller bodies.
 
 ## 3. Return measurements
 
@@ -136,6 +139,23 @@ Additional statuses and exact validation rules are in the [contract reference](f
 | `range` | Time-ordered points | `StartTime`, `EndTime`, `Step` |
 
 Native metrics-server supports live values only. Repeated refreshes must not become invented history.
+
+## Choose the producer's unit
+
+| Quantity | `Unit` |
+| --- | --- |
+| CPU | `cores` |
+| Memory or storage | `bytes` |
+| Duration | `seconds` |
+| Count | `count` |
+| Fraction | `ratio` |
+| Percentage | `percent` |
+| Network throughput | `bytes_per_second` |
+| Event rate | `count_per_second` |
+
+Use only quantities the source actually supplies. Do not invent a denominator, convert a count into a rate, or label a fraction as a percentage.
+
+Finite RPC negotiation uses version 2. Rebuild the host and plugin together after changing the SDK; an older finite protocol returns `UNSUPPORTED`, never a legacy polling fallback.
 
 ## Next steps
 

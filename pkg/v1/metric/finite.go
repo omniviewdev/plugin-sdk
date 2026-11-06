@@ -26,7 +26,7 @@ type MetricSourceRef struct {
 }
 
 // FiniteMetricDescriptor declares physical base units and supported evaluations.
-// Units are cores or bytes; shapes are current or range, never legacy enum numbers.
+// Units use ValidFiniteUnit; shapes are current or range, never legacy enum numbers.
 type FiniteMetricDescriptor struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
@@ -34,6 +34,8 @@ type FiniteMetricDescriptor struct {
 	Unit        string   `json:"unit"`
 	Shapes      []string `json:"shapes"`
 	Description string   `json:"description"`
+	// Source overrides the catalog default for host-composed mixed-source lanes.
+	Source *MetricSourceRef `json:"source,omitempty"`
 }
 
 // ResourceMetricTarget binds a caller correlation token to an admitted reference.
@@ -42,6 +44,9 @@ type ResourceMetricTarget struct {
 	Token     string                       `json:"token"`
 	Reference resourcev2.ResourceReference `json:"reference"`
 	Route     resourcev2.AccessRoute       `json:"route"`
+	// PublicData contains only host-approved scalar fields from owner observations.
+	// Providers must never interpret this projection as resource authority.
+	PublicData map[string]string `json:"public_data,omitempty"`
 }
 
 // ResourceMetricsQuery evaluates every requested target/metric pair once.
@@ -54,6 +59,7 @@ type ResourceMetricsQuery struct {
 	StartTime time.Time              `json:"start_time"`
 	EndTime   time.Time              `json:"end_time"`
 	Step      time.Duration          `json:"step"`
+	Context   MetricQueryContext     `json:"context"`
 }
 
 // ResourceMetricPoint carries an evaluation timestamp and a physical base-unit
@@ -80,6 +86,8 @@ type ResourceMetricResult struct {
 	// \"incarnation\" means source verified UID; \"name\" means name-only attribution.
 	IdentityScope string `json:"identity_scope"`
 	Message       string `json:"message"`
+	// Source is exact provenance. The host fills it after validating each lane.
+	Source *MetricSourceRef `json:"source,omitempty"`
 }
 
 // ResourceMetricsResponse separates completeness from individual result status.
@@ -103,12 +111,12 @@ type ResourceMetricsCatalog struct {
 // FiniteQueryProvider is optional and independent of legacy Query/Stream.
 // Implementations must honor cancellation and must not fabricate missing samples.
 type FiniteQueryProvider interface {
-	GetResourceMetricsCatalog(*types.PluginContext, string) (*ResourceMetricsCatalog, error)
+	GetResourceMetricsCatalog(*types.PluginContext, ResourceMetricsCatalogRequest) (*ResourceMetricsCatalog, error)
 	QueryResources(*types.PluginContext, ResourceMetricsQuery) (*ResourceMetricsResponse, error)
 }
 
 // ResourceMetricsCatalogFunc returns descriptors for one canonical resource key.
-type ResourceMetricsCatalogFunc func(*types.PluginContext, string) (*ResourceMetricsCatalog, error)
+type ResourceMetricsCatalogFunc func(*types.PluginContext, ResourceMetricsCatalogRequest) (*ResourceMetricsCatalog, error)
 
 // QueryResourcesFunc receives the source-owned leased connection context.
 // All target admissions remain leased until the callback returns.
@@ -128,6 +136,9 @@ func validateFiniteSource(s MetricSourceRef) error {
 // Dispatch additionally checks authority against the configured connection registry.
 func ValidateResourceMetricsQuery(q ResourceMetricsQuery) error {
 	if err := validateFiniteSource(q.Source); err != nil {
+		return err
+	}
+	if err := ValidateMetricQueryContext(q.Context); err != nil {
 		return err
 	}
 	if len(q.Targets) == 0 || len(q.Targets) > MaxFiniteTargets || len(q.MetricIDs) == 0 || len(q.MetricIDs) > MaxFiniteMetrics {
@@ -187,7 +198,12 @@ func ValidateResourceMetricsCatalog(c *ResourceMetricsCatalog) error {
 	}
 	ids := map[string]bool{}
 	for _, d := range c.Metrics {
-		if d.ID == "" || ids[d.ID] || d.ResourceKey == "" || (d.Unit != "cores" && d.Unit != "bytes") || len(d.Shapes) == 0 || len(d.Shapes) > 2 {
+		if d.Source != nil {
+			if err := validateFiniteSource(*d.Source); err != nil {
+				return err
+			}
+		}
+		if d.ID == "" || ids[d.ID] || d.ResourceKey == "" || !ValidFiniteUnit(d.Unit) || len(d.Shapes) == 0 || len(d.Shapes) > 2 {
 			return metricError("INVALID_REQUEST", "Invalid finite descriptor.")
 		}
 		ids[d.ID] = true
@@ -224,6 +240,9 @@ func ValidateResourceMetricsResponse(q ResourceMetricsQuery, r *ResourceMetricsR
 	seen := map[[2]string]bool{}
 	points := 0
 	for _, v := range r.Results {
+		if v.Source != nil && *v.Source != q.Source {
+			return metricError("INVALID_REQUEST", "Result source conflicts with selected query source.")
+		}
 		key := [2]string{v.ResourceToken, v.MetricID}
 		if !tokens[v.ResourceToken] || !ids[v.MetricID] || seen[key] {
 			return metricError("INVALID_REQUEST", "Unknown or duplicate finite result.")

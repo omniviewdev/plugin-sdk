@@ -24,13 +24,17 @@ func RegisterMetricPluginServer(registrar grpc.ServiceRegistrar, server metricpb
 	d := metricpb.MetricPlugin_ServiceDesc
 	d.Methods = append([]grpc.MethodDesc(nil), d.Methods...)
 	d.Streams = append([]grpc.StreamDesc(nil), d.Streams...)
+	// GetFiniteCapabilities retains its generated Empty request decoder. Empty is
+	// not a resource-bearing root; forcing the resource envelope rejects support
+	// negotiation before the provider can answer. Finite payload roots are
+	// explicitly admitted by the shared strict codec.
 	for i := range d.Methods {
 		switch d.Methods[i].MethodName {
 		case "Query":
 			d.Methods[i].Handler = metricQueryHandler(false)
 		case "QueryResource":
 			d.Methods[i].Handler = metricQueryHandler(true)
-		case "QueryResources", "GetResourceMetricsCatalog", "GetFiniteCapabilities":
+		case "QueryResources", "GetResourceMetricsCatalog":
 			d.Methods[i].Handler = finiteAdmissionHandler(d.Methods[i])
 		}
 	}

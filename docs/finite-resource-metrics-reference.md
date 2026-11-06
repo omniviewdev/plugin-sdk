@@ -11,9 +11,9 @@ Native plugins normally use `metric.RegisterPlugin` and set both optional `Plugi
 ```go
 opts := metric.PluginOpts{
     ProviderInfo: metric.ProviderInfo{ID: "k8s-metrics", Name: "Kubernetes"},
-    ResourceMetricsCatalogFunc: func(pc *types.PluginContext, key string) (*metric.ResourceMetricsCatalog, error) {
-        // Return only descriptors this source implements for key.
-        return nativeCatalog(pc, key)
+    ResourceMetricsCatalogFunc: func(pc *types.PluginContext, request metric.ResourceMetricsCatalogRequest) (*metric.ResourceMetricsCatalog, error) {
+        // Source names the exact datasource; Context contains host-resolved mappings.
+        return nativeCatalog(pc, request)
     },
     QueryResourcesFunc: func(pc *types.PluginContext, query metric.ResourceMetricsQuery) (*metric.ResourceMetricsResponse, error) {
         // pc.Connection is the configured source profile, not request metadata.
@@ -36,13 +36,23 @@ Source context must contain a nonnil caller context and selected connection. Hon
 
 ## Catalog
 
-`GetResourceMetricsCatalog(pc, resourceKey)` returns `ResourceMetricsCatalog{Source, Metrics, MaxTargets, MaxSampleAge}`. Every descriptor has ID, Name, ResourceKey, Unit, Shapes, and Description. IDs must be unique and nonempty. ResourceKey must match the requested canonical type. Units are physical bases `cores` and `bytes`, not display scales or legacy numeric enums. Shapes are explicit strings `current` and `range`. A source must not advertise a shape it cannot execute.
+`GetResourceMetricsCatalog(pc, ResourceMetricsCatalogRequest{Source, ResourceKey, Context})` returns `ResourceMetricsCatalog{Source, Metrics, MaxTargets, MaxSampleAge}` for the exact selected source. Every descriptor has ID, Name, ResourceKey, Unit, Shapes, Description, and an optional Source override for a host-composed mixed-source catalog. IDs must be unique and nonempty. ResourceKey must match the requested canonical type. Valid units are `cores`, `bytes`, `seconds`, `count`, `ratio`, `percent`, `bytes_per_second` and `count_per_second`, never display scales or legacy numeric enums. These units describe real producer quantities; the host never guesses a conversion or denominator. Shapes are explicit strings `current` and `range`. A source must not advertise a shape it cannot execute.
 
 Native Pod IDs are `kubernetes.pod.cpu.usage` in cores and `kubernetes.pod.memory.working_set` in bytes. Native metrics-server supports current only. It does not fabricate history from polling.
 
 The latest source catalog is authoritative. The manager rejects unadvertised metric IDs or shapes with UNSUPPORTED before collection. Catalog MaxTargets must be 1–256; the manager enforces the catalog's lower bound as well as the protocol bound.
 
 `MaxSampleAge` is the source's freshness policy for current samples, expressed as a nonnegative Go duration (nanoseconds in JSON). Zero means freshness is unknown, not that samples expire immediately. With a positive policy and a known `ObservedAt`, a current sample becomes delayed after `ObservedAt + MaxSampleAge`; refresh or cache reuse must not renew that deadline. Native metrics-server advertises two minutes. This policy is not a cache TTL, polling cadence, or freshness rule for historical range points. Observation snapshots carry the authoritative catalog used to interpret their samples.
+
+## Source configuration and approved projections
+
+The host resolves source precedence from view selection, connection/per-metric binding, profile default, then native inheritance. A failed explicit selection is an error, never permission to fall back to native. `MetricSourceRef` identifies the source plugin, source connection, datasource UID and kind independently of every target's resource owner.
+
+`MetricQueryContext` carries host-resolved semantic definitions, approved public `cluster` scope, `MappingRevision` and `ProjectionRevision`. Projection revision describes approved field bindings independently of the requested target subset. `ResourceMetricTarget.PublicData` carries only schema-approved scalar fields extracted from current owner observations. The host discards caller projections, retains owner admission and source-generation guards, and includes mapping/projection revisions in shared-work partitions. Per-metric projected values participate in work identity; delivery guards also reject retired observations, even if replacement values are equal. Sources must not accept owner bodies or infer owner authority from a datasource credential. No resource GET is introduced for projection.
+
+`ProviderConnectionInput.Credential` is write-only: nil preserves the stored secret; an empty string clears it. `ProviderConnection.HasCredentials` exposes presence only. Credentials and authenticated transports stay inside the trusted provider's private store. Public metric configuration and presentation preferences use separate stores.
+
+Sparse `MetricDefinitionOverride` fields inherit when nil. Removing an override resets it to the latest global definition. `MetricSourceDefaults.Source == nil` resets source inheritance. Host configuration revisions fence active collection and delivery; changing credentials retires the old transport generation and cancels its work.
 
 ## Query domains and bounds
 
@@ -71,7 +81,7 @@ Dimensions are source labels, not authority or source selectors. Message and War
 
 ## Transport and errors
 
-The typed `GetFiniteCapabilities` RPC negotiates version 1. `GetResourceMetricsCatalog` and `QueryResources` use generated finite messages. Old processes or providers lacking finite support return explicit UNSUPPORTED; the client never loops through legacy per-resource calls. Session/catalog context crosses the existing resource session transport. Remote classified resource errors retain their domain codes.
+The typed `GetFiniteCapabilities` RPC negotiates version 2. `GetResourceMetricsCatalog` and `QueryResources` carry generated typed source, mapping and approved-projection messages. Old processes or providers lacking finite support return explicit UNSUPPORTED; the client never loops through legacy per-resource calls. Session/catalog context crosses the existing resource session transport. Remote classified resource errors retain their domain codes.
 
 INVALID_REQUEST denotes invalid source identity, duplicate tokens/IDs, domains, units, statuses, result shape, or numeric values. RESOURCE_LIMIT denotes count/metadata/sample bounds. UNSUPPORTED denotes absent finite capability or an unadvertised metric/shape. Connection retirement, catalog reset, authority, and cancellation retain existing resource registry error semantics. No compatibility adapter or synthetic sample converts these failures into successful data.
 

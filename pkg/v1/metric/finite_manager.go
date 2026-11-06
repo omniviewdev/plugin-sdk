@@ -7,24 +7,31 @@ import (
 
 // GetResourceMetricsCatalog resolves metadata under the selected source lease.
 // Unconfigured finite callbacks return UNSUPPORTED, never a legacy fallback.
-func (m *Manager) GetResourceMetricsCatalog(pc *types.PluginContext, key string) (*ResourceMetricsCatalog, error) {
+func (m *Manager) GetResourceMetricsCatalog(pc *types.PluginContext, request ResourceMetricsCatalogRequest) (*ResourceMetricsCatalog, error) {
+	key := request.ResourceKey
 	if m.resourceMetricsCatalogFunc == nil || m.queryResourcesFunc == nil {
 		return nil, metricError("UNSUPPORTED", "Finite metrics are unsupported.")
 	}
 	if key == "" || pc == nil || pc.Connection == nil || pc.Context == nil {
 		return nil, metricError("INVALID_REQUEST", "Finite catalog requires a resource key and caller source context.")
 	}
+	if err := ValidateResourceMetricsCatalogRequest(request); err != nil {
+		return nil, err
+	}
+	if m.sourcePluginID == "" || request.Source.PluginID != m.sourcePluginID || request.Source.ConnectionID != pc.Connection.ID {
+		return nil, metricError("INVALID_REQUEST", "Catalog source conflicts with selected plugin context.")
+	}
 	var out *ResourceMetricsCatalog
 	err := resourcev2.WithUtilityConnection(pc, m.connectionProvider, nil, nil, func(bound *types.PluginContext) error {
 		var err error
-		out, err = m.resourceMetricsCatalogFunc(bound, key)
+		out, err = m.resourceMetricsCatalogFunc(bound, request)
 		if err != nil {
 			return err
 		}
 		if err = ValidateResourceMetricsCatalog(out); err != nil {
 			return err
 		}
-		if m.sourcePluginID == "" || out.Source.PluginID != m.sourcePluginID || out.Source.ConnectionID != bound.Connection.ID {
+		if m.sourcePluginID == "" || out.Source.PluginID != m.sourcePluginID || out.Source.ConnectionID != bound.Connection.ID || out.Source != request.Source {
 			return metricError("INVALID_REQUEST", "Catalog source conflicts with configured plugin.")
 		}
 		for _, d := range out.Metrics {
@@ -62,7 +69,7 @@ func (m *Manager) QueryResources(pc *types.PluginContext, q ResourceMetricsQuery
 			c := catalogs[key]
 			if c == nil {
 				var err error
-				c, err = m.GetResourceMetricsCatalog(bound, key)
+				c, err = m.GetResourceMetricsCatalog(bound, ResourceMetricsCatalogRequest{Source: q.Source, ResourceKey: key, Context: q.Context})
 				if err != nil {
 					return err
 				}
