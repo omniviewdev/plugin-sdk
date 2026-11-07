@@ -22,6 +22,11 @@ service PluginLifecycle {
   // GetProfilingStatus reports the optional profiler owned by this process.
   rpc GetProfilingStatus(google.protobuf.Empty) returns (ProfilingStatusResponse);
 
+  // GetDiagnostics returns a bounded snapshot of in-plugin measurements. The
+  // host pulls it; plugins never push. Hosts treat plugin_id as a check only
+  // and stamp identity from their own record.
+  rpc GetDiagnostics(GetDiagnosticsRequest) returns (GetDiagnosticsResponse);
+
   rpc BindHostServices(BindHostServicesRequest) returns (BindHostServicesResponse);
 }
 
@@ -60,4 +65,68 @@ message ProfilingStatusResponse {
   string url = 2;
   string error = 3;
   int64 pid = 4;
+}
+
+message GetDiagnosticsRequest {
+  // Highest payload schema the host understands. Zero means 1.
+  uint32 max_schema_version = 1;
+}
+
+message GetDiagnosticsResponse {
+  uint32 schema_version = 1;
+  string plugin_id = 2;
+  // Process start; changes on restart so hosts can detect counter resets.
+  int64 process_start_unix_ns = 3;
+  // True when the plugin dropped metrics, points or invalid observations.
+  bool truncated = 4;
+  // At most 24 metrics.
+  repeated DiagMetric metrics = 5;
+}
+
+enum DiagKind {
+  DIAG_KIND_UNSPECIFIED = 0;
+  DIAG_KIND_COUNTER = 1;
+  DIAG_KIND_GAUGE = 2;
+  DIAG_KIND_HISTOGRAM = 3;
+}
+
+// DiagKey is a closed set: attributes can never carry resource names, queries
+// or credentials as keys, and values are restricted to ^[a-z][a-z0-9_]{0,31}$.
+enum DiagKey {
+  DIAG_KEY_UNSPECIFIED = 0;
+  DIAG_KEY_OPERATION = 1;
+  DIAG_KEY_OUTCOME = 2;
+  DIAG_KEY_PHASE = 3;
+  DIAG_KEY_STATE = 4;
+  DIAG_KEY_REASON = 5;
+  DIAG_KEY_CACHE = 6;
+  DIAG_KEY_QUEUE = 7;
+  DIAG_KEY_DIRECTION = 8;
+  DIAG_KEY_EVENT = 9;
+}
+
+message DiagMetric {
+  // Matches ^omniview\.plugin\.[a-z0-9_.]{1,80}$.
+  string name = 1;
+  string unit = 2;
+  DiagKind kind = 3;
+  // At most 16 points.
+  repeated DiagPoint points = 4;
+}
+
+message DiagPoint {
+  // At most 4 attributes.
+  repeated DiagAttr attrs = 1;
+  // Counter and gauge value.
+  double value = 2;
+  // Histogram fields: count, sum, bounds and len(bounds)+1 bucket counts.
+  uint64 count = 3;
+  double sum = 4;
+  repeated double bounds = 5;
+  repeated uint64 bucket_counts = 6;
+}
+
+message DiagAttr {
+  DiagKey key = 1;
+  string value = 2;
 }

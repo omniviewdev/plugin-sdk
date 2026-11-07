@@ -24,6 +24,7 @@ const (
 	PluginLifecycle_GetCapabilities_FullMethodName    = "/omniview.sdk.lifecycle.v1.PluginLifecycle/GetCapabilities"
 	PluginLifecycle_HealthCheck_FullMethodName        = "/omniview.sdk.lifecycle.v1.PluginLifecycle/HealthCheck"
 	PluginLifecycle_GetProfilingStatus_FullMethodName = "/omniview.sdk.lifecycle.v1.PluginLifecycle/GetProfilingStatus"
+	PluginLifecycle_GetDiagnostics_FullMethodName     = "/omniview.sdk.lifecycle.v1.PluginLifecycle/GetDiagnostics"
 	PluginLifecycle_BindHostServices_FullMethodName   = "/omniview.sdk.lifecycle.v1.PluginLifecycle/BindHostServices"
 )
 
@@ -40,6 +41,10 @@ type PluginLifecycleClient interface {
 	HealthCheck(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HealthCheckResponse, error)
 	// GetProfilingStatus reports the optional profiler owned by this process.
 	GetProfilingStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ProfilingStatusResponse, error)
+	// GetDiagnostics returns a bounded snapshot of in-plugin measurements. The
+	// host pulls it; plugins never push. Hosts treat plugin_id as a check only
+	// and stamp identity from their own record.
+	GetDiagnostics(ctx context.Context, in *GetDiagnosticsRequest, opts ...grpc.CallOption) (*GetDiagnosticsResponse, error)
 	BindHostServices(ctx context.Context, in *BindHostServicesRequest, opts ...grpc.CallOption) (*BindHostServicesResponse, error)
 }
 
@@ -87,6 +92,15 @@ func (c *pluginLifecycleClient) GetProfilingStatus(ctx context.Context, in *empt
 	return out, nil
 }
 
+func (c *pluginLifecycleClient) GetDiagnostics(ctx context.Context, in *GetDiagnosticsRequest, opts ...grpc.CallOption) (*GetDiagnosticsResponse, error) {
+	out := new(GetDiagnosticsResponse)
+	err := c.cc.Invoke(ctx, PluginLifecycle_GetDiagnostics_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *pluginLifecycleClient) BindHostServices(ctx context.Context, in *BindHostServicesRequest, opts ...grpc.CallOption) (*BindHostServicesResponse, error) {
 	out := new(BindHostServicesResponse)
 	err := c.cc.Invoke(ctx, PluginLifecycle_BindHostServices_FullMethodName, in, out, opts...)
@@ -109,6 +123,10 @@ type PluginLifecycleServer interface {
 	HealthCheck(context.Context, *emptypb.Empty) (*HealthCheckResponse, error)
 	// GetProfilingStatus reports the optional profiler owned by this process.
 	GetProfilingStatus(context.Context, *emptypb.Empty) (*ProfilingStatusResponse, error)
+	// GetDiagnostics returns a bounded snapshot of in-plugin measurements. The
+	// host pulls it; plugins never push. Hosts treat plugin_id as a check only
+	// and stamp identity from their own record.
+	GetDiagnostics(context.Context, *GetDiagnosticsRequest) (*GetDiagnosticsResponse, error)
 	BindHostServices(context.Context, *BindHostServicesRequest) (*BindHostServicesResponse, error)
 }
 
@@ -127,6 +145,9 @@ func (UnimplementedPluginLifecycleServer) HealthCheck(context.Context, *emptypb.
 }
 func (UnimplementedPluginLifecycleServer) GetProfilingStatus(context.Context, *emptypb.Empty) (*ProfilingStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetProfilingStatus not implemented")
+}
+func (UnimplementedPluginLifecycleServer) GetDiagnostics(context.Context, *GetDiagnosticsRequest) (*GetDiagnosticsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDiagnostics not implemented")
 }
 func (UnimplementedPluginLifecycleServer) BindHostServices(context.Context, *BindHostServicesRequest) (*BindHostServicesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BindHostServices not implemented")
@@ -215,6 +236,24 @@ func _PluginLifecycle_GetProfilingStatus_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PluginLifecycle_GetDiagnostics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDiagnosticsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginLifecycleServer).GetDiagnostics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginLifecycle_GetDiagnostics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginLifecycleServer).GetDiagnostics(ctx, req.(*GetDiagnosticsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PluginLifecycle_BindHostServices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(BindHostServicesRequest)
 	if err := dec(in); err != nil {
@@ -255,6 +294,10 @@ var PluginLifecycle_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetProfilingStatus",
 			Handler:    _PluginLifecycle_GetProfilingStatus_Handler,
+		},
+		{
+			MethodName: "GetDiagnostics",
+			Handler:    _PluginLifecycle_GetDiagnostics_Handler,
 		},
 		{
 			MethodName: "BindHostServices",

@@ -16,6 +16,7 @@ import (
 
 	"github.com/omniviewdev/plugin-sdk/pkg/activity"
 	"github.com/omniviewdev/plugin-sdk/pkg/config"
+	"github.com/omniviewdev/plugin-sdk/pkg/diagnostics"
 	"github.com/omniviewdev/plugin-sdk/pkg/profiling"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	rp "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
@@ -298,6 +299,8 @@ func (p *Plugin) registerLifecycle() {
 			HostConnections:    p.hostConnections,
 			Activities:         &p.activities,
 			ProfilingStatus:    p.profilingStatus,
+			Diagnostics:        diagnostics.Default().Snapshot,
+			StartUnixNano:      diagnostics.Default().StartUnixNano(),
 		},
 	}
 }
