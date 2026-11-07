@@ -24,7 +24,7 @@ require (
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261104224025-d1e00e9f33ab
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -56,4 +56,4 @@ require (
 )
 
 // Source-session receive controls require the scoped grpc-go fork.
-replace google.golang.org/grpc => github.com/omniviewdev/grpc-go v1.79.3-0.20261103012409-4c6f1d1c4e10
+replace google.golang.org/grpc => github.com/omniviewdev/grpc-go v1.85.1-0.20261107225428-6ba964c95af2
