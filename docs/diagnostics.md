@@ -8,7 +8,7 @@ Plugins never push, never hold an endpoint or credential, and never choose their
 own identity: the host labels every point with the plugin ID from its own record.
 
 ```go
-calls, _ := diagnostics.Default().Counter("omniview.plugin.api.calls", "1")
+calls, _ := diagnostics.Default().Counter("omniview.plugin.self.api.calls", "1")
 calls.Add(1,
     diagnostics.Attr{Key: diagnostics.KeyOperation, Value: "list"},
     diagnostics.Attr{Key: diagnostics.KeyOutcome, Value: "ok"})
@@ -21,7 +21,7 @@ registration (`ErrInvalidMetric`, `ErrTooManyMetrics`) never needs a guard.
 
 | Rule | Limit |
 |---|---|
-| Metric names | `^omniview\.plugin\.[a-z0-9_.]{1,80}$` |
+| Metric names | `^omniview\.plugin\.self\.[a-z0-9_.]{1,72}$` |
 | Metrics per plugin | 24 |
 | Points (series) per metric | 16 |
 | Attributes per point | 4 |

@@ -641,7 +641,7 @@ func (x *GetDiagnosticsResponse) GetMetrics() []*DiagMetric {
 
 type DiagMetric struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Matches ^omniview\.plugin\.[a-z0-9_.]{1,80}$.
+	// Matches ^omniview\.plugin\.self\.[a-z0-9_.]{1,72}$ (host-owned names live elsewhere).
 	Name string   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Unit string   `protobuf:"bytes,2,opt,name=unit,proto3" json:"unit,omitempty"`
 	Kind DiagKind `protobuf:"varint,3,opt,name=kind,proto3,enum=omniview.sdk.lifecycle.v1.DiagKind" json:"kind,omitempty"`

@@ -106,7 +106,7 @@ enum DiagKey {
 }
 
 message DiagMetric {
-  // Matches ^omniview\.plugin\.[a-z0-9_.]{1,80}$.
+  // Matches ^omniview\.plugin\.self\.[a-z0-9_.]{1,72}$ (host-owned names live elsewhere).
   string name = 1;
   string unit = 2;
   DiagKind kind = 3;

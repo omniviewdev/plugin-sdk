@@ -23,6 +23,9 @@ import (
 	lifecyclepb "github.com/omniviewdev/plugin-sdk/proto/v1/lifecycle"
 )
 
+// Metric names live under omniview.plugin.self. so they can never collide with
+// host-owned omniview.plugin.* metrics.
+
 // Wire limits. Hosts enforce the same limits and drop nonconforming data.
 const (
 	SchemaVersion = 1
@@ -55,7 +58,7 @@ type Attr struct {
 }
 
 var (
-	namePattern  = regexp.MustCompile(`^omniview\.plugin\.[a-z0-9_.]{1,80}$`)
+	namePattern  = regexp.MustCompile(`^omniview\.plugin\.self\.[a-z0-9_.]{1,72}$`)
 	valuePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 	unitPattern  = regexp.MustCompile(`^[a-z0-9_{}/]{0,24}$`)
 )

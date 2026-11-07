@@ -34,7 +34,7 @@ func dial(t *testing.T, register func(*grpc.Server)) *Client {
 
 func TestGetDiagnosticsRoundTrip(t *testing.T) {
 	reg := diagnostics.NewRegistry()
-	c, _ := reg.Counter("omniview.plugin.calls", "1")
+	c, _ := reg.Counter("omniview.plugin.self.calls", "1")
 	c.Add(3, diagnostics.Attr{Key: diagnostics.KeyOutcome, Value: "ok"})
 	client := dial(t, func(s *grpc.Server) {
 		lifecyclepb.RegisterPluginLifecycleServer(s, &Server{PluginID: "p", Diagnostics: reg.Snapshot, StartUnixNano: reg.StartUnixNano()})
