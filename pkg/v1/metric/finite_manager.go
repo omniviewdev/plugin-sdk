@@ -44,7 +44,9 @@ func (m *Manager) GetResourceMetricsCatalog(pc *types.PluginContext, request Res
 	return out, err
 }
 
-// QueryResources holds every target's catalog/connection lease through execution.
+// QueryResources holds the configured source lease through execution. Native
+// targets additionally retain their catalog/connection leases; external targets
+// arrive through the host's owner admission and bounded public projection.
 // Source authority comes from configured provider and the selected context, not input.
 func (m *Manager) QueryResources(pc *types.PluginContext, q ResourceMetricsQuery) (*ResourceMetricsResponse, error) {
 	if m.queryResourcesFunc == nil || m.resourceMetricsCatalogFunc == nil {
@@ -59,7 +61,7 @@ func (m *Manager) QueryResources(pc *types.PluginContext, q ResourceMetricsQuery
 	}
 	var admit func(int, *types.PluginContext) error
 	admit = func(i int, bound *types.PluginContext) error {
-		if i < len(q.Targets) {
+		if q.Source.Native && i < len(q.Targets) {
 			t := &q.Targets[i]
 			return resourcev2.WithUtilityConnection(bound, m.connectionProvider, &t.Reference, &t.Route, func(next *types.PluginContext) error { return admit(i+1, next) })
 		}
@@ -104,7 +106,7 @@ func (m *Manager) QueryResources(pc *types.PluginContext, q ResourceMetricsQuery
 		}
 		return ValidateResourceMetricsResponse(q, response)
 	}
-	if err := admit(0, pc); err != nil {
+	if err := resourcev2.WithUtilityConnection(pc, m.connectionProvider, nil, nil, func(bound *types.PluginContext) error { return admit(0, bound) }); err != nil {
 		return nil, err
 	}
 	return response, nil

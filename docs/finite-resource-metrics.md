@@ -84,6 +84,8 @@ Use the plugin's manifest ID in `Source.PluginID`, not `ProviderInfo.ID`. Advert
 
 Native providers validate `request.Source` against the leased configured source. External providers also validate the datasource UID and kind. Resource targets retain their owner's references and routes; a Grafana connection is not a Kubernetes owner connection. The host admits those targets and supplies only approved scalar projections in `PublicData`, never owner credentials or caller bodies.
 
+The SDK holds the selected source registry generation through catalog validation, collection, and response validation. Native queries also hold and revalidate every target's canonical catalog lease. External queries do not resolve owner routes through the source registry: only the host can authorize those foreign owners, read approved fields, and revalidate identity before dispatch and delivery. This is a host-to-plugin RPC contract, not an admission API for arbitrary caller-supplied owner claims. External collectors must use the admitted identity and `PublicData`, not acquire owner credentials or treat target routes as source connections.
+
 ## 3. Return measurements
 
 `QueryResources` receives a resource list and a metric list. Return a result for each requested resource/metric pair, including explicit results for missing measurements.

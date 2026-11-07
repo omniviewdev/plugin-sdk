@@ -96,10 +96,12 @@ func TestFiniteUnitsPreservePhysicalQuantity(t *testing.T) {
 func TestFiniteCatalogRequestRequiresExactSourceBeforeCallback(t *testing.T) {
 	m := NewManager(nil, nil, ProviderInfo{ID: "display-provider-id"}, nil, nil, nil)
 	m.sourcePluginID = "metric"
+	_, registry := metricRegistry(t, []types.Connection{{ID: "one"}}, nil, nil)
+	m.BindConnectionContextProvider(registry)
 	calls := 0
-	m.resourceMetricsCatalogFunc = func(_ *types.PluginContext, _ ResourceMetricsCatalogRequest) (*ResourceMetricsCatalog, error) {
+	m.resourceMetricsCatalogFunc = func(_ *types.PluginContext, r ResourceMetricsCatalogRequest) (*ResourceMetricsCatalog, error) {
 		calls++
-		return nil, nil
+		return &ResourceMetricsCatalog{Source: r.Source, MaxTargets: 1}, nil
 	}
 	m.queryResourcesFunc = func(_ *types.PluginContext, _ ResourceMetricsQuery) (*ResourceMetricsResponse, error) {
 		return nil, nil
@@ -112,5 +114,8 @@ func TestFiniteCatalogRequestRequiresExactSourceBeforeCallback(t *testing.T) {
 	}
 	if calls != 0 {
 		t.Fatal("unselected source invoked callback", calls)
+	}
+	if _, err := m.GetResourceMetricsCatalog(pc, ResourceMetricsCatalogRequest{Source: finiteTestQuery().Source, ResourceKey: "opaque::type"}); err != nil || calls != 1 {
+		t.Fatal("matching source did not execute catalog", err, calls)
 	}
 }

@@ -1,7 +1,9 @@
 package metric
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/interceptors"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -26,7 +28,10 @@ func TestFiniteRegisteredPluginSupportsActualCatalogAndBatchRPC(t *testing.T) {
 		return &ResourceMetricsCatalog{Source: source, MaxTargets: 256, Metrics: []FiniteMetricDescriptor{{ID: "cpu", Name: "CPU", ResourceKey: r.ResourceKey, Unit: "cores", Shapes: []string{"current"}}, {ID: "memory", Name: "Memory", ResourceKey: r.ResourceKey, Unit: "bytes", Shapes: []string{"current"}}}}, nil
 	}
 	calls := 0
-	manager.queryResourcesFunc = func(_ *types.PluginContext, q ResourceMetricsQuery) (*ResourceMetricsResponse, error) {
+	manager.queryResourcesFunc = func(pc *types.PluginContext, q ResourceMetricsQuery) (*ResourceMetricsResponse, error) {
+		if pc.Connection.ID != "one" || pc.Connection.Data["endpoint"] != "configured" {
+			t.Error("collection lost configured source lease")
+		}
 		calls++
 		response := &ResourceMetricsResponse{Complete: true}
 		for _, target := range q.Targets {
@@ -61,5 +66,61 @@ func TestFiniteRegisteredPluginSupportsActualCatalogAndBatchRPC(t *testing.T) {
 	}
 	if calls != 1 || !response.Complete || len(response.Results) != 2 {
 		t.Fatal("finite RPC did not reach one batch callback", calls, response)
+	}
+	q.Targets[0].Route.Connection = "foreign-owner"
+	if _, err := client.QueryResources(pc, q); err == nil || calls != 1 {
+		t.Fatal("native query bypassed canonical owner admission", err, calls)
+	}
+
+	// The source registry deliberately has no foreign owner connection.
+	source = MetricSourceRef{PluginID: "metric", ConnectionID: "one", DatasourceUID: "prometheus", DatasourceKind: "prometheus"}
+	q.Source = source
+	q.Targets[0].Route.Connection = "foreign-owner"
+	ctx = metricConnectionContext("one")
+	pc = types.PluginContextFromContext(ctx)
+	pc.Context = ctx
+	response, err = client.QueryResources(pc, q)
+	if err != nil || calls != 2 || response == nil || len(response.Results) != 2 {
+		t.Fatal("external owner was resolved through source registry", err, calls, response)
+	}
+	q.Source.ConnectionID = "foreign-owner"
+	if _, err := client.QueryResources(pc, q); err == nil || calls != 2 {
+		t.Fatal("external query bypassed selected source admission", err, calls)
+	}
+	q.Source = source
+
+	started := make(chan context.Context, 1)
+	manager.queryResourcesFunc = func(pc *types.PluginContext, _ ResourceMetricsQuery) (*ResourceMetricsResponse, error) {
+		started <- pc.Context
+		<-pc.Context.Done()
+		// Even a collector returning success after retirement cannot publish.
+		return &ResourceMetricsResponse{Complete: false}, nil
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.QueryResources(pc, q)
+		done <- err
+	}()
+	var leased context.Context
+	select {
+	case leased = <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("external collector did not start")
+	}
+	if _, err := registry.UpdateConnection(context.Background(), types.Connection{ID: "one", Data: map[string]any{"endpoint": "replacement"}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-leased.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("source retirement did not cancel external collection")
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("retired external source published success")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("retired external query did not return")
 	}
 }
