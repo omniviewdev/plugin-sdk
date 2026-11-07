@@ -190,6 +190,119 @@ message ResourceMetricStreamOutput {
   }
 }
 
+// Finite execution is independent of the legacy query/stream protocol.
+message MetricSourceRef {
+  string plugin_id = 1;
+  string connection_id = 2;
+  string datasource_uid = 3;
+  string datasource_kind = 4;
+  bool native = 5;
+}
+message FiniteMetricDescriptor {
+  string id = 1;
+  string name = 2;
+  string resource_key = 3;
+  string unit = 4;
+  repeated string shapes = 5;
+  string description = 6;
+  MetricSourceRef source = 7;
+}
+// Only the host may derive these fields from admitted owner observations.
+message MetricFieldBinding {
+  string field = 1;
+  string label = 2;
+  string source = 3;
+  bool required = 4;
+  string transform = 5;
+  string resource_path = 6;
+}
+message MetricDefinition {
+  string id = 1;
+  string name = 2;
+  repeated string resource_keys = 3;
+  string unit = 4;
+  string semantics = 5;
+  repeated string dimensions = 6;
+  repeated string supported_shapes = 7;
+  string query_language = 8;
+  string query = 9;
+  repeated MetricFieldBinding field_bindings = 10;
+  repeated string identity_labels = 11;
+  string reducer = 12;
+  string batch_strategy = 13;
+  string revision = 14;
+  bool native = 15;
+}
+message MetricQueryContext {
+  repeated MetricDefinition definitions = 1;
+  map<string,string> public_scope = 2;
+  string mapping_revision = 3;
+  string projection_revision = 4;
+}
+message ResourceMetricTarget {
+  string token = 1;
+  omniview.resource.v2.ResourceReference reference = 2;
+  omniview.resource.v2.AccessRoute route = 3;
+  map<string,string> public_data = 4;
+}
+message ResourceMetricsQuery {
+  MetricSourceRef source = 1;
+  repeated ResourceMetricTarget targets = 2;
+  repeated string metric_ids = 3;
+  string shape = 4;
+  google.protobuf.Timestamp start_time = 5;
+  google.protobuf.Timestamp end_time = 6;
+  google.protobuf.Duration step = 7;
+  MetricQueryContext context = 8;
+}
+message ResourceMetricPoint {
+  google.protobuf.Timestamp time = 1;
+  optional double value = 2;
+}
+message ResourceMetricResult {
+  string resource_token = 1;
+  string metric_id = 2;
+  string status = 3;
+  optional double value = 4;
+  repeated ResourceMetricPoint points = 5;
+  map<string,string> dimensions = 6;
+  google.protobuf.Timestamp observed_at = 7;
+  google.protobuf.Duration window = 8;
+  string message = 9;
+  string identity_scope = 10;
+  MetricSourceRef source = 11;
+}
+message ResourceMetricsResponse {
+  repeated ResourceMetricResult results = 1;
+  bool complete = 2;
+  repeated string warnings = 3;
+}
+message ResourceMetricsCatalog {
+  MetricSourceRef source = 1;
+  repeated FiniteMetricDescriptor metrics = 2;
+  int32 max_targets = 3;
+  // Live source-age policy; absent/zero is unknown, never a cache deadline.
+  google.protobuf.Duration max_sample_age = 4;
+}
+message ResourceMetricsCatalogRequest {
+  string resource_key = 1;
+  MetricSourceRef source = 2;
+  MetricQueryContext context = 3;
+}
+message FiniteMetricCapabilities {
+  uint32 version = 1;
+  bool owner_catalog = 2;
+}
+message MetricScopeField {
+  string key = 1;
+  string name = 2;
+  string description = 3;
+}
+message MetricOwnerCatalog {
+  repeated MetricDefinition definitions = 1;
+  repeated MetricScopeField scope_fields = 2;
+}
+
 // ===================== SERVICE ===================== //
 
 service MetricPlugin {
@@ -198,4 +311,8 @@ service MetricPlugin {
   rpc StreamMetrics(stream MetricStreamInput) returns (stream MetricStreamOutput);
   rpc QueryResource(QueryMetricsRequest) returns (ResourceQueryMetricsResponse);
   rpc StreamResourceMetrics(stream MetricStreamInput) returns (stream ResourceMetricStreamOutput);
+  rpc GetFiniteCapabilities(google.protobuf.Empty) returns (FiniteMetricCapabilities);
+  rpc GetResourceMetricsCatalog(ResourceMetricsCatalogRequest) returns (ResourceMetricsCatalog);
+  rpc QueryResources(ResourceMetricsQuery) returns (ResourceMetricsResponse);
+  rpc GetMetricOwnerCatalog(google.protobuf.Empty) returns (MetricOwnerCatalog);
 }

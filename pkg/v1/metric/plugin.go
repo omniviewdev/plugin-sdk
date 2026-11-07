@@ -38,7 +38,7 @@ type ResourceStreamProvider interface {
 type Plugin struct {
 	plugin.Plugin
 
-	Impl Provider
+	Impl any
 }
 
 // BindConnectionContextProvider forwards registry binding to implementations that accept it.
@@ -86,6 +86,13 @@ func RegisterPlugin(
 		opts.QueryFunc,
 		opts.StreamFunc,
 	)
+	if (opts.ResourceMetricsCatalogFunc == nil) != (opts.QueryResourcesFunc == nil) {
+		return errors.New("finite metric catalog and query callbacks must be configured together")
+	}
+	impl.resourceMetricsCatalogFunc = opts.ResourceMetricsCatalogFunc
+	impl.queryResourcesFunc = opts.QueryResourcesFunc
+	impl.getMetricOwnerCatalogFunc = opts.GetMetricOwnerCatalogFunc
+	impl.sourcePluginID = p.GetPluginID()
 
 	p.RegisterCapability("metric", &Plugin{Impl: impl})
 	return nil

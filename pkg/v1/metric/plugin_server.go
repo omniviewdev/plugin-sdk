@@ -15,14 +15,18 @@ import (
 )
 
 // PluginServer adapts metric provider calls to the gRPC transport.
-type PluginServer struct{ Impl Provider }
+type PluginServer struct{ Impl any }
 
 // GetSupportedResources exposes the provider's resource handlers.
 func (s *PluginServer) GetSupportedResources(
 	ctx context.Context,
 	_ *emptypb.Empty,
 ) (*metricpb.GetSupportedMetricResourcesResponse, error) {
-	info, handlers := s.Impl.GetSupportedResources(types.PluginContextFromContext(ctx))
+	impl, ok := s.Impl.(Provider)
+	if !ok {
+		return nil, resourceplugin.ResourceRPCError(metricError("UNSUPPORTED", "Legacy metrics are unsupported."))
+	}
+	info, handlers := impl.GetSupportedResources(types.PluginContextFromContext(ctx))
 	out := &metricpb.GetSupportedMetricResourcesResponse{Provider: info.ToProto()}
 	for i := range handlers {
 		out.Handlers = append(out.Handlers, handlers[i].ToProto())
@@ -49,7 +53,11 @@ func (s *PluginServer) Query(
 	if err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
-	response, err := s.Impl.Query(metricPluginContext(ctx), r)
+	impl, ok := s.Impl.(Provider)
+	if !ok {
+		return nil, resourceplugin.ResourceRPCError(metricError("UNSUPPORTED", "Legacy metrics are unsupported."))
+	}
+	response, err := impl.Query(metricPluginContext(ctx), r)
 	if err != nil {
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
@@ -201,7 +209,11 @@ func (s *PluginServer) openMetricStream(
 	in chan StreamInput,
 ) (chan StreamOutput, error) {
 	if !resource {
-		return s.Impl.StreamMetrics(ctx, in)
+		impl, ok := s.Impl.(Provider)
+		if !ok {
+			return nil, metricError("UNSUPPORTED", "Legacy metrics are unsupported.")
+		}
+		return impl.StreamMetrics(ctx, in)
 	}
 	impl, ok := s.Impl.(ResourceStreamProvider)
 	if !ok {

@@ -183,15 +183,19 @@ func (m *Manager) filterStream(
 
 // Manager manages metric queries and streams within a plugin process.
 type Manager struct {
-	log                logging.Logger
-	settingsProvider   settings.Provider
-	providerInfo       ProviderInfo
-	handlers           map[string]Handler
-	queryFunc          QueryFunc
-	streamFunc         StreamFunc
-	subscriptions      map[subscriptionKey]*managedSubscription
-	mux                sync.Mutex
-	connectionProvider resourcev2.ConnectionContextProvider
+	log                        logging.Logger
+	settingsProvider           settings.Provider
+	providerInfo               ProviderInfo
+	handlers                   map[string]Handler
+	queryFunc                  QueryFunc
+	streamFunc                 StreamFunc
+	subscriptions              map[subscriptionKey]*managedSubscription
+	mux                        sync.Mutex
+	connectionProvider         resourcev2.ConnectionContextProvider
+	resourceMetricsCatalogFunc ResourceMetricsCatalogFunc
+	queryResourcesFunc         QueryResourcesFunc
+	getMetricOwnerCatalogFunc  GetMetricOwnerCatalogFunc
+	sourcePluginID             string
 }
 
 type subscriptionKey struct {

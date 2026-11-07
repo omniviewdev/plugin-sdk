@@ -20,11 +20,15 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	MetricPlugin_GetSupportedResources_FullMethodName = "/omniview.sdk.metric.v1.MetricPlugin/GetSupportedResources"
-	MetricPlugin_Query_FullMethodName                 = "/omniview.sdk.metric.v1.MetricPlugin/Query"
-	MetricPlugin_StreamMetrics_FullMethodName         = "/omniview.sdk.metric.v1.MetricPlugin/StreamMetrics"
-	MetricPlugin_QueryResource_FullMethodName         = "/omniview.sdk.metric.v1.MetricPlugin/QueryResource"
-	MetricPlugin_StreamResourceMetrics_FullMethodName = "/omniview.sdk.metric.v1.MetricPlugin/StreamResourceMetrics"
+	MetricPlugin_GetSupportedResources_FullMethodName     = "/omniview.sdk.metric.v1.MetricPlugin/GetSupportedResources"
+	MetricPlugin_Query_FullMethodName                     = "/omniview.sdk.metric.v1.MetricPlugin/Query"
+	MetricPlugin_StreamMetrics_FullMethodName             = "/omniview.sdk.metric.v1.MetricPlugin/StreamMetrics"
+	MetricPlugin_QueryResource_FullMethodName             = "/omniview.sdk.metric.v1.MetricPlugin/QueryResource"
+	MetricPlugin_StreamResourceMetrics_FullMethodName     = "/omniview.sdk.metric.v1.MetricPlugin/StreamResourceMetrics"
+	MetricPlugin_GetFiniteCapabilities_FullMethodName     = "/omniview.sdk.metric.v1.MetricPlugin/GetFiniteCapabilities"
+	MetricPlugin_GetResourceMetricsCatalog_FullMethodName = "/omniview.sdk.metric.v1.MetricPlugin/GetResourceMetricsCatalog"
+	MetricPlugin_QueryResources_FullMethodName            = "/omniview.sdk.metric.v1.MetricPlugin/QueryResources"
+	MetricPlugin_GetMetricOwnerCatalog_FullMethodName     = "/omniview.sdk.metric.v1.MetricPlugin/GetMetricOwnerCatalog"
 )
 
 // MetricPluginClient is the client API for MetricPlugin service.
@@ -36,6 +40,10 @@ type MetricPluginClient interface {
 	StreamMetrics(ctx context.Context, opts ...grpc.CallOption) (MetricPlugin_StreamMetricsClient, error)
 	QueryResource(ctx context.Context, in *QueryMetricsRequest, opts ...grpc.CallOption) (*ResourceQueryMetricsResponse, error)
 	StreamResourceMetrics(ctx context.Context, opts ...grpc.CallOption) (MetricPlugin_StreamResourceMetricsClient, error)
+	GetFiniteCapabilities(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*FiniteMetricCapabilities, error)
+	GetResourceMetricsCatalog(ctx context.Context, in *ResourceMetricsCatalogRequest, opts ...grpc.CallOption) (*ResourceMetricsCatalog, error)
+	QueryResources(ctx context.Context, in *ResourceMetricsQuery, opts ...grpc.CallOption) (*ResourceMetricsResponse, error)
+	GetMetricOwnerCatalog(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MetricOwnerCatalog, error)
 }
 
 type metricPluginClient struct {
@@ -135,6 +143,42 @@ func (x *metricPluginStreamResourceMetricsClient) Recv() (*ResourceMetricStreamO
 	return m, nil
 }
 
+func (c *metricPluginClient) GetFiniteCapabilities(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*FiniteMetricCapabilities, error) {
+	out := new(FiniteMetricCapabilities)
+	err := c.cc.Invoke(ctx, MetricPlugin_GetFiniteCapabilities_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *metricPluginClient) GetResourceMetricsCatalog(ctx context.Context, in *ResourceMetricsCatalogRequest, opts ...grpc.CallOption) (*ResourceMetricsCatalog, error) {
+	out := new(ResourceMetricsCatalog)
+	err := c.cc.Invoke(ctx, MetricPlugin_GetResourceMetricsCatalog_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *metricPluginClient) QueryResources(ctx context.Context, in *ResourceMetricsQuery, opts ...grpc.CallOption) (*ResourceMetricsResponse, error) {
+	out := new(ResourceMetricsResponse)
+	err := c.cc.Invoke(ctx, MetricPlugin_QueryResources_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *metricPluginClient) GetMetricOwnerCatalog(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MetricOwnerCatalog, error) {
+	out := new(MetricOwnerCatalog)
+	err := c.cc.Invoke(ctx, MetricPlugin_GetMetricOwnerCatalog_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MetricPluginServer is the server API for MetricPlugin service.
 // All implementations should embed UnimplementedMetricPluginServer
 // for forward compatibility
@@ -144,6 +188,10 @@ type MetricPluginServer interface {
 	StreamMetrics(MetricPlugin_StreamMetricsServer) error
 	QueryResource(context.Context, *QueryMetricsRequest) (*ResourceQueryMetricsResponse, error)
 	StreamResourceMetrics(MetricPlugin_StreamResourceMetricsServer) error
+	GetFiniteCapabilities(context.Context, *emptypb.Empty) (*FiniteMetricCapabilities, error)
+	GetResourceMetricsCatalog(context.Context, *ResourceMetricsCatalogRequest) (*ResourceMetricsCatalog, error)
+	QueryResources(context.Context, *ResourceMetricsQuery) (*ResourceMetricsResponse, error)
+	GetMetricOwnerCatalog(context.Context, *emptypb.Empty) (*MetricOwnerCatalog, error)
 }
 
 // UnimplementedMetricPluginServer should be embedded to have forward compatible implementations.
@@ -164,6 +212,18 @@ func (UnimplementedMetricPluginServer) QueryResource(context.Context, *QueryMetr
 }
 func (UnimplementedMetricPluginServer) StreamResourceMetrics(MetricPlugin_StreamResourceMetricsServer) error {
 	return status.Errorf(codes.Unimplemented, "method StreamResourceMetrics not implemented")
+}
+func (UnimplementedMetricPluginServer) GetFiniteCapabilities(context.Context, *emptypb.Empty) (*FiniteMetricCapabilities, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetFiniteCapabilities not implemented")
+}
+func (UnimplementedMetricPluginServer) GetResourceMetricsCatalog(context.Context, *ResourceMetricsCatalogRequest) (*ResourceMetricsCatalog, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetResourceMetricsCatalog not implemented")
+}
+func (UnimplementedMetricPluginServer) QueryResources(context.Context, *ResourceMetricsQuery) (*ResourceMetricsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QueryResources not implemented")
+}
+func (UnimplementedMetricPluginServer) GetMetricOwnerCatalog(context.Context, *emptypb.Empty) (*MetricOwnerCatalog, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMetricOwnerCatalog not implemented")
 }
 
 // UnsafeMetricPluginServer may be embedded to opt out of forward compatibility for this service.
@@ -283,6 +343,78 @@ func (x *metricPluginStreamResourceMetricsServer) Recv() (*MetricStreamInput, er
 	return m, nil
 }
 
+func _MetricPlugin_GetFiniteCapabilities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MetricPluginServer).GetFiniteCapabilities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MetricPlugin_GetFiniteCapabilities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MetricPluginServer).GetFiniteCapabilities(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MetricPlugin_GetResourceMetricsCatalog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResourceMetricsCatalogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MetricPluginServer).GetResourceMetricsCatalog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MetricPlugin_GetResourceMetricsCatalog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MetricPluginServer).GetResourceMetricsCatalog(ctx, req.(*ResourceMetricsCatalogRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MetricPlugin_QueryResources_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResourceMetricsQuery)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MetricPluginServer).QueryResources(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MetricPlugin_QueryResources_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MetricPluginServer).QueryResources(ctx, req.(*ResourceMetricsQuery))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MetricPlugin_GetMetricOwnerCatalog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MetricPluginServer).GetMetricOwnerCatalog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MetricPlugin_GetMetricOwnerCatalog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MetricPluginServer).GetMetricOwnerCatalog(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MetricPlugin_ServiceDesc is the grpc.ServiceDesc for MetricPlugin service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -301,6 +433,22 @@ var MetricPlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "QueryResource",
 			Handler:    _MetricPlugin_QueryResource_Handler,
+		},
+		{
+			MethodName: "GetFiniteCapabilities",
+			Handler:    _MetricPlugin_GetFiniteCapabilities_Handler,
+		},
+		{
+			MethodName: "GetResourceMetricsCatalog",
+			Handler:    _MetricPlugin_GetResourceMetricsCatalog_Handler,
+		},
+		{
+			MethodName: "QueryResources",
+			Handler:    _MetricPlugin_QueryResources_Handler,
+		},
+		{
+			MethodName: "GetMetricOwnerCatalog",
+			Handler:    _MetricPlugin_GetMetricOwnerCatalog_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

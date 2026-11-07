@@ -1578,6 +1578,1181 @@ func (*ResourceMetricStreamOutput_Output) isResourceMetricStreamOutput_Payload()
 
 func (*ResourceMetricStreamOutput_Ready) isResourceMetricStreamOutput_Payload() {}
 
+// Finite execution is independent of the legacy query/stream protocol.
+type MetricSourceRef struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	PluginId       string                 `protobuf:"bytes,1,opt,name=plugin_id,json=pluginId,proto3" json:"plugin_id,omitempty"`
+	ConnectionId   string                 `protobuf:"bytes,2,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
+	DatasourceUid  string                 `protobuf:"bytes,3,opt,name=datasource_uid,json=datasourceUid,proto3" json:"datasource_uid,omitempty"`
+	DatasourceKind string                 `protobuf:"bytes,4,opt,name=datasource_kind,json=datasourceKind,proto3" json:"datasource_kind,omitempty"`
+	Native         bool                   `protobuf:"varint,5,opt,name=native,proto3" json:"native,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *MetricSourceRef) Reset() {
+	*x = MetricSourceRef{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricSourceRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricSourceRef) ProtoMessage() {}
+
+func (x *MetricSourceRef) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricSourceRef.ProtoReflect.Descriptor instead.
+func (*MetricSourceRef) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *MetricSourceRef) GetPluginId() string {
+	if x != nil {
+		return x.PluginId
+	}
+	return ""
+}
+
+func (x *MetricSourceRef) GetConnectionId() string {
+	if x != nil {
+		return x.ConnectionId
+	}
+	return ""
+}
+
+func (x *MetricSourceRef) GetDatasourceUid() string {
+	if x != nil {
+		return x.DatasourceUid
+	}
+	return ""
+}
+
+func (x *MetricSourceRef) GetDatasourceKind() string {
+	if x != nil {
+		return x.DatasourceKind
+	}
+	return ""
+}
+
+func (x *MetricSourceRef) GetNative() bool {
+	if x != nil {
+		return x.Native
+	}
+	return false
+}
+
+type FiniteMetricDescriptor struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	ResourceKey   string                 `protobuf:"bytes,3,opt,name=resource_key,json=resourceKey,proto3" json:"resource_key,omitempty"`
+	Unit          string                 `protobuf:"bytes,4,opt,name=unit,proto3" json:"unit,omitempty"`
+	Shapes        []string               `protobuf:"bytes,5,rep,name=shapes,proto3" json:"shapes,omitempty"`
+	Description   string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	Source        *MetricSourceRef       `protobuf:"bytes,7,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FiniteMetricDescriptor) Reset() {
+	*x = FiniteMetricDescriptor{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FiniteMetricDescriptor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FiniteMetricDescriptor) ProtoMessage() {}
+
+func (x *FiniteMetricDescriptor) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FiniteMetricDescriptor.ProtoReflect.Descriptor instead.
+func (*FiniteMetricDescriptor) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *FiniteMetricDescriptor) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *FiniteMetricDescriptor) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *FiniteMetricDescriptor) GetResourceKey() string {
+	if x != nil {
+		return x.ResourceKey
+	}
+	return ""
+}
+
+func (x *FiniteMetricDescriptor) GetUnit() string {
+	if x != nil {
+		return x.Unit
+	}
+	return ""
+}
+
+func (x *FiniteMetricDescriptor) GetShapes() []string {
+	if x != nil {
+		return x.Shapes
+	}
+	return nil
+}
+
+func (x *FiniteMetricDescriptor) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *FiniteMetricDescriptor) GetSource() *MetricSourceRef {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+// Only the host may derive these fields from admitted owner observations.
+type MetricFieldBinding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Field         string                 `protobuf:"bytes,1,opt,name=field,proto3" json:"field,omitempty"`
+	Label         string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	Source        string                 `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"`
+	Required      bool                   `protobuf:"varint,4,opt,name=required,proto3" json:"required,omitempty"`
+	Transform     string                 `protobuf:"bytes,5,opt,name=transform,proto3" json:"transform,omitempty"`
+	ResourcePath  string                 `protobuf:"bytes,6,opt,name=resource_path,json=resourcePath,proto3" json:"resource_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MetricFieldBinding) Reset() {
+	*x = MetricFieldBinding{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricFieldBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricFieldBinding) ProtoMessage() {}
+
+func (x *MetricFieldBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricFieldBinding.ProtoReflect.Descriptor instead.
+func (*MetricFieldBinding) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *MetricFieldBinding) GetField() string {
+	if x != nil {
+		return x.Field
+	}
+	return ""
+}
+
+func (x *MetricFieldBinding) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *MetricFieldBinding) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *MetricFieldBinding) GetRequired() bool {
+	if x != nil {
+		return x.Required
+	}
+	return false
+}
+
+func (x *MetricFieldBinding) GetTransform() string {
+	if x != nil {
+		return x.Transform
+	}
+	return ""
+}
+
+func (x *MetricFieldBinding) GetResourcePath() string {
+	if x != nil {
+		return x.ResourcePath
+	}
+	return ""
+}
+
+type MetricDefinition struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Id              string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name            string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	ResourceKeys    []string               `protobuf:"bytes,3,rep,name=resource_keys,json=resourceKeys,proto3" json:"resource_keys,omitempty"`
+	Unit            string                 `protobuf:"bytes,4,opt,name=unit,proto3" json:"unit,omitempty"`
+	Semantics       string                 `protobuf:"bytes,5,opt,name=semantics,proto3" json:"semantics,omitempty"`
+	Dimensions      []string               `protobuf:"bytes,6,rep,name=dimensions,proto3" json:"dimensions,omitempty"`
+	SupportedShapes []string               `protobuf:"bytes,7,rep,name=supported_shapes,json=supportedShapes,proto3" json:"supported_shapes,omitempty"`
+	QueryLanguage   string                 `protobuf:"bytes,8,opt,name=query_language,json=queryLanguage,proto3" json:"query_language,omitempty"`
+	Query           string                 `protobuf:"bytes,9,opt,name=query,proto3" json:"query,omitempty"`
+	FieldBindings   []*MetricFieldBinding  `protobuf:"bytes,10,rep,name=field_bindings,json=fieldBindings,proto3" json:"field_bindings,omitempty"`
+	IdentityLabels  []string               `protobuf:"bytes,11,rep,name=identity_labels,json=identityLabels,proto3" json:"identity_labels,omitempty"`
+	Reducer         string                 `protobuf:"bytes,12,opt,name=reducer,proto3" json:"reducer,omitempty"`
+	BatchStrategy   string                 `protobuf:"bytes,13,opt,name=batch_strategy,json=batchStrategy,proto3" json:"batch_strategy,omitempty"`
+	Revision        string                 `protobuf:"bytes,14,opt,name=revision,proto3" json:"revision,omitempty"`
+	Native          bool                   `protobuf:"varint,15,opt,name=native,proto3" json:"native,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *MetricDefinition) Reset() {
+	*x = MetricDefinition{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricDefinition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricDefinition) ProtoMessage() {}
+
+func (x *MetricDefinition) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricDefinition.ProtoReflect.Descriptor instead.
+func (*MetricDefinition) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *MetricDefinition) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *MetricDefinition) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *MetricDefinition) GetResourceKeys() []string {
+	if x != nil {
+		return x.ResourceKeys
+	}
+	return nil
+}
+
+func (x *MetricDefinition) GetUnit() string {
+	if x != nil {
+		return x.Unit
+	}
+	return ""
+}
+
+func (x *MetricDefinition) GetSemantics() string {
+	if x != nil {
+		return x.Semantics
+	}
+	return ""
+}
+
+func (x *MetricDefinition) GetDimensions() []string {
+	if x != nil {
+		return x.Dimensions
+	}
+	return nil
+}
+
+func (x *MetricDefinition) GetSupportedShapes() []string {
+	if x != nil {
+		return x.SupportedShapes
+	}
+	return nil
+}
+
+func (x *MetricDefinition) GetQueryLanguage() string {
+	if x != nil {
+		return x.QueryLanguage
+	}
+	return ""
+}
+
+func (x *MetricDefinition) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *MetricDefinition) GetFieldBindings() []*MetricFieldBinding {
+	if x != nil {
+		return x.FieldBindings
+	}
+	return nil
+}
+
+func (x *MetricDefinition) GetIdentityLabels() []string {
+	if x != nil {
+		return x.IdentityLabels
+	}
+	return nil
+}
+
+func (x *MetricDefinition) GetReducer() string {
+	if x != nil {
+		return x.Reducer
+	}
+	return ""
+}
+
+func (x *MetricDefinition) GetBatchStrategy() string {
+	if x != nil {
+		return x.BatchStrategy
+	}
+	return ""
+}
+
+func (x *MetricDefinition) GetRevision() string {
+	if x != nil {
+		return x.Revision
+	}
+	return ""
+}
+
+func (x *MetricDefinition) GetNative() bool {
+	if x != nil {
+		return x.Native
+	}
+	return false
+}
+
+type MetricQueryContext struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Definitions        []*MetricDefinition    `protobuf:"bytes,1,rep,name=definitions,proto3" json:"definitions,omitempty"`
+	PublicScope        map[string]string      `protobuf:"bytes,2,rep,name=public_scope,json=publicScope,proto3" json:"public_scope,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	MappingRevision    string                 `protobuf:"bytes,3,opt,name=mapping_revision,json=mappingRevision,proto3" json:"mapping_revision,omitempty"`
+	ProjectionRevision string                 `protobuf:"bytes,4,opt,name=projection_revision,json=projectionRevision,proto3" json:"projection_revision,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *MetricQueryContext) Reset() {
+	*x = MetricQueryContext{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricQueryContext) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricQueryContext) ProtoMessage() {}
+
+func (x *MetricQueryContext) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricQueryContext.ProtoReflect.Descriptor instead.
+func (*MetricQueryContext) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *MetricQueryContext) GetDefinitions() []*MetricDefinition {
+	if x != nil {
+		return x.Definitions
+	}
+	return nil
+}
+
+func (x *MetricQueryContext) GetPublicScope() map[string]string {
+	if x != nil {
+		return x.PublicScope
+	}
+	return nil
+}
+
+func (x *MetricQueryContext) GetMappingRevision() string {
+	if x != nil {
+		return x.MappingRevision
+	}
+	return ""
+}
+
+func (x *MetricQueryContext) GetProjectionRevision() string {
+	if x != nil {
+		return x.ProjectionRevision
+	}
+	return ""
+}
+
+type ResourceMetricTarget struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	Reference     *v2.ResourceReference  `protobuf:"bytes,2,opt,name=reference,proto3" json:"reference,omitempty"`
+	Route         *v2.AccessRoute        `protobuf:"bytes,3,opt,name=route,proto3" json:"route,omitempty"`
+	PublicData    map[string]string      `protobuf:"bytes,4,rep,name=public_data,json=publicData,proto3" json:"public_data,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceMetricTarget) Reset() {
+	*x = ResourceMetricTarget{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceMetricTarget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceMetricTarget) ProtoMessage() {}
+
+func (x *ResourceMetricTarget) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceMetricTarget.ProtoReflect.Descriptor instead.
+func (*ResourceMetricTarget) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ResourceMetricTarget) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *ResourceMetricTarget) GetReference() *v2.ResourceReference {
+	if x != nil {
+		return x.Reference
+	}
+	return nil
+}
+
+func (x *ResourceMetricTarget) GetRoute() *v2.AccessRoute {
+	if x != nil {
+		return x.Route
+	}
+	return nil
+}
+
+func (x *ResourceMetricTarget) GetPublicData() map[string]string {
+	if x != nil {
+		return x.PublicData
+	}
+	return nil
+}
+
+type ResourceMetricsQuery struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Source        *MetricSourceRef        `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	Targets       []*ResourceMetricTarget `protobuf:"bytes,2,rep,name=targets,proto3" json:"targets,omitempty"`
+	MetricIds     []string                `protobuf:"bytes,3,rep,name=metric_ids,json=metricIds,proto3" json:"metric_ids,omitempty"`
+	Shape         string                  `protobuf:"bytes,4,opt,name=shape,proto3" json:"shape,omitempty"`
+	StartTime     *timestamppb.Timestamp  `protobuf:"bytes,5,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	EndTime       *timestamppb.Timestamp  `protobuf:"bytes,6,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+	Step          *durationpb.Duration    `protobuf:"bytes,7,opt,name=step,proto3" json:"step,omitempty"`
+	Context       *MetricQueryContext     `protobuf:"bytes,8,opt,name=context,proto3" json:"context,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceMetricsQuery) Reset() {
+	*x = ResourceMetricsQuery{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceMetricsQuery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceMetricsQuery) ProtoMessage() {}
+
+func (x *ResourceMetricsQuery) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceMetricsQuery.ProtoReflect.Descriptor instead.
+func (*ResourceMetricsQuery) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ResourceMetricsQuery) GetSource() *MetricSourceRef {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+func (x *ResourceMetricsQuery) GetTargets() []*ResourceMetricTarget {
+	if x != nil {
+		return x.Targets
+	}
+	return nil
+}
+
+func (x *ResourceMetricsQuery) GetMetricIds() []string {
+	if x != nil {
+		return x.MetricIds
+	}
+	return nil
+}
+
+func (x *ResourceMetricsQuery) GetShape() string {
+	if x != nil {
+		return x.Shape
+	}
+	return ""
+}
+
+func (x *ResourceMetricsQuery) GetStartTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartTime
+	}
+	return nil
+}
+
+func (x *ResourceMetricsQuery) GetEndTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndTime
+	}
+	return nil
+}
+
+func (x *ResourceMetricsQuery) GetStep() *durationpb.Duration {
+	if x != nil {
+		return x.Step
+	}
+	return nil
+}
+
+func (x *ResourceMetricsQuery) GetContext() *MetricQueryContext {
+	if x != nil {
+		return x.Context
+	}
+	return nil
+}
+
+type ResourceMetricPoint struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Time          *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=time,proto3" json:"time,omitempty"`
+	Value         *float64               `protobuf:"fixed64,2,opt,name=value,proto3,oneof" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceMetricPoint) Reset() {
+	*x = ResourceMetricPoint{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceMetricPoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceMetricPoint) ProtoMessage() {}
+
+func (x *ResourceMetricPoint) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceMetricPoint.ProtoReflect.Descriptor instead.
+func (*ResourceMetricPoint) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ResourceMetricPoint) GetTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Time
+	}
+	return nil
+}
+
+func (x *ResourceMetricPoint) GetValue() float64 {
+	if x != nil && x.Value != nil {
+		return *x.Value
+	}
+	return 0
+}
+
+type ResourceMetricResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ResourceToken string                 `protobuf:"bytes,1,opt,name=resource_token,json=resourceToken,proto3" json:"resource_token,omitempty"`
+	MetricId      string                 `protobuf:"bytes,2,opt,name=metric_id,json=metricId,proto3" json:"metric_id,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Value         *float64               `protobuf:"fixed64,4,opt,name=value,proto3,oneof" json:"value,omitempty"`
+	Points        []*ResourceMetricPoint `protobuf:"bytes,5,rep,name=points,proto3" json:"points,omitempty"`
+	Dimensions    map[string]string      `protobuf:"bytes,6,rep,name=dimensions,proto3" json:"dimensions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ObservedAt    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	Window        *durationpb.Duration   `protobuf:"bytes,8,opt,name=window,proto3" json:"window,omitempty"`
+	Message       string                 `protobuf:"bytes,9,opt,name=message,proto3" json:"message,omitempty"`
+	IdentityScope string                 `protobuf:"bytes,10,opt,name=identity_scope,json=identityScope,proto3" json:"identity_scope,omitempty"`
+	Source        *MetricSourceRef       `protobuf:"bytes,11,opt,name=source,proto3" json:"source,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceMetricResult) Reset() {
+	*x = ResourceMetricResult{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceMetricResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceMetricResult) ProtoMessage() {}
+
+func (x *ResourceMetricResult) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceMetricResult.ProtoReflect.Descriptor instead.
+func (*ResourceMetricResult) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ResourceMetricResult) GetResourceToken() string {
+	if x != nil {
+		return x.ResourceToken
+	}
+	return ""
+}
+
+func (x *ResourceMetricResult) GetMetricId() string {
+	if x != nil {
+		return x.MetricId
+	}
+	return ""
+}
+
+func (x *ResourceMetricResult) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ResourceMetricResult) GetValue() float64 {
+	if x != nil && x.Value != nil {
+		return *x.Value
+	}
+	return 0
+}
+
+func (x *ResourceMetricResult) GetPoints() []*ResourceMetricPoint {
+	if x != nil {
+		return x.Points
+	}
+	return nil
+}
+
+func (x *ResourceMetricResult) GetDimensions() map[string]string {
+	if x != nil {
+		return x.Dimensions
+	}
+	return nil
+}
+
+func (x *ResourceMetricResult) GetObservedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return nil
+}
+
+func (x *ResourceMetricResult) GetWindow() *durationpb.Duration {
+	if x != nil {
+		return x.Window
+	}
+	return nil
+}
+
+func (x *ResourceMetricResult) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *ResourceMetricResult) GetIdentityScope() string {
+	if x != nil {
+		return x.IdentityScope
+	}
+	return ""
+}
+
+func (x *ResourceMetricResult) GetSource() *MetricSourceRef {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+type ResourceMetricsResponse struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Results       []*ResourceMetricResult `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	Complete      bool                    `protobuf:"varint,2,opt,name=complete,proto3" json:"complete,omitempty"`
+	Warnings      []string                `protobuf:"bytes,3,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceMetricsResponse) Reset() {
+	*x = ResourceMetricsResponse{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceMetricsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceMetricsResponse) ProtoMessage() {}
+
+func (x *ResourceMetricsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceMetricsResponse.ProtoReflect.Descriptor instead.
+func (*ResourceMetricsResponse) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ResourceMetricsResponse) GetResults() []*ResourceMetricResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+func (x *ResourceMetricsResponse) GetComplete() bool {
+	if x != nil {
+		return x.Complete
+	}
+	return false
+}
+
+func (x *ResourceMetricsResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
+type ResourceMetricsCatalog struct {
+	state      protoimpl.MessageState    `protogen:"open.v1"`
+	Source     *MetricSourceRef          `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
+	Metrics    []*FiniteMetricDescriptor `protobuf:"bytes,2,rep,name=metrics,proto3" json:"metrics,omitempty"`
+	MaxTargets int32                     `protobuf:"varint,3,opt,name=max_targets,json=maxTargets,proto3" json:"max_targets,omitempty"`
+	// Live source-age policy; absent/zero is unknown, never a cache deadline.
+	MaxSampleAge  *durationpb.Duration `protobuf:"bytes,4,opt,name=max_sample_age,json=maxSampleAge,proto3" json:"max_sample_age,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceMetricsCatalog) Reset() {
+	*x = ResourceMetricsCatalog{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceMetricsCatalog) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceMetricsCatalog) ProtoMessage() {}
+
+func (x *ResourceMetricsCatalog) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceMetricsCatalog.ProtoReflect.Descriptor instead.
+func (*ResourceMetricsCatalog) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *ResourceMetricsCatalog) GetSource() *MetricSourceRef {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+func (x *ResourceMetricsCatalog) GetMetrics() []*FiniteMetricDescriptor {
+	if x != nil {
+		return x.Metrics
+	}
+	return nil
+}
+
+func (x *ResourceMetricsCatalog) GetMaxTargets() int32 {
+	if x != nil {
+		return x.MaxTargets
+	}
+	return 0
+}
+
+func (x *ResourceMetricsCatalog) GetMaxSampleAge() *durationpb.Duration {
+	if x != nil {
+		return x.MaxSampleAge
+	}
+	return nil
+}
+
+type ResourceMetricsCatalogRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ResourceKey   string                 `protobuf:"bytes,1,opt,name=resource_key,json=resourceKey,proto3" json:"resource_key,omitempty"`
+	Source        *MetricSourceRef       `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	Context       *MetricQueryContext    `protobuf:"bytes,3,opt,name=context,proto3" json:"context,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResourceMetricsCatalogRequest) Reset() {
+	*x = ResourceMetricsCatalogRequest{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResourceMetricsCatalogRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResourceMetricsCatalogRequest) ProtoMessage() {}
+
+func (x *ResourceMetricsCatalogRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResourceMetricsCatalogRequest.ProtoReflect.Descriptor instead.
+func (*ResourceMetricsCatalogRequest) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *ResourceMetricsCatalogRequest) GetResourceKey() string {
+	if x != nil {
+		return x.ResourceKey
+	}
+	return ""
+}
+
+func (x *ResourceMetricsCatalogRequest) GetSource() *MetricSourceRef {
+	if x != nil {
+		return x.Source
+	}
+	return nil
+}
+
+func (x *ResourceMetricsCatalogRequest) GetContext() *MetricQueryContext {
+	if x != nil {
+		return x.Context
+	}
+	return nil
+}
+
+type FiniteMetricCapabilities struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	OwnerCatalog  bool                   `protobuf:"varint,2,opt,name=owner_catalog,json=ownerCatalog,proto3" json:"owner_catalog,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FiniteMetricCapabilities) Reset() {
+	*x = FiniteMetricCapabilities{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FiniteMetricCapabilities) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FiniteMetricCapabilities) ProtoMessage() {}
+
+func (x *FiniteMetricCapabilities) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FiniteMetricCapabilities.ProtoReflect.Descriptor instead.
+func (*FiniteMetricCapabilities) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *FiniteMetricCapabilities) GetVersion() uint32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+func (x *FiniteMetricCapabilities) GetOwnerCatalog() bool {
+	if x != nil {
+		return x.OwnerCatalog
+	}
+	return false
+}
+
+type MetricScopeField struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MetricScopeField) Reset() {
+	*x = MetricScopeField{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricScopeField) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricScopeField) ProtoMessage() {}
+
+func (x *MetricScopeField) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricScopeField.ProtoReflect.Descriptor instead.
+func (*MetricScopeField) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *MetricScopeField) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *MetricScopeField) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *MetricScopeField) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+type MetricOwnerCatalog struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Definitions   []*MetricDefinition    `protobuf:"bytes,1,rep,name=definitions,proto3" json:"definitions,omitempty"`
+	ScopeFields   []*MetricScopeField    `protobuf:"bytes,2,rep,name=scope_fields,json=scopeFields,proto3" json:"scope_fields,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MetricOwnerCatalog) Reset() {
+	*x = MetricOwnerCatalog{}
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MetricOwnerCatalog) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MetricOwnerCatalog) ProtoMessage() {}
+
+func (x *MetricOwnerCatalog) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_metric_metric_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MetricOwnerCatalog.ProtoReflect.Descriptor instead.
+func (*MetricOwnerCatalog) Descriptor() ([]byte, []int) {
+	return file_proto_v1_metric_metric_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *MetricOwnerCatalog) GetDefinitions() []*MetricDefinition {
+	if x != nil {
+		return x.Definitions
+	}
+	return nil
+}
+
+func (x *MetricOwnerCatalog) GetScopeFields() []*MetricScopeField {
+	if x != nil {
+		return x.ScopeFields
+	}
+	return nil
+}
+
 var File_proto_v1_metric_metric_proto protoreflect.FileDescriptor
 
 const file_proto_v1_metric_metric_proto_rawDesc = "" +
@@ -1718,7 +2893,123 @@ const file_proto_v1_metric_metric_proto_rawDesc = "" +
 	"\x15resource_wire_version\x18\x01 \x01(\rR\x13resourceWireVersion\x12D\n" +
 	"\x06output\x18\x02 \x01(\v2*.omniview.sdk.metric.v1.MetricStreamOutputH\x00R\x06output\x12\x16\n" +
 	"\x05ready\x18\x03 \x01(\bH\x00R\x05readyB\t\n" +
-	"\apayload*\xce\x02\n" +
+	"\apayload\"\xbb\x01\n" +
+	"\x0fMetricSourceRef\x12\x1b\n" +
+	"\tplugin_id\x18\x01 \x01(\tR\bpluginId\x12#\n" +
+	"\rconnection_id\x18\x02 \x01(\tR\fconnectionId\x12%\n" +
+	"\x0edatasource_uid\x18\x03 \x01(\tR\rdatasourceUid\x12'\n" +
+	"\x0fdatasource_kind\x18\x04 \x01(\tR\x0edatasourceKind\x12\x16\n" +
+	"\x06native\x18\x05 \x01(\bR\x06native\"\xee\x01\n" +
+	"\x16FiniteMetricDescriptor\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12!\n" +
+	"\fresource_key\x18\x03 \x01(\tR\vresourceKey\x12\x12\n" +
+	"\x04unit\x18\x04 \x01(\tR\x04unit\x12\x16\n" +
+	"\x06shapes\x18\x05 \x03(\tR\x06shapes\x12 \n" +
+	"\vdescription\x18\x06 \x01(\tR\vdescription\x12?\n" +
+	"\x06source\x18\a \x01(\v2'.omniview.sdk.metric.v1.MetricSourceRefR\x06source\"\xb7\x01\n" +
+	"\x12MetricFieldBinding\x12\x14\n" +
+	"\x05field\x18\x01 \x01(\tR\x05field\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x12\x16\n" +
+	"\x06source\x18\x03 \x01(\tR\x06source\x12\x1a\n" +
+	"\brequired\x18\x04 \x01(\bR\brequired\x12\x1c\n" +
+	"\ttransform\x18\x05 \x01(\tR\ttransform\x12#\n" +
+	"\rresource_path\x18\x06 \x01(\tR\fresourcePath\"\x86\x04\n" +
+	"\x10MetricDefinition\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12#\n" +
+	"\rresource_keys\x18\x03 \x03(\tR\fresourceKeys\x12\x12\n" +
+	"\x04unit\x18\x04 \x01(\tR\x04unit\x12\x1c\n" +
+	"\tsemantics\x18\x05 \x01(\tR\tsemantics\x12\x1e\n" +
+	"\n" +
+	"dimensions\x18\x06 \x03(\tR\n" +
+	"dimensions\x12)\n" +
+	"\x10supported_shapes\x18\a \x03(\tR\x0fsupportedShapes\x12%\n" +
+	"\x0equery_language\x18\b \x01(\tR\rqueryLanguage\x12\x14\n" +
+	"\x05query\x18\t \x01(\tR\x05query\x12Q\n" +
+	"\x0efield_bindings\x18\n" +
+	" \x03(\v2*.omniview.sdk.metric.v1.MetricFieldBindingR\rfieldBindings\x12'\n" +
+	"\x0fidentity_labels\x18\v \x03(\tR\x0eidentityLabels\x12\x18\n" +
+	"\areducer\x18\f \x01(\tR\areducer\x12%\n" +
+	"\x0ebatch_strategy\x18\r \x01(\tR\rbatchStrategy\x12\x1a\n" +
+	"\brevision\x18\x0e \x01(\tR\brevision\x12\x16\n" +
+	"\x06native\x18\x0f \x01(\bR\x06native\"\xdc\x02\n" +
+	"\x12MetricQueryContext\x12J\n" +
+	"\vdefinitions\x18\x01 \x03(\v2(.omniview.sdk.metric.v1.MetricDefinitionR\vdefinitions\x12^\n" +
+	"\fpublic_scope\x18\x02 \x03(\v2;.omniview.sdk.metric.v1.MetricQueryContext.PublicScopeEntryR\vpublicScope\x12)\n" +
+	"\x10mapping_revision\x18\x03 \x01(\tR\x0fmappingRevision\x12/\n" +
+	"\x13projection_revision\x18\x04 \x01(\tR\x12projectionRevision\x1a>\n" +
+	"\x10PublicScopeEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xca\x02\n" +
+	"\x14ResourceMetricTarget\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12E\n" +
+	"\treference\x18\x02 \x01(\v2'.omniview.resource.v2.ResourceReferenceR\treference\x127\n" +
+	"\x05route\x18\x03 \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\x12]\n" +
+	"\vpublic_data\x18\x04 \x03(\v2<.omniview.sdk.metric.v1.ResourceMetricTarget.PublicDataEntryR\n" +
+	"publicData\x1a=\n" +
+	"\x0fPublicDataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbb\x03\n" +
+	"\x14ResourceMetricsQuery\x12?\n" +
+	"\x06source\x18\x01 \x01(\v2'.omniview.sdk.metric.v1.MetricSourceRefR\x06source\x12F\n" +
+	"\atargets\x18\x02 \x03(\v2,.omniview.sdk.metric.v1.ResourceMetricTargetR\atargets\x12\x1d\n" +
+	"\n" +
+	"metric_ids\x18\x03 \x03(\tR\tmetricIds\x12\x14\n" +
+	"\x05shape\x18\x04 \x01(\tR\x05shape\x129\n" +
+	"\n" +
+	"start_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x125\n" +
+	"\bend_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\x12-\n" +
+	"\x04step\x18\a \x01(\v2\x19.google.protobuf.DurationR\x04step\x12D\n" +
+	"\acontext\x18\b \x01(\v2*.omniview.sdk.metric.v1.MetricQueryContextR\acontext\"j\n" +
+	"\x13ResourceMetricPoint\x12.\n" +
+	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x19\n" +
+	"\x05value\x18\x02 \x01(\x01H\x00R\x05value\x88\x01\x01B\b\n" +
+	"\x06_value\"\xeb\x04\n" +
+	"\x14ResourceMetricResult\x12%\n" +
+	"\x0eresource_token\x18\x01 \x01(\tR\rresourceToken\x12\x1b\n" +
+	"\tmetric_id\x18\x02 \x01(\tR\bmetricId\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x19\n" +
+	"\x05value\x18\x04 \x01(\x01H\x00R\x05value\x88\x01\x01\x12C\n" +
+	"\x06points\x18\x05 \x03(\v2+.omniview.sdk.metric.v1.ResourceMetricPointR\x06points\x12\\\n" +
+	"\n" +
+	"dimensions\x18\x06 \x03(\v2<.omniview.sdk.metric.v1.ResourceMetricResult.DimensionsEntryR\n" +
+	"dimensions\x12;\n" +
+	"\vobserved_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"observedAt\x121\n" +
+	"\x06window\x18\b \x01(\v2\x19.google.protobuf.DurationR\x06window\x12\x18\n" +
+	"\amessage\x18\t \x01(\tR\amessage\x12%\n" +
+	"\x0eidentity_scope\x18\n" +
+	" \x01(\tR\ridentityScope\x12?\n" +
+	"\x06source\x18\v \x01(\v2'.omniview.sdk.metric.v1.MetricSourceRefR\x06source\x1a=\n" +
+	"\x0fDimensionsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\b\n" +
+	"\x06_value\"\x99\x01\n" +
+	"\x17ResourceMetricsResponse\x12F\n" +
+	"\aresults\x18\x01 \x03(\v2,.omniview.sdk.metric.v1.ResourceMetricResultR\aresults\x12\x1a\n" +
+	"\bcomplete\x18\x02 \x01(\bR\bcomplete\x12\x1a\n" +
+	"\bwarnings\x18\x03 \x03(\tR\bwarnings\"\x85\x02\n" +
+	"\x16ResourceMetricsCatalog\x12?\n" +
+	"\x06source\x18\x01 \x01(\v2'.omniview.sdk.metric.v1.MetricSourceRefR\x06source\x12H\n" +
+	"\ametrics\x18\x02 \x03(\v2..omniview.sdk.metric.v1.FiniteMetricDescriptorR\ametrics\x12\x1f\n" +
+	"\vmax_targets\x18\x03 \x01(\x05R\n" +
+	"maxTargets\x12?\n" +
+	"\x0emax_sample_age\x18\x04 \x01(\v2\x19.google.protobuf.DurationR\fmaxSampleAge\"\xc9\x01\n" +
+	"\x1dResourceMetricsCatalogRequest\x12!\n" +
+	"\fresource_key\x18\x01 \x01(\tR\vresourceKey\x12?\n" +
+	"\x06source\x18\x02 \x01(\v2'.omniview.sdk.metric.v1.MetricSourceRefR\x06source\x12D\n" +
+	"\acontext\x18\x03 \x01(\v2*.omniview.sdk.metric.v1.MetricQueryContextR\acontext\"Y\n" +
+	"\x18FiniteMetricCapabilities\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\rR\aversion\x12#\n" +
+	"\rowner_catalog\x18\x02 \x01(\bR\fownerCatalog\"Z\n" +
+	"\x10MetricScopeField\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\"\xad\x01\n" +
+	"\x12MetricOwnerCatalog\x12J\n" +
+	"\vdefinitions\x18\x01 \x03(\v2(.omniview.sdk.metric.v1.MetricDefinitionR\vdefinitions\x12K\n" +
+	"\fscope_fields\x18\x02 \x03(\v2(.omniview.sdk.metric.v1.MetricScopeFieldR\vscopeFields*\xce\x02\n" +
 	"\n" +
 	"MetricUnit\x12\x14\n" +
 	"\x10METRIC_UNIT_NONE\x10\x00\x12\x15\n" +
@@ -1742,13 +3033,17 @@ const file_proto_v1_metric_metric_proto_rawDesc = "" +
 	"\x13MetricStreamCommand\x12#\n" +
 	"\x1fMETRIC_STREAM_COMMAND_SUBSCRIBE\x10\x00\x12%\n" +
 	"!METRIC_STREAM_COMMAND_UNSUBSCRIBE\x10\x01\x12\x1f\n" +
-	"\x1bMETRIC_STREAM_COMMAND_CLOSE\x10\x022\xbc\x04\n" +
+	"\x1bMETRIC_STREAM_COMMAND_CLOSE\x10\x022\xf2\a\n" +
 	"\fMetricPlugin\x12l\n" +
 	"\x15GetSupportedResources\x12\x16.google.protobuf.Empty\x1a;.omniview.sdk.metric.v1.GetSupportedMetricResourcesResponse\x12b\n" +
 	"\x05Query\x12+.omniview.sdk.metric.v1.QueryMetricsRequest\x1a,.omniview.sdk.metric.v1.QueryMetricsResponse\x12j\n" +
 	"\rStreamMetrics\x12).omniview.sdk.metric.v1.MetricStreamInput\x1a*.omniview.sdk.metric.v1.MetricStreamOutput(\x010\x01\x12r\n" +
 	"\rQueryResource\x12+.omniview.sdk.metric.v1.QueryMetricsRequest\x1a4.omniview.sdk.metric.v1.ResourceQueryMetricsResponse\x12z\n" +
-	"\x15StreamResourceMetrics\x12).omniview.sdk.metric.v1.MetricStreamInput\x1a2.omniview.sdk.metric.v1.ResourceMetricStreamOutput(\x010\x01B<Z:github.com/omniviewdev/plugin-sdk/proto/v1/metric;metricpbb\x06proto3"
+	"\x15StreamResourceMetrics\x12).omniview.sdk.metric.v1.MetricStreamInput\x1a2.omniview.sdk.metric.v1.ResourceMetricStreamOutput(\x010\x01\x12a\n" +
+	"\x15GetFiniteCapabilities\x12\x16.google.protobuf.Empty\x1a0.omniview.sdk.metric.v1.FiniteMetricCapabilities\x12\x82\x01\n" +
+	"\x19GetResourceMetricsCatalog\x125.omniview.sdk.metric.v1.ResourceMetricsCatalogRequest\x1a..omniview.sdk.metric.v1.ResourceMetricsCatalog\x12o\n" +
+	"\x0eQueryResources\x12,.omniview.sdk.metric.v1.ResourceMetricsQuery\x1a/.omniview.sdk.metric.v1.ResourceMetricsResponse\x12[\n" +
+	"\x15GetMetricOwnerCatalog\x12\x16.google.protobuf.Empty\x1a*.omniview.sdk.metric.v1.MetricOwnerCatalogB<Z:github.com/omniviewdev/plugin-sdk/proto/v1/metric;metricpbb\x06proto3"
 
 var (
 	file_proto_v1_metric_metric_proto_rawDescOnce sync.Once
@@ -1763,7 +3058,7 @@ func file_proto_v1_metric_metric_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_v1_metric_metric_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_proto_v1_metric_metric_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
+var file_proto_v1_metric_metric_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
 var file_proto_v1_metric_metric_proto_goTypes = []any{
 	(MetricUnit)(0),                             // 0: omniview.sdk.metric.v1.MetricUnit
 	(MetricShape)(0),                            // 1: omniview.sdk.metric.v1.MetricShape
@@ -1785,72 +3080,125 @@ var file_proto_v1_metric_metric_proto_goTypes = []any{
 	(*MetricOperationError)(nil),                // 17: omniview.sdk.metric.v1.MetricOperationError
 	(*ResourceQueryMetricsResponse)(nil),        // 18: omniview.sdk.metric.v1.ResourceQueryMetricsResponse
 	(*ResourceMetricStreamOutput)(nil),          // 19: omniview.sdk.metric.v1.ResourceMetricStreamOutput
-	nil,                                         // 20: omniview.sdk.metric.v1.DataPoint.LabelsEntry
-	nil,                                         // 21: omniview.sdk.metric.v1.TimeSeries.LabelsEntry
-	nil,                                         // 22: omniview.sdk.metric.v1.CurrentValue.LabelsEntry
-	nil,                                         // 23: omniview.sdk.metric.v1.AggregateValue.LabelsEntry
-	nil,                                         // 24: omniview.sdk.metric.v1.QueryMetricsRequest.ParamsEntry
-	nil,                                         // 25: omniview.sdk.metric.v1.MetricStreamInput.ParamsEntry
-	(*timestamppb.Timestamp)(nil),               // 26: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),                 // 27: google.protobuf.Duration
-	(*v2.Value)(nil),                            // 28: omniview.resource.v2.Value
-	(*v2.ResourceReference)(nil),                // 29: omniview.resource.v2.ResourceReference
-	(*v2.AccessRoute)(nil),                      // 30: omniview.resource.v2.AccessRoute
-	(*emptypb.Empty)(nil),                       // 31: google.protobuf.Empty
+	(*MetricSourceRef)(nil),                     // 20: omniview.sdk.metric.v1.MetricSourceRef
+	(*FiniteMetricDescriptor)(nil),              // 21: omniview.sdk.metric.v1.FiniteMetricDescriptor
+	(*MetricFieldBinding)(nil),                  // 22: omniview.sdk.metric.v1.MetricFieldBinding
+	(*MetricDefinition)(nil),                    // 23: omniview.sdk.metric.v1.MetricDefinition
+	(*MetricQueryContext)(nil),                  // 24: omniview.sdk.metric.v1.MetricQueryContext
+	(*ResourceMetricTarget)(nil),                // 25: omniview.sdk.metric.v1.ResourceMetricTarget
+	(*ResourceMetricsQuery)(nil),                // 26: omniview.sdk.metric.v1.ResourceMetricsQuery
+	(*ResourceMetricPoint)(nil),                 // 27: omniview.sdk.metric.v1.ResourceMetricPoint
+	(*ResourceMetricResult)(nil),                // 28: omniview.sdk.metric.v1.ResourceMetricResult
+	(*ResourceMetricsResponse)(nil),             // 29: omniview.sdk.metric.v1.ResourceMetricsResponse
+	(*ResourceMetricsCatalog)(nil),              // 30: omniview.sdk.metric.v1.ResourceMetricsCatalog
+	(*ResourceMetricsCatalogRequest)(nil),       // 31: omniview.sdk.metric.v1.ResourceMetricsCatalogRequest
+	(*FiniteMetricCapabilities)(nil),            // 32: omniview.sdk.metric.v1.FiniteMetricCapabilities
+	(*MetricScopeField)(nil),                    // 33: omniview.sdk.metric.v1.MetricScopeField
+	(*MetricOwnerCatalog)(nil),                  // 34: omniview.sdk.metric.v1.MetricOwnerCatalog
+	nil,                                         // 35: omniview.sdk.metric.v1.DataPoint.LabelsEntry
+	nil,                                         // 36: omniview.sdk.metric.v1.TimeSeries.LabelsEntry
+	nil,                                         // 37: omniview.sdk.metric.v1.CurrentValue.LabelsEntry
+	nil,                                         // 38: omniview.sdk.metric.v1.AggregateValue.LabelsEntry
+	nil,                                         // 39: omniview.sdk.metric.v1.QueryMetricsRequest.ParamsEntry
+	nil,                                         // 40: omniview.sdk.metric.v1.MetricStreamInput.ParamsEntry
+	nil,                                         // 41: omniview.sdk.metric.v1.MetricQueryContext.PublicScopeEntry
+	nil,                                         // 42: omniview.sdk.metric.v1.ResourceMetricTarget.PublicDataEntry
+	nil,                                         // 43: omniview.sdk.metric.v1.ResourceMetricResult.DimensionsEntry
+	(*timestamppb.Timestamp)(nil),               // 44: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),                 // 45: google.protobuf.Duration
+	(*v2.Value)(nil),                            // 46: omniview.resource.v2.Value
+	(*v2.ResourceReference)(nil),                // 47: omniview.resource.v2.ResourceReference
+	(*v2.AccessRoute)(nil),                      // 48: omniview.resource.v2.AccessRoute
+	(*emptypb.Empty)(nil),                       // 49: google.protobuf.Empty
 }
 var file_proto_v1_metric_metric_proto_depIdxs = []int32{
 	0,  // 0: omniview.sdk.metric.v1.MetricDescriptor.unit:type_name -> omniview.sdk.metric.v1.MetricUnit
 	4,  // 1: omniview.sdk.metric.v1.MetricDescriptor.color_ranges:type_name -> omniview.sdk.metric.v1.MetricColorRange
 	1,  // 2: omniview.sdk.metric.v1.MetricDescriptor.supported_shapes:type_name -> omniview.sdk.metric.v1.MetricShape
 	5,  // 3: omniview.sdk.metric.v1.MetricHandler.metrics:type_name -> omniview.sdk.metric.v1.MetricDescriptor
-	26, // 4: omniview.sdk.metric.v1.DataPoint.timestamp:type_name -> google.protobuf.Timestamp
-	20, // 5: omniview.sdk.metric.v1.DataPoint.labels:type_name -> omniview.sdk.metric.v1.DataPoint.LabelsEntry
+	44, // 4: omniview.sdk.metric.v1.DataPoint.timestamp:type_name -> google.protobuf.Timestamp
+	35, // 5: omniview.sdk.metric.v1.DataPoint.labels:type_name -> omniview.sdk.metric.v1.DataPoint.LabelsEntry
 	7,  // 6: omniview.sdk.metric.v1.TimeSeries.data_points:type_name -> omniview.sdk.metric.v1.DataPoint
-	21, // 7: omniview.sdk.metric.v1.TimeSeries.labels:type_name -> omniview.sdk.metric.v1.TimeSeries.LabelsEntry
-	26, // 8: omniview.sdk.metric.v1.CurrentValue.timestamp:type_name -> google.protobuf.Timestamp
-	22, // 9: omniview.sdk.metric.v1.CurrentValue.labels:type_name -> omniview.sdk.metric.v1.CurrentValue.LabelsEntry
-	27, // 10: omniview.sdk.metric.v1.AggregateValue.window:type_name -> google.protobuf.Duration
-	23, // 11: omniview.sdk.metric.v1.AggregateValue.labels:type_name -> omniview.sdk.metric.v1.AggregateValue.LabelsEntry
+	36, // 7: omniview.sdk.metric.v1.TimeSeries.labels:type_name -> omniview.sdk.metric.v1.TimeSeries.LabelsEntry
+	44, // 8: omniview.sdk.metric.v1.CurrentValue.timestamp:type_name -> google.protobuf.Timestamp
+	37, // 9: omniview.sdk.metric.v1.CurrentValue.labels:type_name -> omniview.sdk.metric.v1.CurrentValue.LabelsEntry
+	45, // 10: omniview.sdk.metric.v1.AggregateValue.window:type_name -> google.protobuf.Duration
+	38, // 11: omniview.sdk.metric.v1.AggregateValue.labels:type_name -> omniview.sdk.metric.v1.AggregateValue.LabelsEntry
 	8,  // 12: omniview.sdk.metric.v1.MetricResult.time_series:type_name -> omniview.sdk.metric.v1.TimeSeries
 	9,  // 13: omniview.sdk.metric.v1.MetricResult.current_value:type_name -> omniview.sdk.metric.v1.CurrentValue
 	10, // 14: omniview.sdk.metric.v1.MetricResult.aggregate_value:type_name -> omniview.sdk.metric.v1.AggregateValue
 	3,  // 15: omniview.sdk.metric.v1.GetSupportedMetricResourcesResponse.provider:type_name -> omniview.sdk.metric.v1.MetricProviderInfo
 	6,  // 16: omniview.sdk.metric.v1.GetSupportedMetricResourcesResponse.handlers:type_name -> omniview.sdk.metric.v1.MetricHandler
-	28, // 17: omniview.sdk.metric.v1.QueryMetricsRequest.resource_data:type_name -> omniview.resource.v2.Value
-	29, // 18: omniview.sdk.metric.v1.QueryMetricsRequest.reference:type_name -> omniview.resource.v2.ResourceReference
-	30, // 19: omniview.sdk.metric.v1.QueryMetricsRequest.route:type_name -> omniview.resource.v2.AccessRoute
+	46, // 17: omniview.sdk.metric.v1.QueryMetricsRequest.resource_data:type_name -> omniview.resource.v2.Value
+	47, // 18: omniview.sdk.metric.v1.QueryMetricsRequest.reference:type_name -> omniview.resource.v2.ResourceReference
+	48, // 19: omniview.sdk.metric.v1.QueryMetricsRequest.route:type_name -> omniview.resource.v2.AccessRoute
 	1,  // 20: omniview.sdk.metric.v1.QueryMetricsRequest.shape:type_name -> omniview.sdk.metric.v1.MetricShape
-	26, // 21: omniview.sdk.metric.v1.QueryMetricsRequest.start_time:type_name -> google.protobuf.Timestamp
-	26, // 22: omniview.sdk.metric.v1.QueryMetricsRequest.end_time:type_name -> google.protobuf.Timestamp
-	27, // 23: omniview.sdk.metric.v1.QueryMetricsRequest.step:type_name -> google.protobuf.Duration
-	24, // 24: omniview.sdk.metric.v1.QueryMetricsRequest.params:type_name -> omniview.sdk.metric.v1.QueryMetricsRequest.ParamsEntry
+	44, // 21: omniview.sdk.metric.v1.QueryMetricsRequest.start_time:type_name -> google.protobuf.Timestamp
+	44, // 22: omniview.sdk.metric.v1.QueryMetricsRequest.end_time:type_name -> google.protobuf.Timestamp
+	45, // 23: omniview.sdk.metric.v1.QueryMetricsRequest.step:type_name -> google.protobuf.Duration
+	39, // 24: omniview.sdk.metric.v1.QueryMetricsRequest.params:type_name -> omniview.sdk.metric.v1.QueryMetricsRequest.ParamsEntry
 	11, // 25: omniview.sdk.metric.v1.QueryMetricsResponse.results:type_name -> omniview.sdk.metric.v1.MetricResult
 	2,  // 26: omniview.sdk.metric.v1.MetricStreamInput.command:type_name -> omniview.sdk.metric.v1.MetricStreamCommand
-	28, // 27: omniview.sdk.metric.v1.MetricStreamInput.resource_data:type_name -> omniview.resource.v2.Value
-	29, // 28: omniview.sdk.metric.v1.MetricStreamInput.reference:type_name -> omniview.resource.v2.ResourceReference
-	30, // 29: omniview.sdk.metric.v1.MetricStreamInput.route:type_name -> omniview.resource.v2.AccessRoute
-	25, // 30: omniview.sdk.metric.v1.MetricStreamInput.params:type_name -> omniview.sdk.metric.v1.MetricStreamInput.ParamsEntry
-	27, // 31: omniview.sdk.metric.v1.MetricStreamInput.interval:type_name -> google.protobuf.Duration
+	46, // 27: omniview.sdk.metric.v1.MetricStreamInput.resource_data:type_name -> omniview.resource.v2.Value
+	47, // 28: omniview.sdk.metric.v1.MetricStreamInput.reference:type_name -> omniview.resource.v2.ResourceReference
+	48, // 29: omniview.sdk.metric.v1.MetricStreamInput.route:type_name -> omniview.resource.v2.AccessRoute
+	40, // 30: omniview.sdk.metric.v1.MetricStreamInput.params:type_name -> omniview.sdk.metric.v1.MetricStreamInput.ParamsEntry
+	45, // 31: omniview.sdk.metric.v1.MetricStreamInput.interval:type_name -> google.protobuf.Duration
 	11, // 32: omniview.sdk.metric.v1.MetricStreamOutput.results:type_name -> omniview.sdk.metric.v1.MetricResult
-	26, // 33: omniview.sdk.metric.v1.MetricStreamOutput.timestamp:type_name -> google.protobuf.Timestamp
+	44, // 33: omniview.sdk.metric.v1.MetricStreamOutput.timestamp:type_name -> google.protobuf.Timestamp
 	17, // 34: omniview.sdk.metric.v1.MetricStreamOutput.operation_error:type_name -> omniview.sdk.metric.v1.MetricOperationError
 	14, // 35: omniview.sdk.metric.v1.ResourceQueryMetricsResponse.response:type_name -> omniview.sdk.metric.v1.QueryMetricsResponse
 	16, // 36: omniview.sdk.metric.v1.ResourceMetricStreamOutput.output:type_name -> omniview.sdk.metric.v1.MetricStreamOutput
-	31, // 37: omniview.sdk.metric.v1.MetricPlugin.GetSupportedResources:input_type -> google.protobuf.Empty
-	13, // 38: omniview.sdk.metric.v1.MetricPlugin.Query:input_type -> omniview.sdk.metric.v1.QueryMetricsRequest
-	15, // 39: omniview.sdk.metric.v1.MetricPlugin.StreamMetrics:input_type -> omniview.sdk.metric.v1.MetricStreamInput
-	13, // 40: omniview.sdk.metric.v1.MetricPlugin.QueryResource:input_type -> omniview.sdk.metric.v1.QueryMetricsRequest
-	15, // 41: omniview.sdk.metric.v1.MetricPlugin.StreamResourceMetrics:input_type -> omniview.sdk.metric.v1.MetricStreamInput
-	12, // 42: omniview.sdk.metric.v1.MetricPlugin.GetSupportedResources:output_type -> omniview.sdk.metric.v1.GetSupportedMetricResourcesResponse
-	14, // 43: omniview.sdk.metric.v1.MetricPlugin.Query:output_type -> omniview.sdk.metric.v1.QueryMetricsResponse
-	16, // 44: omniview.sdk.metric.v1.MetricPlugin.StreamMetrics:output_type -> omniview.sdk.metric.v1.MetricStreamOutput
-	18, // 45: omniview.sdk.metric.v1.MetricPlugin.QueryResource:output_type -> omniview.sdk.metric.v1.ResourceQueryMetricsResponse
-	19, // 46: omniview.sdk.metric.v1.MetricPlugin.StreamResourceMetrics:output_type -> omniview.sdk.metric.v1.ResourceMetricStreamOutput
-	42, // [42:47] is the sub-list for method output_type
-	37, // [37:42] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	20, // 37: omniview.sdk.metric.v1.FiniteMetricDescriptor.source:type_name -> omniview.sdk.metric.v1.MetricSourceRef
+	22, // 38: omniview.sdk.metric.v1.MetricDefinition.field_bindings:type_name -> omniview.sdk.metric.v1.MetricFieldBinding
+	23, // 39: omniview.sdk.metric.v1.MetricQueryContext.definitions:type_name -> omniview.sdk.metric.v1.MetricDefinition
+	41, // 40: omniview.sdk.metric.v1.MetricQueryContext.public_scope:type_name -> omniview.sdk.metric.v1.MetricQueryContext.PublicScopeEntry
+	47, // 41: omniview.sdk.metric.v1.ResourceMetricTarget.reference:type_name -> omniview.resource.v2.ResourceReference
+	48, // 42: omniview.sdk.metric.v1.ResourceMetricTarget.route:type_name -> omniview.resource.v2.AccessRoute
+	42, // 43: omniview.sdk.metric.v1.ResourceMetricTarget.public_data:type_name -> omniview.sdk.metric.v1.ResourceMetricTarget.PublicDataEntry
+	20, // 44: omniview.sdk.metric.v1.ResourceMetricsQuery.source:type_name -> omniview.sdk.metric.v1.MetricSourceRef
+	25, // 45: omniview.sdk.metric.v1.ResourceMetricsQuery.targets:type_name -> omniview.sdk.metric.v1.ResourceMetricTarget
+	44, // 46: omniview.sdk.metric.v1.ResourceMetricsQuery.start_time:type_name -> google.protobuf.Timestamp
+	44, // 47: omniview.sdk.metric.v1.ResourceMetricsQuery.end_time:type_name -> google.protobuf.Timestamp
+	45, // 48: omniview.sdk.metric.v1.ResourceMetricsQuery.step:type_name -> google.protobuf.Duration
+	24, // 49: omniview.sdk.metric.v1.ResourceMetricsQuery.context:type_name -> omniview.sdk.metric.v1.MetricQueryContext
+	44, // 50: omniview.sdk.metric.v1.ResourceMetricPoint.time:type_name -> google.protobuf.Timestamp
+	27, // 51: omniview.sdk.metric.v1.ResourceMetricResult.points:type_name -> omniview.sdk.metric.v1.ResourceMetricPoint
+	43, // 52: omniview.sdk.metric.v1.ResourceMetricResult.dimensions:type_name -> omniview.sdk.metric.v1.ResourceMetricResult.DimensionsEntry
+	44, // 53: omniview.sdk.metric.v1.ResourceMetricResult.observed_at:type_name -> google.protobuf.Timestamp
+	45, // 54: omniview.sdk.metric.v1.ResourceMetricResult.window:type_name -> google.protobuf.Duration
+	20, // 55: omniview.sdk.metric.v1.ResourceMetricResult.source:type_name -> omniview.sdk.metric.v1.MetricSourceRef
+	28, // 56: omniview.sdk.metric.v1.ResourceMetricsResponse.results:type_name -> omniview.sdk.metric.v1.ResourceMetricResult
+	20, // 57: omniview.sdk.metric.v1.ResourceMetricsCatalog.source:type_name -> omniview.sdk.metric.v1.MetricSourceRef
+	21, // 58: omniview.sdk.metric.v1.ResourceMetricsCatalog.metrics:type_name -> omniview.sdk.metric.v1.FiniteMetricDescriptor
+	45, // 59: omniview.sdk.metric.v1.ResourceMetricsCatalog.max_sample_age:type_name -> google.protobuf.Duration
+	20, // 60: omniview.sdk.metric.v1.ResourceMetricsCatalogRequest.source:type_name -> omniview.sdk.metric.v1.MetricSourceRef
+	24, // 61: omniview.sdk.metric.v1.ResourceMetricsCatalogRequest.context:type_name -> omniview.sdk.metric.v1.MetricQueryContext
+	23, // 62: omniview.sdk.metric.v1.MetricOwnerCatalog.definitions:type_name -> omniview.sdk.metric.v1.MetricDefinition
+	33, // 63: omniview.sdk.metric.v1.MetricOwnerCatalog.scope_fields:type_name -> omniview.sdk.metric.v1.MetricScopeField
+	49, // 64: omniview.sdk.metric.v1.MetricPlugin.GetSupportedResources:input_type -> google.protobuf.Empty
+	13, // 65: omniview.sdk.metric.v1.MetricPlugin.Query:input_type -> omniview.sdk.metric.v1.QueryMetricsRequest
+	15, // 66: omniview.sdk.metric.v1.MetricPlugin.StreamMetrics:input_type -> omniview.sdk.metric.v1.MetricStreamInput
+	13, // 67: omniview.sdk.metric.v1.MetricPlugin.QueryResource:input_type -> omniview.sdk.metric.v1.QueryMetricsRequest
+	15, // 68: omniview.sdk.metric.v1.MetricPlugin.StreamResourceMetrics:input_type -> omniview.sdk.metric.v1.MetricStreamInput
+	49, // 69: omniview.sdk.metric.v1.MetricPlugin.GetFiniteCapabilities:input_type -> google.protobuf.Empty
+	31, // 70: omniview.sdk.metric.v1.MetricPlugin.GetResourceMetricsCatalog:input_type -> omniview.sdk.metric.v1.ResourceMetricsCatalogRequest
+	26, // 71: omniview.sdk.metric.v1.MetricPlugin.QueryResources:input_type -> omniview.sdk.metric.v1.ResourceMetricsQuery
+	49, // 72: omniview.sdk.metric.v1.MetricPlugin.GetMetricOwnerCatalog:input_type -> google.protobuf.Empty
+	12, // 73: omniview.sdk.metric.v1.MetricPlugin.GetSupportedResources:output_type -> omniview.sdk.metric.v1.GetSupportedMetricResourcesResponse
+	14, // 74: omniview.sdk.metric.v1.MetricPlugin.Query:output_type -> omniview.sdk.metric.v1.QueryMetricsResponse
+	16, // 75: omniview.sdk.metric.v1.MetricPlugin.StreamMetrics:output_type -> omniview.sdk.metric.v1.MetricStreamOutput
+	18, // 76: omniview.sdk.metric.v1.MetricPlugin.QueryResource:output_type -> omniview.sdk.metric.v1.ResourceQueryMetricsResponse
+	19, // 77: omniview.sdk.metric.v1.MetricPlugin.StreamResourceMetrics:output_type -> omniview.sdk.metric.v1.ResourceMetricStreamOutput
+	32, // 78: omniview.sdk.metric.v1.MetricPlugin.GetFiniteCapabilities:output_type -> omniview.sdk.metric.v1.FiniteMetricCapabilities
+	30, // 79: omniview.sdk.metric.v1.MetricPlugin.GetResourceMetricsCatalog:output_type -> omniview.sdk.metric.v1.ResourceMetricsCatalog
+	29, // 80: omniview.sdk.metric.v1.MetricPlugin.QueryResources:output_type -> omniview.sdk.metric.v1.ResourceMetricsResponse
+	34, // 81: omniview.sdk.metric.v1.MetricPlugin.GetMetricOwnerCatalog:output_type -> omniview.sdk.metric.v1.MetricOwnerCatalog
+	73, // [73:82] is the sub-list for method output_type
+	64, // [64:73] is the sub-list for method input_type
+	64, // [64:64] is the sub-list for extension type_name
+	64, // [64:64] is the sub-list for extension extendee
+	0,  // [0:64] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_metric_metric_proto_init() }
@@ -1867,13 +3215,15 @@ func file_proto_v1_metric_metric_proto_init() {
 		(*ResourceMetricStreamOutput_Output)(nil),
 		(*ResourceMetricStreamOutput_Ready)(nil),
 	}
+	file_proto_v1_metric_metric_proto_msgTypes[24].OneofWrappers = []any{}
+	file_proto_v1_metric_metric_proto_msgTypes[25].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_metric_metric_proto_rawDesc), len(file_proto_v1_metric_metric_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   23,
+			NumMessages:   41,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
