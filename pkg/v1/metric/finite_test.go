@@ -146,6 +146,20 @@ func TestFiniteCatalogUsesBaseUnitsAndExplicitShapes(t *testing.T) {
 	if err := ValidateResourceMetricsCatalog(c); err != nil {
 		t.Fatal("absent range reuse changed current-only catalog validity", err)
 	}
+	c.Metrics[0].RangeToCurrent = true
+	for _, shapes := range [][]string{{"current"}, {"range"}} {
+		c.Metrics[0].Shapes = shapes
+		if err := ValidateResourceMetricsCatalog(c); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+			t.Fatal("range-to-current reuse admitted without both shapes", shapes, err)
+		}
+		if _, err := catalogFromProto(catalogToProto(c)); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+			t.Fatal("peer range-to-current reuse admitted without both shapes", shapes, err)
+		}
+	}
+	c.Metrics[0].Shapes = []string{"current", "range"}
+	if err := ValidateResourceMetricsCatalog(c); err != nil {
+		t.Fatal("range-to-current reuse rejected with both shapes", err)
+	}
 }
 
 func TestFiniteManagerAdmitsEveryTargetBeforeCollection(t *testing.T) {

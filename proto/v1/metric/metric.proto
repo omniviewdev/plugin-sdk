@@ -206,17 +206,23 @@ message FiniteMetricDescriptor {
   repeated string shapes = 5;
   string description = 6;
   MetricSourceRef source = 7;
-  // Provider opt-in for coverage-aware range reuse; absent or false never
-  // permits reuse. Valid only when shapes include "range". When true, every ok
-  // range result is a pure point series: points are pointwise evaluations on
-  // the grid start_time + n*step and, for the same context and step, their
-  // value and presence do not depend on start_time, end_time or which other
-  // points were requested. observed_at and window describe one requested
-  // domain, not that series, so hosts reuse points across different bounds only
-  // from ok results that leave both unset and whose identity_scope, source and
-  // dimensions stay compatible. It implies nothing about the current shape or
-  // immutable history; host cache TTL still governs staleness.
+  // Provider opt-in for cross-bound range reuse. Valid only with "range".
+  // Every ok result is a pure point series on start_time + n*step. For the
+  // same context/step, point value and presence are independent of bounds.
+  // value and observed_at are unset; window is zero. Identity, source and
+  // dimensions remain compatible. Non-ok/incomplete results prove no cross-bound
+  // coverage. This implies neither current equivalence nor immutable history.
   bool range_reuse = 8;
+  // Separate provider opt-in for promoting the latest range point to current.
+  // Requires both shapes and equivalent value/unit/identity/source/dimensions/
+  // sampling-window semantics independent of range bounds and step.
+  // observed_at is the actual source time associated with the last point;
+  // window is its sampling window, not metadata for the requested range.
+  // Hosts require complete ok data, a numeric terminal point, positive known
+  // max_sample_age, fresh nonfuture source/evaluation times and unexpired cache.
+  // A terminal gap never selects an older point; point time never replaces
+  // observed_at. Absent/false never permits range-to-current reuse.
+  bool range_to_current = 9;
 }
 // Only the host may derive these fields from admitted owner observations.
 message MetricFieldBinding {

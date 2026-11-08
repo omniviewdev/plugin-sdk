@@ -157,14 +157,21 @@ metric.FiniteMetricDescriptor{
 }
 ```
 
-Set it only when every `ok` range result meets both conditions:
+Set it only when every `ok` range result meets these conditions:
 
 - Points sit on `StartTime + n*Step`, each evaluated at its own instant.
 - For the same query context and `Step`, a point's value, or its gap, does not depend on `StartTime`, `EndTime` or which other points were requested.
+- `Value` and `ObservedAt` are unset and `Window` is zero; the series has no range-wide sample metadata.
 
 Leave it false, the default, when a point depends on the requested window: a rate over the whole range, a lookback derived from its length, or a step or downsampling chosen from it. The opt-in requires the `range` shape. It says nothing about current values or unchanging history, and the host's cache TTL still bounds staleness.
 
-Hosts reuse points across different bounds only from `ok` results with no `ObservedAt` and no `Window`, because those describe one requested domain. Setting them stays valid but limits reuse to the exact domain. Owners can declare the same promise on a `MetricDefinition`; your descriptor remains the opt-in and you may decline. The [contract reference](finite-resource-metrics-reference.md#range-reuse) has the exact rules.
+Hosts combine complete `ok` results only while identity, source and dimensions stay compatible. Leave the flag false for results carrying aggregate sample metadata; those remain eligible only for exact-domain caching. Owners can declare the pure-series promise on a `MetricDefinition`, but your descriptor remains the opt-in and you may decline. The [contract reference](finite-resource-metrics-reference.md#range-reuse) has the exact rules.
+
+### Optional latest-point reuse for current
+
+Set `FiniteMetricDescriptor.RangeToCurrent` only when the terminal range point has the same sample semantics as a cached current result, independent of requested bounds and step. Both shapes are required. This is separate from overlapping-history reuse and cannot be inherited from an owner hint.
+
+Supply the actual source `ObservedAt` and sampling `Window` for that last point, plus a positive source `MaxSampleAge`. The host refuses unknown, stale or future source times, future evaluations, incomplete results and terminal gaps. It never replaces source time with evaluation time or chooses an older value behind a terminal gap. Exact current results take precedence; all normal cache TTL, authority and configuration fences remain. This uses existing completed entries, not another sample cache.
 
 ## Choose the producer's unit
 

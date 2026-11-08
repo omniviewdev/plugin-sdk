@@ -43,15 +43,26 @@ type FiniteMetricDescriptor struct {
 	// series: Points are pointwise evaluations on the grid StartTime+n*Step, and
 	// for the same query context and Step each point's value and presence do not
 	// depend on StartTime, EndTime or which other points were requested.
-	// ObservedAt and Window describe one requested domain, not that series, so a
-	// host reuses points across different bounds only from ok results that leave
-	// both unset and whose IdentityScope, Source and Dimensions stay compatible;
-	// any other result is valid only for its exact domain. Reuse does not imply
-	// that a range point equals a current sample or that source history never
-	// changes: the host's cache TTL still governs staleness. The descriptor, not
-	// an owner's MetricDefinition.RangeReuse declaration, is the opt-in, and a
-	// provider may decline that declaration.
+	// Opted-in ok results leave Value and ObservedAt unset and Window zero;
+	// cross-bound assembly cannot transplant range-wide sample metadata.
+	// IdentityScope, Source and Dimensions must remain compatible. Non-ok and
+	// incomplete results establish no cross-bound coverage. Reuse does not imply
+	// current equivalence or immutable history: cache TTL still governs staleness.
+	// The descriptor, not an owner's MetricDefinition.RangeReuse declaration,
+	// is the opt-in, and a provider may decline that declaration.
 	RangeReuse bool `json:"range_reuse,omitempty"`
+	// RangeToCurrent separately allows the latest range point to represent a
+	// cached current sample. Both current and range shapes are required.
+	// The provider guarantees equivalent value semantics, unit, identity,
+	// source, dimensions and sampling window independent of range bounds/step.
+	// ObservedAt must be the actual source time associated with that last point,
+	// and Window its source sampling window, not range-wide metadata.
+	// Hosts still require a complete ok response, a numeric terminal point,
+	// known positive MaxSampleAge, fresh nonfuture source/evaluation times and
+	// an unexpired cache entry. A terminal gap never falls back to an older point.
+	// Point.Time does not establish source age and never replaces ObservedAt.
+	// Absence of this flag never permits range-to-current reuse.
+	RangeToCurrent bool `json:"range_to_current,omitempty"`
 }
 
 // ResourceMetricTarget binds a caller correlation token to an admitted reference.
@@ -205,7 +216,7 @@ func ValidateResourceMetricsQuery(q ResourceMetricsQuery) error {
 }
 
 // ValidateResourceMetricsCatalog rejects unknown units/shapes, duplicate IDs and
-// range-reuse opt-in without the range shape.
+// reuse declarations without their required shapes.
 func ValidateResourceMetricsCatalog(c *ResourceMetricsCatalog) error {
 	if c == nil {
 		return metricError("INVALID_REQUEST", "Missing finite catalog.")
@@ -239,6 +250,9 @@ func ValidateResourceMetricsCatalog(c *ResourceMetricsCatalog) error {
 		}
 		if d.RangeReuse && !shapes["range"] {
 			return metricError("INVALID_REQUEST", "Range reuse requires the range shape.")
+		}
+		if d.RangeToCurrent && (!shapes["current"] || !shapes["range"]) {
+			return metricError("INVALID_REQUEST", "Range-to-current reuse requires both shapes.")
 		}
 	}
 	return resourcev2.ValidateMetadata(c)

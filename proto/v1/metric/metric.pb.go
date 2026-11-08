@@ -1664,19 +1664,25 @@ type FiniteMetricDescriptor struct {
 	Shapes      []string               `protobuf:"bytes,5,rep,name=shapes,proto3" json:"shapes,omitempty"`
 	Description string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
 	Source      *MetricSourceRef       `protobuf:"bytes,7,opt,name=source,proto3" json:"source,omitempty"`
-	// Provider opt-in for coverage-aware range reuse; absent or false never
-	// permits reuse. Valid only when shapes include "range". When true, every ok
-	// range result is a pure point series: points are pointwise evaluations on
-	// the grid start_time + n*step and, for the same context and step, their
-	// value and presence do not depend on start_time, end_time or which other
-	// points were requested. observed_at and window describe one requested
-	// domain, not that series, so hosts reuse points across different bounds only
-	// from ok results that leave both unset and whose identity_scope, source and
-	// dimensions stay compatible. It implies nothing about the current shape or
-	// immutable history; host cache TTL still governs staleness.
-	RangeReuse    bool `protobuf:"varint,8,opt,name=range_reuse,json=rangeReuse,proto3" json:"range_reuse,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Provider opt-in for cross-bound range reuse. Valid only with "range".
+	// Every ok result is a pure point series on start_time + n*step. For the
+	// same context/step, point value and presence are independent of bounds.
+	// value and observed_at are unset; window is zero. Identity, source and
+	// dimensions remain compatible. Non-ok/incomplete results prove no cross-bound
+	// coverage. This implies neither current equivalence nor immutable history.
+	RangeReuse bool `protobuf:"varint,8,opt,name=range_reuse,json=rangeReuse,proto3" json:"range_reuse,omitempty"`
+	// Separate provider opt-in for promoting the latest range point to current.
+	// Requires both shapes and equivalent value/unit/identity/source/dimensions/
+	// sampling-window semantics independent of range bounds and step.
+	// observed_at is the actual source time associated with the last point;
+	// window is its sampling window, not metadata for the requested range.
+	// Hosts require complete ok data, a numeric terminal point, positive known
+	// max_sample_age, fresh nonfuture source/evaluation times and unexpired cache.
+	// A terminal gap never selects an older point; point time never replaces
+	// observed_at. Absent/false never permits range-to-current reuse.
+	RangeToCurrent bool `protobuf:"varint,9,opt,name=range_to_current,json=rangeToCurrent,proto3" json:"range_to_current,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *FiniteMetricDescriptor) Reset() {
@@ -1761,6 +1767,13 @@ func (x *FiniteMetricDescriptor) GetSource() *MetricSourceRef {
 func (x *FiniteMetricDescriptor) GetRangeReuse() bool {
 	if x != nil {
 		return x.RangeReuse
+	}
+	return false
+}
+
+func (x *FiniteMetricDescriptor) GetRangeToCurrent() bool {
+	if x != nil {
+		return x.RangeToCurrent
 	}
 	return false
 }
@@ -2929,7 +2942,7 @@ const file_proto_v1_metric_metric_proto_rawDesc = "" +
 	"\rconnection_id\x18\x02 \x01(\tR\fconnectionId\x12%\n" +
 	"\x0edatasource_uid\x18\x03 \x01(\tR\rdatasourceUid\x12'\n" +
 	"\x0fdatasource_kind\x18\x04 \x01(\tR\x0edatasourceKind\x12\x16\n" +
-	"\x06native\x18\x05 \x01(\bR\x06native\"\x8f\x02\n" +
+	"\x06native\x18\x05 \x01(\bR\x06native\"\xb9\x02\n" +
 	"\x16FiniteMetricDescriptor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12!\n" +
@@ -2939,7 +2952,8 @@ const file_proto_v1_metric_metric_proto_rawDesc = "" +
 	"\vdescription\x18\x06 \x01(\tR\vdescription\x12?\n" +
 	"\x06source\x18\a \x01(\v2'.omniview.sdk.metric.v1.MetricSourceRefR\x06source\x12\x1f\n" +
 	"\vrange_reuse\x18\b \x01(\bR\n" +
-	"rangeReuse\"\xb7\x01\n" +
+	"rangeReuse\x12(\n" +
+	"\x10range_to_current\x18\t \x01(\bR\x0erangeToCurrent\"\xb7\x01\n" +
 	"\x12MetricFieldBinding\x12\x14\n" +
 	"\x05field\x18\x01 \x01(\tR\x05field\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x16\n" +
