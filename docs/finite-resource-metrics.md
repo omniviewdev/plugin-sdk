@@ -76,7 +76,7 @@ func PodCatalog(ctx *types.PluginContext, request metric.ResourceMetricsCatalogR
 | Catalog choice | Meaning |
 | --- | --- |
 | `Source` | Actual plugin, connection, and backend supplying the measurements |
-| `Metrics` | Stable IDs, display names, units, and supported query shapes |
+| `Metrics` | Stable IDs, display names, units, supported query shapes, and an optional [range-reuse opt-in](#let-hosts-reuse-overlapping-history) |
 | `MaxTargets` | Maximum resources your provider accepts in one batch |
 | `MaxSampleAge` | How old a live sample can be before it is delayed; zero means unknown |
 
@@ -141,6 +141,30 @@ Additional statuses and exact validation rules are in the [contract reference](f
 | `range` | Time-ordered points | `StartTime`, `EndTime`, `Step` |
 
 Native metrics-server supports live values only. Repeated refreshes must not become invented history.
+
+### Let hosts reuse overlapping history
+
+Dashboards often request windows that overlap one the host already holds. If your range evaluation is a pure point series, set `RangeReuse` on the descriptor so the host can fetch only the part it lacks:
+
+```go
+metric.FiniteMetricDescriptor{
+    ID:          "example.pod.cpu.usage",
+    Name:        "CPU usage",
+    ResourceKey: resourceKey,
+    Unit:        "cores",
+    Shapes:      []string{"current", "range"},
+    RangeReuse:  true,
+}
+```
+
+Set it only when every `ok` range result meets both conditions:
+
+- Points sit on `StartTime + n*Step`, each evaluated at its own instant.
+- For the same query context and `Step`, a point's value, or its gap, does not depend on `StartTime`, `EndTime` or which other points were requested.
+
+Leave it false, the default, when a point depends on the requested window: a rate over the whole range, a lookback derived from its length, or a step or downsampling chosen from it. The opt-in requires the `range` shape. It says nothing about current values or unchanging history, and the host's cache TTL still bounds staleness.
+
+Hosts reuse points across different bounds only from `ok` results with no `ObservedAt` and no `Window`, because those describe one requested domain. Setting them stays valid but limits reuse to the exact domain. Owners can declare the same promise on a `MetricDefinition`; your descriptor remains the opt-in and you may decline. The [contract reference](finite-resource-metrics-reference.md#range-reuse) has the exact rules.
 
 ## Choose the producer's unit
 

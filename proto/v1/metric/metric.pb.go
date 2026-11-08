@@ -1656,14 +1656,25 @@ func (x *MetricSourceRef) GetNative() bool {
 }
 
 type FiniteMetricDescriptor struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	ResourceKey   string                 `protobuf:"bytes,3,opt,name=resource_key,json=resourceKey,proto3" json:"resource_key,omitempty"`
-	Unit          string                 `protobuf:"bytes,4,opt,name=unit,proto3" json:"unit,omitempty"`
-	Shapes        []string               `protobuf:"bytes,5,rep,name=shapes,proto3" json:"shapes,omitempty"`
-	Description   string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
-	Source        *MetricSourceRef       `protobuf:"bytes,7,opt,name=source,proto3" json:"source,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name        string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	ResourceKey string                 `protobuf:"bytes,3,opt,name=resource_key,json=resourceKey,proto3" json:"resource_key,omitempty"`
+	Unit        string                 `protobuf:"bytes,4,opt,name=unit,proto3" json:"unit,omitempty"`
+	Shapes      []string               `protobuf:"bytes,5,rep,name=shapes,proto3" json:"shapes,omitempty"`
+	Description string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	Source      *MetricSourceRef       `protobuf:"bytes,7,opt,name=source,proto3" json:"source,omitempty"`
+	// Provider opt-in for coverage-aware range reuse; absent or false never
+	// permits reuse. Valid only when shapes include "range". When true, every ok
+	// range result is a pure point series: points are pointwise evaluations on
+	// the grid start_time + n*step and, for the same context and step, their
+	// value and presence do not depend on start_time, end_time or which other
+	// points were requested. observed_at and window describe one requested
+	// domain, not that series, so hosts reuse points across different bounds only
+	// from ok results that leave both unset and whose identity_scope, source and
+	// dimensions stay compatible. It implies nothing about the current shape or
+	// immutable history; host cache TTL still governs staleness.
+	RangeReuse    bool `protobuf:"varint,8,opt,name=range_reuse,json=rangeReuse,proto3" json:"range_reuse,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1745,6 +1756,13 @@ func (x *FiniteMetricDescriptor) GetSource() *MetricSourceRef {
 		return x.Source
 	}
 	return nil
+}
+
+func (x *FiniteMetricDescriptor) GetRangeReuse() bool {
+	if x != nil {
+		return x.RangeReuse
+	}
+	return false
 }
 
 // Only the host may derive these fields from admitted owner observations.
@@ -1849,8 +1867,13 @@ type MetricDefinition struct {
 	BatchStrategy   string                 `protobuf:"bytes,13,opt,name=batch_strategy,json=batchStrategy,proto3" json:"batch_strategy,omitempty"`
 	Revision        string                 `protobuf:"bytes,14,opt,name=revision,proto3" json:"revision,omitempty"`
 	Native          bool                   `protobuf:"varint,15,opt,name=native,proto3" json:"native,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Owner declaration that this authored definition meets the guarantee on
+	// FiniteMetricDescriptor.range_reuse. It is not an opt-in: the provider's
+	// descriptor decides, and hosts clear it unless the effective definition is
+	// exactly the owner-authored one. Valid only when supported_shapes include "range".
+	RangeReuse    bool `protobuf:"varint,16,opt,name=range_reuse,json=rangeReuse,proto3" json:"range_reuse,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MetricDefinition) Reset() {
@@ -1984,6 +2007,13 @@ func (x *MetricDefinition) GetRevision() string {
 func (x *MetricDefinition) GetNative() bool {
 	if x != nil {
 		return x.Native
+	}
+	return false
+}
+
+func (x *MetricDefinition) GetRangeReuse() bool {
+	if x != nil {
+		return x.RangeReuse
 	}
 	return false
 }
@@ -2899,7 +2929,7 @@ const file_proto_v1_metric_metric_proto_rawDesc = "" +
 	"\rconnection_id\x18\x02 \x01(\tR\fconnectionId\x12%\n" +
 	"\x0edatasource_uid\x18\x03 \x01(\tR\rdatasourceUid\x12'\n" +
 	"\x0fdatasource_kind\x18\x04 \x01(\tR\x0edatasourceKind\x12\x16\n" +
-	"\x06native\x18\x05 \x01(\bR\x06native\"\xee\x01\n" +
+	"\x06native\x18\x05 \x01(\bR\x06native\"\x8f\x02\n" +
 	"\x16FiniteMetricDescriptor\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12!\n" +
@@ -2907,14 +2937,16 @@ const file_proto_v1_metric_metric_proto_rawDesc = "" +
 	"\x04unit\x18\x04 \x01(\tR\x04unit\x12\x16\n" +
 	"\x06shapes\x18\x05 \x03(\tR\x06shapes\x12 \n" +
 	"\vdescription\x18\x06 \x01(\tR\vdescription\x12?\n" +
-	"\x06source\x18\a \x01(\v2'.omniview.sdk.metric.v1.MetricSourceRefR\x06source\"\xb7\x01\n" +
+	"\x06source\x18\a \x01(\v2'.omniview.sdk.metric.v1.MetricSourceRefR\x06source\x12\x1f\n" +
+	"\vrange_reuse\x18\b \x01(\bR\n" +
+	"rangeReuse\"\xb7\x01\n" +
 	"\x12MetricFieldBinding\x12\x14\n" +
 	"\x05field\x18\x01 \x01(\tR\x05field\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x16\n" +
 	"\x06source\x18\x03 \x01(\tR\x06source\x12\x1a\n" +
 	"\brequired\x18\x04 \x01(\bR\brequired\x12\x1c\n" +
 	"\ttransform\x18\x05 \x01(\tR\ttransform\x12#\n" +
-	"\rresource_path\x18\x06 \x01(\tR\fresourcePath\"\x86\x04\n" +
+	"\rresource_path\x18\x06 \x01(\tR\fresourcePath\"\xa7\x04\n" +
 	"\x10MetricDefinition\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12#\n" +
@@ -2933,7 +2965,9 @@ const file_proto_v1_metric_metric_proto_rawDesc = "" +
 	"\areducer\x18\f \x01(\tR\areducer\x12%\n" +
 	"\x0ebatch_strategy\x18\r \x01(\tR\rbatchStrategy\x12\x1a\n" +
 	"\brevision\x18\x0e \x01(\tR\brevision\x12\x16\n" +
-	"\x06native\x18\x0f \x01(\bR\x06native\"\xdc\x02\n" +
+	"\x06native\x18\x0f \x01(\bR\x06native\x12\x1f\n" +
+	"\vrange_reuse\x18\x10 \x01(\bR\n" +
+	"rangeReuse\"\xdc\x02\n" +
 	"\x12MetricQueryContext\x12J\n" +
 	"\vdefinitions\x18\x01 \x03(\v2(.omniview.sdk.metric.v1.MetricDefinitionR\vdefinitions\x12^\n" +
 	"\fpublic_scope\x18\x02 \x03(\v2;.omniview.sdk.metric.v1.MetricQueryContext.PublicScopeEntryR\vpublicScope\x12)\n" +

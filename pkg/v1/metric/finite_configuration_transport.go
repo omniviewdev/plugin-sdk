@@ -5,7 +5,7 @@ import metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 func finiteContextToProto(c MetricQueryContext) *metricpb.MetricQueryContext {
 	p := &metricpb.MetricQueryContext{PublicScope: c.PublicScope, MappingRevision: c.MappingRevision, ProjectionRevision: c.ProjectionRevision}
 	for _, d := range c.Definitions {
-		v := &metricpb.MetricDefinition{Id: d.ID, Name: d.Name, ResourceKeys: d.ResourceKeys, Unit: d.Unit, Semantics: d.Semantics, Dimensions: d.Dimensions, SupportedShapes: d.SupportedShapes, QueryLanguage: d.QueryLanguage, Query: d.Query, IdentityLabels: d.IdentityLabels, Reducer: d.Reducer, BatchStrategy: d.BatchStrategy, Revision: d.Revision, Native: d.Native}
+		v := &metricpb.MetricDefinition{Id: d.ID, Name: d.Name, ResourceKeys: d.ResourceKeys, Unit: d.Unit, Semantics: d.Semantics, Dimensions: d.Dimensions, SupportedShapes: d.SupportedShapes, QueryLanguage: d.QueryLanguage, Query: d.Query, IdentityLabels: d.IdentityLabels, Reducer: d.Reducer, BatchStrategy: d.BatchStrategy, Revision: d.Revision, Native: d.Native, RangeReuse: d.RangeReuse}
 		for _, b := range d.FieldBindings {
 			v.FieldBindings = append(v.FieldBindings, &metricpb.MetricFieldBinding{Field: b.Field, Label: b.Label, Source: b.Source, Required: b.Required, Transform: string(b.Transform), ResourcePath: b.ResourcePath})
 		}
@@ -28,7 +28,7 @@ func finiteContextFromProto(p *metricpb.MetricQueryContext) (MetricQueryContext,
 		if d == nil || len(d.FieldBindings) > 32 {
 			return c, metricError("INVALID_REQUEST", "Invalid finite mapping.")
 		}
-		v := MetricDefinition{ID: d.Id, Name: d.Name, ResourceKeys: d.ResourceKeys, Unit: d.Unit, Semantics: d.Semantics, Dimensions: d.Dimensions, SupportedShapes: d.SupportedShapes, QueryLanguage: d.QueryLanguage, Query: d.Query, IdentityLabels: d.IdentityLabels, Reducer: d.Reducer, BatchStrategy: d.BatchStrategy, Revision: d.Revision, Native: d.Native}
+		v := MetricDefinition{ID: d.Id, Name: d.Name, ResourceKeys: d.ResourceKeys, Unit: d.Unit, Semantics: d.Semantics, Dimensions: d.Dimensions, SupportedShapes: d.SupportedShapes, QueryLanguage: d.QueryLanguage, Query: d.Query, IdentityLabels: d.IdentityLabels, Reducer: d.Reducer, BatchStrategy: d.BatchStrategy, Revision: d.Revision, Native: d.Native, RangeReuse: d.RangeReuse}
 		for _, b := range d.FieldBindings {
 			if b == nil {
 				return c, metricError("INVALID_REQUEST", "Nil finite field binding.")

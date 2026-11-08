@@ -25,7 +25,7 @@ func TestFiniteRegisteredPluginSupportsActualCatalogAndBatchRPC(t *testing.T) {
 		if pc.Connection.ID != "one" || pc.Connection.Data["endpoint"] != "configured" {
 			t.Error("configured source lease lost")
 		}
-		return &ResourceMetricsCatalog{Source: source, MaxTargets: 256, Metrics: []FiniteMetricDescriptor{{ID: "cpu", Name: "CPU", ResourceKey: r.ResourceKey, Unit: "cores", Shapes: []string{"current"}}, {ID: "memory", Name: "Memory", ResourceKey: r.ResourceKey, Unit: "bytes", Shapes: []string{"current"}}}}, nil
+		return &ResourceMetricsCatalog{Source: source, MaxTargets: 256, Metrics: []FiniteMetricDescriptor{{ID: "cpu", Name: "CPU", ResourceKey: r.ResourceKey, Unit: "cores", Shapes: []string{"current", "range"}, RangeReuse: true}, {ID: "memory", Name: "Memory", ResourceKey: r.ResourceKey, Unit: "bytes", Shapes: []string{"current"}}}}, nil
 	}
 	calls := 0
 	manager.queryResourcesFunc = func(pc *types.PluginContext, q ResourceMetricsQuery) (*ResourceMetricsResponse, error) {
@@ -57,6 +57,9 @@ func TestFiniteRegisteredPluginSupportsActualCatalogAndBatchRPC(t *testing.T) {
 	}
 	if catalog.Source != source || len(catalog.Metrics) != 2 {
 		t.Fatal("finite catalog changed", catalog)
+	}
+	if !catalog.Metrics[0].RangeReuse || catalog.Metrics[1].RangeReuse {
+		t.Fatal("range reuse opt-in changed across the typed catalog RPC", catalog.Metrics)
 	}
 	q := finiteTestQuery()
 	q.MetricIDs = []string{"cpu", "memory"}
