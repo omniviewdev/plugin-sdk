@@ -61,6 +61,15 @@ func (c *Client) GetProfilingStatus(ctx context.Context) (*lifecyclepb.Profiling
 	return c.client.GetProfilingStatus(ctx, &emptypb.Empty{})
 }
 
+// GetDiagnostics pulls the plugin's measurement snapshot. Older plugins return
+// codes.Unimplemented.
+func (c *Client) GetDiagnostics(ctx context.Context, maxSchemaVersion uint32) (*lifecyclepb.GetDiagnosticsResponse, error) {
+	if c == nil || c.client == nil {
+		return nil, errors.New("lifecycle client not initialized")
+	}
+	return c.client.GetDiagnostics(ctx, &lifecyclepb.GetDiagnosticsRequest{MaxSchemaVersion: maxSchemaVersion})
+}
+
 // BindHostServices negotiates the callback service for this plugin process.
 func (c *Client) BindHostServices(ctx context.Context, brokerID uint32, version uint32) (uint32, error) {
 	if c == nil || c.client == nil {

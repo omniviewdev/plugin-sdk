@@ -18,6 +18,8 @@ import (
 	lifecyclepb "github.com/omniviewdev/plugin-sdk/proto/v1/lifecycle"
 )
 
+const diagnosticsSchemaVersion = 1
+
 // Server implements the PluginLifecycle gRPC service.
 // It is auto-populated by sdk.Plugin.Serve() — plugin authors never touch it.
 type Server struct {
@@ -28,11 +30,15 @@ type Server struct {
 	SDKProtocolVersion int32
 	Capabilities       []string
 	ProfilingStatus    func() profiling.Status
-	HostConnections    *hostconnections.Binding
-	Activities         *activity.Binding
-	broker             *plugin.GRPCBroker
-	mu                 sync.Mutex
-	bound              bool
+	// Diagnostics snapshots in-plugin measurements; nil serves an empty snapshot.
+	Diagnostics func() ([]*lifecyclepb.DiagMetric, bool)
+	// StartUnixNano identifies this process incarnation to the host.
+	StartUnixNano   int64
+	HostConnections *hostconnections.Binding
+	Activities      *activity.Binding
+	broker          *plugin.GRPCBroker
+	mu              sync.Mutex
+	bound           bool
 }
 
 // GetInfo returns the process metadata captured at lifecycle registration.
@@ -71,6 +77,21 @@ func (s *Server) GetProfilingStatus(_ context.Context, _ *emptypb.Empty) (*lifec
 		Error:   status.Error,
 		Pid:     int64(os.Getpid()),
 	}, nil
+}
+
+// GetDiagnostics returns the bounded measurement snapshot. Schema 1 is the only
+// payload; the response states its version so a host that understands fewer
+// versions can reject it rather than misread it.
+func (s *Server) GetDiagnostics(_ context.Context, _ *lifecyclepb.GetDiagnosticsRequest) (*lifecyclepb.GetDiagnosticsResponse, error) {
+	response := &lifecyclepb.GetDiagnosticsResponse{
+		SchemaVersion:      diagnosticsSchemaVersion,
+		PluginId:           s.PluginID,
+		ProcessStartUnixNs: s.StartUnixNano,
+	}
+	if s.Diagnostics != nil {
+		response.Metrics, response.Truncated = s.Diagnostics()
+	}
+	return response, nil
 }
 
 // BindHostServices dials and binds the host callback exactly once.
