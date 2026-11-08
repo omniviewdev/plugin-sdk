@@ -41,7 +41,10 @@ show it as unavailable.
 A series exists only after its first observation. Captures compare each series
 between their first and last collection, so a counter series that first appears
 mid-capture makes the capture incomplete (`counter reset or endpoint
-unavailable`). To keep a counter comparable from the first collection, declare
-every series it can report with `Add(0, attrs...)` at start-up. Zero then means
+unavailable`). First enumerate the fixed attribute combinations and ensure
+their total fits the 16-series limit per instrument. Reduce label cardinality
+before declaring a larger set; startup declarations consume the same budget as
+later observations and excess declarations truncate the registry. Then declare
+each permitted counter series with `Add(0, attrs...)` at start-up. Zero means
 the event has not happened since the process started. Leave gauges alone: an
 unobserved gauge has no value, and declaring one would invent a measurement.
