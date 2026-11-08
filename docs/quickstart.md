@@ -44,7 +44,7 @@ after the producer observes that outcome.
 ## Prerequisites
 
 - A checkout of this repository.
-- Go 1.25 or newer, matching [go.mod](../go.mod).
+- Go 1.27 or newer, matching [go.mod](../go.mod).
 - A terminal at the repository root. Go may download dependencies on the first run.
 
 No running Omniview host or installed manifest is needed for the smoke path.

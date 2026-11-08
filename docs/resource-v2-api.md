@@ -356,7 +356,7 @@ that consumes this SDK must select the same fork in its own root `go.mod`:
 
 ```sh
 grpc_fork=github.com/omniviewdev/grpc-go
-grpc_version=v1.79.3-0.20261103012409-4c6f1d1c4e10
+grpc_version=v1.85.1-0.20261107225428-6ba964c95af2
 go mod edit \
   "-replace=google.golang.org/grpc=${grpc_fork}@${grpc_version}"
 go mod tidy
