@@ -71,6 +71,130 @@ func (ServingStatus) EnumDescriptor() ([]byte, []int) {
 	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{0}
 }
 
+type DiagKind int32
+
+const (
+	DiagKind_DIAG_KIND_UNSPECIFIED DiagKind = 0
+	DiagKind_DIAG_KIND_COUNTER     DiagKind = 1
+	DiagKind_DIAG_KIND_GAUGE       DiagKind = 2
+	DiagKind_DIAG_KIND_HISTOGRAM   DiagKind = 3
+)
+
+// Enum value maps for DiagKind.
+var (
+	DiagKind_name = map[int32]string{
+		0: "DIAG_KIND_UNSPECIFIED",
+		1: "DIAG_KIND_COUNTER",
+		2: "DIAG_KIND_GAUGE",
+		3: "DIAG_KIND_HISTOGRAM",
+	}
+	DiagKind_value = map[string]int32{
+		"DIAG_KIND_UNSPECIFIED": 0,
+		"DIAG_KIND_COUNTER":     1,
+		"DIAG_KIND_GAUGE":       2,
+		"DIAG_KIND_HISTOGRAM":   3,
+	}
+)
+
+func (x DiagKind) Enum() *DiagKind {
+	p := new(DiagKind)
+	*p = x
+	return p
+}
+
+func (x DiagKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DiagKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_v1_lifecycle_lifecycle_proto_enumTypes[1].Descriptor()
+}
+
+func (DiagKind) Type() protoreflect.EnumType {
+	return &file_proto_v1_lifecycle_lifecycle_proto_enumTypes[1]
+}
+
+func (x DiagKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DiagKind.Descriptor instead.
+func (DiagKind) EnumDescriptor() ([]byte, []int) {
+	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{1}
+}
+
+// DiagKey is a closed set: attributes can never carry resource names, queries
+// or credentials as keys, and values are restricted to ^[a-z][a-z0-9_]{0,31}$.
+type DiagKey int32
+
+const (
+	DiagKey_DIAG_KEY_UNSPECIFIED DiagKey = 0
+	DiagKey_DIAG_KEY_OPERATION   DiagKey = 1
+	DiagKey_DIAG_KEY_OUTCOME     DiagKey = 2
+	DiagKey_DIAG_KEY_PHASE       DiagKey = 3
+	DiagKey_DIAG_KEY_STATE       DiagKey = 4
+	DiagKey_DIAG_KEY_REASON      DiagKey = 5
+	DiagKey_DIAG_KEY_CACHE       DiagKey = 6
+	DiagKey_DIAG_KEY_QUEUE       DiagKey = 7
+	DiagKey_DIAG_KEY_DIRECTION   DiagKey = 8
+	DiagKey_DIAG_KEY_EVENT       DiagKey = 9
+)
+
+// Enum value maps for DiagKey.
+var (
+	DiagKey_name = map[int32]string{
+		0: "DIAG_KEY_UNSPECIFIED",
+		1: "DIAG_KEY_OPERATION",
+		2: "DIAG_KEY_OUTCOME",
+		3: "DIAG_KEY_PHASE",
+		4: "DIAG_KEY_STATE",
+		5: "DIAG_KEY_REASON",
+		6: "DIAG_KEY_CACHE",
+		7: "DIAG_KEY_QUEUE",
+		8: "DIAG_KEY_DIRECTION",
+		9: "DIAG_KEY_EVENT",
+	}
+	DiagKey_value = map[string]int32{
+		"DIAG_KEY_UNSPECIFIED": 0,
+		"DIAG_KEY_OPERATION":   1,
+		"DIAG_KEY_OUTCOME":     2,
+		"DIAG_KEY_PHASE":       3,
+		"DIAG_KEY_STATE":       4,
+		"DIAG_KEY_REASON":      5,
+		"DIAG_KEY_CACHE":       6,
+		"DIAG_KEY_QUEUE":       7,
+		"DIAG_KEY_DIRECTION":   8,
+		"DIAG_KEY_EVENT":       9,
+	}
+)
+
+func (x DiagKey) Enum() *DiagKey {
+	p := new(DiagKey)
+	*p = x
+	return p
+}
+
+func (x DiagKey) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DiagKey) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_v1_lifecycle_lifecycle_proto_enumTypes[2].Descriptor()
+}
+
+func (DiagKey) Type() protoreflect.EnumType {
+	return &file_proto_v1_lifecycle_lifecycle_proto_enumTypes[2]
+}
+
+func (x DiagKey) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DiagKey.Descriptor instead.
+func (DiagKey) EnumDescriptor() ([]byte, []int) {
+	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{2}
+}
+
 type GetInfoResponse struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	PluginId               string                 `protobuf:"bytes,1,opt,name=plugin_id,json=pluginId,proto3" json:"plugin_id,omitempty"`
@@ -391,6 +515,339 @@ func (x *ProfilingStatusResponse) GetPid() int64 {
 	return 0
 }
 
+type GetDiagnosticsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Highest payload schema the host understands. Zero means 1.
+	MaxSchemaVersion uint32 `protobuf:"varint,1,opt,name=max_schema_version,json=maxSchemaVersion,proto3" json:"max_schema_version,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *GetDiagnosticsRequest) Reset() {
+	*x = GetDiagnosticsRequest{}
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetDiagnosticsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetDiagnosticsRequest) ProtoMessage() {}
+
+func (x *GetDiagnosticsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetDiagnosticsRequest.ProtoReflect.Descriptor instead.
+func (*GetDiagnosticsRequest) Descriptor() ([]byte, []int) {
+	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetDiagnosticsRequest) GetMaxSchemaVersion() uint32 {
+	if x != nil {
+		return x.MaxSchemaVersion
+	}
+	return 0
+}
+
+type GetDiagnosticsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SchemaVersion uint32                 `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
+	PluginId      string                 `protobuf:"bytes,2,opt,name=plugin_id,json=pluginId,proto3" json:"plugin_id,omitempty"`
+	// Process start; changes on restart so hosts can detect counter resets.
+	ProcessStartUnixNs int64 `protobuf:"varint,3,opt,name=process_start_unix_ns,json=processStartUnixNs,proto3" json:"process_start_unix_ns,omitempty"`
+	// True when the plugin dropped metrics, points or invalid observations.
+	Truncated bool `protobuf:"varint,4,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	// At most 24 metrics.
+	Metrics       []*DiagMetric `protobuf:"bytes,5,rep,name=metrics,proto3" json:"metrics,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetDiagnosticsResponse) Reset() {
+	*x = GetDiagnosticsResponse{}
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetDiagnosticsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetDiagnosticsResponse) ProtoMessage() {}
+
+func (x *GetDiagnosticsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetDiagnosticsResponse.ProtoReflect.Descriptor instead.
+func (*GetDiagnosticsResponse) Descriptor() ([]byte, []int) {
+	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GetDiagnosticsResponse) GetSchemaVersion() uint32 {
+	if x != nil {
+		return x.SchemaVersion
+	}
+	return 0
+}
+
+func (x *GetDiagnosticsResponse) GetPluginId() string {
+	if x != nil {
+		return x.PluginId
+	}
+	return ""
+}
+
+func (x *GetDiagnosticsResponse) GetProcessStartUnixNs() int64 {
+	if x != nil {
+		return x.ProcessStartUnixNs
+	}
+	return 0
+}
+
+func (x *GetDiagnosticsResponse) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
+}
+
+func (x *GetDiagnosticsResponse) GetMetrics() []*DiagMetric {
+	if x != nil {
+		return x.Metrics
+	}
+	return nil
+}
+
+type DiagMetric struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Matches ^omniview\.plugin\.self\.[a-z0-9_.]{1,72}$ (host-owned names live elsewhere).
+	Name string   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Unit string   `protobuf:"bytes,2,opt,name=unit,proto3" json:"unit,omitempty"`
+	Kind DiagKind `protobuf:"varint,3,opt,name=kind,proto3,enum=omniview.sdk.lifecycle.v1.DiagKind" json:"kind,omitempty"`
+	// At most 16 points.
+	Points        []*DiagPoint `protobuf:"bytes,4,rep,name=points,proto3" json:"points,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiagMetric) Reset() {
+	*x = DiagMetric{}
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiagMetric) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiagMetric) ProtoMessage() {}
+
+func (x *DiagMetric) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiagMetric.ProtoReflect.Descriptor instead.
+func (*DiagMetric) Descriptor() ([]byte, []int) {
+	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *DiagMetric) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DiagMetric) GetUnit() string {
+	if x != nil {
+		return x.Unit
+	}
+	return ""
+}
+
+func (x *DiagMetric) GetKind() DiagKind {
+	if x != nil {
+		return x.Kind
+	}
+	return DiagKind_DIAG_KIND_UNSPECIFIED
+}
+
+func (x *DiagMetric) GetPoints() []*DiagPoint {
+	if x != nil {
+		return x.Points
+	}
+	return nil
+}
+
+type DiagPoint struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// At most 4 attributes.
+	Attrs []*DiagAttr `protobuf:"bytes,1,rep,name=attrs,proto3" json:"attrs,omitempty"`
+	// Counter and gauge value.
+	Value float64 `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
+	// Histogram fields: count, sum, bounds and len(bounds)+1 bucket counts.
+	Count         uint64    `protobuf:"varint,3,opt,name=count,proto3" json:"count,omitempty"`
+	Sum           float64   `protobuf:"fixed64,4,opt,name=sum,proto3" json:"sum,omitempty"`
+	Bounds        []float64 `protobuf:"fixed64,5,rep,packed,name=bounds,proto3" json:"bounds,omitempty"`
+	BucketCounts  []uint64  `protobuf:"varint,6,rep,packed,name=bucket_counts,json=bucketCounts,proto3" json:"bucket_counts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiagPoint) Reset() {
+	*x = DiagPoint{}
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiagPoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiagPoint) ProtoMessage() {}
+
+func (x *DiagPoint) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiagPoint.ProtoReflect.Descriptor instead.
+func (*DiagPoint) Descriptor() ([]byte, []int) {
+	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *DiagPoint) GetAttrs() []*DiagAttr {
+	if x != nil {
+		return x.Attrs
+	}
+	return nil
+}
+
+func (x *DiagPoint) GetValue() float64 {
+	if x != nil {
+		return x.Value
+	}
+	return 0
+}
+
+func (x *DiagPoint) GetCount() uint64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *DiagPoint) GetSum() float64 {
+	if x != nil {
+		return x.Sum
+	}
+	return 0
+}
+
+func (x *DiagPoint) GetBounds() []float64 {
+	if x != nil {
+		return x.Bounds
+	}
+	return nil
+}
+
+func (x *DiagPoint) GetBucketCounts() []uint64 {
+	if x != nil {
+		return x.BucketCounts
+	}
+	return nil
+}
+
+type DiagAttr struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           DiagKey                `protobuf:"varint,1,opt,name=key,proto3,enum=omniview.sdk.lifecycle.v1.DiagKey" json:"key,omitempty"`
+	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiagAttr) Reset() {
+	*x = DiagAttr{}
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiagAttr) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiagAttr) ProtoMessage() {}
+
+func (x *DiagAttr) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_v1_lifecycle_lifecycle_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiagAttr.ProtoReflect.Descriptor instead.
+func (*DiagAttr) Descriptor() ([]byte, []int) {
+	return file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DiagAttr) GetKey() DiagKey {
+	if x != nil {
+		return x.Key
+	}
+	return DiagKey_DIAG_KEY_UNSPECIFIED
+}
+
+func (x *DiagAttr) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
 var File_proto_v1_lifecycle_lifecycle_proto protoreflect.FileDescriptor
 
 const file_proto_v1_lifecycle_lifecycle_proto_rawDesc = "" +
@@ -414,16 +871,57 @@ const file_proto_v1_lifecycle_lifecycle_proto_rawDesc = "" +
 	"\arunning\x18\x01 \x01(\bR\arunning\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12\x14\n" +
 	"\x05error\x18\x03 \x01(\tR\x05error\x12\x10\n" +
-	"\x03pid\x18\x04 \x01(\x03R\x03pid*g\n" +
+	"\x03pid\x18\x04 \x01(\x03R\x03pid\"E\n" +
+	"\x15GetDiagnosticsRequest\x12,\n" +
+	"\x12max_schema_version\x18\x01 \x01(\rR\x10maxSchemaVersion\"\xee\x01\n" +
+	"\x16GetDiagnosticsResponse\x12%\n" +
+	"\x0eschema_version\x18\x01 \x01(\rR\rschemaVersion\x12\x1b\n" +
+	"\tplugin_id\x18\x02 \x01(\tR\bpluginId\x121\n" +
+	"\x15process_start_unix_ns\x18\x03 \x01(\x03R\x12processStartUnixNs\x12\x1c\n" +
+	"\ttruncated\x18\x04 \x01(\bR\ttruncated\x12?\n" +
+	"\ametrics\x18\x05 \x03(\v2%.omniview.sdk.lifecycle.v1.DiagMetricR\ametrics\"\xab\x01\n" +
+	"\n" +
+	"DiagMetric\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04unit\x18\x02 \x01(\tR\x04unit\x127\n" +
+	"\x04kind\x18\x03 \x01(\x0e2#.omniview.sdk.lifecycle.v1.DiagKindR\x04kind\x12<\n" +
+	"\x06points\x18\x04 \x03(\v2$.omniview.sdk.lifecycle.v1.DiagPointR\x06points\"\xc1\x01\n" +
+	"\tDiagPoint\x129\n" +
+	"\x05attrs\x18\x01 \x03(\v2#.omniview.sdk.lifecycle.v1.DiagAttrR\x05attrs\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\x12\x14\n" +
+	"\x05count\x18\x03 \x01(\x04R\x05count\x12\x10\n" +
+	"\x03sum\x18\x04 \x01(\x01R\x03sum\x12\x16\n" +
+	"\x06bounds\x18\x05 \x03(\x01R\x06bounds\x12#\n" +
+	"\rbucket_counts\x18\x06 \x03(\x04R\fbucketCounts\"V\n" +
+	"\bDiagAttr\x124\n" +
+	"\x03key\x18\x01 \x01(\x0e2\".omniview.sdk.lifecycle.v1.DiagKeyR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value*g\n" +
 	"\rServingStatus\x12\x1a\n" +
 	"\x16SERVING_STATUS_UNKNOWN\x10\x00\x12\x1a\n" +
 	"\x16SERVING_STATUS_SERVING\x10\x01\x12\x1e\n" +
-	"\x1aSERVING_STATUS_NOT_SERVING\x10\x022\xf5\x03\n" +
+	"\x1aSERVING_STATUS_NOT_SERVING\x10\x02*j\n" +
+	"\bDiagKind\x12\x19\n" +
+	"\x15DIAG_KIND_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11DIAG_KIND_COUNTER\x10\x01\x12\x13\n" +
+	"\x0fDIAG_KIND_GAUGE\x10\x02\x12\x17\n" +
+	"\x13DIAG_KIND_HISTOGRAM\x10\x03*\xe2\x01\n" +
+	"\aDiagKey\x12\x18\n" +
+	"\x14DIAG_KEY_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12DIAG_KEY_OPERATION\x10\x01\x12\x14\n" +
+	"\x10DIAG_KEY_OUTCOME\x10\x02\x12\x12\n" +
+	"\x0eDIAG_KEY_PHASE\x10\x03\x12\x12\n" +
+	"\x0eDIAG_KEY_STATE\x10\x04\x12\x13\n" +
+	"\x0fDIAG_KEY_REASON\x10\x05\x12\x12\n" +
+	"\x0eDIAG_KEY_CACHE\x10\x06\x12\x12\n" +
+	"\x0eDIAG_KEY_QUEUE\x10\a\x12\x16\n" +
+	"\x12DIAG_KEY_DIRECTION\x10\b\x12\x12\n" +
+	"\x0eDIAG_KEY_EVENT\x10\t2\xec\x04\n" +
 	"\x0fPluginLifecycle\x12M\n" +
 	"\aGetInfo\x12\x16.google.protobuf.Empty\x1a*.omniview.sdk.lifecycle.v1.GetInfoResponse\x12]\n" +
 	"\x0fGetCapabilities\x12\x16.google.protobuf.Empty\x1a2.omniview.sdk.lifecycle.v1.GetCapabilitiesResponse\x12U\n" +
 	"\vHealthCheck\x12\x16.google.protobuf.Empty\x1a..omniview.sdk.lifecycle.v1.HealthCheckResponse\x12`\n" +
-	"\x12GetProfilingStatus\x12\x16.google.protobuf.Empty\x1a2.omniview.sdk.lifecycle.v1.ProfilingStatusResponse\x12{\n" +
+	"\x12GetProfilingStatus\x12\x16.google.protobuf.Empty\x1a2.omniview.sdk.lifecycle.v1.ProfilingStatusResponse\x12u\n" +
+	"\x0eGetDiagnostics\x120.omniview.sdk.lifecycle.v1.GetDiagnosticsRequest\x1a1.omniview.sdk.lifecycle.v1.GetDiagnosticsResponse\x12{\n" +
 	"\x10BindHostServices\x122.omniview.sdk.lifecycle.v1.BindHostServicesRequest\x1a3.omniview.sdk.lifecycle.v1.BindHostServicesResponseBBZ@github.com/omniviewdev/plugin-sdk/proto/v1/lifecycle;lifecyclepbb\x06proto3"
 
 var (
@@ -438,35 +936,49 @@ func file_proto_v1_lifecycle_lifecycle_proto_rawDescGZIP() []byte {
 	return file_proto_v1_lifecycle_lifecycle_proto_rawDescData
 }
 
-var file_proto_v1_lifecycle_lifecycle_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proto_v1_lifecycle_lifecycle_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_proto_v1_lifecycle_lifecycle_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_proto_v1_lifecycle_lifecycle_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_proto_v1_lifecycle_lifecycle_proto_goTypes = []any{
 	(ServingStatus)(0),               // 0: omniview.sdk.lifecycle.v1.ServingStatus
-	(*GetInfoResponse)(nil),          // 1: omniview.sdk.lifecycle.v1.GetInfoResponse
-	(*BindHostServicesRequest)(nil),  // 2: omniview.sdk.lifecycle.v1.BindHostServicesRequest
-	(*BindHostServicesResponse)(nil), // 3: omniview.sdk.lifecycle.v1.BindHostServicesResponse
-	(*GetCapabilitiesResponse)(nil),  // 4: omniview.sdk.lifecycle.v1.GetCapabilitiesResponse
-	(*HealthCheckResponse)(nil),      // 5: omniview.sdk.lifecycle.v1.HealthCheckResponse
-	(*ProfilingStatusResponse)(nil),  // 6: omniview.sdk.lifecycle.v1.ProfilingStatusResponse
-	(*emptypb.Empty)(nil),            // 7: google.protobuf.Empty
+	(DiagKind)(0),                    // 1: omniview.sdk.lifecycle.v1.DiagKind
+	(DiagKey)(0),                     // 2: omniview.sdk.lifecycle.v1.DiagKey
+	(*GetInfoResponse)(nil),          // 3: omniview.sdk.lifecycle.v1.GetInfoResponse
+	(*BindHostServicesRequest)(nil),  // 4: omniview.sdk.lifecycle.v1.BindHostServicesRequest
+	(*BindHostServicesResponse)(nil), // 5: omniview.sdk.lifecycle.v1.BindHostServicesResponse
+	(*GetCapabilitiesResponse)(nil),  // 6: omniview.sdk.lifecycle.v1.GetCapabilitiesResponse
+	(*HealthCheckResponse)(nil),      // 7: omniview.sdk.lifecycle.v1.HealthCheckResponse
+	(*ProfilingStatusResponse)(nil),  // 8: omniview.sdk.lifecycle.v1.ProfilingStatusResponse
+	(*GetDiagnosticsRequest)(nil),    // 9: omniview.sdk.lifecycle.v1.GetDiagnosticsRequest
+	(*GetDiagnosticsResponse)(nil),   // 10: omniview.sdk.lifecycle.v1.GetDiagnosticsResponse
+	(*DiagMetric)(nil),               // 11: omniview.sdk.lifecycle.v1.DiagMetric
+	(*DiagPoint)(nil),                // 12: omniview.sdk.lifecycle.v1.DiagPoint
+	(*DiagAttr)(nil),                 // 13: omniview.sdk.lifecycle.v1.DiagAttr
+	(*emptypb.Empty)(nil),            // 14: google.protobuf.Empty
 }
 var file_proto_v1_lifecycle_lifecycle_proto_depIdxs = []int32{
-	0, // 0: omniview.sdk.lifecycle.v1.HealthCheckResponse.status:type_name -> omniview.sdk.lifecycle.v1.ServingStatus
-	7, // 1: omniview.sdk.lifecycle.v1.PluginLifecycle.GetInfo:input_type -> google.protobuf.Empty
-	7, // 2: omniview.sdk.lifecycle.v1.PluginLifecycle.GetCapabilities:input_type -> google.protobuf.Empty
-	7, // 3: omniview.sdk.lifecycle.v1.PluginLifecycle.HealthCheck:input_type -> google.protobuf.Empty
-	7, // 4: omniview.sdk.lifecycle.v1.PluginLifecycle.GetProfilingStatus:input_type -> google.protobuf.Empty
-	2, // 5: omniview.sdk.lifecycle.v1.PluginLifecycle.BindHostServices:input_type -> omniview.sdk.lifecycle.v1.BindHostServicesRequest
-	1, // 6: omniview.sdk.lifecycle.v1.PluginLifecycle.GetInfo:output_type -> omniview.sdk.lifecycle.v1.GetInfoResponse
-	4, // 7: omniview.sdk.lifecycle.v1.PluginLifecycle.GetCapabilities:output_type -> omniview.sdk.lifecycle.v1.GetCapabilitiesResponse
-	5, // 8: omniview.sdk.lifecycle.v1.PluginLifecycle.HealthCheck:output_type -> omniview.sdk.lifecycle.v1.HealthCheckResponse
-	6, // 9: omniview.sdk.lifecycle.v1.PluginLifecycle.GetProfilingStatus:output_type -> omniview.sdk.lifecycle.v1.ProfilingStatusResponse
-	3, // 10: omniview.sdk.lifecycle.v1.PluginLifecycle.BindHostServices:output_type -> omniview.sdk.lifecycle.v1.BindHostServicesResponse
-	6, // [6:11] is the sub-list for method output_type
-	1, // [1:6] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	0,  // 0: omniview.sdk.lifecycle.v1.HealthCheckResponse.status:type_name -> omniview.sdk.lifecycle.v1.ServingStatus
+	11, // 1: omniview.sdk.lifecycle.v1.GetDiagnosticsResponse.metrics:type_name -> omniview.sdk.lifecycle.v1.DiagMetric
+	1,  // 2: omniview.sdk.lifecycle.v1.DiagMetric.kind:type_name -> omniview.sdk.lifecycle.v1.DiagKind
+	12, // 3: omniview.sdk.lifecycle.v1.DiagMetric.points:type_name -> omniview.sdk.lifecycle.v1.DiagPoint
+	13, // 4: omniview.sdk.lifecycle.v1.DiagPoint.attrs:type_name -> omniview.sdk.lifecycle.v1.DiagAttr
+	2,  // 5: omniview.sdk.lifecycle.v1.DiagAttr.key:type_name -> omniview.sdk.lifecycle.v1.DiagKey
+	14, // 6: omniview.sdk.lifecycle.v1.PluginLifecycle.GetInfo:input_type -> google.protobuf.Empty
+	14, // 7: omniview.sdk.lifecycle.v1.PluginLifecycle.GetCapabilities:input_type -> google.protobuf.Empty
+	14, // 8: omniview.sdk.lifecycle.v1.PluginLifecycle.HealthCheck:input_type -> google.protobuf.Empty
+	14, // 9: omniview.sdk.lifecycle.v1.PluginLifecycle.GetProfilingStatus:input_type -> google.protobuf.Empty
+	9,  // 10: omniview.sdk.lifecycle.v1.PluginLifecycle.GetDiagnostics:input_type -> omniview.sdk.lifecycle.v1.GetDiagnosticsRequest
+	4,  // 11: omniview.sdk.lifecycle.v1.PluginLifecycle.BindHostServices:input_type -> omniview.sdk.lifecycle.v1.BindHostServicesRequest
+	3,  // 12: omniview.sdk.lifecycle.v1.PluginLifecycle.GetInfo:output_type -> omniview.sdk.lifecycle.v1.GetInfoResponse
+	6,  // 13: omniview.sdk.lifecycle.v1.PluginLifecycle.GetCapabilities:output_type -> omniview.sdk.lifecycle.v1.GetCapabilitiesResponse
+	7,  // 14: omniview.sdk.lifecycle.v1.PluginLifecycle.HealthCheck:output_type -> omniview.sdk.lifecycle.v1.HealthCheckResponse
+	8,  // 15: omniview.sdk.lifecycle.v1.PluginLifecycle.GetProfilingStatus:output_type -> omniview.sdk.lifecycle.v1.ProfilingStatusResponse
+	10, // 16: omniview.sdk.lifecycle.v1.PluginLifecycle.GetDiagnostics:output_type -> omniview.sdk.lifecycle.v1.GetDiagnosticsResponse
+	5,  // 17: omniview.sdk.lifecycle.v1.PluginLifecycle.BindHostServices:output_type -> omniview.sdk.lifecycle.v1.BindHostServicesResponse
+	12, // [12:18] is the sub-list for method output_type
+	6,  // [6:12] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_proto_v1_lifecycle_lifecycle_proto_init() }
@@ -479,8 +991,8 @@ func file_proto_v1_lifecycle_lifecycle_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_lifecycle_lifecycle_proto_rawDesc), len(file_proto_v1_lifecycle_lifecycle_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   6,
+			NumEnums:      3,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
