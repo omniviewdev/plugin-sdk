@@ -12,7 +12,8 @@ func ValidFiniteUnit(unit string) bool {
 	}
 }
 
-// ValidateMetricDefinitionContract checks portable finite semantics, not a query language.
+// ValidateMetricDefinitionContract checks portable finite semantics, not a query
+// language. A range-reuse declaration must name the range shape.
 // Source providers additionally validate compilation and exact identity attribution.
 func ValidateMetricDefinitionContract(d MetricDefinition) error {
 	if err := resourcev2.ValidateMetadata(d); err != nil {
@@ -56,6 +57,9 @@ func ValidateMetricDefinitionContract(d MetricDefinition) error {
 			return metricError("INVALID_REQUEST", "Unsupported finite definition shape.")
 		}
 		shapes[s] = true
+	}
+	if d.RangeReuse && !shapes["range"] {
+		return metricError("INVALID_REQUEST", "Range reuse requires the range shape.")
 	}
 	return nil
 }

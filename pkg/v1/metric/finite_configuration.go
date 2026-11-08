@@ -44,6 +44,12 @@ type MetricDefinition struct {
 	BatchStrategy   string               `json:"batch_strategy"`
 	Revision        string               `json:"revision"`
 	Native          bool                 `json:"native"`
+	// RangeReuse is the owner's declaration that this authored definition meets
+	// the FiniteMetricDescriptor.RangeReuse guarantee. It requires the range
+	// shape. It is not an opt-in: the provider's descriptor decides and may
+	// decline, and a host clears the declaration unless the effective definition
+	// is exactly the owner-authored one.
+	RangeReuse bool `json:"range_reuse,omitempty"`
 }
 
 // MetricDefinitionOverride is sparse. Nil inherits; removing the override resets it.
