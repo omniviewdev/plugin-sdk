@@ -76,7 +76,7 @@ func PodCatalog(ctx *types.PluginContext, request metric.ResourceMetricsCatalogR
 | Catalog choice | Meaning |
 | --- | --- |
 | `Source` | Actual plugin, connection, and backend supplying the measurements |
-| `Metrics` | Stable IDs, display names, units, and supported query shapes |
+| `Metrics` | Stable IDs, display names, units, supported query shapes, and an optional [range-reuse opt-in](#let-hosts-reuse-overlapping-history) |
 | `MaxTargets` | Maximum resources your provider accepts in one batch |
 | `MaxSampleAge` | How old a live sample can be before it is delayed; zero means unknown |
 
@@ -141,6 +141,37 @@ Additional statuses and exact validation rules are in the [contract reference](f
 | `range` | Time-ordered points | `StartTime`, `EndTime`, `Step` |
 
 Native metrics-server supports live values only. Repeated refreshes must not become invented history.
+
+### Let hosts reuse overlapping history
+
+Dashboards often request windows that overlap one the host already holds. If your range evaluation is a pure point series, set `RangeReuse` on the descriptor so the host can fetch only the part it lacks:
+
+```go
+metric.FiniteMetricDescriptor{
+    ID:          "example.pod.cpu.usage",
+    Name:        "CPU usage",
+    ResourceKey: resourceKey,
+    Unit:        "cores",
+    Shapes:      []string{"current", "range"},
+    RangeReuse:  true,
+}
+```
+
+Set it only when every `ok` range result meets these conditions:
+
+- Points sit on `StartTime + n*Step`, each evaluated at its own instant.
+- For the same query context and `Step`, a point's value, or its gap, does not depend on `StartTime`, `EndTime` or which other points were requested.
+- `Value` and `ObservedAt` are unset and `Window` is zero; the series has no range-wide sample metadata.
+
+Leave it false, the default, when a point depends on the requested window: a rate over the whole range, a lookback derived from its length, or a step or downsampling chosen from it. The opt-in requires the `range` shape. It says nothing about current values or unchanging history, and the host's cache TTL still bounds staleness.
+
+Hosts combine complete `ok` results only while identity, source and dimensions stay compatible. Leave the flag false for results carrying aggregate sample metadata; those remain eligible only for exact-domain caching. Owners can declare the pure-series promise on a `MetricDefinition`, but your descriptor remains the opt-in and you may decline. The [contract reference](finite-resource-metrics-reference.md#range-reuse) has the exact rules.
+
+### Optional latest-point reuse for current
+
+Set `FiniteMetricDescriptor.RangeToCurrent` only when the terminal range point has the same sample semantics as a cached current result, independent of requested bounds and step. Both shapes are required. This is separate from overlapping-history reuse and cannot be inherited from an owner hint.
+
+Supply the actual source `ObservedAt` and sampling `Window` for that last point, plus a positive source `MaxSampleAge`. The host refuses unknown, stale or future source times, future evaluations, incomplete results and terminal gaps. It never replaces source time with evaluation time or chooses an older value behind a terminal gap. Exact current results take precedence; all normal cache TTL, authority and configuration fences remain. This uses existing completed entries, not another sample cache.
 
 ## Choose the producer's unit
 

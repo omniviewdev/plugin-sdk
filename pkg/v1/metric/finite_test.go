@@ -127,6 +127,39 @@ func TestFiniteCatalogUsesBaseUnitsAndExplicitShapes(t *testing.T) {
 	if ValidateResourceMetricsCatalog(c) == nil {
 		t.Fatal("enum-number shape admitted")
 	}
+	// An opt-in promises range evaluations, so only descriptors with that shape may make it.
+	c.Metrics[0].RangeReuse = true
+	for _, shapes := range [][]string{{"current", "range"}, {"range"}} {
+		c.Metrics[0].Shapes = shapes
+		if err := ValidateResourceMetricsCatalog(c); err != nil {
+			t.Fatal("range reuse rejected for", shapes, err)
+		}
+	}
+	c.Metrics[0].Shapes = []string{"current"}
+	if err := ValidateResourceMetricsCatalog(c); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatal("range reuse admitted without the range shape", err)
+	}
+	if _, err := catalogFromProto(catalogToProto(c)); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatal("peer catalog opted into range reuse without the range shape", err)
+	}
+	c.Metrics[0].RangeReuse = false
+	if err := ValidateResourceMetricsCatalog(c); err != nil {
+		t.Fatal("absent range reuse changed current-only catalog validity", err)
+	}
+	c.Metrics[0].RangeToCurrent = true
+	for _, shapes := range [][]string{{"current"}, {"range"}} {
+		c.Metrics[0].Shapes = shapes
+		if err := ValidateResourceMetricsCatalog(c); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+			t.Fatal("range-to-current reuse admitted without both shapes", shapes, err)
+		}
+		if _, err := catalogFromProto(catalogToProto(c)); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+			t.Fatal("peer range-to-current reuse admitted without both shapes", shapes, err)
+		}
+	}
+	c.Metrics[0].Shapes = []string{"current", "range"}
+	if err := ValidateResourceMetricsCatalog(c); err != nil {
+		t.Fatal("range-to-current reuse rejected with both shapes", err)
+	}
 }
 
 func TestFiniteManagerAdmitsEveryTargetBeforeCollection(t *testing.T) {

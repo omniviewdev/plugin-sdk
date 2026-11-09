@@ -51,7 +51,7 @@ func decodeFiniteDuration(d *durationpb.Duration) (time.Duration, error) {
 func catalogToProto(c *ResourceMetricsCatalog) *metricpb.ResourceMetricsCatalog {
 	p := &metricpb.ResourceMetricsCatalog{Source: sourceToProto(c.Source), MaxTargets: int32(c.MaxTargets), MaxSampleAge: durationpb.New(c.MaxSampleAge)}
 	for _, d := range c.Metrics {
-		v := &metricpb.FiniteMetricDescriptor{Id: d.ID, Name: d.Name, ResourceKey: d.ResourceKey, Unit: d.Unit, Shapes: d.Shapes, Description: d.Description}
+		v := &metricpb.FiniteMetricDescriptor{Id: d.ID, Name: d.Name, ResourceKey: d.ResourceKey, Unit: d.Unit, Shapes: d.Shapes, Description: d.Description, RangeReuse: d.RangeReuse, RangeToCurrent: d.RangeToCurrent}
 		if d.Source != nil {
 			v.Source = sourceToProto(*d.Source)
 		}
@@ -72,7 +72,7 @@ func catalogFromProto(p *metricpb.ResourceMetricsCatalog) (*ResourceMetricsCatal
 		if d == nil {
 			return nil, metricError("INVALID_REQUEST", "Nil finite descriptor.")
 		}
-		v := FiniteMetricDescriptor{ID: d.Id, Name: d.Name, ResourceKey: d.ResourceKey, Unit: d.Unit, Shapes: d.Shapes, Description: d.Description}
+		v := FiniteMetricDescriptor{ID: d.Id, Name: d.Name, ResourceKey: d.ResourceKey, Unit: d.Unit, Shapes: d.Shapes, Description: d.Description, RangeReuse: d.RangeReuse, RangeToCurrent: d.RangeToCurrent}
 		if d.Source != nil {
 			source := sourceFromProto(d.Source)
 			v.Source = &source

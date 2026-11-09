@@ -1,6 +1,7 @@
 package metric
 
 import (
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 	"google.golang.org/protobuf/proto"
@@ -14,7 +15,9 @@ func finiteMappingFixture() MetricDefinition {
 
 func TestFiniteMappingAndProjectionSurviveTypedWire(t *testing.T) {
 	q := finiteTestQuery()
-	q.Context = MetricQueryContext{Definitions: []MetricDefinition{finiteMappingFixture()}, PublicScope: map[string]string{"cluster": "approved"}, MappingRevision: "source-1", ProjectionRevision: "projection-1"}
+	definition := finiteMappingFixture()
+	definition.RangeReuse = true
+	q.Context = MetricQueryContext{Definitions: []MetricDefinition{definition}, PublicScope: map[string]string{"cluster": "approved"}, MappingRevision: "source-1", ProjectionRevision: "projection-1"}
 	q.Targets[0].PublicData = map[string]string{"node": "worker-01"}
 	p, err := finiteQueryToProto(q)
 	if err != nil {
@@ -90,6 +93,41 @@ func TestFiniteUnitsPreservePhysicalQuantity(t *testing.T) {
 		if ValidFiniteUnit(unit) {
 			t.Fatal("invented or scaled unit admitted", unit)
 		}
+	}
+}
+
+func TestFiniteRangeReuseDeclarationRequiresRangeShape(t *testing.T) {
+	d := finiteMappingFixture()
+	d.RangeReuse = true
+	owner := func(definition MetricDefinition) *MetricOwnerCatalog {
+		return &MetricOwnerCatalog{Definitions: []MetricDefinition{definition}, ScopeFields: []MetricScopeField{{Key: "cluster", Name: "Cluster"}}}
+	}
+	for _, shapes := range [][]string{{"current", "range"}, {"range"}} {
+		d.SupportedShapes = shapes
+		if err := ValidateMetricDefinitionContract(d); err != nil {
+			t.Fatal("range reuse rejected for", shapes, err)
+		}
+		if err := ValidateMetricOwnerCatalog(owner(d)); err != nil {
+			t.Fatal("owner declaration rejected for", shapes, err)
+		}
+	}
+	d.SupportedShapes = []string{"current"}
+	if err := ValidateMetricDefinitionContract(d); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatal("range reuse admitted without the range shape", err)
+	}
+	if err := ValidateMetricOwnerCatalog(owner(d)); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatal("owner declared range reuse without the range shape", err)
+	}
+	mapping := MetricQueryContext{Definitions: []MetricDefinition{d}}
+	if err := ValidateMetricQueryContext(mapping); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatal("host mapping carried range reuse without the range shape", err)
+	}
+	if _, err := finiteContextFromProto(finiteContextToProto(mapping)); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
+		t.Fatal("peer mapping declared range reuse without the range shape", err)
+	}
+	d.RangeReuse = false
+	if err := ValidateMetricDefinitionContract(d); err != nil {
+		t.Fatal("absent range reuse changed current-only definition validity", err)
 	}
 }
 

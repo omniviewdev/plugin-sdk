@@ -40,6 +40,8 @@ Source context must contain a nonnil caller context and selected connection. Hon
 
 `GetResourceMetricsCatalog(pc, ResourceMetricsCatalogRequest{Source, ResourceKey, Context})` returns `ResourceMetricsCatalog{Source, Metrics, MaxTargets, MaxSampleAge}` for the exact selected source. Every descriptor has ID, Name, ResourceKey, Unit, Shapes, Description, and an optional Source override for a host-composed mixed-source catalog. IDs must be unique and nonempty. ResourceKey must match the requested canonical type. Valid units are `cores`, `bytes`, `seconds`, `count`, `ratio`, `percent`, `bytes_per_second` and `count_per_second`, never display scales or legacy numeric enums. These units describe real producer quantities; the host never guesses a conversion or denominator. Shapes are explicit strings `current` and `range`. A source must not advertise a shape it cannot execute.
 
+A descriptor may also set `RangeReuse`, an optional opt-in to coverage-aware range reuse. It requires the `range` shape; see [Range reuse](#range-reuse).
+
 For example, the Kubernetes plugin defines `kubernetes.pod.cpu.usage` in cores and `kubernetes.pod.memory.working_set` in bytes. Its metrics-server source supports current values only; it does not fabricate history from polling.
 
 The latest source catalog is authoritative. The manager rejects unadvertised metric IDs or shapes with UNSUPPORTED before collection. Catalog MaxTargets must be 1–256; the manager enforces the catalog's lower bound as well as the protocol bound.
@@ -83,9 +85,37 @@ IdentityScope is source provenance: `incarnation` means the source actually veri
 
 Dimensions are source labels, not authority or source selectors. Message and Warnings contain safe diagnostics, never credentials. Permission-denied delivery must remove sensitive prior data at the host boundary.
 
+## Range reuse
+
+`FiniteMetricDescriptor.RangeReuse` (`range_reuse`) is an optional provider opt-in. It lets a host answer a range query from points it already holds for an overlapping window and fetch only the uncovered part. It defaults to false and is valid only when `Shapes` includes `range`; the SDK rejects any other combination with `INVALID_REQUEST` on both sides of the RPC.
+
+Setting it promises that every `ok` range result for the metric is a **pure point series**:
+
+- `Points` are pointwise evaluations on the grid `StartTime + n*Step`.
+- For the same `MetricQueryContext` and `Step`, a point's value and presence (a nil value is a gap) do not depend on `StartTime`, `EndTime` or which other points were requested. Do not opt in when a result changes with the requested window: a rate or aggregate computed over the whole range, a lookback or interval derived from its length, or a step or downsampling chosen from it.
+- `Value` and `ObservedAt` are unset and `Window` is zero. Range-wide sample metadata cannot be transplanted into another requested domain.
+
+The promise does not say that a range point equals the current sample, or that source history never changes. Retained points remain subject to the host's existing cache TTL; the contract carries no per-point maturity or settled-history signal.
+
+Cross-bound reuse is deliberately conservative. The host combines only complete `ok` results while `IdentityScope`, `Source` and `Dimensions` stay compatible. An opted-in `ok` response carrying aggregate sample metadata violates the declaration and may be rejected. Without the flag, range results may still carry `ObservedAt` and `Window`, but do not establish cross-bound coverage. Non-`ok` and incomplete results never establish cross-bound coverage.
+
+`MetricDefinition.RangeReuse` is an owner's declaration that its authored definition meets the same promise. It also requires `range` in `SupportedShapes`, and `ValidateMetricDefinitionContract` rejects it otherwise. It is not an opt-in: the provider's descriptor decides, and a provider may decline an owner's declaration by leaving its own flag false. A host clears the declaration unless the effective definition is exactly the owner-authored one, so a user edit, override or other remapping never inherits it.
+
+Absent and false mean the same thing in JSON and protobuf, and neither permits cross-bound reuse. Existing exact-domain caching is independent of this capability.
+
+## Range-to-current reuse
+
+`FiniteMetricDescriptor.RangeToCurrent` (`range_to_current`) is a separate provider opt-in requiring both `current` and `range` shapes. It promises that the latest range point can represent a cached current sample with the same value semantics, physical unit, identity, source, dimensions and sampling window, independent of range bounds and step. This is not implied by `RangeReuse`, and there is no inherited owner-definition opt-in.
+
+The range result's `ObservedAt` must identify the actual source time associated with its terminal point, and `Window` that point's sampling window. Neither may describe the whole requested range. A host can promote only a complete `ok` result whose terminal point is numeric, whose cache entry has not expired, and whose source declares a positive known `MaxSampleAge`. Source time must be fresh and no later than the point's nonfuture evaluation time. An absent source timestamp or age policy prevents reuse; `Point.Time` never substitutes for source time. A terminal null remains a gap: never search backward for an older numeric value.
+
+The host preserves actual source metadata and every existing authority, generation, configuration and projection fence. Exact current results, including known absence, take precedence. Among eligible range results, prefer the newest physical sample, not the most recently fetched historical query. Reuse reads the existing completed cache without adding a promoted-sample cache or extending TTL. Manual refresh bypasses completed reuse.
+
 ## Transport and errors
 
 The typed `GetFiniteCapabilities` RPC negotiates version 2. `GetResourceMetricsCatalog` and `QueryResources` carry generated typed source, mapping and approved-projection messages. Old processes or providers lacking finite support return explicit UNSUPPORTED; the client never loops through legacy per-resource calls. Session/catalog context crosses the existing resource session transport. Remote classified resource errors retain their domain codes.
+
+`range_reuse` (descriptor field 8, definition field 16) and `range_to_current` (descriptor field 9) are additive, so the finite wire version stays 2. Older providers remain opted out and older hosts ignore the fields. False fields are omitted from stored JSON.
 
 INVALID_REQUEST denotes invalid source identity, duplicate tokens/IDs, domains, units, statuses, result shape, or numeric values. RESOURCE_LIMIT denotes count/metadata/sample bounds. UNSUPPORTED denotes absent finite capability or an unadvertised metric/shape. Connection retirement, catalog reset, authority, and cancellation retain existing resource registry error semantics. No compatibility adapter or synthetic sample converts these failures into successful data.
 
