@@ -164,6 +164,14 @@ plugin traces as `omniview.client.id` and Pyroscope profiles as
 `omniview_client_id`. An empty value adds neither attribute. Existing plugin
 binaries must be rebuilt with this SDK to label their Pyroscope profiles.
 
+Resource v2 streaming actions create finite client and provider spans. They propagate
+W3C trace context across the action stream even when gRPC stream instrumentation is
+filtered out. Spans identify the action, plugin, connection, resource type and
+resource ID, and report readiness stage, outcome and reviewed error classification.
+They do not record action inputs, event payloads or provider error messages. Resource
+identifiers are operational metadata and should be handled under the deployment's
+trace retention and access policy.
+
 
 ### Pre-launch artifact compatibility
 
