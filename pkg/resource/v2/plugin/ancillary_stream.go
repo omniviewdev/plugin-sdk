@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -65,7 +67,7 @@ func watchConnectionsHandler(srv any, stream grpc.ServerStream) error {
 	return relayAncillaryEvents(ctx, cancel, events, done, send, finish, "connection")
 }
 
-func streamActionHandler(srv any, stream grpc.ServerStream) error {
+func streamActionHandler(srv any, stream grpc.ServerStream) (result error) {
 	s, ok := srv.(*ancillaryServer)
 	if !ok {
 		return rpcError(invalid("invalid ancillary server"))
@@ -89,6 +91,16 @@ func streamActionHandler(srv any, stream grpc.ServerStream) error {
 	if err != nil {
 		return rpcError(err)
 	}
+	base, span := startActionTrace(actionTraceIncoming(base), "resource.action.stream.server", trace.SpanKindServer, in)
+	stage := "admission"
+	var eventErrorCode string
+	defer func() {
+		if result == nil && eventErrorCode != "" {
+			finishActionTrace(span, stage, resourcev2.NewError(eventErrorCode, ""))
+		} else {
+			finishActionTrace(span, stage, result)
+		}
+	}()
 	ctx, cancel := context.WithCancel(base)
 	defer cancel()
 	if fenceErr := s.owner.checkCatalogRoute(ctx, r.Action.GetRoute()); fenceErr != nil {
@@ -105,6 +117,7 @@ func streamActionHandler(srv any, stream grpc.ServerStream) error {
 	if !ok {
 		return rpcError(unsupported("streaming action unsupported"))
 	}
+	stage = "pre_ready"
 	events := make(chan resourcev2.ActionEvent, 1)
 	done := make(chan error, 1)
 	go func() { done <- p.StreamAction(ctx, in, events) }()
@@ -116,11 +129,28 @@ func streamActionHandler(srv any, stream grpc.ServerStream) error {
 				return err
 			}
 		}
-		return s.sendActionEvent(ctx, stream, r.Action.GetRoute(), &ready, v)
+		err := s.sendActionEvent(ctx, stream, r.Action.GetRoute(), &ready, v)
+		if err == nil && v.Type == "ready" {
+			stage = "post_ready"
+			span.AddEvent("action.ready")
+		}
+		if err == nil && v.Error != nil {
+			eventErrorCode = resourcev2.ErrorCode(v.Error)
+			span.AddEvent("action.provider.error", trace.WithAttributes(
+				attribute.String("omniview.error.code", resourcev2.ErrorCode(v.Error)),
+				attribute.String("omniview.action.stage", stage),
+			))
+		}
+		return err
 	}
 	finish := func(err error) error {
 		if err != nil {
-			return rpcError(s.owner.classify(err))
+			classified := s.owner.classify(err)
+			span.AddEvent("action.provider.failure", trace.WithAttributes(
+				attribute.String("omniview.error.code", actionTraceErrorCode(rpcError(classified))),
+				attribute.String("omniview.action.stage", stage),
+			))
+			return rpcError(classified)
 		}
 		if !ready {
 			return rpcError(invalid("action completed without native readiness"))
@@ -199,7 +229,17 @@ func (c *Client) StreamAction(
 	ctx context.Context,
 	in resourcev2.ActionRequest,
 	out chan<- resourcev2.ActionEvent,
-) error {
+) (result error) {
+	ctx, span := startActionTrace(ctx, "resource.action.stream.client", trace.SpanKindClient, in)
+	stage := "admission"
+	var eventErrorCode string
+	defer func() {
+		if result == nil && eventErrorCode != "" {
+			finishActionTrace(span, stage, resourcev2.NewError(eventErrorCode, ""))
+		} else {
+			finishActionTrace(span, stage, result)
+		}
+	}()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	if _, err := resourcev2.AdmitStreamingAction(ctx, c, in); err != nil {
@@ -217,6 +257,8 @@ func (c *Client) StreamAction(
 	if err != nil {
 		return err
 	}
+	stage = "pre_ready"
+	ctx = actionTraceOutgoing(ctx)
 	s, err := c.openStream(
 		ctx,
 		1,
@@ -237,6 +279,17 @@ func (c *Client) StreamAction(
 				return nil
 			}
 			return receiveErr
+		}
+		if v.Type == "ready" {
+			stage = "post_ready"
+			span.AddEvent("action.ready")
+		}
+		if v.Error != nil {
+			eventErrorCode = resourcev2.ErrorCode(v.Error)
+			span.AddEvent("action.provider.error", trace.WithAttributes(
+				attribute.String("omniview.error.code", resourcev2.ErrorCode(v.Error)),
+				attribute.String("omniview.action.stage", stage),
+			))
 		}
 		select {
 		case out <- v:
