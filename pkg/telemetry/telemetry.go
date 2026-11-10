@@ -62,14 +62,18 @@ func InitFromEnv() (*Provider, error) {
 	if !cfg.Enabled {
 		return nil, nil //nolint:nilnil // Disabled telemetry intentionally creates no provider and is not an error.
 	}
+	clientID := os.Getenv("OMNIVIEW_TELEMETRY_CLIENT_ID")
+	attributes := []attribute.KeyValue{
+		semconv.ServiceName("omniview.plugin." + cfg.PluginID),
+		attribute.String("omniview.plugin.id", cfg.PluginID),
+	}
+	if clientID != "" {
+		attributes = append(attributes, attribute.String("omniview.client.id", clientID))
+	}
 
 	res, err := resource.Merge(
 		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
-			semconv.ServiceName("omniview.plugin."+cfg.PluginID),
-			attribute.String("omniview.plugin.id", cfg.PluginID),
-		),
+		resource.NewWithAttributes(semconv.SchemaURL, attributes...),
 	)
 	if err != nil {
 		return nil, err
@@ -96,9 +100,14 @@ func InitFromEnv() (*Provider, error) {
 	p := &Provider{tracerProvider: tp}
 
 	if cfg.Profiling && cfg.PyroscopeEndpoint != "" {
+		var tags map[string]string
+		if clientID != "" {
+			tags = map[string]string{"omniview_client_id": clientID}
+		}
 		profiler, profErr := pyroscope.Start(pyroscope.Config{
 			ApplicationName: "omniview.plugin." + cfg.PluginID,
 			ServerAddress:   cfg.PyroscopeEndpoint,
+			Tags:            tags,
 			ProfileTypes: []pyroscope.ProfileType{
 				pyroscope.ProfileCPU,
 				pyroscope.ProfileAllocSpace,

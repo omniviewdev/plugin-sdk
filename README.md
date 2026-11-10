@@ -159,6 +159,11 @@ The lifecycle service exposes `GetProfilingStatus` with the process PID, actual 
 
 The shared `pkg/profiling` package also serves host pprof. Requests require the exact numeric loopback Host and no Origin header. CPU and trace captures accept GET only and cap explicit durations at 120 and 15 seconds. Captures are unauthenticated and may contain sensitive data: never publish or forward these ports. Continuous Pyroscope and pprof cannot own the same process's CPU profiler simultaneously; coordination remains manual.
 
+When the host sets `OMNIVIEW_TELEMETRY_CLIENT_ID`, the SDK adds the value to
+plugin traces as `omniview.client.id` and Pyroscope profiles as
+`omniview_client_id`. An empty value adds neither attribute. Existing plugin
+binaries must be rebuilt with this SDK to label their Pyroscope profiles.
+
 
 ### Pre-launch artifact compatibility
 
