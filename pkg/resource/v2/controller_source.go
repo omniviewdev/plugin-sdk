@@ -6,12 +6,33 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/omniviewdev/plugin-sdk/internal/obs"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // OpenSource dispatches a source session under a route lease and catalog fence.
 func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenRequest, emitter SourceEmitter) (err error) {
 	var registration *Registration[T]
-	defer c.guard(&registration, &err)
+	var pages, snapshotItems int
+	ctx, span := obs.Tracer().Start(ctx, "sdk.source.open", trace.WithAttributes(
+		attribute.String("source_id", request.SessionID),
+		attribute.String("resource_type", request.Target.Type),
+		attribute.String("connection_id", request.Target.Route.Connection),
+		attribute.String("mode", request.Mode),
+	))
+	var openEnded sync.Once
+	// endOpen closes the handshake span exactly once. A following source ends it
+	// when the provider callback starts, so the span never spans the stream lifetime.
+	endOpen := func(openErr error) {
+		openEnded.Do(func() {
+			span.SetAttributes(attribute.Int("snapshot_items", snapshotItems), attribute.Int("pages", pages))
+			obs.End(span, openErr, ErrorCode(openErr))
+		})
+	}
+	defer func() { endOpen(err) }()
+	defer c.guardContext(ctx, "open_source", &registration, &err)
 	if err = ValidateSourceOpenRequest(request); err != nil {
 		return err
 	}
@@ -43,6 +64,8 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 		}
 	}
 	if !foundBinding {
+		obs.Reject(ctx, lifecycleLogger(), "open_source", "RESET_REQUIRED", "reason", "binding_changed", "source_id", request.SessionID)
+		sourceResetRequired(ctx, "binding_changed")
 		return NewError("RESET_REQUIRED", "Source binding changed.")
 	}
 	sourceCtx, cancel := context.WithCancel(ctx)
@@ -56,6 +79,7 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 				break
 			}
 		}
+		endOpen(nil)
 		err = registration.Source(sourceCtx, client, SourceRequest{Target: target, Representation: representation, Limits: request.Limits}, fenced)
 		if fenced.reset.Load() {
 			return nil
@@ -67,7 +91,9 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 			// A transient catalog failure cannot turn an otherwise completed
 			// source into a terminal failure. A revision mismatch still emits
 			// bindingChanged; otherwise the transport emits sourceInvalidated.
-			_ = fenced.checkCatalog(ctx)
+			if catalogErr := fenced.checkCatalog(ctx); catalogErr != nil {
+				lifecycleLogger().Debugw(ctx, "source completion catalog check failed", "source_id", request.SessionID, "error_code", obs.ErrorCode(catalogErr, ErrorCode(catalogErr)))
+			}
 			return nil
 		}
 		return err
@@ -80,7 +106,7 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 	seen := make(map[string]struct{})
 	coverage := SourceCoverage{Enumeration: EnumerationExhausted, Consistency: ConsistencyPointInTime, Limitations: []string{}}
 	var revision *string
-	pages := 0
+	pages = 0
 	for {
 		var page SourcePage
 		if operation == OperationEnumerate {
@@ -101,10 +127,11 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 			}
 			return err
 		}
-		if err = checkPage(page, descriptor, target, size); err != nil {
+		if err = checkPage(ctx, page, descriptor, target, size); err != nil {
 			return err
 		}
 		pages++
+		lifecycleLogger().Debugw(ctx, "source page received", "source_id", request.SessionID, "pages", pages, "records", len(page.Records))
 		if page.Coverage.Kind == "unknown" {
 			coverage.Enumeration = EnumerationUnknown
 		} else if page.Coverage.Kind == "partial" && coverage.Enumeration != EnumerationUnknown {
@@ -134,10 +161,12 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 		observations := make([]SourceObservation, len(page.Records))
 		for i := range page.Records {
 			if !reflect.DeepEqual(page.Records[i].Representation, request.Binding.Representation) {
+				sourceResetRequired(ctx, "record_representation_changed")
 				return NewError("RESET_REQUIRED", "Source binding changed.")
 			}
 			observations[i] = SourceObservation{Record: CompactSourceRecord(page.Records[i])}
 		}
+		snapshotItems += len(observations)
 		if len(observations) != 0 {
 			if err = fenced.Snapshot(ctx, observations); err != nil {
 				return err
@@ -172,6 +201,7 @@ type controllerSourceEmitter[T any] struct {
 }
 
 func (e *controllerSourceEmitter[T]) bindingReset(ctx context.Context) error {
+	sourceResetRequired(ctx, "binding_changed")
 	err := e.emitter.Reset(e.streamCtx, SourceResetBindingChanged, "Source binding changed.")
 	e.reset.Store(true)
 	e.cancel()
@@ -218,6 +248,7 @@ func (e *controllerSourceEmitter[T]) Snapshot(ctx context.Context, observations 
 	expected := RepresentationRef{ID: e.binding.ID, Revision: e.binding.Revision, SchemaRevision: e.binding.Schema.Revision}
 	for _, observation := range observations {
 		if !reflect.DeepEqual(observation.Record.Representation, expected) {
+			sourceResetRequired(ctx, "record_representation_changed")
 			return NewError("RESET_REQUIRED", "Source binding changed.")
 		}
 		if err := checkSourceObservation(e.descriptor, e.target, observation); err != nil {
@@ -244,6 +275,7 @@ func (e *controllerSourceEmitter[T]) Changes(ctx context.Context, changes []Sour
 				return NewError("PROVIDER_ERROR", "invalid source upsert")
 			}
 			if !reflect.DeepEqual(change.Observation.Record.Representation, expected) {
+				sourceResetRequired(ctx, "record_representation_changed")
 				return NewError("RESET_REQUIRED", "Source binding changed.")
 			}
 			if err := checkSourceObservation(e.descriptor, e.target, *change.Observation); err != nil {

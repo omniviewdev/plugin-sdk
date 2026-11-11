@@ -80,14 +80,14 @@ func handleAncillaryCall(
 			return nil, rpcError(invalid("invalid ancillary request"))
 		}
 		if fenceErr := s.owner.checkAncillaryCatalogs(ctx, request); fenceErr != nil {
-			return nil, rpcError(s.owner.classify(fenceErr))
+			return nil, rpcErrorContext(ctx, "ancillary_call", s.owner.classify(fenceErr))
 		}
 		out, err := s.call(ctx, request)
 		if fenceErr := s.owner.checkAncillaryCatalogs(ctx, request); fenceErr != nil {
-			return nil, rpcError(s.owner.classify(fenceErr))
+			return nil, rpcErrorContext(ctx, "ancillary_call", s.owner.classify(fenceErr))
 		}
 		err = responseError(out, err)
-		return out, rpcError(s.owner.classify(err))
+		return out, rpcErrorContext(ctx, "ancillary_call", s.owner.classify(err))
 	}
 	if i == nil {
 		return f(ctx, r)

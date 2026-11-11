@@ -38,6 +38,7 @@ func (c *PluginClient) GetSupportedResources(ctx *types.PluginContext) []Handler
 		&emptypb.Empty{},
 	)
 	if err != nil {
+		c.log.Debugw(context.Background(), "exec supported resources failed", "grpc_code", status.Code(err).String())
 		return nil
 	}
 	handlers := resp.GetHandlers()
@@ -272,6 +273,7 @@ func (c *PluginClient) Stream(
 ) (chan StreamOutput, error) {
 	stream, err := c.client.Stream(ctx)
 	if err != nil {
+		c.log.Debugw(ctx, "exec stream open failed", "grpc_code", status.Code(err).String())
 		return nil, err
 	}
 

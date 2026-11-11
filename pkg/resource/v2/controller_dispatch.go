@@ -11,7 +11,7 @@ import "context"
 // result; a nonnil error means the returned record is not accepted.
 func (c *Controller[T]) Get(ctx context.Context, request GetRequest) (record Record, err error) {
 	var r *Registration[T]
-	defer c.guard(&r, &err)
+	defer c.guardContext(ctx, "get", &r, &err)
 	if err = ValidateGetRequest(request); err != nil {
 		return record, err
 	}
@@ -53,7 +53,7 @@ func (c *Controller[T]) Get(ctx context.Context, request GetRequest) (record Rec
 // Inputs/results follow Registration's ownership rules; ignore the page on error.
 func (c *Controller[T]) Enumerate(ctx context.Context, request EnumerateRequest) (page SourcePage, err error) {
 	var r *Registration[T]
-	defer c.guard(&r, &err)
+	defer c.guardContext(ctx, "enumerate", &r, &err)
 	if err = ValidateEnumerateRequest(request); err != nil {
 		return page, err
 	}
@@ -71,7 +71,7 @@ func (c *Controller[T]) Enumerate(ctx context.Context, request EnumerateRequest)
 // Inputs/results follow Registration's ownership rules; ignore the page on error.
 func (c *Controller[T]) NativeQuery(ctx context.Context, request NativeQueryRequest) (page SourcePage, err error) {
 	var r *Registration[T]
-	defer c.guard(&r, &err)
+	defer c.guardContext(ctx, "native_query", &r, &err)
 	if err = ValidateNativeQueryRequest(request); err != nil {
 		return page, err
 	}
@@ -117,7 +117,7 @@ func (c *Controller[T]) dispatchPage(
 		err = c.fenceCatalog(ctx, target.Route)
 	}
 	if err == nil {
-		err = checkPage(page, descriptor, target, size)
+		err = checkPage(ctx, page, descriptor, target, size)
 	}
 	return page, err
 }
@@ -131,7 +131,7 @@ func (c *Controller[T]) dispatchPage(
 // replay; the returned record is not accepted on error.
 func (c *Controller[T]) Mutate(ctx context.Context, request MutationRequest) (record Record, err error) {
 	var r *Registration[T]
-	defer c.guard(&r, &err)
+	defer c.guardContext(ctx, "mutate", &r, &err)
 	if err = ValidateMutationRequest(request); err != nil {
 		return record, err
 	}
@@ -172,7 +172,7 @@ func (c *Controller[T]) Mutate(ctx context.Context, request MutationRequest) (re
 // not evidence that replay is safe; ignore the returned Value on error.
 func (c *Controller[T]) Action(ctx context.Context, request ActionRequest) (value Value, err error) {
 	var r *Registration[T]
-	defer c.guard(&r, &err)
+	defer c.guardContext(ctx, "action", &r, &err)
 	if err = ValidateActionRequest(request); err != nil {
 		return value, err
 	}

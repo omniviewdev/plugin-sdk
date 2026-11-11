@@ -15,7 +15,9 @@ import (
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 
+	"github.com/omniviewdev/plugin-sdk/internal/obs"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	"github.com/omniviewdev/plugin-sdk/pkg/utils"
 	execpb "github.com/omniviewdev/plugin-sdk/proto/v1/exec"
 )
 
@@ -329,16 +331,20 @@ func (s *PluginServer) ResizeSession(
 }
 
 // Stream multiplexes session input and output for the lifetime of the RPC.
-func (s *PluginServer) Stream(stream execpb.ExecPlugin_StreamServer) error {
+func (s *PluginServer) Stream(stream execpb.ExecPlugin_StreamServer) (streamErr error) {
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
+	ctx, obsStream := utils.BeginStream(ctx, s.log, "exec", "exec_stream")
+	defer func() { obsStream.Close(ctx, streamErr) }()
 
 	multiplexer := make(chan StreamInput)
 	defer close(multiplexer)
 	out, err := s.Impl.Stream(ctx, multiplexer)
 	if err != nil {
+		obsStream.OpenFailed(ctx, err)
 		return err
 	}
+	obsStream.OpenDone()
 
 	// handle the output — pass cancel so send errors break the recv loop
 	go s.handleOut(ctx, cancel, out, stream)
@@ -377,6 +383,9 @@ func (s *PluginServer) handleOut(
 				return
 			}
 			if err := stream.Send(msg.ToProto()); err != nil {
+				if s.log != nil {
+					s.log.Debugw(ctx, "exec stream send failed", "error_code", obs.ErrorCode(err, ""))
+				}
 				cancel() // unblock the recv loop
 				return
 			}

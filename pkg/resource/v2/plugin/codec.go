@@ -17,12 +17,12 @@ import (
 
 // envelope retains admission failure within a single RPC, without global state.
 type envelope struct {
-	message         proto.Message
-	err             error
-	legacyExec      bool
-	forceStrict     bool
-	legacyValidator func([]byte) error
-	sourceBatchLimit int
+	message            proto.Message
+	err                error
+	legacyExec         bool
+	forceStrict        bool
+	legacyValidator    func([]byte) error
+	sourceBatchLimit   int
 	legacySchemaClaims bool
 }
 type strictCodec struct{ fallback encoding.CodecV2 }
@@ -116,7 +116,11 @@ func decodeResource(data mem.BufferSlice, p proto.Message, e *envelope, wrapped 
 	return proto.Unmarshal(buf.ReadOnlyData(), p)
 }
 
-func rpcError(err error) error {
+func rpcError(err error) error { return rpcErrorContext(context.Background(), "", err) }
+
+// rpcErrorContext maps err to its wire status. When it masks provider text it
+// records the mask on the span in ctx; operation names the RPC when known.
+func rpcErrorContext(ctx context.Context, operation string, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -129,8 +133,10 @@ func rpcError(err error) error {
 			return status.Error(codes.DeadlineExceeded, "resource call timed out")
 		}
 		if st, ok := status.FromError(err); ok {
+			recordErrorMasked(ctx, operation, err, st.Code().String(), "")
 			return status.Error(st.Code(), "resource transport failed")
 		}
+		recordErrorMasked(ctx, operation, err, "", "PROVIDER_ERROR")
 		err = resourcev2.NewError("PROVIDER_ERROR", "resource operation failed")
 	}
 	code := resourcev2.ErrorCode(err)
@@ -181,6 +187,7 @@ func domainError(err error) error {
 	}
 	st, ok := status.FromError(err)
 	if !ok {
+		recordErrorMasked(context.Background(), "client", err, codes.Unknown.String(), "")
 		return status.Error(codes.Unknown, "resource transport failed")
 	}
 	for _, d := range st.Details() {
@@ -191,6 +198,7 @@ func domainError(err error) error {
 			return &resourcev2.ResourceOperationError{Err: err, Code: info.Reason, Message: "resource operation failed"}
 		}
 	}
+	recordErrorMasked(context.Background(), "client", err, st.Code().String(), "")
 	return status.Error(st.Code(), "resource transport failed")
 }
 

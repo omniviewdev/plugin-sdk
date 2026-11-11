@@ -156,8 +156,11 @@ func (c *Controller[T]) classify(r *Registration[T], err error) (out error) {
 	return err
 }
 
-func (c *Controller[T]) guard(r **Registration[T], err *error) {
-	if recover() != nil {
+// guardContext converts a provider panic into INTERNAL, records it on the
+// caller's span and classifies the result. Call it directly from the deferred statement.
+func (c *Controller[T]) guardContext(ctx context.Context, operation string, r **Registration[T], err *error) {
+	if recovered := recover(); recovered != nil {
+		guardPanic(ctx, operation, recovered)
 		*err = NewError("INTERNAL", "Provider handler panicked.")
 	}
 	*err = c.classify(*r, *err)

@@ -35,7 +35,7 @@ func TestUnaryPanicRecovery_PanicIsRecovered(t *testing.T) {
 	require.True(t, ok, "error should be a gRPC status")
 	assert.Equal(t, codes.Internal, st.Code(), "error code should be Internal")
 	assert.Contains(t, st.Message(), "panic in /test.Service/PanicMethod", "error message should mention the method")
-	assert.Contains(t, st.Message(), "something went wrong", "error message should contain the panic value")
+	assert.NotContains(t, st.Message(), "something went wrong", "panic value must not be sent to clients")
 }
 
 func TestUnaryPanicRecovery_SuccessPassthrough(t *testing.T) {
@@ -91,7 +91,7 @@ func TestStreamPanicRecovery_PanicIsRecovered(t *testing.T) {
 	require.True(t, ok, "error should be a gRPC status")
 	assert.Equal(t, codes.Internal, st.Code())
 	assert.Contains(t, st.Message(), "panic in /test.Service/StreamPanic")
-	assert.Contains(t, st.Message(), "stream boom")
+	assert.NotContains(t, st.Message(), "stream boom", "panic value must not be sent to clients")
 }
 
 func TestStreamPanicRecovery_SuccessPassthrough(t *testing.T) {

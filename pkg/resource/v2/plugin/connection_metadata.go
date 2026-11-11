@@ -5,9 +5,13 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/status"
 
+	"github.com/omniviewdev/plugin-sdk/internal/obs"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
@@ -27,9 +31,11 @@ var connectionMetadataStream = grpc.StreamDesc{
 func (s *ancillaryServer) connectionMetadataCall(ctx context.Context, r *resourcepb.AncillaryRequest) (*resourcepb.AncillaryResponse, error) {
 	p, ok := s.owner.impl.(resourcev2.ConnectionMetadataProvider)
 	if !ok {
+		obs.Reject(ctx, logging.Default(), "connection_metadata", "UNSUPPORTED", "reason", "metadata_unavailable")
 		return nil, unsupported("connection metadata unsupported")
 	}
 	if r.Id == "" {
+		obs.Reject(ctx, logging.Default(), "connection_metadata", "INVALID_REQUEST", "reason", "missing_connection_id")
 		return nil, invalid("missing connection id")
 	}
 	var snapshot resourcev2.ConnectionMetadataSnapshot
@@ -70,15 +76,18 @@ func watchConnectionMetadataHandler(srv any, stream grpc.ServerStream) error {
 	r := &resourcepb.AncillaryRequest{}
 	e := &envelope{message: r}
 	if err := stream.RecvMsg(e); err != nil {
+		obs.Reject(stream.Context(), logging.Default(), "watch_connection_metadata", "INVALID_REQUEST", "reason", "malformed_request")
 		return rpcError(invalid("malformed metadata stream request"))
 	}
 	if e.err != nil {
 		return rpcError(e.err)
 	}
 	if r.Version != resourcev2.WireVersion {
+		obs.Reject(stream.Context(), logging.Default(), "watch_connection_metadata", "UNSUPPORTED", "reason", "wire_version")
 		return rpcError(unsupported("unsupported stream wire version"))
 	}
 	if r.Operation != watchConnectionMetadataOperation {
+		obs.Reject(stream.Context(), logging.Default(), "watch_connection_metadata", "INVALID_REQUEST", "reason", "unexpected_operation")
 		return rpcError(invalid("unexpected metadata stream operation"))
 	}
 	ctx, err := streamContext(stream, s)
@@ -87,11 +96,17 @@ func watchConnectionMetadataHandler(srv any, stream grpc.ServerStream) error {
 	}
 	p, ok := s.owner.impl.(resourcev2.ConnectionMetadataProvider)
 	if !ok {
+		obs.Reject(ctx, logging.Default(), "watch_connection_metadata", "UNSUPPORTED", "reason", "metadata_unavailable")
 		return rpcError(unsupported("connection metadata unsupported"))
 	}
+	closeStream := obs.StreamOpened("watch_metadata")
+	defer closeStream()
+	openedAt := time.Now()
+	logging.Default().Debugw(ctx, "metadata watch opened")
 	var mu sync.Mutex
 	err = p.WatchConnectionMetadata(ctx, func(event resourcev2.ConnectionMetadataEvent) error {
 		if err := resourcev2.ValidateConnectionMetadataSnapshot(event.Snapshot); err != nil {
+			logging.Default().Warnw(ctx, "metadata snapshot invalid", "error_code", obs.ErrorCode(err, resourcev2.ErrorCode(err)))
 			return err
 		}
 		mu.Lock()
@@ -102,7 +117,10 @@ func watchConnectionMetadataHandler(srv any, stream grpc.ServerStream) error {
 		}
 		return sendResource(stream, &resourcepb.ConnectionStreamEvent{Version: resourcev2.WireVersion, ConnectionsJson: out.GetJson()})
 	})
-	return rpcError(s.owner.classify(err))
+	classified := s.owner.classify(err)
+	wireErr := rpcErrorContext(ctx, "watch_metadata", classified)
+	logging.Default().Debugw(ctx, "metadata watch closed", "grpc_code", status.Code(wireErr).String(), "duration_ms", time.Since(openedAt).Milliseconds())
+	return wireErr
 }
 
 // WatchConnectionMetadata forwards snapshots and removals until completion or cancellation.

@@ -31,7 +31,7 @@ func UnaryPanicRecovery(log logging.Logger) grpc.UnaryServerInterceptor {
 					"panic", r,
 					"stack", string(stack),
 				)
-				err = status.Errorf(codes.Internal, "panic in %s: %v", info.FullMethod, r)
+				err = status.Error(codes.Internal, "panic in "+info.FullMethod)
 			}
 		}()
 		return handler(ctx, req)
@@ -58,7 +58,7 @@ func StreamPanicRecovery(log logging.Logger) grpc.StreamServerInterceptor {
 					"panic", r,
 					"stack", string(stack),
 				)
-				err = status.Errorf(codes.Internal, "panic in %s: %v", info.FullMethod, r)
+				err = status.Error(codes.Internal, "panic in "+info.FullMethod)
 			}
 		}()
 		return handler(srv, ss)

@@ -3,12 +3,15 @@ package metric
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 
 	"github.com/google/uuid"
+
+	"github.com/omniviewdev/plugin-sdk/internal/obs"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/settings"
@@ -164,6 +167,8 @@ func (m *Manager) filterStream(
 			}
 			size, err := m.validateStreamAdmission(ctx, input, resource, admission)
 			if err != nil {
+				obs.Reject(ctx, m.log, "metric_stream", obs.ErrorCode(err, resourcev2.ErrorCode(err)),
+					"command", int(input.Command))
 				select {
 				case rejected <- streamRejection(input, err):
 				case <-ctx.Done():
@@ -304,6 +309,10 @@ func (m *Manager) query(ctx *types.PluginContext, req QueryRequest) (*QueryRespo
 			return err
 		},
 	)
+	if err != nil {
+		m.log.Debugw(queryLogContext(ctx), "metric query failed",
+			"error_code", obs.ErrorCode(err, resourcev2.ErrorCode(err)), "error_type", fmt.Sprintf("%T", err))
+	}
 	return response, err
 }
 
@@ -609,6 +618,8 @@ func (m *Manager) subscribe(
 	}
 	m.subscriptions[key] = sub
 	m.mux.Unlock()
+	m.log.Debugw(parentCtx, "metric subscribed",
+		"subscription_id", subID, "interval_ms", interval.Milliseconds(), "metric_count", len(input.MetricIDs))
 
 	polls.Go(func() {
 		m.pollSubscription(sub)
@@ -624,6 +635,7 @@ func (m *Manager) unsubscribe(owner context.Context, subscriptionID string) {
 		delete(m.subscriptions, key)
 	}
 	m.mux.Unlock()
+	m.log.Debugw(owner, "metric unsubscribed", "subscription_id", subscriptionID, "found", ok)
 }
 
 func (m *Manager) pollSubscription(sub *managedSubscription) {
@@ -672,11 +684,16 @@ func (m *Manager) pollOnce(sub *managedSubscription) {
 	if err != nil {
 		var operation *resourcev2.ResourceOperationError
 		errors.As(metricDomainError(err), &operation)
+		// Provider error text can carry remote or resource content: subscribers
+		// get only the classification code; the Go type goes to the Debug log.
+		code := obs.ErrorCode(err, resourcev2.ErrorCode(err))
+		m.log.Debugw(sub.ctx, "metric poll failed",
+			"subscription_id", sub.id, "error_code", code, "error_type", fmt.Sprintf("%T", err))
 		select {
 		case sub.out <- StreamOutput{
 			SubscriptionID: sub.id,
 			Timestamp:      time.Now(),
-			Error:          err.Error(),
+			Error:          code,
 			OperationError: operation,
 		}:
 		case <-sub.ctx.Done():
@@ -710,4 +727,11 @@ func streamAdmissionMetadataBytes(id string, reference *resourcev2.ResourceRefer
 		}
 	}
 	return size
+}
+
+func queryLogContext(pc *types.PluginContext) context.Context {
+	if pc != nil && pc.Context != nil {
+		return pc.Context
+	}
+	return context.Background()
 }

@@ -3,6 +3,10 @@ package settings
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/omniviewdev/plugin-sdk/internal/obs"
+	logging "github.com/omniviewdev/plugin-sdk/log"
+	"github.com/omniviewdev/plugin-sdk/pkg/utils"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -74,18 +78,24 @@ func (s *SettingsPluginServer) GetSettingValue(
 }
 
 // CommitSettings keeps validation, persistence and publication in one provider transaction.
-func (s *SettingsPluginServer) CommitSettings(stream settingspb.SettingsPlugin_CommitSettingsServer) error {
+func (s *SettingsPluginServer) CommitSettings(stream settingspb.SettingsPlugin_CommitSettingsServer) (commitErr error) {
+	ctx, obsStream := utils.BeginStream(stream.Context(), logging.Default().Named("settings.plugin.server"), "settings", "commit_settings")
+	defer func() { obsStream.Close(ctx, commitErr) }()
 	request, err := stream.Recv()
 	if err != nil {
+		obsStream.OpenFailed(ctx, err)
 		return err
 	}
 	if request.GetProposal() == nil {
+		obsStream.OpenFailed(ctx, status.Error(codes.InvalidArgument, "settings proposal required"))
 		return status.Error(codes.InvalidArgument, "settings proposal required")
 	}
 	values, err := decodeValues(request.GetProposal())
 	if err != nil {
+		obsStream.OpenFailed(ctx, err)
 		return status.Error(codes.InvalidArgument, "invalid settings proposal")
 	}
+	obsStream.OpenDone()
 	result, err := s.Impl.CommitSettings(stream.Context(), values, func(normalized map[string]any) error {
 		if contextErr := stream.Context().Err(); contextErr != nil {
 			return contextErr
@@ -112,8 +122,12 @@ func (s *SettingsPluginServer) CommitSettings(stream settingspb.SettingsPlugin_C
 	if err != nil {
 		var validationErr *settings.ValidationError
 		if errors.As(err, &validationErr) {
+			logging.Default().Named("settings.plugin.server").Debugw(ctx, "settings commit rejected",
+				"error_code", "validation", "value_count", len(values))
 			return status.Errorf(codes.InvalidArgument, "settings commit rejected: %s", err)
 		}
+		logging.Default().Named("settings.plugin.server").Warnw(ctx, "settings commit failed",
+			"error_code", obs.ErrorCode(err, ""), "error_type", fmt.Sprintf("%T", err), "value_count", len(values))
 		return status.Errorf(codes.FailedPrecondition, "settings commit rejected: %s", err)
 	}
 	return stream.Send(&settingspb.CommitSettingsResponse{

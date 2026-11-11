@@ -3,6 +3,7 @@ package metric
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/omniviewdev/plugin-sdk/internal/obs"
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
@@ -24,6 +26,19 @@ type PluginClient struct {
 }
 
 var _ Provider = (*PluginClient)(nil)
+
+// logFailure records a classified Debug line for a failed remote call. It logs
+// the gRPC code and Go error type, never the error text.
+func (c *PluginClient) logFailure(ctx context.Context, msg string, err error) {
+	log := c.log
+	if log == nil {
+		log = logging.Default()
+	}
+	log.Debugw(ctx, msg,
+		"grpc_code", status.Code(err).String(),
+		"error_code", obs.ErrorCode(err, resourcev2.ErrorCode(err)),
+		"error_type", fmt.Sprintf("%T", err))
+}
 
 // metricDomainError preserves local C02 errors and remote classifications. Only
 // an unclassified missing-method status becomes explicit capability absence.
@@ -47,8 +62,10 @@ func metricDomainError(err error) error {
 
 // GetSupportedResources returns the remote provider and its resource handlers.
 func (c *PluginClient) GetSupportedResources(ctx *types.PluginContext) (*ProviderInfo, []Handler) {
-	response, err := c.client.GetSupportedResources(pluginCallContext(ctx), &emptypb.Empty{})
+	callCtx := pluginCallContext(ctx)
+	response, err := c.client.GetSupportedResources(callCtx, &emptypb.Empty{})
 	if err != nil {
+		c.logFailure(callCtx, "metric supported resources failed", err)
 		return nil, nil
 	}
 	info := ProviderInfoFromProto(response.Provider)
@@ -82,8 +99,10 @@ func (c *PluginClient) Query(ctx *types.PluginContext, r QueryRequest) (*QueryRe
 	if err != nil {
 		return nil, err
 	}
-	response, err := c.client.Query(pluginCallContext(ctx), p)
+	callCtx := pluginCallContext(ctx)
+	response, err := c.client.Query(callCtx, p)
 	if err != nil {
+		c.logFailure(callCtx, "metric query failed", err)
 		return nil, metricDomainError(err)
 	}
 	return QueryResponseFromProto(response), nil
@@ -111,6 +130,7 @@ func (c *PluginClient) QueryResource(ctx *types.PluginContext, r QueryRequest) (
 		return nil, e
 	}
 	if err != nil {
+		c.logFailure(callContext, "metric resource query failed", err)
 		return nil, metricDomainError(err)
 	}
 	if response.ResourceWireVersion != ResourceWireVersion || response.Response == nil {
@@ -143,6 +163,7 @@ func (c *PluginClient) StreamMetrics(ctx context.Context, in chan StreamInput) (
 	child, cancel := context.WithCancel(ctx)
 	stream, err := c.client.StreamMetrics(child)
 	if err != nil {
+		c.logFailure(child, "metric stream open failed", err)
 		cancel()
 		return nil, metricDomainError(err)
 	}
@@ -165,6 +186,7 @@ func (c *PluginClient) StreamResourceMetrics(ctx context.Context, in chan Stream
 	option, admission := resourceplugin.ResponseAdmission()
 	stream, err := c.client.StreamResourceMetrics(child, option)
 	if err != nil {
+		c.logFailure(child, "metric stream open failed", err)
 		cancel()
 		return nil, metricDomainError(err)
 	}
@@ -174,16 +196,19 @@ func (c *PluginClient) StreamResourceMetrics(ctx context.Context, in chan Stream
 		ResourceOpen:        true,
 	}); err != nil && !errors.Is(err, io.EOF) {
 		timer.Stop()
+		c.logFailure(child, "metric stream open frame failed", err)
 		cancel()
 		return nil, metricDomainError(err)
 	}
 	ack, err := stream.Recv()
 	timer.Stop()
 	if e := admission(); e != nil {
+		c.logFailure(child, "metric stream readiness rejected", e)
 		cancel()
 		return nil, e
 	}
 	if err != nil {
+		c.logFailure(child, "metric stream readiness failed", err)
 		cancel()
 		return nil, metricDomainError(err)
 	}
@@ -275,6 +300,8 @@ func receiveMetricOutputs(
 }
 
 func publishMetricStreamError(ctx context.Context, out chan<- StreamOutput, id string, err error) {
+	logging.Default().Named("metric.client").Debugw(ctx, "metric stream error published",
+		"subscription_id", id, "grpc_code", status.Code(err).String(), "error_type", fmt.Sprintf("%T", err))
 	err = metricDomainError(err)
 	var operation *resourcev2.ResourceOperationError
 	if !errors.As(err, &operation) {

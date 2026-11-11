@@ -38,6 +38,7 @@ func (t *SourcePhaseTracker) TransportError(err error) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.closed {
+		// Expected: the local side already closed the session.
 		return NewError("CANCELLED", "source stream closed")
 	}
 	if err == nil {
@@ -46,6 +47,7 @@ func (t *SourcePhaseTracker) TransportError(err error) error {
 	if errors.Is(err, io.EOF) && t.phase == 3 {
 		return io.EOF
 	}
+	sourceTransportEnded(t.phase)
 	return &ResourceOperationError{Code: "RESET_REQUIRED", Message: "source transport ended before completion", Err: err}
 }
 

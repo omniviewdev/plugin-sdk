@@ -234,7 +234,10 @@ func (m *Manager) StartResourcePortForwardSession(
 	}
 	if err != nil {
 		if session != nil {
-			_, _ = m.ClosePortForwardSession(pluginctx, session.ID)
+			if _, closeErr := m.ClosePortForwardSession(pluginctx, session.ID); closeErr != nil {
+				m.log.Debugw(context.Background(), "port forward cleanup after failed start failed",
+					"session_id", session.ID, "error_type", fmt.Sprintf("%T", closeErr))
+			}
 		}
 		return nil, err
 	}
@@ -653,7 +656,10 @@ func (m *Manager) ClosePortForwardSession(
 	m.mu.Unlock()
 
 	entry.cancel(ErrSessionClosed)
-	_ = entry.transition(SessionStateStopped)
+	if err := entry.transition(SessionStateStopped); err != nil {
+		m.log.Debugw(context.Background(), "port forward stop transition rejected",
+			"session_id", sessionID, "error_type", fmt.Sprintf("%T", err))
+	}
 
 	snap := entry.snapshot()
 	return &snap, nil
@@ -667,7 +673,10 @@ func (m *Manager) StopAll() {
 	m.stopped = true
 	for id, entry := range m.sessions {
 		entry.cancel(ErrManagerStopped)
-		_ = entry.transition(SessionStateStopped)
+		if err := entry.transition(SessionStateStopped); err != nil {
+			m.log.Debugw(context.Background(), "port forward stop transition rejected",
+				"session_id", id, "error_type", fmt.Sprintf("%T", err))
+		}
 		delete(m.sessions, id)
 	}
 	m.mu.Unlock()

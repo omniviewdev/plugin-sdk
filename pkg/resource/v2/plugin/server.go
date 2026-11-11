@@ -120,7 +120,7 @@ func (s *server) Call(ctx context.Context, r *resourcepb.Request) (*resourcepb.R
 		*resourcepb.Request_Mutate,
 		*resourcepb.Request_Action:
 		if routeErr := s.checkCatalogRoute(ctx, finiteRoute(r)); routeErr != nil {
-			return nil, rpcError(s.classify(routeErr))
+			return nil, rpcErrorContext(ctx, "call", s.classify(routeErr))
 		}
 	}
 	out, err := s.dispatch(ctx, r)
@@ -131,11 +131,11 @@ func (s *server) Call(ctx context.Context, r *resourcepb.Request) (*resourcepb.R
 		*resourcepb.Request_Mutate,
 		*resourcepb.Request_Action:
 		if fenceErr := s.checkCatalogRoute(ctx, finiteRoute(r)); fenceErr != nil {
-			return nil, rpcError(s.classify(fenceErr))
+			return nil, rpcErrorContext(ctx, "call", s.classify(fenceErr))
 		}
 	}
 	if err != nil {
-		return nil, rpcError(s.classify(err))
+		return nil, rpcErrorContext(ctx, "call", s.classify(err))
 	}
 	out.Version = resourcev2.WireVersion
 	if err = responseError(out, nil); err != nil {

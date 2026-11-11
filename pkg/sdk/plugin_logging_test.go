@@ -89,3 +89,38 @@ func TestNewPluginReadsOnlySelectedStateRoot(t *testing.T) {
 	t.Setenv("OMNIVIEW_WORKSPACE_FILE", filepath.Join(t.TempDir(), "missing-workspace.json"))
 	require.Panics(t, func() { NewPlugin(PluginOpts{ID: "isolated-plugin"}) })
 }
+
+func newEnvLevelPlugin(t *testing.T, id, envLevel string, debug bool) *Plugin {
+	t.Helper()
+	testutil.SetHome(t, t.TempDir())
+	t.Setenv("OMNIVIEW_STATE_DIR", "")
+	t.Setenv("OMNIVIEW_WORKSPACE_FILE", "")
+	t.Setenv(LogLevelEnvironment, envLevel)
+	writeTestPluginYAML(t, os.Getenv("HOME"), id)
+	oldDefault := logging.Default()
+	t.Cleanup(func() { logging.SetDefault(oldDefault) })
+	return NewPlugin(PluginOpts{ID: id, Debug: debug})
+}
+
+func TestNewPlugin_LogLevelEnvironment(t *testing.T) {
+	ctx := context.Background()
+
+	p := newEnvLevelPlugin(t, "plugin-env-debug", "debug", false)
+	require.True(t, p.Log.Enabled(ctx, logging.LevelDebug))
+
+	p = newEnvLevelPlugin(t, "plugin-env-warn", "warn", false)
+	require.False(t, p.Log.Enabled(ctx, logging.LevelInfo))
+	require.True(t, p.Log.Enabled(ctx, logging.LevelWarn))
+
+	p = newEnvLevelPlugin(t, "plugin-env-bogus", "bogus", false)
+	require.True(t, p.Log.Enabled(ctx, logging.LevelInfo))
+	require.False(t, p.Log.Enabled(ctx, logging.LevelDebug))
+
+	p = newEnvLevelPlugin(t, "plugin-env-empty", "", false)
+	require.True(t, p.Log.Enabled(ctx, logging.LevelInfo))
+	require.False(t, p.Log.Enabled(ctx, logging.LevelDebug))
+
+	// Debug mode wins over a stricter host level.
+	p = newEnvLevelPlugin(t, "plugin-env-debug-wins", "error", true)
+	require.True(t, p.Log.Enabled(ctx, logging.LevelDebug))
+}

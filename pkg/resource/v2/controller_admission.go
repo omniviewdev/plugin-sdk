@@ -148,7 +148,7 @@ func constraintContains(allowed, wanted ScopeConstraint) bool {
 // context, but must not synchronously retire their leased generation.
 func (c *Controller[T]) Catalog(ctx context.Context, request CatalogRequest) (catalog Catalog, err error) {
 	var registration *Registration[T]
-	defer c.guard(&registration, &err)
+	defer c.guardContext(ctx, "catalog", &registration, &err)
 	ctx, _, done, err := c.lease(ctx, request.Route)
 	if err != nil {
 		return Catalog{}, err
@@ -447,7 +447,7 @@ func AdmitOperation(ctx context.Context, provider Provider, request any) (descri
 	}()
 	target, err := describeOperation(request)
 	if err != nil {
-		return descriptor, err
+		return descriptor, admissionRejected(ctx, "admit_operation", err)
 	}
 	if err = ctx.Err(); err != nil {
 		return descriptor, &ResourceOperationError{Code: ErrorCode(err), Err: err}
@@ -468,7 +468,7 @@ func AdmitOperation(ctx context.Context, provider Provider, request any) (descri
 		_, supported = provider.(SourceProvider)
 	}
 	if !supported {
-		return descriptor, NewError("UNSUPPORTED", "Operation handler is not implemented.")
+		return descriptor, admissionRejected(ctx, "admit_operation", NewError("UNSUPPORTED", "Operation handler is not implemented."))
 	}
 	descriptor, err = admitProviderTarget(ctx, provider, target)
 	if err != nil {
@@ -476,7 +476,7 @@ func AdmitOperation(ctx context.Context, provider Provider, request any) (descri
 	}
 	switch value := request.(type) {
 	case NativeQueryRequest:
-		err = ValidateNativeQueryInput(descriptor, value)
+		err = admissionRejected(ctx, "admit_operation", ValidateNativeQueryInput(descriptor, value))
 	case ActionRequest:
 		if value.ExpectedDescriptor != nil {
 			_, err = ResolveActionDescriptor(ctx, provider, value, false)
@@ -502,10 +502,10 @@ func AdmitStreamingAction(
 	}()
 	target, err := describeOperation(request)
 	if err != nil {
-		return descriptor, err
+		return descriptor, admissionRejected(ctx, "admit_streaming_action", err)
 	}
 	if _, ok := provider.(StreamingActioner); !ok {
-		return descriptor, NewError("UNSUPPORTED", "Streaming action handler is not implemented.")
+		return descriptor, admissionRejected(ctx, "admit_streaming_action", NewError("UNSUPPORTED", "Streaming action handler is not implemented."))
 	}
 	descriptor, err = admitProviderTarget(ctx, provider, target)
 	if err == nil && request.ExpectedDescriptor != nil {
@@ -536,7 +536,7 @@ func admitProviderTarget(ctx context.Context, provider Provider, target operatio
 		return ResourceType{}, err
 	}
 	descriptor, _, err := admitTarget(catalog, target)
-	return descriptor, err
+	return descriptor, admissionRejected(ctx, "admit_provider_target", err)
 }
 
 // ValidateOperationResult binds finite provider output to its admitted request
@@ -558,13 +558,13 @@ func ValidateOperationResult(request any, result any, descriptor ResourceType) e
 		if !ok {
 			return NewError("INTERNAL", "Enumeration returned the wrong result type.")
 		}
-		return checkPage(page, descriptor, request.Target, request.PageSize)
+		return checkPage(context.Background(), page, descriptor, request.Target, request.PageSize)
 	case NativeQueryRequest:
 		page, ok := result.(SourcePage)
 		if !ok {
 			return NewError("INTERNAL", "Native query returned the wrong result type.")
 		}
-		return checkPage(page, descriptor, request.Target, request.PageSize)
+		return checkPage(context.Background(), page, descriptor, request.Target, request.PageSize)
 	case MutationRequest:
 		record, ok := result.(Record)
 		if !ok {
@@ -626,7 +626,7 @@ func (c *Controller[T]) resolve(
 		},
 	)
 	if err != nil {
-		return nil, ResourceType{}, err
+		return nil, ResourceType{}, admissionRejected(ctx, "resolve", err)
 	}
 	registrations, err := c.registrations(ctx, route, typ)
 	if err != nil {
@@ -637,13 +637,13 @@ func (c *Controller[T]) resolve(
 		r := &registrations[i]
 		if handles(*r, op) && scopeContains(r.Scope, scope) {
 			if selected != nil {
-				return nil, ResourceType{}, NewError("INTERNAL", "Operation has overlapping registrations.")
+				return nil, ResourceType{}, admissionRejected(ctx, "resolve", NewError("INTERNAL", "Operation has overlapping registrations."))
 			}
 			selected = r
 		}
 	}
 	if selected == nil {
-		return nil, ResourceType{}, NewError("UNSUPPORTED", "Operation handler is not registered.")
+		return nil, ResourceType{}, admissionRejected(ctx, "resolve", NewError("UNSUPPORTED", "Operation handler is not registered."))
 	}
 	return selected, descriptor, nil
 }
@@ -701,12 +701,12 @@ func checkRecord(
 	return NewError("INTERNAL", "Provider response representation is not catalog-bound.")
 }
 
-func checkPage(page SourcePage, descriptor ResourceType, target ReadTarget, size uint32) error {
+func checkPage(ctx context.Context, page SourcePage, descriptor ResourceType, target ReadTarget, size uint32) error {
 	if err := ValidateSourcePage(page); err != nil {
-		return err
+		return admissionPageInvalid(ctx, target, "page_shape", err)
 	}
 	if size != 0 && len(page.Records) > int(size) {
-		return NewError("INTERNAL", "Provider response exceeded requested source page size.")
+		return admissionPageInvalid(ctx, target, "page_size_exceeded", NewError("INTERNAL", "Provider response exceeded requested source page size."))
 	}
 	for i := range page.Records {
 		record := &page.Records[i]
@@ -719,11 +719,11 @@ func checkPage(page SourcePage, descriptor ResourceType, target ReadTarget, size
 			nil,
 			target.Scope,
 		); err != nil {
-			return err
+			return admissionPageInvalid(ctx, target, "record_invalid", err)
 		}
 		for j := range i {
 			if sameAddress(record.Reference.Address, page.Records[j].Reference.Address) {
-				return NewError("INTERNAL", "Source page repeats resource identity.")
+				return admissionPageInvalid(ctx, target, "duplicate_identity", NewError("INTERNAL", "Source page repeats resource identity."))
 			}
 		}
 	}
@@ -742,8 +742,8 @@ func AdmitCatalogOperation(catalog Catalog, request any) (ResourceType, error) {
 	}
 	target, err := describeOperation(request)
 	if err != nil {
-		return ResourceType{}, err
+		return ResourceType{}, admissionRejected(context.Background(), "admit_catalog", err)
 	}
 	descriptor, _, err := admitTarget(catalog, target)
-	return descriptor, err
+	return descriptor, admissionRejected(context.Background(), "admit_catalog", err)
 }

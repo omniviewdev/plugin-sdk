@@ -17,6 +17,7 @@ import (
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	"github.com/omniviewdev/plugin-sdk/pkg/utils"
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 
@@ -235,15 +236,19 @@ func (s *PluginServer) UpdateSessionOptions(
 }
 
 // Stream forwards bidirectional log traffic until the RPC ends or receiving fails.
-func (s *PluginServer) Stream(stream logspb.LogPlugin_StreamServer) error {
+func (s *PluginServer) Stream(stream logspb.LogPlugin_StreamServer) (streamErr error) {
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
+	ctx, obsStream := utils.BeginStream(ctx, s.log, "logs", "log_stream")
+	defer func() { obsStream.Close(ctx, streamErr) }()
 
 	multiplexer := make(chan StreamInput)
 	out, err := s.Impl.Stream(ctx, multiplexer)
 	if err != nil {
+		obsStream.OpenFailed(ctx, err)
 		return err
 	}
+	obsStream.OpenDone()
 
 	// handle the output
 	go s.handleOut(ctx, out, stream)

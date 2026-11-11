@@ -3,8 +3,13 @@ package resourcev2
 import (
 	"context"
 	"errors"
+	"fmt"
+	"runtime/debug"
 
+	"github.com/omniviewdev/plugin-sdk/internal/obs"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func (c *Controller[T]) routeContext(
@@ -55,6 +60,7 @@ func (c *Controller[T]) lease(ctx context.Context, route AccessRoute) (context.C
 	if s == nil || s.stopping {
 		c.mu.Unlock()
 		cancel()
+		obs.Reject(ctx, lifecycleLogger(), "lease", "INVALID_REQUEST", "reason", "connection_not_started")
 		return nil, nil, nil, NewError("INVALID_REQUEST", "Connection is not started.")
 	}
 	c.mu.Unlock()
@@ -96,7 +102,7 @@ func (c *Controller[T]) WithConnection(
 	fn func(context.Context, types.Connection) error,
 ) (err error) {
 	var registration *Registration[T]
-	defer c.guard(&registration, &err)
+	defer c.guardContext(ctx, "with_connection", &registration, &err)
 	if c.cfg.Lifecycle == nil {
 		return NewError("UNSUPPORTED", "Connected utility context is unavailable.")
 	}
@@ -139,7 +145,7 @@ func (c *Controller[T]) WithClient(
 	fn func(context.Context, *T) error,
 ) (err error) {
 	var registration *Registration[T]
-	defer c.guard(&registration, &err)
+	defer c.guardContext(ctx, "with_client", &registration, &err)
 	ctx, client, done, err := c.lease(ctx, route)
 	if err != nil {
 		return err
@@ -185,29 +191,39 @@ func (c *Controller[T]) connection(ctx context.Context, id string) (types.Connec
 	return connection, nil
 }
 
-func (c *Controller[T]) startClient(s *clientSlot[T]) {
+func (c *Controller[T]) startClient(spanCtx context.Context, s *clientSlot[T]) {
+	span := trace.SpanFromContext(spanCtx)
 	defer close(s.ready)
 	defer func() {
-		if recover() != nil {
+		if recovered := recover(); recovered != nil {
 			s.err = NewError("INTERNAL", "Connection start handler panicked.")
+			span.AddEvent("panic_recovered", trace.WithAttributes(attribute.String("panic_type", fmt.Sprintf("%T", recovered))))
+			lifecycleLogger().Errorw(spanCtx, "connection start handler panicked", "connection_id", s.connection.ID, "panic_type", fmt.Sprintf("%T", recovered), "stack", string(debug.Stack()))
 		}
 		if s.err != nil {
 			c.mu.Lock()
+			failed := false
 			if c.clients[s.connection.ID] == s && !s.stopping && !c.changing[s.connection.ID] && s.ctx.Err() == nil {
 				c.failedStarts[s.connection.ID] = true
+				failed = true
 			}
 			c.mu.Unlock()
+			if failed {
+				lifecycleLogger().Warnw(spanCtx, "connection start failed", "connection_id", s.connection.ID, "error_code", obs.ErrorCode(s.err, ErrorCode(s.err)))
+			}
 		}
 	}()
 	connection := cloneConnection(s.connection)
 	session, _ := SessionFromContext(s.ctx)
 	session.Connection = &connection
 	ctx := WithSession(s.ctx, session)
+	span.AddEvent("create_client")
 	s.client, s.err = c.cfg.Lifecycle.CreateClient(ctx, connection)
 	if s.err == nil && s.client == nil {
 		s.err = NewError("INTERNAL", "CreateClient returned a nil client.")
 	}
 	if s.err == nil && c.cfg.Lifecycle.OnStart != nil {
+		span.AddEvent("on_start")
 		s.err = c.cfg.Lifecycle.OnStart(ctx, connection, s.client)
 	}
 	if s.err == nil {
@@ -226,8 +242,10 @@ func (c *Controller[T]) startClient(s *clientSlot[T]) {
 // NOT_FOUND; lifecycle-less controllers return UNSUPPORTED. Calls may overlap
 // readiness inspection, but callbacks must not wait on their own pending start.
 func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status types.ConnectionStatus, err error) {
+	ctx, span, finish := lifecycleStart(ctx, "start", id)
+	defer func() { finish(err) }()
 	var r *Registration[T]
-	defer c.guard(&r, &err)
+	defer c.guardContext(ctx, "start_connection", &r, &err)
 	_, err = c.connection(ctx, id)
 	if err != nil {
 		return status, err
@@ -253,9 +271,13 @@ func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status 
 	}
 	c.mu.Unlock()
 	if created {
+		generation := lifecycleGenerations.Add(1)
+		span.SetAttributes(attribute.Int64("generation", int64(generation)))
 		stop := context.AfterFunc(ctx, s.cancel)
-		c.startClient(s)
+		c.startClient(ctx, s)
 		stop()
+	} else {
+		span.AddEvent("joined_inflight_start")
 	}
 	select {
 	case <-s.ready:
@@ -284,6 +306,7 @@ func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status 
 		return status, NewError("CANCELLED", "Connection is stopping.")
 	}
 	connection = cloneConnection(connection)
+	lifecycleLogger().Infow(ctx, "connection started", "connection_id", id)
 	return types.ConnectionStatus{Connection: &connection, Status: types.ConnectionStatusConnected}, nil
 }
 
@@ -329,6 +352,8 @@ func (c *Controller[T]) stopSlot(s *clientSlot[T]) error {
 	s.destroy.Do(func() {
 		<-s.ready
 		s.users.Wait()
+		_, span, finish := lifecycleStart(context.WithoutCancel(s.ctx), "destroy", s.connection.ID)
+		defer func() { finish(s.destroyErr) }()
 		if s.client != nil {
 			// Cleanup must not inherit the canceled client context.
 			ctx := context.WithoutCancel(s.ctx)
@@ -337,12 +362,17 @@ func (c *Controller[T]) stopSlot(s *clientSlot[T]) error {
 			session.Connection = &connection
 			ctx = WithSession(ctx, session)
 			if c.cfg.Lifecycle.OnStop != nil {
+				span.AddEvent("on_stop")
 				s.destroyErr = lifecycleCall(func() error { return c.cfg.Lifecycle.OnStop(ctx, connection, s.client) })
 			}
+			span.AddEvent("destroy_client")
 			s.destroyErr = errors.Join(
 				s.destroyErr,
 				lifecycleCall(func() error { return c.cfg.Lifecycle.DestroyClient(ctx, s.client) }),
 			)
+			if s.destroyErr != nil {
+				lifecycleLogger().Warnw(ctx, "connection teardown failed", "connection_id", s.connection.ID, "error_code", ErrorCode(s.destroyErr))
+			}
 		}
 		c.mu.Lock()
 		if c.clients[s.connection.ID] == s {
@@ -362,8 +392,10 @@ func (c *Controller[T]) stopSlot(s *clientSlot[T]) error {
 // This can block on callbacks that ignore cancellation; never call synchronously
 // from work holding this generation's lease or from its lifecycle callbacks.
 func (c *Controller[T]) StopConnection(ctx context.Context, id string) (connection types.Connection, err error) {
+	ctx, _, finish := lifecycleStart(ctx, "stop", id)
+	defer func() { finish(err) }()
 	var r *Registration[T]
-	defer c.guard(&r, &err)
+	defer c.guardContext(ctx, "stop_connection", &r, &err)
 	connection, err = c.GetConnection(ctx, id)
 	if err != nil {
 		return connection, err
@@ -380,7 +412,11 @@ func (c *Controller[T]) StopConnection(ctx context.Context, id string) (connecti
 	if s == nil {
 		return connection, nil
 	}
-	return connection, c.stopSlot(s)
+	err = c.stopSlot(s)
+	if err == nil {
+		lifecycleLogger().Infow(ctx, "connection stopped", "connection_id", id)
+	}
+	return connection, err
 }
 
 // GetConnectionStatus snapshots the sole configured-client registry without
@@ -440,7 +476,7 @@ func (c *Controller[T]) GetConnectionStatus(ctx context.Context, id string) (typ
 // Cancellation includes the caller and generation; callbacks must honor it.
 func (c *Controller[T]) CheckConnection(ctx context.Context, id string) (status types.ConnectionStatus, err error) {
 	var r *Registration[T]
-	defer c.guard(&r, &err)
+	defer c.guardContext(ctx, "check_connection", &r, &err)
 	connection, err := c.connection(ctx, id)
 	if err != nil {
 		return status, err
