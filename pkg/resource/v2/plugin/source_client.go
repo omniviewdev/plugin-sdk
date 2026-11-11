@@ -6,12 +6,14 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
@@ -97,6 +99,24 @@ type sourceClientStream struct {
 	once     sync.Once
 }
 
+// sourceBeginTimedOut logs the begin-handshake timeout and returns its domain error.
+func sourceBeginTimedOut(ctx context.Context, sourceID string) error {
+	trace.SpanFromContext(ctx).AddEvent("source.begin_timeout")
+	logging.Default().Warnw(ctx, "source begin timed out", "source_id", sourceID, "timeout_ms", sourceBeginTimeout.Milliseconds(), "error_code", "TIMEOUT")
+	return resourcev2.NewError("TIMEOUT", "source begin timed out")
+}
+
+// sourceSessionTimeout logs the snapshot-progress timeout and returns its domain error.
+func sourceSessionTimeout(ctx context.Context, timeout time.Duration) error {
+	logging.Default().Warnw(ctx, "source session timed out", "timeout_ms", timeout.Milliseconds(), "error_code", "TIMEOUT")
+	return resourcev2.NewError("TIMEOUT", "source session timed out")
+}
+
+// sourceFrameInvalid logs a rejected provider frame with a closed reason; frame content is never logged.
+func sourceFrameInvalid(ctx context.Context, reason string) {
+	logging.Default().Warnw(ctx, "source frame invalid", "reason", reason, "error_code", "PROVIDER_ERROR")
+}
+
 // OpenSourceStream opens a bounded, validated source session.
 func (c *Client) OpenSourceStream(ctx context.Context, r resourcev2.SourceOpenRequest) (resourcev2.SourceStream, error) {
 	snapshotTimeout, ok := ctx.Value(sourceSnapshotProgressTimeoutKey{}).(time.Duration)
@@ -120,7 +140,7 @@ func (c *Client) OpenSourceStream(ctx context.Context, r resourcev2.SourceOpenRe
 	descriptor, err := sourceAdmission(ctx, c, r)
 	if err != nil {
 		if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
-			return nil, resourcev2.NewError("TIMEOUT", "source begin timed out")
+			return nil, sourceBeginTimedOut(ctx, r.SessionID)
 		}
 		return nil, err
 	}
@@ -132,7 +152,7 @@ func (c *Client) OpenSourceStream(ctx context.Context, r resourcev2.SourceOpenRe
 	stream, err := c.conn.NewStream(ctx, &resourcepb.ResourceSources_ServiceDesc.Streams[0], resourcepb.ResourceSources_Open_FullMethodName, grpc.MaxCallRecvMsgSize(int(r.Limits.MaxFrameBytes)), grpc.MaxCallSendMsgSize(256<<10), grpc.PartialMessageReadTimeout(5*time.Second))
 	if err != nil {
 		if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
-			return nil, resourcev2.NewError("TIMEOUT", "source begin timed out")
+			return nil, sourceBeginTimedOut(ctx, r.SessionID)
 		}
 		cancel()
 		return nil, domainError(err)
@@ -142,7 +162,7 @@ func (c *Client) OpenSourceStream(ctx context.Context, r resourcev2.SourceOpenRe
 	}
 	if err != nil {
 		if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
-			return nil, resourcev2.NewError("TIMEOUT", "source begin timed out")
+			return nil, sourceBeginTimedOut(ctx, r.SessionID)
 		}
 		cancel()
 		return nil, domainError(err)
@@ -162,7 +182,7 @@ func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 		}
 		if s.ctx != nil && errors.Is(context.Cause(s.ctx), context.DeadlineExceeded) {
 			s.Close()
-			return zero, resourcev2.NewError("TIMEOUT", "source session timed out")
+			return zero, sourceSessionTimeout(s.ctx, s.snapshotTimeout)
 		}
 		if s.ctx != nil && s.ctx.Err() != nil {
 			s.Close()
@@ -188,10 +208,12 @@ func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 			return zero, e.err
 		}
 		s.Close()
+		sourceFrameInvalid(s.ctx, "envelope_error")
 		return zero, resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
 	}
 	if p.GetVersion() != resourcev2.WireVersion {
 		s.Close()
+		sourceFrameInvalid(s.ctx, "wire_version")
 		return zero, resourcev2.NewError("PROVIDER_ERROR", "invalid source wire version")
 	}
 	f, err := resourcev2.FromProtoSourceFrame(p)
@@ -200,6 +222,7 @@ func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 		if resourcev2.ErrorCode(err) == "RESOURCE_LIMIT" {
 			return zero, err
 		}
+		sourceFrameInvalid(s.ctx, "decode_failed")
 		return zero, resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
 	}
 	if err = s.tracker.AdmitSized(f, proto.Size(p)); err != nil {
@@ -217,7 +240,7 @@ func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 	if s.ctx != nil && s.ctx.Err() != nil {
 		if errors.Is(context.Cause(s.ctx), context.DeadlineExceeded) {
 			s.Close()
-			return zero, resourcev2.NewError("TIMEOUT", "source session timed out")
+			return zero, sourceSessionTimeout(s.ctx, s.snapshotTimeout)
 		}
 		s.Close()
 		return zero, resourcev2.NewError("CANCELLED", "source stream closed")

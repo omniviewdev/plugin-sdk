@@ -3,10 +3,16 @@ package resourcev2
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"maps"
 	"reflect"
+	"runtime/debug"
 	"strconv"
 	"time"
+
+	"github.com/omniviewdev/plugin-sdk/internal/obs"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // All metadata state and subscription queues are protected by Controller.mu.
@@ -51,6 +57,7 @@ func (c *Controller[T]) metadataPublishLocked(m *connectionMetadataState[T], nex
 		default:
 			close(w.overflow)
 			delete(c.metadataWatchers, w)
+			lifecycleLogger().Warnw(c.ctx, "metadata watcher overflow", "watchers", len(c.metadataWatchers))
 		}
 	}
 }
@@ -141,6 +148,7 @@ func (c *Controller[T]) RefreshConnectionMetadata(ctx context.Context, id string
 	m := c.metadata[id]
 	if m == nil || m.slot == nil || m.slot.stopping || c.closed || c.changing[id] {
 		c.mu.Unlock()
+		obs.Reject(ctx, lifecycleLogger(), "refresh_connection_metadata", "CONNECTION_ERROR", "reason", "connection_not_started")
 		return ConnectionMetadataSnapshot{}, NewError("CONNECTION_ERROR", "Connection is not started.")
 	}
 	job := c.metadataAcquireLocked(m)
@@ -166,6 +174,7 @@ func (c *Controller[T]) InvalidateConnectionMetadata(ctx context.Context, id str
 	defer c.mu.Unlock()
 	m := c.metadata[id]
 	if m == nil || m.slot == nil || m.slot.stopping || c.closed {
+		obs.Reject(ctx, lifecycleLogger(), "invalidate_connection_metadata", "CONNECTION_ERROR", "reason", "connection_not_started")
 		return NewError("CONNECTION_ERROR", "Connection is not started.")
 	}
 	if m.running != nil {
@@ -192,16 +201,21 @@ func (c *Controller[T]) metadataAcquireLocked(m *connectionMetadataState[T]) *me
 }
 func (c *Controller[T]) metadataObserve(m *connectionMetadataState[T], slot *clientSlot[T], job *metadataAcquisition) {
 	defer slot.users.Done()
-	ctx, cancel := context.WithTimeout(slot.ctx, 30*time.Second)
+	ctx, span, finish := lifecycleStartNamed(slot.ctx, "metadata.refresh", "refresh", slot.connection.ID)
+	var err error
+	defer func() { finish(err) }()
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	var update ConnectionMetadataUpdate
-	var err error
 	func() {
 		defer func() {
-			if recover() != nil {
+			if recovered := recover(); recovered != nil {
 				err = NewError("INTERNAL", "Connection metadata observation failed.")
+				span.AddEvent("panic_recovered", trace.WithAttributes(attribute.String("panic_type", fmt.Sprintf("%T", recovered))))
+				lifecycleLogger().Errorw(ctx, "connection metadata observer panicked", "connection_id", slot.connection.ID, "panic_type", fmt.Sprintf("%T", recovered), "stack", string(debug.Stack()))
 			}
 		}()
+		span.AddEvent("observe_start")
 		update, err = c.cfg.ConnectionMetadata(ctx, cloneConnection(slot.connection), slot.client)
 		if err == nil {
 			err = ctx.Err()
@@ -256,6 +270,8 @@ func (c *Controller[T]) metadataObserve(m *connectionMetadataState[T], slot *cli
 		err = validateMetadataSnapshotAdmission(next)
 	}
 	if err != nil {
+		span.AddEvent("refresh_failed")
+		lifecycleLogger().Warnw(ctx, "metadata refresh failed", "connection_id", slot.connection.ID, "error_code", obs.ErrorCode(err, ErrorCode(err)))
 		next = m.snapshot
 		next.Refreshing = false
 		next.LastRefreshError = &ConnectionMetadataError{Code: "OBSERVATION_FAILED", Message: "Connection metadata could not be refreshed."}
@@ -279,14 +295,18 @@ func (c *Controller[T]) metadataObserve(m *connectionMetadataState[T], slot *cli
 // sink receives RESET_REQUIRED rather than silently losing an ordered tombstone.
 func (c *Controller[T]) WatchConnectionMetadata(ctx context.Context, sink ConnectionMetadataSink) error {
 	if c.cfg.ConnectionMetadata == nil {
+		obs.Reject(ctx, lifecycleLogger(), "watch_connection_metadata", "UNSUPPORTED", "reason", "metadata_unavailable")
 		return NewError("UNSUPPORTED", "Connection metadata is unavailable.")
 	}
 	if sink == nil {
+		obs.Reject(ctx, lifecycleLogger(), "watch_connection_metadata", "INVALID_REQUEST", "reason", "sink_missing")
 		return NewError("INVALID_REQUEST", "Metadata sink is required.")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	lifecycleLogger().Debugw(ctx, "metadata watch opened")
+	defer func() { lifecycleLogger().Debugw(ctx, "metadata watch closed") }()
 	w := &metadataWatcher{events: make(chan ConnectionMetadataEvent, 64), overflow: make(chan struct{})}
 	c.mu.Lock()
 	if c.closed {
@@ -321,10 +341,12 @@ func (c *Controller[T]) WatchConnectionMetadata(ctx context.Context, sink Connec
 		case <-c.ctx.Done():
 			return c.ctx.Err()
 		case <-w.overflow:
+			c.metadataWatchOverflowed(ctx)
 			return NewError("RESET_REQUIRED", "Metadata subscription must resynchronize.")
 		case event := <-w.events:
 			select {
 			case <-w.overflow:
+				c.metadataWatchOverflowed(ctx)
 				return NewError("RESET_REQUIRED", "Metadata subscription must resynchronize.")
 			default:
 			}
@@ -336,3 +358,9 @@ func (c *Controller[T]) WatchConnectionMetadata(ctx context.Context, sink Connec
 }
 
 var _ ConnectionMetadataProvider = (*Controller[struct{}])(nil)
+
+// metadataWatchOverflowed records a subscriber reset on the watch call's own span.
+func (c *Controller[T]) metadataWatchOverflowed(ctx context.Context) {
+	trace.SpanFromContext(ctx).AddEvent("metadata.watch_overflow")
+	lifecycleLogger().Warnw(ctx, "metadata watch reset required")
+}

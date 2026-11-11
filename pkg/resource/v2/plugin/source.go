@@ -13,6 +13,8 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/omniviewdev/plugin-sdk/internal/obs"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
@@ -47,6 +49,7 @@ func sourceAdmission(ctx context.Context, p resourcev2.Provider, r resourcev2.So
 		return resourcev2.ResourceType{}, err
 	}
 	if !features.Has(resourcev2.FeatureSourceSessions) {
+		obs.Reject(ctx, logging.Default(), "open_source", "UNSUPPORTED", "reason", "source_sessions_unsupported")
 		return resourcev2.ResourceType{}, unsupported("source sessions unsupported")
 	}
 	catalog, err := p.Catalog(ctx, resourcev2.CatalogRequest{Route: r.Target.Route})
@@ -79,6 +82,7 @@ func sourceAdmission(ctx context.Context, p resourcev2.Provider, r resourcev2.So
 			return typ, nil
 		}
 	}
+	obs.Reject(ctx, logging.Default(), "open_source", "RESET_REQUIRED", "reason", "binding_changed")
 	return resourcev2.ResourceType{}, resourcev2.NewError("RESET_REQUIRED", "source binding changed")
 }
 
@@ -89,7 +93,7 @@ func registerSources(s *grpc.Server, owner *server) {
 	s.RegisterService(&desc, &sourceServer{owner: owner})
 }
 
-func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
+func sourceOpenHandler(srv any, stream grpc.ServerStream) (handlerErr error) {
 	s, ok := srv.(*sourceServer)
 	if !ok {
 		return status.Error(codes.Internal, "resource source server unavailable")
@@ -115,6 +119,12 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	closeSource := obs.StreamOpened("source")
+	openedAt := time.Now()
+	defer func() {
+		closeSource()
+		logging.Default().Debugw(ctx, "source stream closed", "source_id", r.SessionID, "grpc_code", status.Code(handlerErr).String(), "duration_ms", time.Since(openedAt).Milliseconds())
+	}()
 	queue := make(chan sourceDelivery, 1)
 	stalled := make(chan struct{})
 	e := &sourceEmitter{ctx: ctx, request: r, queue: queue, stalled: stalled}
@@ -135,6 +145,7 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
 			}
 		}
 		if ctx.Err() != nil {
+			// Expected: the stream was torn down by the peer or the handler; nothing left to report.
 			return
 		}
 		if err == nil {
@@ -145,7 +156,9 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
 				return
 			}
 			if ended {
-				_ = e.Reset(ctx, resourcev2.SourceResetSourceInvalidated, "source ended")
+				if resetErr := e.Reset(ctx, resourcev2.SourceResetSourceInvalidated, "source ended"); resetErr != nil {
+					logging.Default().Debugw(ctx, "source reset frame not delivered", "source_id", r.SessionID, "error_code", obs.ErrorCode(resetErr, resourcev2.ErrorCode(resetErr)))
+				}
 				return
 			}
 			err = resourcev2.NewError("INTERNAL", "source ended before snapshot boundary")
@@ -159,7 +172,9 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
 			done <- rpcError(err)
 			return
 		}
-		_ = e.failure(ctx, err)
+		if failureErr := e.failure(ctx, err); failureErr != nil {
+			logging.Default().Debugw(ctx, "source failure frame not delivered", "source_id", r.SessionID, "error_code", obs.ErrorCode(failureErr, resourcev2.ErrorCode(failureErr)))
+		}
 	}()
 	frames := make(chan *resourcepb.SourceFrame)
 	sent := make(chan error, 1)
@@ -201,6 +216,7 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) error {
 				cancel()
 				d.ack <- limited("source host stalled")
 				// Returning lets gRPC terminate the RPC and unblock SendMsg.
+				logging.Default().Warnw(ctx, "source host stalled", "source_id", r.SessionID, "timeout_ms", sourceSendStallTimeout.Milliseconds(), "error_code", "RESOURCE_LIMIT")
 				return rpcError(limited("source host stalled"))
 			case <-stream.Context().Done():
 				if !timer.Stop() {
