@@ -151,8 +151,10 @@ func mergeScopedActionDescriptors[T any](registrations []Registration[T]) ([]Act
 }
 
 // resolveActionDescriptor selects the same scoped registration as finite dispatch.
-// The streaming lane only changes the execution lane the descriptor must declare;
-// AdmitStreamingAction admits the outer provider's streaming handler separately.
+// The streaming lane only changes the execution lane the descriptor must declare.
+// A registration still needs a finite Action func to be selected, because the
+// catalog derives the action capability from it; AdmitStreamingAction admits the
+// outer provider's streaming handler separately.
 func (c *Controller[T]) resolveActionDescriptor(
 	ctx context.Context,
 	request ActionRequest,

@@ -54,3 +54,28 @@ func TestWrappedControllerResolvesStreamingActionDescriptor(t *testing.T) {
 	_, err = ResolveActionDescriptor(ctx, provider, request("missing"), true)
 	assertControllerCode(t, err, "UNSUPPORTED")
 }
+
+func TestWrappedControllerResolvesStreamingOnlyRegistration(t *testing.T) {
+	cfg := controllerConfig()
+	cfg.Registrations = []Registration[string]{{
+		Type:    "opaque/type",
+		Actions: []ActionDescriptor{{ID: "stream", Scope: ActionScopeInstance, Streaming: true}},
+	}}
+	provider := streamingWrapper{newTestController(t, cfg)}
+	ctx := acceptedControllerContext(context.Background(), t, provider)
+	request := ActionRequest{
+		Route:     controllerTarget().Route,
+		Reference: ResourceReference{Address: controllerAddress()},
+		Action:    "stream",
+		Input:     Value{Kind: "null"},
+	}
+	descriptor, err := ResolveActionDescriptor(ctx, provider, request, true)
+	if err != nil {
+		t.Fatalf("streaming-only registration rejected: %v", err)
+	}
+	if descriptor == nil || !descriptor.Streaming {
+		t.Fatalf("descriptor = %+v, want streaming", descriptor)
+	}
+	_, err = ResolveActionDescriptor(ctx, provider, request, false)
+	assertControllerCode(t, err, "UNSUPPORTED")
+}
