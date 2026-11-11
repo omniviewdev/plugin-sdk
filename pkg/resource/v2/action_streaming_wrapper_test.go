@@ -55,7 +55,9 @@ func TestWrappedControllerResolvesStreamingActionDescriptor(t *testing.T) {
 	assertControllerCode(t, err, "UNSUPPORTED")
 }
 
-func TestWrappedControllerResolvesStreamingOnlyRegistration(t *testing.T) {
+// The catalog derives the action capability from a registration's finite Action
+// func, so a streaming-only registration without one stays unsupported.
+func TestWrappedControllerStreamingOnlyRegistrationWithoutActionStaysUnsupported(t *testing.T) {
 	cfg := controllerConfig()
 	cfg.Registrations = []Registration[string]{{
 		Type:    "opaque/type",
@@ -69,13 +71,6 @@ func TestWrappedControllerResolvesStreamingOnlyRegistration(t *testing.T) {
 		Action:    "stream",
 		Input:     Value{Kind: "null"},
 	}
-	descriptor, err := ResolveActionDescriptor(ctx, provider, request, true)
-	if err != nil {
-		t.Fatalf("streaming-only registration rejected: %v", err)
-	}
-	if descriptor == nil || !descriptor.Streaming {
-		t.Fatalf("descriptor = %+v, want streaming", descriptor)
-	}
-	_, err = ResolveActionDescriptor(ctx, provider, request, false)
+	_, err := ResolveActionDescriptor(ctx, provider, request, true)
 	assertControllerCode(t, err, "UNSUPPORTED")
 }
