@@ -5,8 +5,8 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
-// ResourceSessionWireVersion selects the reviewed canonical resource Value wire.
-const ResourceSessionWireVersion = resourcev2.WireVersion
+// ResourceSessionWireVersion selects the independent canonical exec-session wire.
+const ResourceSessionWireVersion uint32 = 2
 
 // ResourceSessionProvider adds explicit resource-scoped creation while reusing
 // ordinary exec session IDs and attach/output/resize/close lifecycle. The body

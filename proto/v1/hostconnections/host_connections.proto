@@ -4,6 +4,7 @@ package omniview.sdk.hostconnections.v1;
 option go_package = "github.com/omniviewdev/plugin-sdk/proto/v1/hostconnections;hostconnectionspb";
 
 import "proto/resource/v2/domain.proto";
+import "proto/resource/v2/ancillary.proto";
 
 service HostConnections {
   rpc Call(CallRequest) returns (CallResponse);
@@ -13,10 +14,13 @@ message CallRequest {
   string owner_plugin = 1;
   bytes delegation_token = 2;
   string target_id = 3;
+  reserved 6;
+  reserved "schema_document";
   oneof operation {
     omniview.resource.v2.Request resource = 4;
     ResolveTargetInput resolve_target = 5;
-    SchemaDocumentInput schema_document = 6;
+    omniview.resource.v2.SchemaRequest resolve_schema = 7;
+    omniview.resource.v2.SchemaDocumentRequest schema_document_request = 8;
   }
 }
 
@@ -27,16 +31,12 @@ message ResolveTargetInput {
   string representation = 4;
 }
 
-message SchemaDocumentInput {
-  omniview.resource.v2.AccessRoute route = 1;
-  omniview.resource.v2.SchemaDocumentReference reference = 2;
-}
-
 message CallResponse {
   oneof result {
     omniview.resource.v2.Response resource = 1;
     ResolvedTarget resolved_target = 2;
     omniview.resource.v2.SchemaDocument schema_document = 3;
+    omniview.resource.v2.SchemaBinding schema_binding = 4;
   }
 }
 

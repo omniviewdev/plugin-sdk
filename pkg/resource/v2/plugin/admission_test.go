@@ -18,11 +18,8 @@ type qualifiedProvider struct {
 }
 
 func testRepresentation() resourcev2.Representation {
-	return resourcev2.Representation{
-		ID:       "document",
-		Revision: "rep-1",
-		Schema:   resourcev2.SchemaBinding{State: "absent"},
-	}
+	return resourcev2.Representation{ID: "document",
+		Revision: "rep-1"}
 }
 
 func testGet() resourcev2.GetRequest {
@@ -89,7 +86,7 @@ func TestCatalogDeniesDirectProviderDispatch(t *testing.T) {
 	err = c.Invoke(
 		acceptedWireContext(context.Background(), t, NewClient(c), testGet().Route),
 		resourcepb.ResourceProvider_Call_FullMethodName,
-		&resourcepb.Request{Version: 2, Operation: &resourcepb.Request_Get{Get: input}},
+		&resourcepb.Request{Version: resourcev2.WireVersion, Operation: &resourcepb.Request_Get{Get: input}},
 		&out,
 	)
 	if resourcev2.ErrorCode(domainError(err)) != "UNSUPPORTED" {
@@ -123,22 +120,22 @@ type maliciousServer struct {
 
 func (s *maliciousServer) Call(ctx context.Context, in *resourcepb.Request) (*resourcepb.Response, error) {
 	if in.GetFeatures() != nil {
-		return &resourcepb.Response{Version: 2, Result: &resourcepb.Response_Features{Features: &resourcepb.FeatureSet{}}}, nil
+		return &resourcepb.Response{Version: resourcev2.WireVersion, Result: &resourcepb.Response_Features{Features: &resourcepb.FeatureSet{}}}, nil
 	}
-	if in.GetCatalog() != nil {
+	if in.GetCatalogRequest() != nil {
 		v, err := s.provider.Catalog(ctx, resourcev2.CatalogRequest{})
 		if err != nil {
 			return nil, err
 		}
 		p, err := resourcev2.ToProtoCatalog(v)
-		return &resourcepb.Response{Version: 2, Result: &resourcepb.Response_Catalog{Catalog: p}}, err
+		return &resourcepb.Response{Version: resourcev2.WireVersion, Result: &resourcepb.Response_Catalog{Catalog: p}}, err
 	}
 	v, err := s.provider.Get(ctx, testGet())
 	if err != nil {
 		return nil, err
 	}
 	p, err := resourcev2.ToProtoRecord(v)
-	return &resourcepb.Response{Version: 2, Result: &resourcepb.Response_Record{Record: p}}, err
+	return &resourcepb.Response{Version: resourcev2.WireVersion, Result: &resourcepb.Response_Record{Record: p}}, err
 }
 
 func TestClientRejectsEscapedResponse(t *testing.T) {

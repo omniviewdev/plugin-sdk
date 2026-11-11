@@ -2,7 +2,6 @@ package resourcev2
 
 import (
 	"context"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -58,7 +57,7 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 	}
 	foundBinding := false
 	for _, candidate := range descriptor.Representations {
-		if candidate.ID == target.Representation && reflect.DeepEqual(candidate, request.Binding.Representation) {
+		if candidate.ID == target.Representation && candidate == request.Binding.Representation {
 			foundBinding = true
 			break
 		}
@@ -70,7 +69,7 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 	}
 	sourceCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	fenced := &controllerSourceEmitter[T]{controller: c, route: target.Route, descriptor: descriptor, target: target, binding: request.Binding.Representation, emitter: emitter, cancel: cancel, streamCtx: streamCtx, leaseCtx: ctx, updates: operation == OperationSourceUpdates, nextCatalogCheck: time.Now().Add(time.Second)}
+	fenced := &controllerSourceEmitter[T]{controller: c, route: target.Route, descriptor: descriptor, request: request, target: target, binding: request.Binding.Representation, emitter: emitter, cancel: cancel, streamCtx: streamCtx, leaseCtx: ctx, updates: operation == OperationSourceUpdates, nextCatalogCheck: time.Now().Add(time.Second)}
 	if operation == OperationSourceUpdates {
 		var representation Representation
 		for _, candidate := range descriptor.Representations {
@@ -89,7 +88,7 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 		}
 		if err == nil {
 			// A transient catalog failure cannot turn an otherwise completed
-			// source into a terminal failure. A revision mismatch still emits
+			// source into a terminal failure. A selected-contract mismatch emits
 			// bindingChanged; otherwise the transport emits sourceInvalidated.
 			if catalogErr := fenced.checkCatalog(ctx); catalogErr != nil {
 				lifecycleLogger().Debugw(ctx, "source completion catalog check failed", "source_id", request.SessionID, "error_code", obs.ErrorCode(catalogErr, ErrorCode(catalogErr)))
@@ -160,7 +159,7 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 		}
 		observations := make([]SourceObservation, len(page.Records))
 		for i := range page.Records {
-			if !reflect.DeepEqual(page.Records[i].Representation, request.Binding.Representation) {
+			if page.Records[i].Representation != request.Binding.Representation {
 				sourceResetRequired(ctx, "record_representation_changed")
 				return NewError("RESET_REQUIRED", "Source binding changed.")
 			}
@@ -188,6 +187,7 @@ type controllerSourceEmitter[T any] struct {
 	controller       *Controller[T]
 	route            AccessRoute
 	descriptor       ResourceType
+	request          SourceOpenRequest
 	target           ReadTarget
 	binding          Representation
 	emitter          SourceEmitter
@@ -212,7 +212,7 @@ func (e *controllerSourceEmitter[T]) checkCatalog(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err = CheckCatalogRevisionForRoute(ctx, catalog, e.route); err != nil {
+	if err = CheckSourceCatalog(ctx, catalog, e.request, e.descriptor); err != nil {
 		if ErrorCode(err) != "RESET_REQUIRED" {
 			return err
 		}
@@ -245,9 +245,9 @@ func (e *controllerSourceEmitter[T]) Snapshot(ctx context.Context, observations 
 	if err := e.fence(ctx); err != nil {
 		return err
 	}
-	expected := RepresentationRef{ID: e.binding.ID, Revision: e.binding.Revision, SchemaRevision: e.binding.Schema.Revision}
+	expected := e.binding
 	for _, observation := range observations {
-		if !reflect.DeepEqual(observation.Record.Representation, expected) {
+		if observation.Record.Representation != expected {
 			sourceResetRequired(ctx, "record_representation_changed")
 			return NewError("RESET_REQUIRED", "Source binding changed.")
 		}
@@ -267,14 +267,14 @@ func (e *controllerSourceEmitter[T]) Changes(ctx context.Context, changes []Sour
 	if err := e.fence(ctx); err != nil {
 		return err
 	}
-	expected := RepresentationRef{ID: e.binding.ID, Revision: e.binding.Revision, SchemaRevision: e.binding.Schema.Revision}
+	expected := e.binding
 	for _, change := range changes {
 		switch change.Kind {
 		case SourceChangeUpsert:
 			if change.Observation == nil || change.Reference != nil || change.SourceRevision != nil {
 				return NewError("PROVIDER_ERROR", "invalid source upsert")
 			}
-			if !reflect.DeepEqual(change.Observation.Record.Representation, expected) {
+			if change.Observation.Record.Representation != expected {
 				sourceResetRequired(ctx, "record_representation_changed")
 				return NewError("RESET_REQUIRED", "Source binding changed.")
 			}

@@ -15,7 +15,7 @@ import (
 )
 
 // Version is the negotiated host callback protocol version.
-const Version uint32 = 1
+const Version uint32 = 2
 
 // ErrHostConnectionsUnavailable rejects calls without a live process binding.
 var ErrHostConnectionsUnavailable = errors.New("host connections service is unavailable")
@@ -38,18 +38,22 @@ type ResolvedTarget struct {
 type Client interface {
 	Catalog(context.Context, string, resourcev2.CatalogRequest) (resourcev2.Catalog, error)
 	ResolveTarget(context.Context, string, ResolveTargetRequest) (ResolvedTarget, error)
-	GetSchemaDocument(context.Context, string, resourcev2.AccessRoute, resourcev2.SchemaDocumentReference) (resourcev2.SchemaDocument, error)
+	ResolveSchema(context.Context, string, resourcev2.SchemaRequest) (resourcev2.SchemaBinding, error)
+	GetSchemaDocument(context.Context, string, resourcev2.SchemaDocumentRequest) (resourcev2.SchemaDocument, error)
 	Get(context.Context, string, string, resourcev2.GetRequest) (resourcev2.Record, error)
 	Enumerate(context.Context, string, string, resourcev2.EnumerateRequest) (resourcev2.SourcePage, error)
 	Update(context.Context, string, string, resourcev2.MutationRequest) (resourcev2.Record, error)
 }
 
 // Service is the host boundary for one consumer process.
-// Implementations must authorize each token, owner, route, target, and operation.
+// Implementations must authorize each token, owner, route, target, and operation,
+// including the current generation and final access check. Schema document
+// references identify content; they do not grant access to another schema target.
 type Service interface {
 	Catalog(context.Context, []byte, string, resourcev2.CatalogRequest) (resourcev2.Catalog, error)
 	ResolveTarget(context.Context, []byte, string, ResolveTargetRequest) (ResolvedTarget, error)
-	GetSchemaDocument(context.Context, []byte, string, resourcev2.AccessRoute, resourcev2.SchemaDocumentReference) (resourcev2.SchemaDocument, error)
+	ResolveSchema(context.Context, []byte, string, resourcev2.SchemaRequest) (resourcev2.SchemaBinding, error)
+	GetSchemaDocument(context.Context, []byte, string, resourcev2.SchemaDocumentRequest) (resourcev2.SchemaDocument, error)
 	Get(context.Context, []byte, string, string, resourcev2.GetRequest) (resourcev2.Record, error)
 	Enumerate(context.Context, []byte, string, string, resourcev2.EnumerateRequest) (resourcev2.SourcePage, error)
 	Update(context.Context, []byte, string, string, resourcev2.MutationRequest) (resourcev2.Record, error)
@@ -137,8 +141,10 @@ func (c *client) call(ctx context.Context, owner, target string, op any) (*pb.Ca
 		r.Operation = &pb.CallRequest_Resource{Resource: v}
 	case *pb.ResolveTargetInput:
 		r.Operation = &pb.CallRequest_ResolveTarget{ResolveTarget: v}
-	case *pb.SchemaDocumentInput:
-		r.Operation = &pb.CallRequest_SchemaDocument{SchemaDocument: v}
+	case *resourcepb.SchemaRequest:
+		r.Operation = &pb.CallRequest_ResolveSchema{ResolveSchema: v}
+	case *resourcepb.SchemaDocumentRequest:
+		r.Operation = &pb.CallRequest_SchemaDocumentRequest{SchemaDocumentRequest: v}
 	default:
 		return nil, invalid()
 	}
@@ -172,7 +178,7 @@ func (c *client) Catalog(ctx context.Context, owner string, in resourcev2.Catalo
 	if err != nil {
 		return z, err
 	}
-	out, err := c.call(ctx, owner, "", &resourcepb.Request{Version: resourcev2.WireVersion, Operation: &resourcepb.Request_Catalog{Catalog: p}})
+	out, err := c.call(ctx, owner, "", &resourcepb.Request{Version: resourcev2.WireVersion, Operation: &resourcepb.Request_CatalogRequest{CatalogRequest: p}})
 	if err != nil {
 		return z, err
 	}
@@ -218,21 +224,37 @@ func (c *client) ResolveTarget(ctx context.Context, owner string, in ResolveTarg
 	return ResolvedTarget{TargetID: p.GetTargetId(), Target: t}, nil
 }
 
-// GetSchemaDocument retrieves the exact referenced schema without changing its identity.
-func (c *client) GetSchemaDocument(ctx context.Context, owner string, route resourcev2.AccessRoute, ref resourcev2.SchemaDocumentReference) (resourcev2.SchemaDocument, error) {
+// ResolveSchema resolves only the explicitly selected schema target.
+func (c *client) ResolveSchema(ctx context.Context, owner string, in resourcev2.SchemaRequest) (resourcev2.SchemaBinding, error) {
+	var z resourcev2.SchemaBinding
+	if err := c.check(in.Route); err != nil {
+		return z, err
+	}
+	p, err := resourcev2.ToProtoSchemaRequest(in)
+	if err != nil {
+		return z, err
+	}
+	out, err := c.call(ctx, owner, "", p)
+	if err != nil {
+		return z, err
+	}
+	if out.GetSchemaBinding() == nil {
+		return z, invalid()
+	}
+	return resourcev2.FromProtoSchemaBinding(out.GetSchemaBinding())
+}
+
+// GetSchemaDocument retrieves the exact document for an independently authorized target.
+func (c *client) GetSchemaDocument(ctx context.Context, owner string, in resourcev2.SchemaDocumentRequest) (resourcev2.SchemaDocument, error) {
 	var z resourcev2.SchemaDocument
-	if err := c.check(route); err != nil {
+	if err := c.check(in.Request.Route); err != nil {
 		return z, err
 	}
-	r, err := resourcev2.ToProtoAccessRoute(route)
+	p, err := resourcev2.ToProtoSchemaDocumentRequest(in)
 	if err != nil {
 		return z, err
 	}
-	p, err := resourcev2.ToProtoSchemaDocumentReference(ref)
-	if err != nil {
-		return z, err
-	}
-	out, err := c.call(ctx, owner, "", &pb.SchemaDocumentInput{Route: r, Reference: p})
+	out, err := c.call(ctx, owner, "", p)
 	if err != nil {
 		return z, err
 	}
@@ -243,7 +265,7 @@ func (c *client) GetSchemaDocument(ctx context.Context, owner string, route reso
 	if err != nil {
 		return z, err
 	}
-	if d.Reference != ref {
+	if d.Reference != in.Reference {
 		return z, invalid()
 	}
 	return d, nil

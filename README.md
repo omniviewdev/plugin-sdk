@@ -237,9 +237,9 @@ to secret settings.
 
 ## Resource v2 boundary
 
-Resource v2 is an **implementation candidate awaiting public API review**, not
-an approved contract. Providers use handwritten `pkg/resource/v2` values and
-`sdk.RegisterResourcePlugin(plugin, provider)`. Only catalog discovery is required;
+SDK v0.20.0 targets the coordinated resource-v2 cutover described below.
+Providers use handwritten `pkg/resource/v2` values and
+`sdk.RegisterResourcePlugin(plugin, provider)`. Only catalog observation is required;
 finite operations, lifecycle, ancillary traits and source sessions are optional.
 Catalog declarations qualify each operation independently, including create,
 mutation update and delete. `OperationSourceUpdates` never authorizes writes.
@@ -252,6 +252,12 @@ The [Go package overview](pkg/resource/v2/doc.go) links those concepts to the
 [compiling public examples](pkg/resource/v2/example_test.go): catalog-only,
 get-only, controller lifecycle and custom-provider generation issuance.
 
+Resource RPC wire `3` separates support/body formats from optional targeted schemas.
+`Representation` is only `{ID, Revision}`; `SchemaResolver` resolves one selected target.
+`CatalogRequest.Refresh` requests discovery explicitly; ordinary observation performs no schema acquisition.
+Rebuild supported cohorts together; old schema-bearing shapes are rejected, not decoded as new shapes.
+Resource-aware utilities retain their independent wire `2`.
+
 Read the [code review](docs/resource-v2-code-review.md) and
 [specification comparison](docs/resource-v2-spec-review.md) before freezing or
 claiming approval. Connection routes and catalog pins are not permission grants;
@@ -260,9 +266,10 @@ framing are transport details, not provider construction APIs.
 
 Providers must rebuild for the resource v2 contract. Existing nonresource utility
 engines remain; resource-bearing operations use canonical values and strict
-versioned admission without legacy-method fallback. Resource wire version is
-`2`; the shared go-plugin transport remains `1`. Local replacements alone are
-not a consumable release receipt.
+versioned admission without legacy-method fallback. Resource RPC wire version is
+`3`; host callback broker negotiation is `2`. Resource-aware utility lanes remain
+independently `2`, and the shared go-plugin transport remains `1`. Local
+replacements alone are not a consumable release receipt.
 
 `buf.gen.yaml` pins protoc-gen-go `v1.36.11` and protoc-gen-go-grpc `v1.3.0`.
 Use `make proto` for regeneration; remote Buf generators require no ambient
@@ -281,6 +288,8 @@ Protobuf map decoding reuses destination storage for duplicate detection without
 changing entry-error precedence or mutable ownership. Generic metadata traversal
 uses immutable field plans for fixed SDK types; arbitrary caller-defined types
 retain uncached admission, so dynamic types cannot grow a global plan cache.
+Metadata `map[string]string` admission iterates typed entries without reflective
+key/value copies, while retaining the same node, field, depth, and byte budgets.
 
 Profile host and plugin processes separately when evaluating these paths.
 Allocation savings from catalog batching and JSON validation overlap; do not add
@@ -322,6 +331,27 @@ tag, confirm the version's `.info` and `.mod` endpoints at
 with `GOWORK=off GOFLAGS= GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org go mod download -json github.com/omniviewdev/plugin-sdk@<release-tag>`.
 Consumers must pin the new version, update `go.sum`, and pass their own checks
 without a local SDK replacement before their releases are published.
+
+### v0.20.0 coordinated resource release
+
+The `v0.20.0` tag targets Omniview `v0.36.0` and rebuilt resource plugins,
+including Kubernetes `v0.21.0`. Resource wire `3` and host callback broker `2`
+are a breaking cohort; utility wire `2` and process protocol `1` are unchanged.
+Migrate schema-bearing representations and bulk editor-schema lists to
+`Representation{ID, Revision}` and targeted `SchemaResolver` requests. Catalog
+refresh is explicit; optional schemas do not own support revisions or source
+lifetimes. Ongoing source fences retain the selected operational contract and
+the originally admitted native binding epoch.
+
+Keep current streaming-action descriptor resolution and action, lifecycle,
+source, admission, and stream telemetry when rebuilding. Repeat matched
+allocation and end-to-end measurements on the integrated cohort; historical
+profile receipts do not verify this release.
+
+Preserve the root `google.golang.org/grpc` replacement in every consuming module
+until stock gRPC supplies the required scoped receive controls. The existing
+`v0.14.4` retraction remains in force. Publication and coordinated acceptance
+must complete before this source becomes a release receipt.
 
 The workspace-isolation release is `v0.6.0`: it removes the standalone `.devinfo`
 APIs and requires rebuilding plugins against this SDK. It must not reuse the

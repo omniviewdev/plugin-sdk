@@ -30,9 +30,10 @@ func transportSourceRequest() resourcev2.SourceOpenRequest {
 
 type transportSourceProvider struct {
 	qualifiedProvider
-	callback     func(context.Context, resourcev2.SourceEmitter) error
-	capabilities []resourcev2.Capability
-	features     *resourcev2.FeatureSet
+	binding         testCatalogBinding
+	callback        func(context.Context, resourcev2.SourceEmitter) error
+	capabilities    []resourcev2.Capability
+	features        *resourcev2.FeatureSet
 	noSourceUpdates bool
 }
 
@@ -53,7 +54,10 @@ func (p *transportSourceProvider) Catalog(ctx context.Context, r resourcev2.Cata
 		c.Types[0].QueryDimensions = []resourcev2.Dimension{{Name: "region"}}
 		c.Types[0].Capabilities = p.capabilities
 	}
-	return c, err
+	if err != nil {
+		return resourcev2.Catalog{}, err
+	}
+	return p.binding.bind(c)
 }
 func (p *transportSourceProvider) OpenSource(ctx context.Context, _ resourcev2.SourceOpenRequest, e resourcev2.SourceEmitter) error {
 	return p.callback(ctx, e)
@@ -210,7 +214,6 @@ func TestSourceWireRejectsOversizedBatchBeforeDecode(t *testing.T) {
 		}
 	}
 }
-
 
 type hostileSourceServer struct {
 	resourcepb.UnimplementedResourceSourcesServer
@@ -892,9 +895,9 @@ func TestSourceEmitterRejectsWireComplexityOversize(t *testing.T) {
 		return resourcev2.SourceObservation{Record: resourcev2.CompactSourceRecord(item)}
 	}
 	for _, tc := range []struct {
-		name string
+		name         string
 		observations int
-		values int
+		values       int
 	}{
 		{"single snapshot observation", 1, 132000},
 		{"atomic changes", 2, 70000},
@@ -1402,6 +1405,111 @@ func TestSourceTransportHostileValueDepth(t *testing.T) {
 			}
 			if frame.Snapshot == nil || len(frame.Snapshot.Observations) != 1 || !reflect.DeepEqual(frame.Snapshot.Observations[0].Record.Body, value) {
 				t.Fatal("valid nested source body changed in transit")
+			}
+		})
+	}
+}
+
+func TestSourceUpdatesDoNotRequireFiniteEnumeration(t *testing.T) {
+	scope := resourcev2.QueryScope{{Dimension: "region", Match: resourcev2.ScopeAny}}
+	provider := &transportSourceProvider{
+		capabilities: []resourcev2.Capability{{
+			Operation: resourcev2.OperationSourceUpdates, Scope: scope, Guarantee: resourcev2.ContinuityBestEffort,
+		}},
+		callback: func(ctx context.Context, emitter resourcev2.SourceEmitter) error {
+			return emitter.EndSnapshot(ctx, resourcev2.SourceCoverage{
+				Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort,
+			}, resourcev2.ContinuityBestEffort)
+		},
+	}
+	server := grpc.NewServer()
+	RegisterServer(server, provider)
+	client := NewClient(pipe(t, server))
+	request := transportSourceRequest()
+	request.Mode = resourcev2.SourceModeSnapshotAndUpdates
+	request.Target.Scope = scope
+	ctx := acceptedCatalogContext(context.Background(), t, client, request.Target.Route)
+	stream, err := client.OpenSourceStream(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	if frame, err := stream.Recv(); err != nil || frame.Begin == nil {
+		t.Fatalf("source-only begin: %+v %v", frame, err)
+	}
+	if frame, err := stream.Recv(); err != nil || frame.SnapshotEnd == nil || frame.SnapshotEnd.Continuity != resourcev2.ContinuityBestEffort {
+		t.Fatalf("source-only snapshot: %+v %v", frame, err)
+	}
+	if _, err := client.Enumerate(ctx, resourcev2.EnumerateRequest{Target: request.Target}); resourcev2.ErrorCode(err) != "UNSUPPORTED" {
+		t.Fatalf("source-only support granted finite enumeration: %v", err)
+	}
+}
+
+func TestSourceServerCatalogRecheckBound(t *testing.T) {
+	for _, stop := range []string{"timeout", "context"} {
+		t.Run(stop, func(t *testing.T) {
+			provider := &sourceRecheckProvider{stall: true, entered: make(chan context.Context, 1), exited: make(chan error, 1)}
+			request := transportSourceRequest()
+			request.Mode = resourcev2.SourceModeSnapshotAndUpdates
+			catalog, err := provider.Catalog(context.Background(), resourcev2.CatalogRequest{Route: request.Target.Route})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(resourcev2.WithCatalogRevision(context.Background(), catalog.Revision))
+			defer cancel()
+			tracker := resourcev2.NewCatalogBoundSourcePhaseTracker(request, catalog.Types[0])
+			if err := tracker.Admit(resourcev2.SourceFrame{SessionID: request.SessionID, Generation: request.Generation, Sequence: 1, Begin: &resourcev2.SourceBegin{Mode: request.Mode}}); err != nil {
+				t.Fatal(err)
+			}
+			emitter := &sourceEmitter{
+				ctx: ctx, request: request, owner: &server{impl: provider}, descriptor: catalog.Types[0],
+				tracker: tracker, queue: make(chan sourceDelivery, 1), stalled: make(chan struct{}), sequence: 1,
+			}
+			provider.checking.Store(true)
+			sent := make(chan error, 1)
+			started := time.Now()
+			go func() {
+				sent <- emitter.EndSnapshot(ctx, resourcev2.SourceCoverage{Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort}, resourcev2.ContinuityBestEffort)
+			}()
+			var checkCtx context.Context
+			select {
+			case checkCtx = <-provider.entered:
+			case <-time.After(time.Second):
+				t.Fatal("server catalog recheck did not start")
+			}
+			deadline, bounded := checkCtx.Deadline()
+			if !bounded || time.Until(deadline) > 5*time.Second+100*time.Millisecond {
+				t.Error("server catalog recheck lacks a five-second bound")
+				cancel()
+			}
+			want := "TIMEOUT"
+			if stop == "context" {
+				want = "CANCELLED"
+				cancel()
+			}
+			select {
+			case err := <-sent:
+				if resourcev2.ErrorCode(err) != want {
+					t.Errorf("recheck %s: %v", stop, err)
+				}
+				t.Logf("server recheck %s returned after %s", stop, time.Since(started))
+			case <-time.After(6 * time.Second):
+				cancel()
+				t.Fatal("server catalog recheck did not unblock")
+			}
+			select {
+			case err := <-provider.exited:
+				if err == nil {
+					t.Fatal("stalled server catalog did not observe cancellation")
+				}
+			case <-time.After(time.Second):
+				t.Fatal("stalled server catalog callback did not exit")
+			}
+			if len(emitter.queue) != 0 || emitter.sequence != 1 {
+				t.Fatal("failed catalog recheck admitted or queued a source frame")
+			}
+			if bounded && stop == "timeout" && ctx.Err() != nil {
+				t.Fatal("catalog deadline cancelled source context before terminal error delivery")
 			}
 		})
 	}

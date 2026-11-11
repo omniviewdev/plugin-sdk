@@ -287,66 +287,6 @@ func (x *RepresentationBinding) GetRepresentation() *Representation {
 	return nil
 }
 
-type RepresentationRef struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Revision       string                 `protobuf:"bytes,2,opt,name=revision,proto3" json:"revision,omitempty"`
-	SchemaRevision *string                `protobuf:"bytes,3,opt,name=schema_revision,json=schemaRevision,proto3,oneof" json:"schema_revision,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
-}
-
-func (x *RepresentationRef) Reset() {
-	*x = RepresentationRef{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *RepresentationRef) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RepresentationRef) ProtoMessage() {}
-
-func (x *RepresentationRef) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RepresentationRef.ProtoReflect.Descriptor instead.
-func (*RepresentationRef) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *RepresentationRef) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
-}
-
-func (x *RepresentationRef) GetRevision() string {
-	if x != nil {
-		return x.Revision
-	}
-	return ""
-}
-
-func (x *RepresentationRef) GetSchemaRevision() string {
-	if x != nil && x.SchemaRevision != nil {
-		return *x.SchemaRevision
-	}
-	return ""
-}
-
 type SourceOpenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Version       uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
@@ -363,7 +303,7 @@ type SourceOpenRequest struct {
 
 func (x *SourceOpenRequest) Reset() {
 	*x = SourceOpenRequest{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[6]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -375,7 +315,7 @@ func (x *SourceOpenRequest) String() string {
 func (*SourceOpenRequest) ProtoMessage() {}
 
 func (x *SourceOpenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[6]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -388,7 +328,7 @@ func (x *SourceOpenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceOpenRequest.ProtoReflect.Descriptor instead.
 func (*SourceOpenRequest) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{6}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SourceOpenRequest) GetVersion() uint32 {
@@ -457,7 +397,7 @@ type LabelEntry struct {
 
 func (x *LabelEntry) Reset() {
 	*x = LabelEntry{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[7]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -469,7 +409,7 @@ func (x *LabelEntry) String() string {
 func (*LabelEntry) ProtoMessage() {}
 
 func (x *LabelEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[7]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -482,7 +422,7 @@ func (x *LabelEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LabelEntry.ProtoReflect.Descriptor instead.
 func (*LabelEntry) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{7}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *LabelEntry) GetKey() string {
@@ -509,7 +449,7 @@ type ResourceMetadata struct {
 
 func (x *ResourceMetadata) Reset() {
 	*x = ResourceMetadata{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[8]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -521,7 +461,7 @@ func (x *ResourceMetadata) String() string {
 func (*ResourceMetadata) ProtoMessage() {}
 
 func (x *ResourceMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[8]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -534,7 +474,7 @@ func (x *ResourceMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceMetadata.ProtoReflect.Descriptor instead.
 func (*ResourceMetadata) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{8}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ResourceMetadata) GetLabels() []*LabelEntry {
@@ -560,7 +500,7 @@ type FieldPathMember struct {
 
 func (x *FieldPathMember) Reset() {
 	*x = FieldPathMember{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[9]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -572,7 +512,7 @@ func (x *FieldPathMember) String() string {
 func (*FieldPathMember) ProtoMessage() {}
 
 func (x *FieldPathMember) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[9]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -585,7 +525,7 @@ func (x *FieldPathMember) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FieldPathMember.ProtoReflect.Descriptor instead.
 func (*FieldPathMember) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{9}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *FieldPathMember) GetName() string {
@@ -604,7 +544,7 @@ type FieldPathIndex struct {
 
 func (x *FieldPathIndex) Reset() {
 	*x = FieldPathIndex{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[10]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -616,7 +556,7 @@ func (x *FieldPathIndex) String() string {
 func (*FieldPathIndex) ProtoMessage() {}
 
 func (x *FieldPathIndex) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[10]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -629,7 +569,7 @@ func (x *FieldPathIndex) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FieldPathIndex.ProtoReflect.Descriptor instead.
 func (*FieldPathIndex) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{10}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *FieldPathIndex) GetIndex() uint32 {
@@ -652,7 +592,7 @@ type FieldPathSegment struct {
 
 func (x *FieldPathSegment) Reset() {
 	*x = FieldPathSegment{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[11]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -664,7 +604,7 @@ func (x *FieldPathSegment) String() string {
 func (*FieldPathSegment) ProtoMessage() {}
 
 func (x *FieldPathSegment) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[11]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -677,7 +617,7 @@ func (x *FieldPathSegment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FieldPathSegment.ProtoReflect.Descriptor instead.
 func (*FieldPathSegment) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{11}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *FieldPathSegment) GetSegment() isFieldPathSegment_Segment {
@@ -730,7 +670,7 @@ type DocumentFieldPath struct {
 
 func (x *DocumentFieldPath) Reset() {
 	*x = DocumentFieldPath{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[12]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -742,7 +682,7 @@ func (x *DocumentFieldPath) String() string {
 func (*DocumentFieldPath) ProtoMessage() {}
 
 func (x *DocumentFieldPath) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[12]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -755,7 +695,7 @@ func (x *DocumentFieldPath) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DocumentFieldPath.ProtoReflect.Descriptor instead.
 func (*DocumentFieldPath) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{12}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *DocumentFieldPath) GetSegments() []*FieldPathSegment {
@@ -774,7 +714,7 @@ type DocumentCoverage struct {
 
 func (x *DocumentCoverage) Reset() {
 	*x = DocumentCoverage{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[13]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -786,7 +726,7 @@ func (x *DocumentCoverage) String() string {
 func (*DocumentCoverage) ProtoMessage() {}
 
 func (x *DocumentCoverage) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[13]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -799,7 +739,7 @@ func (x *DocumentCoverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DocumentCoverage.ProtoReflect.Descriptor instead.
 func (*DocumentCoverage) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{13}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DocumentCoverage) GetKnownAbsent() []*DocumentFieldPath {
@@ -813,7 +753,7 @@ type SourceRecord struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Reference      *ResourceReference     `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
 	Body           *Value                 `protobuf:"bytes,2,opt,name=body,proto3" json:"body,omitempty"`
-	Representation *RepresentationRef     `protobuf:"bytes,3,opt,name=representation,proto3" json:"representation,omitempty"`
+	Representation *Representation        `protobuf:"bytes,3,opt,name=representation,proto3" json:"representation,omitempty"`
 	Coverage       *Coverage              `protobuf:"bytes,4,opt,name=coverage,proto3" json:"coverage,omitempty"`
 	SourceRevision *string                `protobuf:"bytes,5,opt,name=source_revision,json=sourceRevision,proto3,oneof" json:"source_revision,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -822,7 +762,7 @@ type SourceRecord struct {
 
 func (x *SourceRecord) Reset() {
 	*x = SourceRecord{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[14]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -834,7 +774,7 @@ func (x *SourceRecord) String() string {
 func (*SourceRecord) ProtoMessage() {}
 
 func (x *SourceRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[14]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -847,7 +787,7 @@ func (x *SourceRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceRecord.ProtoReflect.Descriptor instead.
 func (*SourceRecord) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{14}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *SourceRecord) GetReference() *ResourceReference {
@@ -864,7 +804,7 @@ func (x *SourceRecord) GetBody() *Value {
 	return nil
 }
 
-func (x *SourceRecord) GetRepresentation() *RepresentationRef {
+func (x *SourceRecord) GetRepresentation() *Representation {
 	if x != nil {
 		return x.Representation
 	}
@@ -897,7 +837,7 @@ type SourceObservation struct {
 
 func (x *SourceObservation) Reset() {
 	*x = SourceObservation{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[15]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -909,7 +849,7 @@ func (x *SourceObservation) String() string {
 func (*SourceObservation) ProtoMessage() {}
 
 func (x *SourceObservation) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[15]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -922,7 +862,7 @@ func (x *SourceObservation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceObservation.ProtoReflect.Descriptor instead.
 func (*SourceObservation) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{15}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *SourceObservation) GetRecord() *SourceRecord {
@@ -964,7 +904,7 @@ type SourceCoverage struct {
 
 func (x *SourceCoverage) Reset() {
 	*x = SourceCoverage{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[16]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -976,7 +916,7 @@ func (x *SourceCoverage) String() string {
 func (*SourceCoverage) ProtoMessage() {}
 
 func (x *SourceCoverage) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[16]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -989,7 +929,7 @@ func (x *SourceCoverage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceCoverage.ProtoReflect.Descriptor instead.
 func (*SourceCoverage) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{16}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *SourceCoverage) GetEnumeration() string {
@@ -1022,7 +962,7 @@ type SourceBegin struct {
 
 func (x *SourceBegin) Reset() {
 	*x = SourceBegin{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[17]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1034,7 +974,7 @@ func (x *SourceBegin) String() string {
 func (*SourceBegin) ProtoMessage() {}
 
 func (x *SourceBegin) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[17]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1047,7 +987,7 @@ func (x *SourceBegin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceBegin.ProtoReflect.Descriptor instead.
 func (*SourceBegin) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{17}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *SourceBegin) GetMode() string {
@@ -1066,7 +1006,7 @@ type SourceSnapshot struct {
 
 func (x *SourceSnapshot) Reset() {
 	*x = SourceSnapshot{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[18]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1078,7 +1018,7 @@ func (x *SourceSnapshot) String() string {
 func (*SourceSnapshot) ProtoMessage() {}
 
 func (x *SourceSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[18]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1091,7 +1031,7 @@ func (x *SourceSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceSnapshot.ProtoReflect.Descriptor instead.
 func (*SourceSnapshot) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{18}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *SourceSnapshot) GetObservations() []*SourceObservation {
@@ -1111,7 +1051,7 @@ type SourceSnapshotEnd struct {
 
 func (x *SourceSnapshotEnd) Reset() {
 	*x = SourceSnapshotEnd{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[19]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1123,7 +1063,7 @@ func (x *SourceSnapshotEnd) String() string {
 func (*SourceSnapshotEnd) ProtoMessage() {}
 
 func (x *SourceSnapshotEnd) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[19]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1136,7 +1076,7 @@ func (x *SourceSnapshotEnd) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceSnapshotEnd.ProtoReflect.Descriptor instead.
 func (*SourceSnapshotEnd) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{19}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *SourceSnapshotEnd) GetCoverage() *SourceCoverage {
@@ -1163,7 +1103,7 @@ type SourceRemove struct {
 
 func (x *SourceRemove) Reset() {
 	*x = SourceRemove{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[20]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1175,7 +1115,7 @@ func (x *SourceRemove) String() string {
 func (*SourceRemove) ProtoMessage() {}
 
 func (x *SourceRemove) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[20]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1188,7 +1128,7 @@ func (x *SourceRemove) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceRemove.ProtoReflect.Descriptor instead.
 func (*SourceRemove) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{20}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *SourceRemove) GetReference() *ResourceReference {
@@ -1218,7 +1158,7 @@ type SourceChange struct {
 
 func (x *SourceChange) Reset() {
 	*x = SourceChange{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[21]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1230,7 +1170,7 @@ func (x *SourceChange) String() string {
 func (*SourceChange) ProtoMessage() {}
 
 func (x *SourceChange) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[21]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1243,7 +1183,7 @@ func (x *SourceChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceChange.ProtoReflect.Descriptor instead.
 func (*SourceChange) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{21}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SourceChange) GetChange() isSourceChange_Change {
@@ -1297,7 +1237,7 @@ type SourceChanges struct {
 
 func (x *SourceChanges) Reset() {
 	*x = SourceChanges{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[22]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1309,7 +1249,7 @@ func (x *SourceChanges) String() string {
 func (*SourceChanges) ProtoMessage() {}
 
 func (x *SourceChanges) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[22]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1322,7 +1262,7 @@ func (x *SourceChanges) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceChanges.ProtoReflect.Descriptor instead.
 func (*SourceChanges) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{22}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SourceChanges) GetChanges() []*SourceChange {
@@ -1349,7 +1289,7 @@ type SourceReset struct {
 
 func (x *SourceReset) Reset() {
 	*x = SourceReset{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[23]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1361,7 +1301,7 @@ func (x *SourceReset) String() string {
 func (*SourceReset) ProtoMessage() {}
 
 func (x *SourceReset) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[23]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1374,7 +1314,7 @@ func (x *SourceReset) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceReset.ProtoReflect.Descriptor instead.
 func (*SourceReset) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{23}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *SourceReset) GetReason() string {
@@ -1401,7 +1341,7 @@ type SourceFailure struct {
 
 func (x *SourceFailure) Reset() {
 	*x = SourceFailure{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[24]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1413,7 +1353,7 @@ func (x *SourceFailure) String() string {
 func (*SourceFailure) ProtoMessage() {}
 
 func (x *SourceFailure) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[24]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1426,7 +1366,7 @@ func (x *SourceFailure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceFailure.ProtoReflect.Descriptor instead.
 func (*SourceFailure) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{24}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SourceFailure) GetCode() string {
@@ -1464,7 +1404,7 @@ type SourceFrame struct {
 
 func (x *SourceFrame) Reset() {
 	*x = SourceFrame{}
-	mi := &file_proto_resource_v2_source_proto_msgTypes[25]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1476,7 +1416,7 @@ func (x *SourceFrame) String() string {
 func (*SourceFrame) ProtoMessage() {}
 
 func (x *SourceFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_source_proto_msgTypes[25]
+	mi := &file_proto_resource_v2_source_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1489,7 +1429,7 @@ func (x *SourceFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceFrame.ProtoReflect.Descriptor instead.
 func (*SourceFrame) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{25}
+	return file_proto_resource_v2_source_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *SourceFrame) GetVersion() uint32 {
@@ -1638,12 +1578,7 @@ const file_proto_resource_v2_source_proto_rawDesc = "" +
 	"\fnative_query\x18\x02 \x01(\v2'.omniview.resource.v2.SourceNativeQueryH\x00R\vnativeQueryB\x06\n" +
 	"\x04kind\"e\n" +
 	"\x15RepresentationBinding\x12L\n" +
-	"\x0erepresentation\x18\x01 \x01(\v2$.omniview.resource.v2.RepresentationR\x0erepresentation\"\x81\x01\n" +
-	"\x11RepresentationRef\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
-	"\brevision\x18\x02 \x01(\tR\brevision\x12,\n" +
-	"\x0fschema_revision\x18\x03 \x01(\tH\x00R\x0eschemaRevision\x88\x01\x01B\x12\n" +
-	"\x10_schema_revision\"\x88\x03\n" +
+	"\x0erepresentation\x18\x01 \x01(\v2$.omniview.resource.v2.RepresentationR\x0erepresentation\"\x88\x03\n" +
 	"\x11SourceOpenRequest\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1d\n" +
 	"\n" +
@@ -1675,11 +1610,11 @@ const file_proto_resource_v2_source_proto_rawDesc = "" +
 	"\x11DocumentFieldPath\x12B\n" +
 	"\bsegments\x18\x01 \x03(\v2&.omniview.resource.v2.FieldPathSegmentR\bsegments\"^\n" +
 	"\x10DocumentCoverage\x12J\n" +
-	"\fknown_absent\x18\x01 \x03(\v2'.omniview.resource.v2.DocumentFieldPathR\vknownAbsent\"\xd5\x02\n" +
+	"\fknown_absent\x18\x01 \x03(\v2'.omniview.resource.v2.DocumentFieldPathR\vknownAbsent\"\xd2\x02\n" +
 	"\fSourceRecord\x12E\n" +
 	"\treference\x18\x01 \x01(\v2'.omniview.resource.v2.ResourceReferenceR\treference\x12/\n" +
-	"\x04body\x18\x02 \x01(\v2\x1b.omniview.resource.v2.ValueR\x04body\x12O\n" +
-	"\x0erepresentation\x18\x03 \x01(\v2'.omniview.resource.v2.RepresentationRefR\x0erepresentation\x12:\n" +
+	"\x04body\x18\x02 \x01(\v2\x1b.omniview.resource.v2.ValueR\x04body\x12L\n" +
+	"\x0erepresentation\x18\x03 \x01(\v2$.omniview.resource.v2.RepresentationR\x0erepresentation\x12:\n" +
 	"\bcoverage\x18\x04 \x01(\v2\x1e.omniview.resource.v2.CoverageR\bcoverage\x12,\n" +
 	"\x0fsource_revision\x18\x05 \x01(\tH\x00R\x0esourceRevision\x88\x01\x01B\x12\n" +
 	"\x10_source_revision\"\xa7\x02\n" +
@@ -1750,78 +1685,77 @@ func file_proto_resource_v2_source_proto_rawDescGZIP() []byte {
 	return file_proto_resource_v2_source_proto_rawDescData
 }
 
-var file_proto_resource_v2_source_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_proto_resource_v2_source_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_proto_resource_v2_source_proto_goTypes = []any{
 	(*SourceLimits)(nil),          // 0: omniview.resource.v2.SourceLimits
 	(*SourceEnumerate)(nil),       // 1: omniview.resource.v2.SourceEnumerate
 	(*SourceNativeQuery)(nil),     // 2: omniview.resource.v2.SourceNativeQuery
 	(*SourceAcquisition)(nil),     // 3: omniview.resource.v2.SourceAcquisition
 	(*RepresentationBinding)(nil), // 4: omniview.resource.v2.RepresentationBinding
-	(*RepresentationRef)(nil),     // 5: omniview.resource.v2.RepresentationRef
-	(*SourceOpenRequest)(nil),     // 6: omniview.resource.v2.SourceOpenRequest
-	(*LabelEntry)(nil),            // 7: omniview.resource.v2.LabelEntry
-	(*ResourceMetadata)(nil),      // 8: omniview.resource.v2.ResourceMetadata
-	(*FieldPathMember)(nil),       // 9: omniview.resource.v2.FieldPathMember
-	(*FieldPathIndex)(nil),        // 10: omniview.resource.v2.FieldPathIndex
-	(*FieldPathSegment)(nil),      // 11: omniview.resource.v2.FieldPathSegment
-	(*DocumentFieldPath)(nil),     // 12: omniview.resource.v2.DocumentFieldPath
-	(*DocumentCoverage)(nil),      // 13: omniview.resource.v2.DocumentCoverage
-	(*SourceRecord)(nil),          // 14: omniview.resource.v2.SourceRecord
-	(*SourceObservation)(nil),     // 15: omniview.resource.v2.SourceObservation
-	(*SourceCoverage)(nil),        // 16: omniview.resource.v2.SourceCoverage
-	(*SourceBegin)(nil),           // 17: omniview.resource.v2.SourceBegin
-	(*SourceSnapshot)(nil),        // 18: omniview.resource.v2.SourceSnapshot
-	(*SourceSnapshotEnd)(nil),     // 19: omniview.resource.v2.SourceSnapshotEnd
-	(*SourceRemove)(nil),          // 20: omniview.resource.v2.SourceRemove
-	(*SourceChange)(nil),          // 21: omniview.resource.v2.SourceChange
-	(*SourceChanges)(nil),         // 22: omniview.resource.v2.SourceChanges
-	(*SourceReset)(nil),           // 23: omniview.resource.v2.SourceReset
-	(*SourceFailure)(nil),         // 24: omniview.resource.v2.SourceFailure
-	(*SourceFrame)(nil),           // 25: omniview.resource.v2.SourceFrame
-	(*Value)(nil),                 // 26: omniview.resource.v2.Value
-	(*Representation)(nil),        // 27: omniview.resource.v2.Representation
-	(*ReadTarget)(nil),            // 28: omniview.resource.v2.ReadTarget
-	(*TimestampValue)(nil),        // 29: omniview.resource.v2.TimestampValue
-	(*ResourceReference)(nil),     // 30: omniview.resource.v2.ResourceReference
-	(*Coverage)(nil),              // 31: omniview.resource.v2.Coverage
+	(*SourceOpenRequest)(nil),     // 5: omniview.resource.v2.SourceOpenRequest
+	(*LabelEntry)(nil),            // 6: omniview.resource.v2.LabelEntry
+	(*ResourceMetadata)(nil),      // 7: omniview.resource.v2.ResourceMetadata
+	(*FieldPathMember)(nil),       // 8: omniview.resource.v2.FieldPathMember
+	(*FieldPathIndex)(nil),        // 9: omniview.resource.v2.FieldPathIndex
+	(*FieldPathSegment)(nil),      // 10: omniview.resource.v2.FieldPathSegment
+	(*DocumentFieldPath)(nil),     // 11: omniview.resource.v2.DocumentFieldPath
+	(*DocumentCoverage)(nil),      // 12: omniview.resource.v2.DocumentCoverage
+	(*SourceRecord)(nil),          // 13: omniview.resource.v2.SourceRecord
+	(*SourceObservation)(nil),     // 14: omniview.resource.v2.SourceObservation
+	(*SourceCoverage)(nil),        // 15: omniview.resource.v2.SourceCoverage
+	(*SourceBegin)(nil),           // 16: omniview.resource.v2.SourceBegin
+	(*SourceSnapshot)(nil),        // 17: omniview.resource.v2.SourceSnapshot
+	(*SourceSnapshotEnd)(nil),     // 18: omniview.resource.v2.SourceSnapshotEnd
+	(*SourceRemove)(nil),          // 19: omniview.resource.v2.SourceRemove
+	(*SourceChange)(nil),          // 20: omniview.resource.v2.SourceChange
+	(*SourceChanges)(nil),         // 21: omniview.resource.v2.SourceChanges
+	(*SourceReset)(nil),           // 22: omniview.resource.v2.SourceReset
+	(*SourceFailure)(nil),         // 23: omniview.resource.v2.SourceFailure
+	(*SourceFrame)(nil),           // 24: omniview.resource.v2.SourceFrame
+	(*Value)(nil),                 // 25: omniview.resource.v2.Value
+	(*Representation)(nil),        // 26: omniview.resource.v2.Representation
+	(*ReadTarget)(nil),            // 27: omniview.resource.v2.ReadTarget
+	(*TimestampValue)(nil),        // 28: omniview.resource.v2.TimestampValue
+	(*ResourceReference)(nil),     // 29: omniview.resource.v2.ResourceReference
+	(*Coverage)(nil),              // 30: omniview.resource.v2.Coverage
 }
 var file_proto_resource_v2_source_proto_depIdxs = []int32{
-	26, // 0: omniview.resource.v2.SourceNativeQuery.query:type_name -> omniview.resource.v2.Value
+	25, // 0: omniview.resource.v2.SourceNativeQuery.query:type_name -> omniview.resource.v2.Value
 	1,  // 1: omniview.resource.v2.SourceAcquisition.enumerate:type_name -> omniview.resource.v2.SourceEnumerate
 	2,  // 2: omniview.resource.v2.SourceAcquisition.native_query:type_name -> omniview.resource.v2.SourceNativeQuery
-	27, // 3: omniview.resource.v2.RepresentationBinding.representation:type_name -> omniview.resource.v2.Representation
-	28, // 4: omniview.resource.v2.SourceOpenRequest.target:type_name -> omniview.resource.v2.ReadTarget
+	26, // 3: omniview.resource.v2.RepresentationBinding.representation:type_name -> omniview.resource.v2.Representation
+	27, // 4: omniview.resource.v2.SourceOpenRequest.target:type_name -> omniview.resource.v2.ReadTarget
 	3,  // 5: omniview.resource.v2.SourceOpenRequest.acquisition:type_name -> omniview.resource.v2.SourceAcquisition
 	0,  // 6: omniview.resource.v2.SourceOpenRequest.limits:type_name -> omniview.resource.v2.SourceLimits
 	4,  // 7: omniview.resource.v2.SourceOpenRequest.binding:type_name -> omniview.resource.v2.RepresentationBinding
-	7,  // 8: omniview.resource.v2.ResourceMetadata.labels:type_name -> omniview.resource.v2.LabelEntry
-	29, // 9: omniview.resource.v2.ResourceMetadata.created_at:type_name -> omniview.resource.v2.TimestampValue
-	9,  // 10: omniview.resource.v2.FieldPathSegment.member:type_name -> omniview.resource.v2.FieldPathMember
-	10, // 11: omniview.resource.v2.FieldPathSegment.index:type_name -> omniview.resource.v2.FieldPathIndex
-	11, // 12: omniview.resource.v2.DocumentFieldPath.segments:type_name -> omniview.resource.v2.FieldPathSegment
-	12, // 13: omniview.resource.v2.DocumentCoverage.known_absent:type_name -> omniview.resource.v2.DocumentFieldPath
-	30, // 14: omniview.resource.v2.SourceRecord.reference:type_name -> omniview.resource.v2.ResourceReference
-	26, // 15: omniview.resource.v2.SourceRecord.body:type_name -> omniview.resource.v2.Value
-	5,  // 16: omniview.resource.v2.SourceRecord.representation:type_name -> omniview.resource.v2.RepresentationRef
-	31, // 17: omniview.resource.v2.SourceRecord.coverage:type_name -> omniview.resource.v2.Coverage
-	14, // 18: omniview.resource.v2.SourceObservation.record:type_name -> omniview.resource.v2.SourceRecord
-	8,  // 19: omniview.resource.v2.SourceObservation.metadata:type_name -> omniview.resource.v2.ResourceMetadata
-	13, // 20: omniview.resource.v2.SourceObservation.document_coverage:type_name -> omniview.resource.v2.DocumentCoverage
-	15, // 21: omniview.resource.v2.SourceSnapshot.observations:type_name -> omniview.resource.v2.SourceObservation
-	16, // 22: omniview.resource.v2.SourceSnapshotEnd.coverage:type_name -> omniview.resource.v2.SourceCoverage
-	30, // 23: omniview.resource.v2.SourceRemove.reference:type_name -> omniview.resource.v2.ResourceReference
-	15, // 24: omniview.resource.v2.SourceChange.upsert:type_name -> omniview.resource.v2.SourceObservation
-	20, // 25: omniview.resource.v2.SourceChange.remove:type_name -> omniview.resource.v2.SourceRemove
-	21, // 26: omniview.resource.v2.SourceChanges.changes:type_name -> omniview.resource.v2.SourceChange
-	16, // 27: omniview.resource.v2.SourceChanges.coverage:type_name -> omniview.resource.v2.SourceCoverage
-	17, // 28: omniview.resource.v2.SourceFrame.begin:type_name -> omniview.resource.v2.SourceBegin
-	18, // 29: omniview.resource.v2.SourceFrame.snapshot:type_name -> omniview.resource.v2.SourceSnapshot
-	19, // 30: omniview.resource.v2.SourceFrame.snapshot_end:type_name -> omniview.resource.v2.SourceSnapshotEnd
-	22, // 31: omniview.resource.v2.SourceFrame.changes:type_name -> omniview.resource.v2.SourceChanges
-	23, // 32: omniview.resource.v2.SourceFrame.reset:type_name -> omniview.resource.v2.SourceReset
-	24, // 33: omniview.resource.v2.SourceFrame.failed:type_name -> omniview.resource.v2.SourceFailure
-	6,  // 34: omniview.resource.v2.ResourceSources.Open:input_type -> omniview.resource.v2.SourceOpenRequest
-	25, // 35: omniview.resource.v2.ResourceSources.Open:output_type -> omniview.resource.v2.SourceFrame
+	6,  // 8: omniview.resource.v2.ResourceMetadata.labels:type_name -> omniview.resource.v2.LabelEntry
+	28, // 9: omniview.resource.v2.ResourceMetadata.created_at:type_name -> omniview.resource.v2.TimestampValue
+	8,  // 10: omniview.resource.v2.FieldPathSegment.member:type_name -> omniview.resource.v2.FieldPathMember
+	9,  // 11: omniview.resource.v2.FieldPathSegment.index:type_name -> omniview.resource.v2.FieldPathIndex
+	10, // 12: omniview.resource.v2.DocumentFieldPath.segments:type_name -> omniview.resource.v2.FieldPathSegment
+	11, // 13: omniview.resource.v2.DocumentCoverage.known_absent:type_name -> omniview.resource.v2.DocumentFieldPath
+	29, // 14: omniview.resource.v2.SourceRecord.reference:type_name -> omniview.resource.v2.ResourceReference
+	25, // 15: omniview.resource.v2.SourceRecord.body:type_name -> omniview.resource.v2.Value
+	26, // 16: omniview.resource.v2.SourceRecord.representation:type_name -> omniview.resource.v2.Representation
+	30, // 17: omniview.resource.v2.SourceRecord.coverage:type_name -> omniview.resource.v2.Coverage
+	13, // 18: omniview.resource.v2.SourceObservation.record:type_name -> omniview.resource.v2.SourceRecord
+	7,  // 19: omniview.resource.v2.SourceObservation.metadata:type_name -> omniview.resource.v2.ResourceMetadata
+	12, // 20: omniview.resource.v2.SourceObservation.document_coverage:type_name -> omniview.resource.v2.DocumentCoverage
+	14, // 21: omniview.resource.v2.SourceSnapshot.observations:type_name -> omniview.resource.v2.SourceObservation
+	15, // 22: omniview.resource.v2.SourceSnapshotEnd.coverage:type_name -> omniview.resource.v2.SourceCoverage
+	29, // 23: omniview.resource.v2.SourceRemove.reference:type_name -> omniview.resource.v2.ResourceReference
+	14, // 24: omniview.resource.v2.SourceChange.upsert:type_name -> omniview.resource.v2.SourceObservation
+	19, // 25: omniview.resource.v2.SourceChange.remove:type_name -> omniview.resource.v2.SourceRemove
+	20, // 26: omniview.resource.v2.SourceChanges.changes:type_name -> omniview.resource.v2.SourceChange
+	15, // 27: omniview.resource.v2.SourceChanges.coverage:type_name -> omniview.resource.v2.SourceCoverage
+	16, // 28: omniview.resource.v2.SourceFrame.begin:type_name -> omniview.resource.v2.SourceBegin
+	17, // 29: omniview.resource.v2.SourceFrame.snapshot:type_name -> omniview.resource.v2.SourceSnapshot
+	18, // 30: omniview.resource.v2.SourceFrame.snapshot_end:type_name -> omniview.resource.v2.SourceSnapshotEnd
+	21, // 31: omniview.resource.v2.SourceFrame.changes:type_name -> omniview.resource.v2.SourceChanges
+	22, // 32: omniview.resource.v2.SourceFrame.reset:type_name -> omniview.resource.v2.SourceReset
+	23, // 33: omniview.resource.v2.SourceFrame.failed:type_name -> omniview.resource.v2.SourceFailure
+	5,  // 34: omniview.resource.v2.ResourceSources.Open:input_type -> omniview.resource.v2.SourceOpenRequest
+	24, // 35: omniview.resource.v2.ResourceSources.Open:output_type -> omniview.resource.v2.SourceFrame
 	35, // [35:36] is the sub-list for method output_type
 	34, // [34:35] is the sub-list for method input_type
 	34, // [34:34] is the sub-list for extension type_name
@@ -1839,19 +1773,18 @@ func file_proto_resource_v2_source_proto_init() {
 		(*SourceAcquisition_Enumerate)(nil),
 		(*SourceAcquisition_NativeQuery)(nil),
 	}
-	file_proto_resource_v2_source_proto_msgTypes[5].OneofWrappers = []any{}
-	file_proto_resource_v2_source_proto_msgTypes[11].OneofWrappers = []any{
+	file_proto_resource_v2_source_proto_msgTypes[10].OneofWrappers = []any{
 		(*FieldPathSegment_Member)(nil),
 		(*FieldPathSegment_Index)(nil),
 	}
+	file_proto_resource_v2_source_proto_msgTypes[13].OneofWrappers = []any{}
 	file_proto_resource_v2_source_proto_msgTypes[14].OneofWrappers = []any{}
-	file_proto_resource_v2_source_proto_msgTypes[15].OneofWrappers = []any{}
-	file_proto_resource_v2_source_proto_msgTypes[20].OneofWrappers = []any{}
-	file_proto_resource_v2_source_proto_msgTypes[21].OneofWrappers = []any{
+	file_proto_resource_v2_source_proto_msgTypes[19].OneofWrappers = []any{}
+	file_proto_resource_v2_source_proto_msgTypes[20].OneofWrappers = []any{
 		(*SourceChange_Upsert)(nil),
 		(*SourceChange_Remove)(nil),
 	}
-	file_proto_resource_v2_source_proto_msgTypes[25].OneofWrappers = []any{
+	file_proto_resource_v2_source_proto_msgTypes[24].OneofWrappers = []any{
 		(*SourceFrame_Begin)(nil),
 		(*SourceFrame_Snapshot)(nil),
 		(*SourceFrame_SnapshotEnd)(nil),
@@ -1865,7 +1798,7 @@ func file_proto_resource_v2_source_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_resource_v2_source_proto_rawDesc), len(file_proto_resource_v2_source_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   26,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

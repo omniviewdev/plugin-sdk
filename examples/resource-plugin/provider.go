@@ -17,22 +17,59 @@ const (
 //go:embed data/*.json
 var notes embed.FS
 
-func newProvider() (*resourcev2.Controller[struct{}], error) {
-	return resourcev2.NewController(resourcev2.Config[struct{}]{
+type noteProvider struct {
+	*resourcev2.Controller[struct{}]
+}
+
+func newProvider() (*noteProvider, error) {
+	controller, err := resourcev2.NewController(resourcev2.Config[struct{}]{
 		Catalog: catalog,
 		Registrations: []resourcev2.Registration[struct{}]{{
 			Type: resourceTypeID,
 			Get:  getNote,
 		}},
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &noteProvider{Controller: controller}, nil
 }
 
 func nativeRepresentation() resourcev2.Representation {
-	return resourcev2.Representation{
-		ID:       representationID,
-		Revision: "1",
-		Schema:   resourcev2.SchemaBinding{State: "absent"},
+	return resourcev2.Representation{ID: representationID, Revision: "1"}
+}
+
+func (p *noteProvider) Features(ctx context.Context) (resourcev2.FeatureSet, error) {
+	features, err := p.Controller.Features(ctx)
+	if err != nil {
+		return resourcev2.FeatureSet{}, err
 	}
+	features.Traits = append(features.Traits, resourcev2.FeatureSchemaResolver)
+	return features, nil
+}
+
+// ResolveSchema positively knows that the embedded note format has no schema.
+// Other formats and auxiliary keys are unsupported, not fabricated absence.
+func (p *noteProvider) ResolveSchema(ctx context.Context, request resourcev2.SchemaRequest) (resourcev2.SchemaBinding, error) {
+	if err := resourcev2.ValidateSchemaRequest(request); err != nil {
+		return resourcev2.SchemaBinding{}, err
+	}
+	err := p.WithClient(ctx, request.Route, func(bound context.Context, _ *struct{}) error {
+		if err := checkRoute(bound, request.Route); err != nil {
+			return err
+		}
+		if request.Type != resourceTypeID || request.Target.Representation == nil {
+			return resourcev2.NewError("UNSUPPORTED", "The selected schema target is not supported.")
+		}
+		if *request.Target.Representation != nativeRepresentation() {
+			return resourcev2.NewError("RESET_REQUIRED", "The selected body format changed.")
+		}
+		return bound.Err()
+	})
+	if err != nil {
+		return resourcev2.SchemaBinding{}, err
+	}
+	return resourcev2.SchemaBinding{State: "absent"}, nil
 }
 
 func checkRoute(ctx context.Context, route resourcev2.AccessRoute) error {

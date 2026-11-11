@@ -42,10 +42,11 @@ func ancillaryRoutes(r *resourcepb.AncillaryRequest) []*resourcepb.AccessRoute {
 		ancillarySchemaDocument,
 		ancillaryGroups,
 		ancillaryDefinition,
-		ancillaryEditorSchemas,
 		ancillaryActions,
 		ancillaryRelationships:
 		return []*resourcepb.AccessRoute{r.Route}
+	case ancillaryResolveSchema:
+		return []*resourcepb.AccessRoute{r.GetSchemaRequest().GetRoute()}
 	case ancillaryHealth, ancillaryEvents:
 		return []*resourcepb.AccessRoute{r.Get.GetRoute()}
 	}

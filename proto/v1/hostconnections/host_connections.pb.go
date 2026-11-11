@@ -31,7 +31,8 @@ type CallRequest struct {
 	//
 	//	*CallRequest_Resource
 	//	*CallRequest_ResolveTarget
-	//	*CallRequest_SchemaDocument
+	//	*CallRequest_ResolveSchema
+	//	*CallRequest_SchemaDocumentRequest
 	Operation     isCallRequest_Operation `protobuf_oneof:"operation"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -113,10 +114,19 @@ func (x *CallRequest) GetResolveTarget() *ResolveTargetInput {
 	return nil
 }
 
-func (x *CallRequest) GetSchemaDocument() *SchemaDocumentInput {
+func (x *CallRequest) GetResolveSchema() *v2.SchemaRequest {
 	if x != nil {
-		if x, ok := x.Operation.(*CallRequest_SchemaDocument); ok {
-			return x.SchemaDocument
+		if x, ok := x.Operation.(*CallRequest_ResolveSchema); ok {
+			return x.ResolveSchema
+		}
+	}
+	return nil
+}
+
+func (x *CallRequest) GetSchemaDocumentRequest() *v2.SchemaDocumentRequest {
+	if x != nil {
+		if x, ok := x.Operation.(*CallRequest_SchemaDocumentRequest); ok {
+			return x.SchemaDocumentRequest
 		}
 	}
 	return nil
@@ -134,15 +144,21 @@ type CallRequest_ResolveTarget struct {
 	ResolveTarget *ResolveTargetInput `protobuf:"bytes,5,opt,name=resolve_target,json=resolveTarget,proto3,oneof"`
 }
 
-type CallRequest_SchemaDocument struct {
-	SchemaDocument *SchemaDocumentInput `protobuf:"bytes,6,opt,name=schema_document,json=schemaDocument,proto3,oneof"`
+type CallRequest_ResolveSchema struct {
+	ResolveSchema *v2.SchemaRequest `protobuf:"bytes,7,opt,name=resolve_schema,json=resolveSchema,proto3,oneof"`
+}
+
+type CallRequest_SchemaDocumentRequest struct {
+	SchemaDocumentRequest *v2.SchemaDocumentRequest `protobuf:"bytes,8,opt,name=schema_document_request,json=schemaDocumentRequest,proto3,oneof"`
 }
 
 func (*CallRequest_Resource) isCallRequest_Operation() {}
 
 func (*CallRequest_ResolveTarget) isCallRequest_Operation() {}
 
-func (*CallRequest_SchemaDocument) isCallRequest_Operation() {}
+func (*CallRequest_ResolveSchema) isCallRequest_Operation() {}
+
+func (*CallRequest_SchemaDocumentRequest) isCallRequest_Operation() {}
 
 type ResolveTargetInput struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
@@ -212,58 +228,6 @@ func (x *ResolveTargetInput) GetRepresentation() string {
 	return ""
 }
 
-type SchemaDocumentInput struct {
-	state         protoimpl.MessageState      `protogen:"open.v1"`
-	Route         *v2.AccessRoute             `protobuf:"bytes,1,opt,name=route,proto3" json:"route,omitempty"`
-	Reference     *v2.SchemaDocumentReference `protobuf:"bytes,2,opt,name=reference,proto3" json:"reference,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SchemaDocumentInput) Reset() {
-	*x = SchemaDocumentInput{}
-	mi := &file_proto_v1_hostconnections_host_connections_proto_msgTypes[2]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SchemaDocumentInput) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SchemaDocumentInput) ProtoMessage() {}
-
-func (x *SchemaDocumentInput) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_hostconnections_host_connections_proto_msgTypes[2]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SchemaDocumentInput.ProtoReflect.Descriptor instead.
-func (*SchemaDocumentInput) Descriptor() ([]byte, []int) {
-	return file_proto_v1_hostconnections_host_connections_proto_rawDescGZIP(), []int{2}
-}
-
-func (x *SchemaDocumentInput) GetRoute() *v2.AccessRoute {
-	if x != nil {
-		return x.Route
-	}
-	return nil
-}
-
-func (x *SchemaDocumentInput) GetReference() *v2.SchemaDocumentReference {
-	if x != nil {
-		return x.Reference
-	}
-	return nil
-}
-
 type CallResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Result:
@@ -271,6 +235,7 @@ type CallResponse struct {
 	//	*CallResponse_Resource
 	//	*CallResponse_ResolvedTarget
 	//	*CallResponse_SchemaDocument
+	//	*CallResponse_SchemaBinding
 	Result        isCallResponse_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -278,7 +243,7 @@ type CallResponse struct {
 
 func (x *CallResponse) Reset() {
 	*x = CallResponse{}
-	mi := &file_proto_v1_hostconnections_host_connections_proto_msgTypes[3]
+	mi := &file_proto_v1_hostconnections_host_connections_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -290,7 +255,7 @@ func (x *CallResponse) String() string {
 func (*CallResponse) ProtoMessage() {}
 
 func (x *CallResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_hostconnections_host_connections_proto_msgTypes[3]
+	mi := &file_proto_v1_hostconnections_host_connections_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -303,7 +268,7 @@ func (x *CallResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallResponse.ProtoReflect.Descriptor instead.
 func (*CallResponse) Descriptor() ([]byte, []int) {
-	return file_proto_v1_hostconnections_host_connections_proto_rawDescGZIP(), []int{3}
+	return file_proto_v1_hostconnections_host_connections_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CallResponse) GetResult() isCallResponse_Result {
@@ -340,6 +305,15 @@ func (x *CallResponse) GetSchemaDocument() *v2.SchemaDocument {
 	return nil
 }
 
+func (x *CallResponse) GetSchemaBinding() *v2.SchemaBinding {
+	if x != nil {
+		if x, ok := x.Result.(*CallResponse_SchemaBinding); ok {
+			return x.SchemaBinding
+		}
+	}
+	return nil
+}
+
 type isCallResponse_Result interface {
 	isCallResponse_Result()
 }
@@ -356,11 +330,17 @@ type CallResponse_SchemaDocument struct {
 	SchemaDocument *v2.SchemaDocument `protobuf:"bytes,3,opt,name=schema_document,json=schemaDocument,proto3,oneof"`
 }
 
+type CallResponse_SchemaBinding struct {
+	SchemaBinding *v2.SchemaBinding `protobuf:"bytes,4,opt,name=schema_binding,json=schemaBinding,proto3,oneof"`
+}
+
 func (*CallResponse_Resource) isCallResponse_Result() {}
 
 func (*CallResponse_ResolvedTarget) isCallResponse_Result() {}
 
 func (*CallResponse_SchemaDocument) isCallResponse_Result() {}
+
+func (*CallResponse_SchemaBinding) isCallResponse_Result() {}
 
 type ResolvedTarget struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -372,7 +352,7 @@ type ResolvedTarget struct {
 
 func (x *ResolvedTarget) Reset() {
 	*x = ResolvedTarget{}
-	mi := &file_proto_v1_hostconnections_host_connections_proto_msgTypes[4]
+	mi := &file_proto_v1_hostconnections_host_connections_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -384,7 +364,7 @@ func (x *ResolvedTarget) String() string {
 func (*ResolvedTarget) ProtoMessage() {}
 
 func (x *ResolvedTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_v1_hostconnections_host_connections_proto_msgTypes[4]
+	mi := &file_proto_v1_hostconnections_host_connections_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -397,7 +377,7 @@ func (x *ResolvedTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolvedTarget.ProtoReflect.Descriptor instead.
 func (*ResolvedTarget) Descriptor() ([]byte, []int) {
-	return file_proto_v1_hostconnections_host_connections_proto_rawDescGZIP(), []int{4}
+	return file_proto_v1_hostconnections_host_connections_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ResolvedTarget) GetTargetId() string {
@@ -418,27 +398,26 @@ var File_proto_v1_hostconnections_host_connections_proto protoreflect.FileDescri
 
 const file_proto_v1_hostconnections_host_connections_proto_rawDesc = "" +
 	"\n" +
-	"/proto/v1/hostconnections/host_connections.proto\x12\x1fomniview.sdk.hostconnections.v1\x1a\x1eproto/resource/v2/domain.proto\"\x81\x03\n" +
+	"/proto/v1/hostconnections/host_connections.proto\x12\x1fomniview.sdk.hostconnections.v1\x1a\x1eproto/resource/v2/domain.proto\x1a!proto/resource/v2/ancillary.proto\"\xec\x03\n" +
 	"\vCallRequest\x12!\n" +
 	"\fowner_plugin\x18\x01 \x01(\tR\vownerPlugin\x12)\n" +
 	"\x10delegation_token\x18\x02 \x01(\fR\x0fdelegationToken\x12\x1b\n" +
 	"\ttarget_id\x18\x03 \x01(\tR\btargetId\x12;\n" +
 	"\bresource\x18\x04 \x01(\v2\x1d.omniview.resource.v2.RequestH\x00R\bresource\x12\\\n" +
-	"\x0eresolve_target\x18\x05 \x01(\v23.omniview.sdk.hostconnections.v1.ResolveTargetInputH\x00R\rresolveTarget\x12_\n" +
-	"\x0fschema_document\x18\x06 \x01(\v24.omniview.sdk.hostconnections.v1.SchemaDocumentInputH\x00R\x0eschemaDocumentB\v\n" +
-	"\toperation\"\xc1\x01\n" +
+	"\x0eresolve_target\x18\x05 \x01(\v23.omniview.sdk.hostconnections.v1.ResolveTargetInputH\x00R\rresolveTarget\x12L\n" +
+	"\x0eresolve_schema\x18\a \x01(\v2#.omniview.resource.v2.SchemaRequestH\x00R\rresolveSchema\x12e\n" +
+	"\x17schema_document_request\x18\b \x01(\v2+.omniview.resource.v2.SchemaDocumentRequestH\x00R\x15schemaDocumentRequestB\v\n" +
+	"\toperationJ\x04\b\x06\x10\aR\x0fschema_document\"\xc1\x01\n" +
 	"\x12ResolveTargetInput\x127\n" +
 	"\x05route\x18\x01 \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x126\n" +
 	"\x05scope\x18\x03 \x01(\v2 .omniview.resource.v2.QueryScopeR\x05scope\x12&\n" +
-	"\x0erepresentation\x18\x04 \x01(\tR\x0erepresentation\"\x9b\x01\n" +
-	"\x13SchemaDocumentInput\x127\n" +
-	"\x05route\x18\x01 \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\x12K\n" +
-	"\treference\x18\x02 \x01(\v2-.omniview.resource.v2.SchemaDocumentReferenceR\treference\"\x83\x02\n" +
+	"\x0erepresentation\x18\x04 \x01(\tR\x0erepresentation\"\xd1\x02\n" +
 	"\fCallResponse\x12<\n" +
 	"\bresource\x18\x01 \x01(\v2\x1e.omniview.resource.v2.ResponseH\x00R\bresource\x12Z\n" +
 	"\x0fresolved_target\x18\x02 \x01(\v2/.omniview.sdk.hostconnections.v1.ResolvedTargetH\x00R\x0eresolvedTarget\x12O\n" +
-	"\x0fschema_document\x18\x03 \x01(\v2$.omniview.resource.v2.SchemaDocumentH\x00R\x0eschemaDocumentB\b\n" +
+	"\x0fschema_document\x18\x03 \x01(\v2$.omniview.resource.v2.SchemaDocumentH\x00R\x0eschemaDocument\x12L\n" +
+	"\x0eschema_binding\x18\x04 \x01(\v2#.omniview.resource.v2.SchemaBindingH\x00R\rschemaBindingB\b\n" +
 	"\x06result\"g\n" +
 	"\x0eResolvedTarget\x12\x1b\n" +
 	"\ttarget_id\x18\x01 \x01(\tR\btargetId\x128\n" +
@@ -458,35 +437,36 @@ func file_proto_v1_hostconnections_host_connections_proto_rawDescGZIP() []byte {
 	return file_proto_v1_hostconnections_host_connections_proto_rawDescData
 }
 
-var file_proto_v1_hostconnections_host_connections_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_proto_v1_hostconnections_host_connections_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_proto_v1_hostconnections_host_connections_proto_goTypes = []any{
-	(*CallRequest)(nil),                // 0: omniview.sdk.hostconnections.v1.CallRequest
-	(*ResolveTargetInput)(nil),         // 1: omniview.sdk.hostconnections.v1.ResolveTargetInput
-	(*SchemaDocumentInput)(nil),        // 2: omniview.sdk.hostconnections.v1.SchemaDocumentInput
-	(*CallResponse)(nil),               // 3: omniview.sdk.hostconnections.v1.CallResponse
-	(*ResolvedTarget)(nil),             // 4: omniview.sdk.hostconnections.v1.ResolvedTarget
-	(*v2.Request)(nil),                 // 5: omniview.resource.v2.Request
-	(*v2.AccessRoute)(nil),             // 6: omniview.resource.v2.AccessRoute
-	(*v2.QueryScope)(nil),              // 7: omniview.resource.v2.QueryScope
-	(*v2.SchemaDocumentReference)(nil), // 8: omniview.resource.v2.SchemaDocumentReference
-	(*v2.Response)(nil),                // 9: omniview.resource.v2.Response
-	(*v2.SchemaDocument)(nil),          // 10: omniview.resource.v2.SchemaDocument
-	(*v2.ReadTarget)(nil),              // 11: omniview.resource.v2.ReadTarget
+	(*CallRequest)(nil),              // 0: omniview.sdk.hostconnections.v1.CallRequest
+	(*ResolveTargetInput)(nil),       // 1: omniview.sdk.hostconnections.v1.ResolveTargetInput
+	(*CallResponse)(nil),             // 2: omniview.sdk.hostconnections.v1.CallResponse
+	(*ResolvedTarget)(nil),           // 3: omniview.sdk.hostconnections.v1.ResolvedTarget
+	(*v2.Request)(nil),               // 4: omniview.resource.v2.Request
+	(*v2.SchemaRequest)(nil),         // 5: omniview.resource.v2.SchemaRequest
+	(*v2.SchemaDocumentRequest)(nil), // 6: omniview.resource.v2.SchemaDocumentRequest
+	(*v2.AccessRoute)(nil),           // 7: omniview.resource.v2.AccessRoute
+	(*v2.QueryScope)(nil),            // 8: omniview.resource.v2.QueryScope
+	(*v2.Response)(nil),              // 9: omniview.resource.v2.Response
+	(*v2.SchemaDocument)(nil),        // 10: omniview.resource.v2.SchemaDocument
+	(*v2.SchemaBinding)(nil),         // 11: omniview.resource.v2.SchemaBinding
+	(*v2.ReadTarget)(nil),            // 12: omniview.resource.v2.ReadTarget
 }
 var file_proto_v1_hostconnections_host_connections_proto_depIdxs = []int32{
-	5,  // 0: omniview.sdk.hostconnections.v1.CallRequest.resource:type_name -> omniview.resource.v2.Request
+	4,  // 0: omniview.sdk.hostconnections.v1.CallRequest.resource:type_name -> omniview.resource.v2.Request
 	1,  // 1: omniview.sdk.hostconnections.v1.CallRequest.resolve_target:type_name -> omniview.sdk.hostconnections.v1.ResolveTargetInput
-	2,  // 2: omniview.sdk.hostconnections.v1.CallRequest.schema_document:type_name -> omniview.sdk.hostconnections.v1.SchemaDocumentInput
-	6,  // 3: omniview.sdk.hostconnections.v1.ResolveTargetInput.route:type_name -> omniview.resource.v2.AccessRoute
-	7,  // 4: omniview.sdk.hostconnections.v1.ResolveTargetInput.scope:type_name -> omniview.resource.v2.QueryScope
-	6,  // 5: omniview.sdk.hostconnections.v1.SchemaDocumentInput.route:type_name -> omniview.resource.v2.AccessRoute
-	8,  // 6: omniview.sdk.hostconnections.v1.SchemaDocumentInput.reference:type_name -> omniview.resource.v2.SchemaDocumentReference
-	9,  // 7: omniview.sdk.hostconnections.v1.CallResponse.resource:type_name -> omniview.resource.v2.Response
-	4,  // 8: omniview.sdk.hostconnections.v1.CallResponse.resolved_target:type_name -> omniview.sdk.hostconnections.v1.ResolvedTarget
-	10, // 9: omniview.sdk.hostconnections.v1.CallResponse.schema_document:type_name -> omniview.resource.v2.SchemaDocument
-	11, // 10: omniview.sdk.hostconnections.v1.ResolvedTarget.target:type_name -> omniview.resource.v2.ReadTarget
+	5,  // 2: omniview.sdk.hostconnections.v1.CallRequest.resolve_schema:type_name -> omniview.resource.v2.SchemaRequest
+	6,  // 3: omniview.sdk.hostconnections.v1.CallRequest.schema_document_request:type_name -> omniview.resource.v2.SchemaDocumentRequest
+	7,  // 4: omniview.sdk.hostconnections.v1.ResolveTargetInput.route:type_name -> omniview.resource.v2.AccessRoute
+	8,  // 5: omniview.sdk.hostconnections.v1.ResolveTargetInput.scope:type_name -> omniview.resource.v2.QueryScope
+	9,  // 6: omniview.sdk.hostconnections.v1.CallResponse.resource:type_name -> omniview.resource.v2.Response
+	3,  // 7: omniview.sdk.hostconnections.v1.CallResponse.resolved_target:type_name -> omniview.sdk.hostconnections.v1.ResolvedTarget
+	10, // 8: omniview.sdk.hostconnections.v1.CallResponse.schema_document:type_name -> omniview.resource.v2.SchemaDocument
+	11, // 9: omniview.sdk.hostconnections.v1.CallResponse.schema_binding:type_name -> omniview.resource.v2.SchemaBinding
+	12, // 10: omniview.sdk.hostconnections.v1.ResolvedTarget.target:type_name -> omniview.resource.v2.ReadTarget
 	0,  // 11: omniview.sdk.hostconnections.v1.HostConnections.Call:input_type -> omniview.sdk.hostconnections.v1.CallRequest
-	3,  // 12: omniview.sdk.hostconnections.v1.HostConnections.Call:output_type -> omniview.sdk.hostconnections.v1.CallResponse
+	2,  // 12: omniview.sdk.hostconnections.v1.HostConnections.Call:output_type -> omniview.sdk.hostconnections.v1.CallResponse
 	12, // [12:13] is the sub-list for method output_type
 	11, // [11:12] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
@@ -502,12 +482,14 @@ func file_proto_v1_hostconnections_host_connections_proto_init() {
 	file_proto_v1_hostconnections_host_connections_proto_msgTypes[0].OneofWrappers = []any{
 		(*CallRequest_Resource)(nil),
 		(*CallRequest_ResolveTarget)(nil),
-		(*CallRequest_SchemaDocument)(nil),
+		(*CallRequest_ResolveSchema)(nil),
+		(*CallRequest_SchemaDocumentRequest)(nil),
 	}
-	file_proto_v1_hostconnections_host_connections_proto_msgTypes[3].OneofWrappers = []any{
+	file_proto_v1_hostconnections_host_connections_proto_msgTypes[2].OneofWrappers = []any{
 		(*CallResponse_Resource)(nil),
 		(*CallResponse_ResolvedTarget)(nil),
 		(*CallResponse_SchemaDocument)(nil),
+		(*CallResponse_SchemaBinding)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -515,7 +497,7 @@ func file_proto_v1_hostconnections_host_connections_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_v1_hostconnections_host_connections_proto_rawDesc), len(file_proto_v1_hostconnections_host_connections_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -10,7 +10,7 @@ import (
 )
 
 // WireVersion identifies the resource transport contract, not a catalog revision.
-const WireVersion uint32 = 2
+const WireVersion uint32 = 3
 
 // ScopeEntry is one literal identity dimension, not a query constraint.
 // Empty Value is meaningful only when the declared dimension permits it.
@@ -120,7 +120,7 @@ type SchemaBinding struct {
 	UnavailableReason *string `json:"unavailableReason,omitempty"`
 }
 
-// SchemaDocumentReference shares one bounded raw document across catalog roots.
+// SchemaDocumentReference names one exact bounded document held for a demanded target.
 type SchemaDocumentReference struct {
 	ID       string `json:"id"`
 	Revision string `json:"revision"`
@@ -134,12 +134,11 @@ type SchemaDocument struct {
 	Document  json.RawMessage         `json:"document"`
 }
 
-// Representation declares a body format and its schema observation. Revision
-// tracks that format's contract, independently of record or catalog revisions.
+// Representation identifies one body format. Revision tracks that format's
+// contract independently of schema observations, records, and catalogs.
 type Representation struct {
-	ID       string        `json:"id"`
-	Revision string        `json:"revision"`
-	Schema   SchemaBinding `json:"schema"`
+	ID       string `json:"id"`
+	Revision string `json:"revision"`
 }
 
 // Dimension declares a required identity or query coordinate. AllowEmpty permits
@@ -212,10 +211,12 @@ type ResourceType struct {
 	AcquireOnConnect    bool                    `json:"acquireOnConnect"`
 }
 
-// CatalogRequest discovers support through one explicit access route. Discovery
-// does not start a connection or grant authority over the returned types.
+// CatalogRequest observes support through one explicit access route. Refresh
+// requests eligible native discovery; ordinary observation performs no native
+// discovery or schema acquisition and never starts a connection.
 type CatalogRequest struct {
-	Route AccessRoute `json:"route"`
+	Route   AccessRoute `json:"route"`
+	Refresh bool        `json:"refresh"`
 }
 
 // NativeAuthorityHint is nonauthoritative provider metadata. Only the host may

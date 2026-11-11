@@ -84,6 +84,8 @@ Pins are observations, not grants. The host must first authorize provider/author
 
 A native metadata change changes the bound catalog revision but not the source epoch. Replacing/reconfiguring the actual native binding changes its epoch, including A→B→A transitions. Custom providers retain an issued epoch for one actual binding; stateless providers issue one per instance. Never invent a constant epoch or rotate it merely for schema/catalog churn.
 
+`CatalogRequest.Refresh` carries explicit discovery intent through domain, JSON, adapters, and wire. Default requests observe installed support only. Optional schema resolution cannot rotate native catalog identity, authority, or source generations. Explicit refresh errors remain local to that refresh; initial discovery and native identity/scope are still mandatory.
+
 ## Connection lifecycle and overlays
 
 Controller is the sole state owner. Configured profiles and registered clients are distinct. Discovery does not start clients, and no operation selects the first active connection implicitly.
@@ -150,8 +152,8 @@ Action parameter and output schemas require unique names in each `required` list
 ## Results and errors
 
 - **Schema:** `available` requires revision, dialect, and exactly one inline document or document reference. `absent` has no document binding. `unavailable` is acquisition failure, not absence; it cannot include inline document. Optional unavailable reason is a reviewed machine code, never diagnostics. Bindings carry no validation claims; the host schema catalog decides dialect support, normalization, and validation, and JSON `validation`/`unvalidated` members are rejected as unknown fields. Dialect constants `DialectJSONSchema202012`, `DialectJSONSchemaDraft07`, and `DialectOpenAPI30` name the host-normalized dialects; SDK validation requires only a non-empty dialect. Roots are local RFC6901 URI-fragment pointers; for JSON Schema dialects an empty root selects the whole document; `DialectOpenAPI30` roots MUST name a `#/components/schemas/<name>` entry. No implicit external IO or normalization occurs.
-- **Representation:** canonical SDK Get requests and read targets require an explicit representation. A host resolving an omitted UI selection may use only the catalog's explicit `DefaultRepresentation`; it must pass the resolved representation to the provider. Result provenance must match the admitted representation.
-- **Editor schemas:** `EditorSchema{Type, Key, Language, Binding}` covers auxiliary documents that are not catalog representations (for example Helm values). `Key` is 1–256 UTF-8 bytes without control characters, `Language` is `yaml` or `json`, and `(Type, Key)` is unique per list; duplicates fail with `INVALID_REQUEST` on server and client paths. Providers never supply file matches or URIs; the host derives editor associations.
+- **Representation:** one `Representation{ID, Revision}` body-format reference serves finite and compact source records. Canonical Get requests and read targets select a format explicitly. Hosts may resolve an omitted UI choice only from `DefaultRepresentation` before dispatch. Schema availability/revision never enters data provenance.
+- **Targeted schemas:** optional `SchemaResolver.ResolveSchema(ctx, SchemaRequest)` returns one `SchemaBinding`. Exactly one explicit current representation or exact auxiliary resource/key/revision is required. `AuxiliarySchemaTarget.Key` is 1–256 UTF-8 bytes without control characters. Missing optional support is unsupported enrichment, not absence. Providers supply neither editor model URIs nor file matches.
 - **Coverage:** `complete` has no limitations; `partial` and `unknown` require a reason and retain path limitations. Each `Paths` entry is an RFC6901 JSON pointer that starts with `/` and names a limited body subtree; other forms fail with `INVALID_REQUEST`. Failed/denied discovery is an error, not empty complete coverage.
 - **Count:** `unknown` has no value; `exact`/`estimate` use canonical unsigned decimal strings. Unknown is not zero and page length is not automatically total count.
 - **Cursor:** optional opaque source continuation, not a host query cursor or portable source identity. Preserve source semantics; never fabricate continuity or silently reuse a cursor across changed targets/generations.
@@ -170,12 +172,26 @@ Action parameter and output schemas require unique names in each `required` list
 
 See [relationship_validation.go](../pkg/resource/v2/relationship_validation.go) and [relationship_request.go](../pkg/resource/v2/relationship_request.go). Target bindings still require independent host authority, explicit routes and scopes, and accepted catalog observations.
 
+## P07/C04 schema ownership cutover
+
+This contract supersedes earlier P07/C04 schema-bearing operational representations and global-catalog source-lifetime coupling. It does not relax their authorization, canonical identity, native epoch, continuity, schema/privacy, scalar, raw-wire, completeness, ownership, or memory requirements.
+
+- Required connection readiness comprises authenticated native generation, bounded discovery, effective scope, native identity, and admitted support. Schema acquisition is optional demand, never a startup wrapper or all-catalog enrichment pass.
+- Initial finite/source dispatch keeps exact catalog observation. Ongoing `SourceOperationalContractEqual` compares the selected type, format ID/revision, operation/scope, relevant dimensions, native identity hint, and update guarantee. `CheckSourceCatalog` also compares the originally accepted `CatalogBindingEpoch`; it never acquires a fresh epoch to bless old work. Global revisions, presentation, and unrelated support are not lifetime fences.
+- Partial discovery cannot establish removal or authorize unobserved operations. Unknown selected support returns unavailable rather than complete-empty support or replacement authority. Confirmed selected withdrawal and native retarget/disconnect/reconfiguration remain fail closed.
+- Schema bindings and demanded documents live only on optional target entries. Keep one host normalizer/store and exact target-to-document association. Current-schema-dependent authoring/privacy fails closed when enrichment is insufficient; independently authorized raw data remains usable.
+- Internal `GetSchemaDocument(ctx, route, exactRef)` only reads held demanded references. Host/broker `SchemaDocumentRequest{Request, Reference}` independently admits current principal/grant, route/type/target, and exact resolved reference, with final generation/access checks. A digest or shared group/version document is never a grant.
+- Resource RPCs negotiate wire `3`; callback broker negotiation is `2`. Removed tags/names remain reserved. Incompatible version-`2` resource cohorts fail explicitly, without schema-claim stripping or shape fallback. Unchanged resource-aware exec/log/metric/forwarding lanes retain their independent wire `2`; the process/lifecycle protocol remains `1`.
+
 ## Safety ceilings and exclusions
 
 Candidate policy `omniview.resource-wire-policy.v1` bounds frames at 32 MiB, bodies at 16 MiB, semantic value depth at 64, nodes at 262144, fields at 1048576 and source pages at 256 records. Aggregate frame/page budgets apply before generated decoding; record limits do not multiply aggregate allowance. Protobuf-tree, JSON-tree and semantic-value depth checks are separate boundaries, not interchangeable traversal counters. Qualified observations have 4096-byte individual revision and conservative 32 KiB aggregate limits; targets are bounded at 256. Metric lanes separately bound used-ID tombstones at 4096 and retained admission metadata at 32 MiB.
 
 Schema documents and raw byte slices consume byte budgets, not one field per byte.
 JSON and protobuf schema admission retain the 16 MiB document limit and the 32 MiB message limit.
+
+String-only metadata maps avoid reflective key/value copies without changing
+UTF-8, quoted-JSON byte, field, node or depth admission budgets.
 Semantic collections still consume their existing field and node budgets.
 
 Raw protobuf admission and direct adapter admission bound protobuf message depth at 208, counting the root at zero and including wrappers. Semantic Value depth remains 64, counting the root Value at zero. Map entries, list containers, and enclosing RPC messages therefore do not consume the semantic Value depth budget. The independent protobuf node, field, and byte limits remain in force.

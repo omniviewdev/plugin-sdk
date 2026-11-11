@@ -3,7 +3,7 @@
 [Docs home](README.md) · [Quickstart](quickstart.md) · [API reference](resource-v2-api.md)
 
 > [!IMPORTANT]
-> Resource v2 is the SDK v0.9 resource API, not a compatibility layer. Rebuild and migrate host/plugin consumers together using the coordinated release versions.
+> This guide targets SDK v0.20.0 and coordinated Omniview v0.36.0. Resource RPC wire `3` is not a compatibility layer for older resource cohorts. Rebuild and migrate host/plugin consumers together.
 
 This guide covers the two removed resource stacks: `pkg/resource` and `pkg/v1/resource`. Utility packages such as `pkg/v1/exec` and `pkg/v1/metric` remain current.
 
@@ -18,6 +18,7 @@ This guide covers the two removed resource stacks: `pkg/resource` and `pkg/v1/re
 | Generic maps or raw JSON, depending on the old stack | Tagged `Value` domain | Preserve native numeric and timestamp intent before transport. |
 | List/Find and filtering extensions | Finite `Enumerate` and optional provider-language `NativeQuery` | Return honest source pages, not a replacement host query engine. |
 | SDK-managed watches/informers | Explicit source sessions | Snapshot boundaries and declared continuity replace advisory watch delivery. |
+| Schema-bearing format/catalog and bulk editor-schema list | One `{ID, Revision}` format plus optional targeted `SchemaResolver` | Remove schema fields from data records/catalogs; migrate active schema consumers to explicit targets. |
 
 Old extensions such as watches, actions, schemas, and relationships were already optional. The old framework was Kubernetes-shaped, not Kubernetes-exclusive. See [historical v1 source](https://github.com/omniviewdev/plugin-sdk/blob/32a3358/pkg/v1/resource/resourcer.go) for the actual six-method core and extensions.
 
@@ -92,10 +93,12 @@ Use the [quickstart checkpoints](quickstart.md), existing native-boundary confor
 
 | Name | Current meaning |
 | --- | --- |
-| Resource wire version `2` | Canonical resource contract negotiated by resource RPCs |
+| Resource wire version `3` | Schema-independent resource contract; rebuild incompatible version-`2` cohorts together |
 | Shared SDK/go-plugin protocol `1` | Process/lifecycle transport version; not bumped merely by resource v2 |
 | `pkg/v1/exec`, `logs`, `metric`, … | Retained utility package paths |
 | Go module release tag | Coordinated publication decision; not inferred from the numbers above |
+
+Resource-aware utility lanes keep their independent wire version `2`; their unchanged payloads do not inherit the resource RPC version. Host-owned callback broker negotiation is now `2` for target-qualified schema requests and documents. The unchanged `pkg/v1/hostconnections` package name is not its handshake version.
 
 ## Known limitations
 

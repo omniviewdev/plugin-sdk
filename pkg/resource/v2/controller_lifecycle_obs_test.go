@@ -230,6 +230,11 @@ func TestMetadataRefreshFailureAndRejectAreObservable(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadataWaitIdle(t, c, "explicit")
+	// Idle metadata precedes the observer's deferred span export. Draining the
+	// generation waits for that export before inspecting telemetry.
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
 	refresh := h.span(t, "sdk.connection.metadata.refresh")
 	if lifecycleObsAttr(refresh, "outcome") != "failure" {
 		t.Fatalf("refresh span outcome = %v", refresh.Attributes)

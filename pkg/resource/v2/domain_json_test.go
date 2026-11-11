@@ -8,34 +8,14 @@ import (
 	"time"
 )
 
-func TestCatalogJSONSchemaDepthRemainsSymmetric(t *testing.T) {
-	catalog := Catalog{
-		Provider: "provider",
-		Revision: "revision",
-		Coverage: Coverage{Kind: "complete"},
-		Types: []ResourceType{{
-			Type: "type",
-			IdentityDimensions: []Dimension{},
-			QueryDimensions: []Dimension{},
-			Representations: []Representation{{ID: "document", Revision: "revision", Schema: SchemaBinding{State: "absent"}}},
-			Capabilities: []Capability{},
-		}},
-	}
-	base, err := json.Marshal(catalog)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestSchemaBindingJSONDepthRemainsSymmetric(t *testing.T) {
 	for _, tc := range []struct {
-		depth int
+		depth    int
 		accepted bool
-	}{{58, true}, {59, false}} {
+	}{{MaxValueDepth - 1, true}, {MaxValueDepth, false}} {
 		document := strings.Repeat("[", tc.depth) + "null" + strings.Repeat("]", tc.depth)
-		binding := `{"state":"available","revision":"revision","dialect":"fixture","document":` + document + `}`
-		input := strings.Replace(string(base), `{"state":"absent"}`, binding, 1)
-		if input == string(base) {
-			t.Fatal("schema binding fixture not found")
-		}
-		var decoded Catalog
+		input := `{"state":"available","revision":"revision","dialect":"fixture","document":` + document + `}`
+		var decoded SchemaBinding
 		err := json.Unmarshal([]byte(input), &decoded)
 		if !tc.accepted {
 			if ErrorCode(err) != "RESOURCE_LIMIT" {
@@ -63,8 +43,8 @@ func TestDomainJSONTaggedValueDepthBoundary(t *testing.T) {
 	route := AccessRoute{Connection: "route"}
 	target := ReadTarget{Route: route, Provider: record.Reference.Address.Provider, Authority: record.Reference.Address.Authority, Type: record.Reference.Address.Type, Scope: QueryScope{}, Representation: record.Representation.ID}
 	for _, tc := range []struct {
-		name string
-		input any
+		name   string
+		input  any
 		output any
 	}{
 		{"record", record, &Record{}},
@@ -369,5 +349,41 @@ func TestCanonicalJSONEmitsSelectedEmptyArrays(t *testing.T) {
 	}
 	if decodeErr := json.Unmarshal(data, &catalog); decodeErr != nil {
 		t.Fatalf("empty catalog did not roundtrip: %s %v", data, decodeErr)
+	}
+}
+
+func TestCatalogRequestJSONPreservesExplicitRefresh(t *testing.T) {
+	for _, refresh := range []bool{false, true} {
+		request := CatalogRequest{Route: AccessRoute{Connection: "explicit"}, Refresh: refresh}
+		data, err := json.Marshal(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded CatalogRequest
+		if err := json.Unmarshal(data, &decoded); err != nil || decoded != request {
+			t.Fatalf("catalog refresh changed: got %+v, want %+v, error=%v", decoded, request, err)
+		}
+	}
+	for _, input := range []string{
+		`{"route":{"connection":"explicit"},"refresh":null}`,
+		`{"route":{"connection":"explicit"},"refresh":false,"refresh":true}`,
+		`{"route":{"connection":"explicit"},"refresh":"true"}`,
+	} {
+		var request CatalogRequest
+		if err := json.Unmarshal([]byte(input), &request); ErrorCode(err) != "INVALID_REQUEST" {
+			t.Fatalf("malformed refresh intent admitted: %s %v", input, err)
+		}
+	}
+}
+
+func TestRepresentationJSONRejectsRetiredSchemaFields(t *testing.T) {
+	for _, input := range []string{
+		`{"id":"document","revision":"format-1","schema":{"state":"absent"}}`,
+		`{"id":"document","revision":"format-1","schemaRevision":"schema-1"}`,
+	} {
+		var representation Representation
+		if err := json.Unmarshal([]byte(input), &representation); ErrorCode(err) != "INVALID_REQUEST" {
+			t.Fatalf("retired representation schema admitted: %s %v", input, err)
+		}
 	}
 }

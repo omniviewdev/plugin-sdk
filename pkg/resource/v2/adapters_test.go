@@ -32,11 +32,8 @@ func codecRecord() Record {
 				"empty":   {Kind: "list", List: []Value{}},
 			},
 		},
-		Representation: Representation{
-			ID:       "native",
-			Revision: "representation-1",
-			Schema:   SchemaBinding{State: "absent"},
-		},
+		Representation: Representation{ID: "native",
+			Revision: "representation-1"},
 		Coverage:       Coverage{Kind: "complete", Paths: []string{}},
 		SourceRevision: codecToken("object-revision"),
 	}
@@ -194,6 +191,7 @@ func TestEveryFiniteDomainAdapter(t *testing.T) {
 		t.Fatal("decoder aliased or inherited authority hint")
 	}
 	adapterRoundTrip(t, CatalogRequest{Route: route}, ToProtoCatalogRequest, FromProtoCatalogRequest)
+	adapterRoundTrip(t, CatalogRequest{Route: route, Refresh: true}, ToProtoCatalogRequest, FromProtoCatalogRequest)
 	adapterRoundTrip(t, target, ToProtoReadTarget, FromProtoReadTarget)
 	adapterRoundTrip(
 		t,
@@ -267,14 +265,14 @@ func TestEveryFiniteDomainAdapter(t *testing.T) {
 		ToProtoSchemaDocument,
 		FromProtoSchemaDocument,
 	)
-	r.Representation.Schema = SchemaBinding{
+	binding := SchemaBinding{
 		State:       "available",
 		Revision:    codecToken("schema-1"),
 		Dialect:     "https://json-schema.org/draft/2020-12/schema",
 		DocumentRef: &reference,
 		Root:        "#/$defs/x",
 	}
-	adapterRoundTrip(t, r, ToProtoRecord, FromProtoRecord)
+	adapterRoundTrip(t, binding, ToProtoSchemaBinding, FromProtoSchemaBinding)
 }
 
 func TestProtoScalarBoundariesAndSize(t *testing.T) {

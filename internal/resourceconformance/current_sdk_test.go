@@ -215,7 +215,7 @@ func checkNativeScenario(
 	require.NoError(t, err)
 	ctx = resource.WithCatalogRevision(ctx, catalog.Revision)
 	require.Equal(t, s.Type, catalog.Types[0].Type)
-	require.Equal(t, representation(s), catalog.Types[0].Representations[0])
+	require.Equal(t, representation(), catalog.Types[0].Representations[0])
 	expectedCaps := []resource.Capability{
 		{Operation: resource.OperationGet, Scope: queryScope(s)},
 		{Operation: resource.OperationEnumerate, Scope: queryScope(s)},
@@ -226,7 +226,7 @@ func checkNativeScenario(
 		require.Nil(t, catalog.Types[i].NativeAuthorityHint)
 	}
 	checkNativeTransportSnapshot(ctx, t, enumerator, getter, s, c, bodies)
-	missing := nativeRecord(c.Record(s.Pages[0].Records[0]), s).Reference
+	missing := nativeRecord(c.Record(s.Pages[0].Records[0])).Reference
 	missing.Address.ID = "not-observed"
 	_, err = getter.Get(
 		ctx,
@@ -246,7 +246,7 @@ func checkNativeScenario(
 	wrong.Type = "unregistered/native/type"
 	_, err = enumerator.Enumerate(ctx, resource.EnumerateRequest{Target: wrong})
 	requireNativeError(t, err, "UNSUPPORTED")
-	ref := nativeRecord(c.Record(s.Pages[0].Records[0]), s).Reference
+	ref := nativeRecord(c.Record(s.Pages[0].Records[0])).Reference
 	_, err = mutator.Mutate(
 		ctx,
 		resource.MutationRequest{
@@ -316,7 +316,7 @@ func checkNativeTransportSnapshot(
 		for i := range result.Records {
 			got := &result.Records[i]
 			r := c.Record(page.Records[i])
-			require.Equal(t, nativeRecord(r, s), *got, "transport changed canonical record %s", r.Name)
+			require.Equal(t, nativeRecord(r), *got, "transport changed canonical record %s", r.Name)
 			get, getErr := getter.Get(
 				ctx,
 				resource.GetRequest{
@@ -486,7 +486,7 @@ func checkNativeProfileOperations(
 	hasGet, hasEnum, hasQuery bool,
 ) {
 	t.Helper()
-	ref := nativeRecord(c.Record(s.Pages[0].Records[0]), s).Reference
+	ref := nativeRecord(c.Record(s.Pages[0].Records[0])).Reference
 	getter, ok := provider.(resource.Getter)
 	require.True(t, ok)
 	got, getErr := getter.Get(
@@ -499,7 +499,7 @@ func checkNativeProfileOperations(
 	)
 	if hasGet {
 		require.NoError(t, getErr)
-		require.Equal(t, nativeRecord(c.Record(s.Pages[0].Records[0]), s), got)
+		require.Equal(t, nativeRecord(c.Record(s.Pages[0].Records[0])), got)
 	} else {
 		requireNativeError(t, getErr, "UNSUPPORTED")
 	}
@@ -662,12 +662,14 @@ func TestNativeFixtureCatalogBindingTracksSourceInstance(t *testing.T) {
 	require.Equal(t, "catalog:opaque/1", provider.nativeCatalogRevision)
 }
 
-func TestCurrentSDKSchemaCatalogScenarios(t *testing.T) {
+func TestCurrentSDKTargetedSchemaScenarios(t *testing.T) {
 	provider, _, stop := startNativeProfile(t, "read-only")
 	defer stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	documents, ok := provider.(resource.SchemaDocumentProvider)
+	require.True(t, ok)
+	resolver, ok := provider.(resource.SchemaResolver)
 	require.True(t, ok)
 	lifecycle, ok := provider.(resource.ConnectionLifecycle)
 	require.True(t, ok)
@@ -678,7 +680,13 @@ func TestCurrentSDKSchemaCatalogScenarios(t *testing.T) {
 		catalog, err := provider.Catalog(ctx, resource.CatalogRequest{Route: route})
 		require.NoError(t, err)
 		require.Equal(t, catalog.Types[0].Representations[0].ID, catalog.Types[0].DefaultRepresentation)
-		return route, catalog.Types[0].Representations[0].Schema, resource.WithCatalogRevision(ctx, catalog.Revision)
+		callCtx := resource.WithCatalogRevision(ctx, catalog.Revision)
+		schema, err := resolver.ResolveSchema(callCtx, resource.SchemaRequest{
+			Route: route, Type: catalog.Types[0].Type,
+			Target: resource.SchemaTarget{Representation: &catalog.Types[0].Representations[0]},
+		})
+		require.NoError(t, err)
+		return route, schema, callCtx
 	}
 
 	route, schema, callCtx := binding("cloud-discovered-schema")

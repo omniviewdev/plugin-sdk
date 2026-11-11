@@ -59,12 +59,6 @@ type RepresentationBinding struct {
 	Representation Representation `json:"representation"`
 }
 
-type RepresentationRef struct {
-	ID             string  `json:"id"`
-	Revision       string  `json:"revision"`
-	SchemaRevision *string `json:"schemaRevision,omitempty"`
-}
-
 type FieldPathSegment struct {
 	Member *string `json:"member,omitempty"`
 	Index  *uint32 `json:"index,omitempty"`
@@ -81,28 +75,27 @@ type DocumentCoverage struct {
 type SourceRecord struct {
 	Reference      ResourceReference `json:"reference"`
 	Body           Value             `json:"body"`
-	Representation RepresentationRef `json:"representation"`
+	Representation Representation    `json:"representation"`
 	Coverage       Coverage          `json:"coverage"`
 	SourceRevision *string           `json:"sourceRevision,omitempty"`
 }
 
-// CompactSourceRecord removes the per-record schema after its binding is admitted.
+// CompactSourceRecord adapts a finite record to the source observation envelope.
 func CompactSourceRecord(record Record) SourceRecord {
 	return SourceRecord{
 		Reference: record.Reference, Body: record.Body, Coverage: record.Coverage,
 		SourceRevision: record.SourceRevision,
-		Representation: RepresentationRef{ID: record.Representation.ID, Revision: record.Representation.Revision, SchemaRevision: record.Representation.Schema.Revision},
+		Representation: record.Representation,
 	}
 }
 
-
 type SourceOpenRequest struct {
-	SessionID   string            `json:"sessionId"`
-	Generation  string            `json:"generation"`
-	Target      ReadTarget        `json:"target"`
-	Mode        string            `json:"mode"`
-	Acquisition SourceAcquisition `json:"acquisition"`
-	Limits      SourceLimits      `json:"limits"`
+	SessionID   string                `json:"sessionId"`
+	Generation  string                `json:"generation"`
+	Target      ReadTarget            `json:"target"`
+	Mode        string                `json:"mode"`
+	Acquisition SourceAcquisition     `json:"acquisition"`
+	Limits      SourceLimits          `json:"limits"`
 	Binding     RepresentationBinding `json:"binding"`
 }
 
@@ -126,8 +119,12 @@ type SourceChange struct {
 	SourceRevision *string            `json:"sourceRevision,omitempty"`
 }
 
-type SourceBegin struct{ Mode string `json:"mode"` }
-type SourceSnapshot struct{ Observations []SourceObservation `json:"observations"` }
+type SourceBegin struct {
+	Mode string `json:"mode"`
+}
+type SourceSnapshot struct {
+	Observations []SourceObservation `json:"observations"`
+}
 type SourceSnapshotEnd struct {
 	Coverage   SourceCoverage `json:"coverage"`
 	Continuity string         `json:"continuity"`
@@ -137,23 +134,23 @@ type SourceChanges struct {
 	Coverage *SourceCoverage `json:"coverage,omitempty"`
 }
 type SourceReset struct {
-	Reason string `json:"reason"`
+	Reason  string `json:"reason"`
 	Message string `json:"message"`
 }
 type SourceFailure struct {
-	Code string `json:"code"`
+	Code    string `json:"code"`
 	Message string `json:"message"`
 }
 type SourceFrame struct {
-	SessionID  string             `json:"sessionId"`
-	Generation string             `json:"generation"`
-	Sequence   uint64             `json:"-"`
-	Begin      *SourceBegin       `json:"begin,omitempty"`
-	Snapshot   *SourceSnapshot    `json:"snapshot,omitempty"`
+	SessionID   string             `json:"sessionId"`
+	Generation  string             `json:"generation"`
+	Sequence    uint64             `json:"-"`
+	Begin       *SourceBegin       `json:"begin,omitempty"`
+	Snapshot    *SourceSnapshot    `json:"snapshot,omitempty"`
 	SnapshotEnd *SourceSnapshotEnd `json:"snapshotEnd,omitempty"`
-	Changes    *SourceChanges     `json:"changes,omitempty"`
-	Reset      *SourceReset       `json:"reset,omitempty"`
-	Failed     *SourceFailure     `json:"failed,omitempty"`
+	Changes     *SourceChanges     `json:"changes,omitempty"`
+	Reset       *SourceReset       `json:"reset,omitempty"`
+	Failed      *SourceFailure     `json:"failed,omitempty"`
 }
 
 // SourceProvider opens a source session and emits its snapshot and updates.

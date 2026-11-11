@@ -3,10 +3,7 @@ package resourcev2
 import (
 	"bytes"
 	"encoding/json"
-	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
 )
@@ -452,70 +449,115 @@ func (d *adapterDecoder) scopeExtractor(p *resourcepb.ScopeExtractor) ScopeExtra
 	return ScopeExtractor{Dimension: p.Dimension, FieldPath: p.FieldPath}
 }
 
-func validateEditorSchema(v EditorSchema) error {
-	if err := admission(v); err != nil {
-		return err
+func toSchemaTarget(v SchemaTarget) *resourcepb.SchemaTarget {
+	p := &resourcepb.SchemaTarget{}
+	if v.Representation != nil {
+		p.Selection = &resourcepb.SchemaTarget_Representation{Representation: toRepresentation(*v.Representation)}
+	} else if v.Auxiliary != nil {
+		p.Selection = &resourcepb.SchemaTarget_Auxiliary{Auxiliary: &resourcepb.AuxiliarySchemaTarget{
+			Key:            v.Auxiliary.Key,
+			Reference:      toResourceReference(v.Auxiliary.Reference),
+			SourceRevision: copyToken(v.Auxiliary.SourceRevision),
+		}}
 	}
-	if err := text(v.Type, true); err != nil {
-		return err
-	}
-	if len(v.Key) == 0 || len(v.Key) > maxEditorSchemaKeyBytes || !utf8.ValidString(v.Key) ||
-		strings.IndexFunc(v.Key, unicode.IsControl) >= 0 {
-		return invalid("editor schema key must be 1-256 UTF-8 bytes without control characters")
-	}
-	if v.Language != "yaml" && v.Language != "json" {
-		return invalid("editor schema language must be yaml or json")
-	}
-	return validateSchema(v.Binding)
+	return p
 }
 
-// maxEditorSchemaKeyBytes bounds auxiliary editor schema keys.
-const maxEditorSchemaKeyBytes = 256
-
-// ValidateEditorSchemaList rejects duplicate auxiliary (Type, Key) pairs. Item
-// validation stays with ToProtoEditorSchema and FromProtoEditorSchema.
-func ValidateEditorSchemaList(schemas []EditorSchema) error {
-	seen := make(map[[2]string]struct{}, len(schemas))
-	for _, schema := range schemas {
-		key := [2]string{schema.Type, schema.Key}
-		if _, ok := seen[key]; ok {
-			return invalid("duplicate auxiliary editor schema")
-		}
-		seen[key] = struct{}{}
-	}
-	return nil
-}
-
-func toEditorSchema(v EditorSchema) *resourcepb.EditorSchema {
-	return &resourcepb.EditorSchema{
-		Type:     v.Type,
-		Key:      v.Key,
-		Language: v.Language,
-		Binding:  toSchemaBinding(v.Binding),
-	}
-}
-
-func (d *adapterDecoder) editorSchema(p *resourcepb.EditorSchema) EditorSchema {
+func (d *adapterDecoder) schemaTarget(p *resourcepb.SchemaTarget) SchemaTarget {
 	if p == nil {
-		d.fail("missing editor schema")
-		return EditorSchema{}
+		d.fail("missing schema target")
+		return SchemaTarget{}
 	}
-	return EditorSchema{
-		Type:     p.GetType(),
-		Key:      p.GetKey(),
-		Language: p.GetLanguage(),
-		Binding:  d.schema(p.GetBinding()),
+	switch target := p.Selection.(type) {
+	case *resourcepb.SchemaTarget_Representation:
+		if target == nil || target.Representation == nil {
+			d.fail("missing schema representation target")
+			return SchemaTarget{}
+		}
+		value := d.representation(target.Representation)
+		return SchemaTarget{Representation: &value}
+	case *resourcepb.SchemaTarget_Auxiliary:
+		if target == nil || target.Auxiliary == nil {
+			d.fail("missing auxiliary schema target")
+			return SchemaTarget{}
+		}
+		return SchemaTarget{Auxiliary: &AuxiliarySchemaTarget{
+			Key:            target.Auxiliary.Key,
+			Reference:      d.reference(target.Auxiliary.Reference),
+			SourceRevision: copyToken(target.Auxiliary.SourceRevision),
+		}}
+	default:
+		d.fail("unset schema target")
+		return SchemaTarget{}
 	}
 }
 
-// ToProtoEditorSchema encodes editor metadata and schema availability without fetching document references.
-// It validates before encoding, returns nil on error, and owns output storage.
-func ToProtoEditorSchema(v EditorSchema) (*resourcepb.EditorSchema, error) {
-	return toProto(v, validateEditorSchema, toEditorSchema)
+func toSchemaRequest(v SchemaRequest) *resourcepb.SchemaRequest {
+	return &resourcepb.SchemaRequest{
+		Route:  toAccessRoute(v.Route),
+		Type:   v.Type,
+		Target: toSchemaTarget(v.Target),
+	}
 }
 
-// FromProtoEditorSchema decodes editor metadata and schema availability without fetching document references.
-// It rejects nil or invalid messages; successful output owns mutable storage.
-func FromProtoEditorSchema(p *resourcepb.EditorSchema) (EditorSchema, error) {
-	return fromProto(p, (*adapterDecoder).editorSchema, validateEditorSchema)
+func (d *adapterDecoder) schemaRequest(p *resourcepb.SchemaRequest) SchemaRequest {
+	if p == nil {
+		d.fail("missing schema request")
+		return SchemaRequest{}
+	}
+	return SchemaRequest{Route: d.route(p.Route), Type: p.Type, Target: d.schemaTarget(p.Target)}
+}
+
+func toSchemaDocumentRequest(v SchemaDocumentRequest) *resourcepb.SchemaDocumentRequest {
+	return &resourcepb.SchemaDocumentRequest{
+		Request:   toSchemaRequest(v.Request),
+		Reference: toSchemaDocumentReference(v.Reference),
+	}
+}
+
+func (d *adapterDecoder) schemaDocumentRequest(p *resourcepb.SchemaDocumentRequest) SchemaDocumentRequest {
+	if p == nil {
+		d.fail("missing schema document request")
+		return SchemaDocumentRequest{}
+	}
+	return SchemaDocumentRequest{
+		Request:   d.schemaRequest(p.Request),
+		Reference: d.schemaDocumentReference(p.Reference),
+	}
+}
+
+// ToProtoSchemaRequest validates and encodes one explicit schema target.
+// It performs no schema acquisition and owns all output storage.
+func ToProtoSchemaRequest(v SchemaRequest) (*resourcepb.SchemaRequest, error) {
+	return toProto(v, ValidateSchemaRequest, toSchemaRequest)
+}
+
+// FromProtoSchemaRequest rejects missing, unknown, or invalid target fields.
+// Successful output owns all mutable storage independently.
+func FromProtoSchemaRequest(p *resourcepb.SchemaRequest) (SchemaRequest, error) {
+	return fromProto(p, (*adapterDecoder).schemaRequest, ValidateSchemaRequest)
+}
+
+// ToProtoSchemaDocumentRequest encodes a target-qualified exact document lookup.
+// It validates before encoding and owns all output storage.
+func ToProtoSchemaDocumentRequest(v SchemaDocumentRequest) (*resourcepb.SchemaDocumentRequest, error) {
+	return toProto(v, ValidateSchemaDocumentRequest, toSchemaDocumentRequest)
+}
+
+// FromProtoSchemaDocumentRequest admits an exact reference and its selected target.
+// It rejects nil or invalid messages and independently owns mutable storage.
+func FromProtoSchemaDocumentRequest(p *resourcepb.SchemaDocumentRequest) (SchemaDocumentRequest, error) {
+	return fromProto(p, (*adapterDecoder).schemaDocumentRequest, ValidateSchemaDocumentRequest)
+}
+
+// ToProtoSchemaBinding validates availability, document selection, and safe codes.
+// It performs no document resolution and owns all output storage.
+func ToProtoSchemaBinding(v SchemaBinding) (*resourcepb.SchemaBinding, error) {
+	return toProto(v, ValidateSchemaBinding, toSchemaBinding)
+}
+
+// FromProtoSchemaBinding rejects missing or invalid schema bindings.
+// Successful output owns document bytes and optional observations independently.
+func FromProtoSchemaBinding(p *resourcepb.SchemaBinding) (SchemaBinding, error) {
+	return fromProto(p, (*adapterDecoder).schema, ValidateSchemaBinding)
 }

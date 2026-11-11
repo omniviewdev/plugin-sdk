@@ -78,7 +78,7 @@ func TestSourceRaceProfiles(t *testing.T) {
 		t.Run(profile, func(t *testing.T) {
 			corpus := NativeCorpus()
 			s := corpus.Scenarios[0]
-			initial := nativeRecord(corpus.Record(s.Pages[0].Records[0]), s)
+			initial := nativeRecord(corpus.Record(s.Pages[0].Records[0]))
 			initial.SourceRevision = token("1")
 			initial.Reference.Incarnation = token("uid-1")
 			stable := initial
@@ -111,7 +111,7 @@ func TestSourceRaceProfiles(t *testing.T) {
 				continuity = resource.ContinuityBestEffort
 			}
 			cfg := resource.Config[struct{}]{Catalog: func(context.Context, resource.CatalogRequest) (resource.Catalog, error) {
-				return resource.Catalog{Provider: initial.Reference.Address.Provider, Revision: "race-catalog", Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}, Types: []resource.ResourceType{{Type: s.Type, IdentityDimensions: []resource.Dimension{{Name: scopeAccount}, {Name: scopeRegion}}, QueryDimensions: []resource.Dimension{{Name: scopeAccount}, {Name: scopeRegion}}, Representations: []resource.Representation{representation(s)}, Capabilities: []resource.Capability{{Operation: resource.OperationEnumerate, Scope: queryScope(s)}, {Operation: resource.OperationSourceUpdates, Scope: queryScope(s), Guarantee: continuity}}}}}, nil
+				return resource.Catalog{Provider: initial.Reference.Address.Provider, Revision: "race-catalog", Coverage: resource.Coverage{Kind: "complete", Paths: []string{}}, Types: []resource.ResourceType{{Type: s.Type, IdentityDimensions: []resource.Dimension{{Name: scopeAccount}, {Name: scopeRegion}}, QueryDimensions: []resource.Dimension{{Name: scopeAccount}, {Name: scopeRegion}}, Representations: []resource.Representation{representation()}, Capabilities: []resource.Capability{{Operation: resource.OperationEnumerate, Scope: queryScope(s)}, {Operation: resource.OperationSourceUpdates, Scope: queryScope(s), Guarantee: continuity}}}}}, nil
 			}}
 			cfg.Registrations = []resource.Registration[struct{}]{{Type: s.Type, Enumerate: func(_ context.Context, _ *struct{}, request resource.EnumerateRequest) (resource.SourcePage, error) {
 				records, _ := store.snapshotAt()

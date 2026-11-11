@@ -1,6 +1,6 @@
 # Resource v2 API reference
 
-**API status:** resource-v2 contract for SDK v0.9. This page describes the implemented behavior used by the coordinated host/plugin release.
+**API status:** SDK v0.20.0 resource-v2 contract with resource RPC wire `3` and host callback broker `2`, targeting coordinated Omniview v0.36.0. Rebuild supported hosts and providers together; source documentation is not a publication or acceptance receipt.
 
 [Documentation home](README.md) · [Quickstart](quickstart.md) · [Resource tasks](resources.md) · [Connections](connections.md) · [Migration](sdk-v1-v2-overview.md)
 
@@ -20,6 +20,8 @@ Use this page to find interfaces, request fields, capabilities, values, and erro
 | Add exec, logs, metrics, forwarding, tools, or commands | SDK capability registration | [SDK capabilities](capabilities.md) |
 
 Providers define native semantics. The host authorizes access, issues authority, and pins accepted catalog observations. Transport adapters and generated protobuf messages are not required in provider handlers.
+
+`CatalogRequest{Route, Refresh}` separates observation from discovery. Default `Refresh: false` observes installed support without native discovery or schema acquisition. Explicit eligible refresh owns its discovery errors and cannot poison ordinary observation of a valid snapshot. Initial native identity, scope, and discovery remain mandatory and fail closed. Optional schema resolution never enters the support revision.
 
 ## Construction and examples
 
@@ -155,7 +157,7 @@ All types below live in [domain.go](../pkg/resource/v2/domain.go). Request conta
 
 | Request | Fields beyond explicit route/reference/target |
 | --- | --- |
-| `CatalogRequest` | `Route` only; discovery does not implicitly start a client |
+| `CatalogRequest` | `Route`, optional `Refresh` for explicit discovery refresh; discovery does not implicitly start a client |
 | `GetRequest` | `Route`, `Reference`, explicit `Representation` |
 | `EnumerateRequest` | `Target`, `PageSize`, optional source `Cursor` |
 | `NativeQueryRequest` | `Target`, `Language`, typed `Query`, `PageSize`, optional `Cursor` |
@@ -210,8 +212,8 @@ Relationship bindings may include an explicit `any` query-only dimension absent 
 | `Catalog` | `Provider`, supported `Types`, opaque bound `Revision`, honest `Coverage` |
 | `Record` | Requested `Reference`, map-root `Body`, admitted `Representation`, honest `Coverage`; optional native `SourceRevision` |
 | `SourcePage` | Stable `Records`, optional `NextCursor`, explicit `Count`, `Coverage`, `Consistency`, optional `SourceRevision` |
-| `Representation` | Format `ID`, format-contract `Revision`, `Schema` binding |
-| `SchemaBinding` | Distinguish `available`, `absent`, and acquisition-failed `unavailable` |
+| `Representation` | Body-format `ID` and format-contract `Revision` only; shared by finite and source records |
+| `SchemaBinding` | Optional targeted observation: distinguish `available`, `absent`, and acquisition-failed `unavailable` |
 
 ### Result metadata
 
@@ -226,11 +228,13 @@ Relationship bindings may include an explicit `any` query-only dimension absent 
 | Available schema | Revision, non-empty dialect, exactly one inline document or document reference; `DialectJSONSchema202012`, `DialectJSONSchemaDraft07`, `DialectOpenAPI30` name the dialects the host catalog normalizes |
 | Absent schema | No document binding; absence is not acquisition failure |
 | Unavailable schema | No inline document; optional reviewed error code, never raw diagnostics |
-| Auxiliary editor schema | `EditorSchema{Type, Key, Language, Binding}`: non-empty `Type`; `Key` 1–256 UTF-8 bytes without control characters; `Language` `yaml` or `json`; `(Type, Key)` unique per list |
+| Auxiliary schema target | `AuxiliarySchemaTarget{Key, Reference, SourceRevision}` selects one exact resource; `Key` is 1–256 UTF-8 bytes without control characters; optional `SourceRevision` is nonempty when present |
 
 Schema roots are local RFC6901 URI-fragment pointers. For JSON Schema dialects an empty root selects the whole document. For `DialectOpenAPI30` the root MUST name a `#/components/schemas/<name>` entry. No implicit external loading or normalization occurs. Bindings carry no validation claims: the host schema catalog is the only normalizer and validation authority, and JSON bindings with `validation` or `unvalidated` members are rejected as unknown fields.
 
-`EditorSchema` is only for auxiliary documents that are not catalog representations, such as Helm values. The host derives editor associations, file matches, and model URIs from the catalog; providers never supply them. Duplicate `(Type, Key)` pairs fail with `INVALID_REQUEST` on both plugin server and client paths.
+Schemas do not belong to catalog representations, body provenance, or source identity. Optional `SchemaResolver.ResolveSchema(ctx, SchemaRequest)` resolves exactly one selected target. `SchemaRequest` contains `Route`, `Type`, and `Target`; `SchemaTarget` contains exactly one `Representation *Representation` or `Auxiliary *AuxiliarySchemaTarget`. Resolve catalog defaults before constructing an explicit format ID/revision. Auxiliary selection names one exact resource/key/revision, never all releases or a URL. Missing `FeatureSchemaResolver` means unsupported enrichment, not known absence.
+
+`ValidateSchemaBinding` validates a returned observation without allocating a protobuf tree or acquiring documents. `SchemaDocumentProvider.GetSchemaDocument(ctx, route, exactRef)` is an internal lookup for currently held demanded documents; it must never substitute a newer revision. Public host/broker access instead takes `SchemaDocumentRequest{Request: SchemaRequest, Reference: exactRef}`. Independently admit current principal, grant, route, type, target, and exact resolved association before and after acquisition. Shared bytes, group/version documents, and digests do not grant access. Providers never supply editor model URIs or file matches.
 
 `SourcePage` is bounded source acquisition, not a host query/history engine. Failed discovery is an error, not empty complete coverage. On error, callers discard the accompanying result.
 
@@ -331,17 +335,21 @@ Negotiate remote features through [`FeatureNegotiator`](../pkg/resource/v2/featu
 | Show connection inventory UI | `ConnectionBrowser` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Discovery does not start clients |
 | Discover dimension values | `ScopeValuesProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Values do not grant or constrain acquisition |
 | Add display metadata | `PresentationProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Does not replace catalog capability declarations |
-| Supply auxiliary editor schemas and schema documents | `EditorSchemaProvider`, `SchemaDocumentProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Preserve absence and failure states; unique `(Type, Key)` per auxiliary schema |
+| Resolve one selected schema and held documents | `SchemaResolver`, `SchemaDocumentProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Explicit target; preserve absence/failure; exact-reference document lookup |
 | Resolve native links | `RelationshipProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Explicit target routes, authorities, scopes, and observations |
 | Report resource health/events | `HealthProvider` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Resource health is not connection health |
 | Describe/stream actions | `ActionCatalog`, `StreamingActioner` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Exactly one `ready` after native establishment, before output |
 | Publish source sessions | `SourceProvider`, `SourceEmitter` in [source.go](../pkg/resource/v2/source.go) | Emit snapshot, snapshot boundary, then changes; declare honest continuity |
 
-Source sessions begin with a framework-issued `begin` frame. Providers emit snapshot observations and call `EndSnapshot` with coverage and continuity before sending changes. Snapshot-only sessions terminate at the boundary; update sessions terminate with reset or failure. Catalog `sourceUpdates` capabilities declare `gapFree` or `bestEffort` continuity. `AcquireOnConnect` requires that capability. Hosts supply session and generation tokens and frame limits, and must reopen after a reset.
+Source sessions begin with a framework-issued `begin` frame. Providers emit snapshot observations and call `EndSnapshot` with coverage and continuity before sending changes. Snapshot-only sessions terminate at the boundary; update sessions terminate with reset or failure. Catalog `sourceUpdates` capabilities declare `gapFree` or `bestEffort` continuity. Existing explicit non-Kubernetes `AcquireOnConnect` policy still requires that capability; it does not make every connection an inventory consumer. Hosts supply session and generation tokens and frame limits, and must reopen after a reset.
 
-`SourceOpenRequest.Binding` supplies the admitted representation once per generation. Observations carry a compact `RepresentationRef`, the tagged `Value` body, per-record coverage, and independent `DocumentCoverage.KnownAbsent` paths. The reference must match the binding's ID, revision, and schema-revision presence and value. Frame sequences use unsigned decimal strings in JSON; protobuf retains `uint64`. `CompactSourceRecord` converts a P45 record after the caller verifies its full representation against the admitted binding.
+`SourceOpenRequest.Binding` supplies the selected `Representation{ID, Revision}` once per generation. Finite `Record` and compact `SourceRecord` use that same format type. Observations retain tagged `Value` bodies, per-record coverage, and independent `DocumentCoverage.KnownAbsent` paths. Frame sequences use unsigned decimal strings in JSON; protobuf retains `uint64`. `CompactSourceRecord` adapts a finite record without schema copies.
 
-The legacy finite-response compatibility path does not accept retired schema claims in ancillary editor-schema responses. Such responses are unsupported; the exercised Proxmox SDK v0.10.0 provider does not advertise editor schemas.
+Initial finite/source dispatch requires the exact accepted catalog observation. Ongoing source checks use `SourceOperationalContractEqual` and `CheckSourceCatalog`: retain the originally captured native binding epoch, selected type/format/operation/scope, identity/query dimensions, and continuity. Presentation, unselected support, and global catalog revision do not retire a healthy selected source. Partial discovery cannot prove withdrawal or grant unobserved support. Schema observations never change source identity.
+
+Source admission also requires an SDK-owned `CatalogBindingEpoch`; custom providers issue and bind that epoch through the existing catalog helpers. A source-updates operation owns its snapshot and changes; it does not require or grant independent finite enumeration. Snapshot-only finite/native-query adapters still admit their actual acquisition operation, including opaque native-query contracts without schema metadata.
+
+Resource wire version `3` explicitly rejects incompatible version-`2` cohorts before changed payload interpretation. The old bare-route catalog request tag, schema-bearing representation tag, compact schema-revision tag, and bulk editor-list result tag are retired, not reinterpreted. Independently supported host v1/finite adapters must normalize to this contract and demand schemas separately; they do not fabricate source-session support.
 
 Framework owns stream channels and completion. Send events and return; never close framework-owned channels. See [stream lifetime contracts](resource-v2-contracts.md#utility-and-stream-lifetime).
 

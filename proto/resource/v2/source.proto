@@ -11,11 +11,6 @@ message SourceEnumerate {}
 message SourceNativeQuery { string language = 1; Value query = 2; }
 message SourceAcquisition { oneof kind { SourceEnumerate enumerate = 1; SourceNativeQuery native_query = 2; } }
 message RepresentationBinding { Representation representation = 1; }
-message RepresentationRef {
-  string id = 1;
-  string revision = 2;
-  optional string schema_revision = 3;
-}
 message SourceOpenRequest {
   uint32 version = 1;
   string session_id = 2;
@@ -36,7 +31,7 @@ message DocumentCoverage { repeated DocumentFieldPath known_absent = 1; }
 message SourceRecord {
   ResourceReference reference = 1;
   Value body = 2;
-  RepresentationRef representation = 3;
+  Representation representation = 3;
   Coverage coverage = 4;
   optional string source_revision = 5;
 }

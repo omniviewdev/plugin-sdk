@@ -145,7 +145,7 @@ func TestActualGRPCMultiMiBResourceBodies(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			size := proto.Size(&resourcepb.Response{Version: 2, Result: &resourcepb.Response_Record{Record: wire}})
+			size := proto.Size(&resourcepb.Response{Version: resourcev2.WireVersion, Result: &resourcepb.Response_Record{Record: wire}})
 			t.Logf("payload_bytes=%d encoded_response_bytes=%d elapsed=%s", len(p.payload), size, elapsed)
 			if p.calls.Load() != 1 {
 				t.Fatal("Get dispatch count mismatch")
@@ -191,7 +191,7 @@ func TestActualGRPCAggregatePageFrameLimit(t *testing.T) {
 	for range 3 {
 		page = append(page, framedRecord...)
 	}
-	data := append([]byte{8, 2}, bytesField(4, page)...)
+	data := append([]byte{8, byte(resourcev2.WireVersion)}, bytesField(4, page)...)
 	if err := ValidateWire(
 		data,
 		(&resourcepb.Response{}).ProtoReflect().Descriptor(),
@@ -205,7 +205,7 @@ func TestActualGRPCAggregatePageFrameLimit(t *testing.T) {
 	c := NewClient(pipe(t, s))
 	_, err := c.call(
 		context.Background(),
-		&resourcepb.Request{Operation: &resourcepb.Request_Catalog{Catalog: &resourcepb.AccessRoute{Connection: "c"}}},
+		&resourcepb.Request{Operation: &resourcepb.Request_CatalogRequest{CatalogRequest: &resourcepb.CatalogRequest{Route: &resourcepb.AccessRoute{Connection: "c"}}}},
 	)
 	if testErrorClass(err) != "RESOURCE_LIMIT" {
 		t.Fatalf("aggregate response class: %v", err)

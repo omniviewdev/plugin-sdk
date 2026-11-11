@@ -75,7 +75,7 @@ func TestQualifiedCatalogMetadataRejectsMalformedBeforeDispatch(t *testing.T) {
 		err = conn.Invoke(
 			outgoing,
 			resourcepb.ResourceAncillary_Call_FullMethodName,
-			&resourcepb.AncillaryRequest{Version: 2, Operation: "resolveRelationships", RelationshipResolution: wire},
+			&resourcepb.AncillaryRequest{Version: resourcev2.WireVersion, Operation: "resolveRelationships", RelationshipResolution: wire},
 			&response,
 		)
 		if resourcev2.ErrorCode(domainError(err)) != "RESET_REQUIRED" || p.calls.Load() != 0 {

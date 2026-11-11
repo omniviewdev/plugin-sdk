@@ -89,15 +89,19 @@ func (d *sourceDeadline) stop() {
 }
 
 type sourceClientStream struct {
-	stream          grpc.ClientStream
-	cancel          context.CancelFunc
-	ctx             context.Context
-	maxBatchItems   uint32
-	deadline        *sourceDeadline
-	snapshotTimeout time.Duration
-	tracker         *resourcev2.SourcePhaseTracker
-	admitted        bool
-	once            sync.Once
+	stream           grpc.ClientStream
+	cancel           context.CancelFunc
+	ctx              context.Context
+	maxBatchItems    uint32
+	deadline         *sourceDeadline
+	snapshotTimeout  time.Duration
+	tracker          *resourcev2.SourcePhaseTracker
+	client           *Client
+	request          resourcev2.SourceOpenRequest
+	descriptor       resourcev2.ResourceType
+	nextCatalogCheck time.Time
+	admitted         bool
+	once             sync.Once
 }
 
 // sourceBeginTimedOut logs the begin-handshake timeout and returns its domain error.
@@ -145,12 +149,12 @@ func (c *Client) OpenSourceStream(ctx context.Context, r resourcev2.SourceOpenRe
 		}
 		return nil, err
 	}
-	ctx, err = outgoingSession(ctx)
+	streamCtx, err := outgoingSession(ctx)
 	if err != nil {
 		return nil, err
 	}
 	cancel := func() { cancelCause(context.Canceled) }
-	stream, err := c.conn.NewStream(ctx, &resourcepb.ResourceSources_ServiceDesc.Streams[0], resourcepb.ResourceSources_Open_FullMethodName, grpc.MaxCallRecvMsgSize(int(r.Limits.MaxFrameBytes)), grpc.MaxCallSendMsgSize(256<<10), grpc.PartialMessageReadTimeout(5*time.Second))
+	stream, err := c.conn.NewStream(streamCtx, &resourcepb.ResourceSources_ServiceDesc.Streams[0], resourcepb.ResourceSources_Open_FullMethodName, grpc.MaxCallRecvMsgSize(int(r.Limits.MaxFrameBytes)), grpc.MaxCallSendMsgSize(256<<10), grpc.PartialMessageReadTimeout(5*time.Second))
 	if err != nil {
 		if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
 			return nil, sourceBeginTimedOut(ctx, r.SessionID)
@@ -169,7 +173,7 @@ func (c *Client) OpenSourceStream(ctx context.Context, r resourcev2.SourceOpenRe
 		return nil, domainError(err)
 	}
 	opened = true
-	return &sourceClientStream{stream: stream, cancel: cancel, ctx: ctx, maxBatchItems: r.Limits.MaxBatchItems, deadline: deadline, snapshotTimeout: snapshotTimeout, tracker: resourcev2.NewCatalogBoundSourcePhaseTracker(r, descriptor)}, nil
+	return &sourceClientStream{stream: stream, cancel: cancel, ctx: ctx, maxBatchItems: r.Limits.MaxBatchItems, deadline: deadline, snapshotTimeout: snapshotTimeout, tracker: resourcev2.NewCatalogBoundSourcePhaseTracker(r, descriptor), client: c, request: r, descriptor: descriptor, nextCatalogCheck: time.Now().Add(time.Second)}, nil
 }
 func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 	var zero resourcev2.SourceFrame
@@ -225,6 +229,13 @@ func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 		}
 		sourceFrameInvalid(s.ctx, "decode_failed")
 		return zero, resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
+	}
+	if s.client != nil && (f.Snapshot != nil || f.SnapshotEnd != nil || f.Changes != nil) && !time.Now().Before(s.nextCatalogCheck) {
+		s.nextCatalogCheck = time.Now().Add(time.Second)
+		if err := sourceCatalogCheck(s.ctx, s.client, s.request, s.descriptor); err != nil {
+			s.Close()
+			return zero, err
+		}
 	}
 	if err = s.tracker.AdmitSized(f, proto.Size(p)); err != nil {
 		s.Close()

@@ -113,7 +113,7 @@ func schemaDocumentReference(s Scenario) resource.SchemaDocumentReference {
 
 const nativeRepresentationID = "native"
 
-func representation(s Scenario) resource.Representation {
+func schemaBinding(s Scenario) resource.SchemaBinding {
 	schema := resource.SchemaBinding{State: "absent"}
 	switch {
 	case s.SchemaUnavailable != "":
@@ -131,10 +131,14 @@ func representation(s Scenario) resource.Representation {
 			schema.Document = s.Schema
 		}
 	}
-	return resource.Representation{ID: nativeRepresentationID, Revision: "representation:opaque/1", Schema: schema}
+	return schema
 }
 
-func nativeRecord(r Record, s Scenario) resource.Record {
+func representation() resource.Representation {
+	return resource.Representation{ID: nativeRepresentationID, Revision: "representation:opaque/1"}
+}
+
+func nativeRecord(r Record) resource.Record {
 	return resource.Record{
 		Reference: resource.ResourceReference{
 			Address: resource.ResourceAddress{
@@ -147,7 +151,7 @@ func nativeRecord(r Record, s Scenario) resource.Record {
 			Incarnation: token(r.Incarnation),
 		},
 		Body:           nativeValue(r.Body),
-		Representation: representation(s),
+		Representation: representation(),
 		Coverage:       resource.Coverage{Kind: "complete", Paths: []string{}},
 		SourceRevision: token(r.Revision),
 	}
@@ -155,23 +159,25 @@ func nativeRecord(r Record, s Scenario) resource.Record {
 func nativeError(code, message string) error { return resource.NewError(code, message) }
 
 type nativeProvider struct {
-	corpus                Corpus
-	state                 string
-	profile               string
-	mu                    sync.Mutex
-	active                map[string]bool
-	bindingEpochs         map[string]string
-	nativeCatalogRevision string
+	corpus                  Corpus
+	state                   string
+	profile                 string
+	mu                      sync.Mutex
+	active                  map[string]bool
+	bindingEpochs           map[string]string
+	nativeCatalogRevision   string
+	demandedSchemaDocuments map[string]resource.SchemaDocumentReference
 }
 
 func newNativeProvider(state, profile string) *nativeProvider {
 	return &nativeProvider{
-		corpus:                NativeCorpus(),
-		state:                 state,
-		profile:               profile,
-		active:                map[string]bool{},
-		bindingEpochs:         map[string]string{},
-		nativeCatalogRevision: "catalog:opaque/1",
+		corpus:                  NativeCorpus(),
+		state:                   state,
+		profile:                 profile,
+		active:                  map[string]bool{},
+		bindingEpochs:           map[string]string{},
+		nativeCatalogRevision:   "catalog:opaque/1",
+		demandedSchemaDocuments: map[string]resource.SchemaDocumentReference{},
 	}
 }
 
@@ -238,7 +244,7 @@ func (p *nativeProvider) Catalog(ctx context.Context, in resource.CatalogRequest
 				DisplayName:           s.Type,
 				IdentityDimensions:    dims,
 				QueryDimensions:       dims,
-				Representations:       []resource.Representation{representation(s)},
+				Representations:       []resource.Representation{representation()},
 				DefaultRepresentation: nativeRepresentationID,
 				Capabilities:          caps,
 			},
@@ -246,8 +252,37 @@ func (p *nativeProvider) Catalog(ctx context.Context, in resource.CatalogRequest
 	}, nil
 }
 
-// GetSchemaDocument serves a reference-delivered scenario schema; any other
-// reference is NOT_FOUND.
+// ResolveSchema admits one exact format and records only demanded documents.
+func (p *nativeProvider) ResolveSchema(ctx context.Context, request resource.SchemaRequest) (resource.SchemaBinding, error) {
+	if err := resource.ValidateSchemaRequest(request); err != nil {
+		return resource.SchemaBinding{}, err
+	}
+	s, err := p.scenario(request.Route)
+	if err != nil {
+		return resource.SchemaBinding{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return resource.SchemaBinding{}, err
+	}
+	if request.Type != s.Type || request.Target.Representation == nil {
+		return resource.SchemaBinding{}, nativeError("UNSUPPORTED", "schema target is not served by this source")
+	}
+	if *request.Target.Representation != representation() {
+		return resource.SchemaBinding{}, nativeError("RESET_REQUIRED", "schema format changed")
+	}
+	binding := schemaBinding(s)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.active[request.Route.Connection] {
+		return resource.SchemaBinding{}, nativeError("RESET_REQUIRED", "schema source retired")
+	}
+	if binding.DocumentRef != nil {
+		p.demandedSchemaDocuments[request.Route.Connection] = *binding.DocumentRef
+	}
+	return binding, nil
+}
+
+// GetSchemaDocument serves only an exact reference held by demanded resolution.
 func (p *nativeProvider) GetSchemaDocument(
 	ctx context.Context,
 	route resource.AccessRoute,
@@ -259,6 +294,11 @@ func (p *nativeProvider) GetSchemaDocument(
 	}
 	if err = ctx.Err(); err != nil {
 		return resource.SchemaDocument{}, err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.active[route.Connection] || p.demandedSchemaDocuments[route.Connection] != reference {
+		return resource.SchemaDocument{}, nativeError("NOT_FOUND", "schema document is not held by this source")
 	}
 	if s.SchemaDelivery != SchemaDeliveryReference || reference != schemaDocumentReference(s) {
 		return resource.SchemaDocument{}, nativeError("NOT_FOUND", "schema document is not served by this source")
@@ -321,6 +361,7 @@ func (p *nativeProvider) StopConnection(ctx context.Context, id string) (types.C
 	p.mu.Lock()
 	delete(p.active, id)
 	delete(p.bindingEpochs, id)
+	delete(p.demandedSchemaDocuments, id)
 	p.mu.Unlock()
 	if err := os.WriteFile(filepath.Join(p.state, id+".closed"), []byte("closed"), 0o600); err != nil {
 		return types.Connection{}, err
@@ -354,7 +395,7 @@ func (p *nativeReader) Get(ctx context.Context, in resource.GetRequest) (resourc
 	}
 	for _, page := range s.Pages {
 		for _, name := range page.Records {
-			r := nativeRecord(p.corpus.Record(name), s)
+			r := nativeRecord(p.corpus.Record(name))
 			r.Reference.Address.Authority = in.Reference.Address.Authority
 			if reflect.DeepEqual(r.Reference.Address, in.Reference.Address) &&
 				(in.Reference.Incarnation == nil || reflect.DeepEqual(in.Reference.Incarnation, r.Reference.Incarnation)) {
@@ -432,7 +473,7 @@ func (p *nativeProvider) page(ctx context.Context, in resource.EnumerateRequest)
 			Consistency: s.Coverage.Consistency,
 		}
 		for _, name := range page.Records {
-			record := nativeRecord(p.corpus.Record(name), s)
+			record := nativeRecord(p.corpus.Record(name))
 			record.Reference.Address.Authority = in.Target.Authority
 			out.Records = append(out.Records, record)
 		}

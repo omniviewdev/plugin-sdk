@@ -84,26 +84,57 @@ func TestControllerSourceRejectsCursorCycle(t *testing.T) {
 	assertControllerCode(t, err, "PROVIDER_ERROR")
 }
 
-func TestControllerSourceFenceResetsChangedCatalog(t *testing.T) {
-	cfg := controllerConfig()
-	catalog := cfg.Catalog
-	changed := false
-	cfg.Catalog = func(ctx context.Context, request CatalogRequest) (Catalog, error) {
-		result, err := catalog(ctx, request)
-		if changed {
-			result.Revision = "changed"
-		}
-		return result, err
-	}
-	cfg.Registrations = []Registration[string]{{Type: "opaque/type", Source: func(context.Context, *string, SourceRequest, SourceEmitter) error {
-		changed = true
-		return nil
-	}}}
-	c := newTestController(t, cfg)
-	emitter := &recordingSourceEmitter{}
-	err := c.OpenSource(acceptedControllerContext(context.Background(), t, c), controllerSourceOpen(SourceModeSnapshotAndUpdates), emitter)
-	if err != nil || emitter.reset != SourceResetBindingChanged || len(emitter.observations) != 0 {
-		t.Fatalf("reset=%q observations=%d err=%v", emitter.reset, len(emitter.observations), err)
+func TestControllerSourceFenceUsesSelectedContract(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*Catalog)
+		reset  string
+	}{
+		{"unrelated revision and presentation", func(c *Catalog) {
+			c.Revision = "changed"
+			c.Types[0].DisplayName = "renamed"
+			c.Types[0].Description = "new display description"
+			c.Types[0].Representations = append(c.Types[0].Representations, Representation{ID: "other", Revision: "1"})
+		}, ""},
+		{"selected format", func(c *Catalog) {
+			c.Types[0].Representations[0].Revision = "changed"
+		}, SourceResetBindingChanged},
+		{"selected capability withdrawal", func(c *Catalog) {
+			c.Types[0].Capabilities = nil
+		}, SourceResetBindingChanged},
+		{"selected continuity", func(c *Catalog) {
+			for i := range c.Types[0].Capabilities {
+				if c.Types[0].Capabilities[i].Operation == OperationSourceUpdates {
+					c.Types[0].Capabilities[i].Guarantee = ContinuityGapFree
+				}
+			}
+		}, SourceResetBindingChanged},
+		{"native identity", func(c *Catalog) {
+			c.Types[0].NativeAuthorityHint = &NativeAuthorityHint{Scheme: "fixture.v1", ID: "different", Continuity: ContinuityConnectionLocal}
+		}, SourceResetBindingChanged},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := controllerConfig()
+			catalog := cfg.Catalog
+			changed := false
+			cfg.Catalog = func(ctx context.Context, request CatalogRequest) (Catalog, error) {
+				result, err := catalog(ctx, request)
+				if changed {
+					tc.change(&result)
+				}
+				return result, err
+			}
+			cfg.Registrations = []Registration[string]{{Type: "opaque/type", Source: func(context.Context, *string, SourceRequest, SourceEmitter) error {
+				changed = true
+				return nil
+			}}}
+			c := newTestController(t, cfg)
+			emitter := &recordingSourceEmitter{}
+			err := c.OpenSource(acceptedControllerContext(context.Background(), t, c), controllerSourceOpen(SourceModeSnapshotAndUpdates), emitter)
+			if err != nil || emitter.reset != tc.reset || len(emitter.observations) != 0 {
+				t.Fatalf("reset=%q want=%q observations=%d err=%v", emitter.reset, tc.reset, len(emitter.observations), err)
+			}
+		})
 	}
 }
 
@@ -235,7 +266,7 @@ func TestControllerSourceLimitationsAreBounded(t *testing.T) {
 }
 
 func TestControllerLiveSourceRejectsUnboundRecords(t *testing.T) {
-	for _, mutation := range []string{"revision", "schema", "identity"} {
+	for _, mutation := range []string{"revision", "identity"} {
 		for _, phase := range []string{"snapshot", "upsert", "remove"} {
 			if phase == "remove" && mutation != "identity" {
 				continue
@@ -254,9 +285,6 @@ func TestControllerLiveSourceRejectsUnboundRecords(t *testing.T) {
 				cfg := controllerConfig()
 				cfg.Registrations = []Registration[string]{{Type: "opaque/type", Source: func(ctx context.Context, _ *string, _ SourceRequest, emitter SourceEmitter) error {
 					observation := SourceObservation{Record: CompactSourceRecord(record)}
-					if mutation == "schema" {
-						observation.Record.Representation.SchemaRevision = codecToken("unaccepted-schema")
-					}
 					if phase == "snapshot" {
 						return emitter.Snapshot(ctx, []SourceObservation{observation})
 					}

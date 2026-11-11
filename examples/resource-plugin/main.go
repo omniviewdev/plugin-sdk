@@ -46,7 +46,7 @@ func run() (err error) {
 	return nil
 }
 
-func smokeRead(ctx context.Context, provider *resourcev2.Controller[struct{}], out io.Writer) error {
+func smokeRead(ctx context.Context, provider *noteProvider, out io.Writer) error {
 	route := resourcev2.AccessRoute{Connection: "local"}
 	catalog, err := provider.Catalog(ctx, resourcev2.CatalogRequest{Route: route})
 	if err != nil {

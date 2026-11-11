@@ -37,21 +37,21 @@ func (s *legacyUpdateWireServer) Call(ctx context.Context, request *resourcepb.R
 		for i, trait := range s.provider.features.Traits {
 			traits[i] = string(trait)
 		}
-		return &resourcepb.Response{Version: 2, Result: &resourcepb.Response_Features{Features: &resourcepb.FeatureSet{Traits: traits}}}, nil
+		return &resourcepb.Response{Version: resourcev2.WireVersion, Result: &resourcepb.Response_Features{Features: &resourcepb.FeatureSet{Traits: traits}}}, nil
 	}
 	catalog, err := s.provider.Catalog(ctx, resourcev2.CatalogRequest{})
 	if err != nil {
 		return nil, err
 	}
 	wire, err := resourcev2.ToProtoCatalog(catalog)
-	return &resourcepb.Response{Version: 2, Result: &resourcepb.Response_Catalog{Catalog: wire}}, err
+	return &resourcepb.Response{Version: resourcev2.WireVersion, Result: &resourcepb.Response_Catalog{Catalog: wire}}, err
 }
 
 func TestLegacyUpdateProviderContext(t *testing.T) {
 	for _, tc := range []struct {
-		name string
+		name   string
 		traits []resourcev2.Feature
-		code string
+		code   string
 	}{
 		{name: "old", traits: []resourcev2.Feature{"bestEffortUpdates"}},
 		{name: "modern", traits: []resourcev2.Feature{resourcev2.FeatureSourceSessions}, code: "INVALID_REQUEST"},

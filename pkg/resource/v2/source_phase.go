@@ -66,9 +66,6 @@ func sourceToken(s string) bool {
 
 // ValidateSourceOpenRequest checks the request's target, acquisition and negotiated limits.
 func ValidateSourceOpenRequest(r SourceOpenRequest) error {
-	if len(r.Binding.Representation.Schema.Document) > 256<<10 {
-		return limited("source open exceeds byte limit")
-	}
 	if !sourceToken(r.SessionID) || !sourceToken(r.Generation) {
 		return invalid("invalid source token")
 	}
@@ -158,7 +155,7 @@ func checkSourceReference(descriptor ResourceType, target ReadTarget, reference 
 
 func (t *SourcePhaseTracker) checkObservation(observation SourceObservation) error {
 	ref, binding := observation.Record.Representation, t.request.Binding.Representation
-	if ref.ID != binding.ID || ref.Revision != binding.Revision || (ref.SchemaRevision == nil) != (binding.Schema.Revision == nil) || ref.SchemaRevision != nil && *ref.SchemaRevision != *binding.Schema.Revision {
+	if ref != binding {
 		return NewError("RESET_REQUIRED", "source binding changed")
 	}
 	if t.descriptor != nil {

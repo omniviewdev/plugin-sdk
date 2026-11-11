@@ -43,9 +43,6 @@ func metricRegistry(
 							{
 								ID:       "document",
 								Revision: "1",
-								Schema: resourcev2.SchemaBinding{
-									State: "absent",
-								},
 							},
 						},
 						Capabilities: []resourcev2.Capability{},

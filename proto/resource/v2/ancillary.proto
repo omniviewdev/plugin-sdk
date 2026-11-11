@@ -6,16 +6,16 @@ import "proto/resource/v2/domain.proto";
 // JSON fields contain only bounded shared connection data or presentation documents.
 // Operation names determine payloads: health uses get/value; events uses get/
 // limit. resolveRelationships uses relationship_resolution, not legacy get.
-// schemaDocument uses route/document_ref; relationships/actions/scopeValues/
-// definition use route/type; groups/editorSchemas use route. updateConnection and
-// applyConnectionOverlay use connection_json; deleteConnection uses id.
+// schemaDocument uses route/document_ref; resolveSchema uses schema_request.
+// relationships/actions/scopeValues/definition use route/type; groups uses route.
+// updateConnection/applyConnectionOverlay use connection_json; deleteConnection uses id.
 // listConnections/nativeConnections carry no operation-specific input.
 // getConnectionMetadata/refreshConnectionMetadata use id and return snapshot JSON.
 // watchConnectionMetadata carries no input and streams event JSON, preserving
 // explicit null entry values. ConnectionStreamEvent.connections_json carries
 // the complete metadata event for WatchConnectionMetadata.
 // Results correspond respectively to health/events/resolved/document/
-// relationships/editor_schemas; presentation and connection results use json.
+// relationships/schema_binding; presentation and connection results use json.
 // OptionalHealth with absent health represents unavailable health, not success
 // with an empty ResourceHealth. Missing required messages or result selections
 // fail admission. Unknown fields, singular duplicates, and multiple oneof
@@ -38,9 +38,12 @@ message AncillaryRequest {
   uint32 limit = 9;
   SchemaDocumentReference document_ref = 10;
   RelationshipResolutionInput relationship_resolution = 11;
+  SchemaRequest schema_request = 12;
 }
 
 message AncillaryResponse {
+  reserved 8;
+  reserved "editor_schemas";
   uint32 version = 1;
   oneof result {
     bytes json = 2;
@@ -49,21 +52,32 @@ message AncillaryResponse {
     OptionalHealth health = 5;
     ResourceEvents events = 6;
     SchemaDocument document = 7;
-    EditorSchemas editor_schemas = 8;
+    SchemaBinding schema_binding = 9;
   }
 }
 
-message EditorSchema {
-  reserved 2, 3;
-  reserved "file_match", "uri";
-  string type = 1;
-  string language = 4;
-  SchemaBinding binding = 5;
-  string key = 6;
+message SchemaTarget {
+  oneof selection {
+    Representation representation = 1;
+    AuxiliarySchemaTarget auxiliary = 2;
+  }
 }
 
-message EditorSchemas {
-  repeated EditorSchema schemas = 1;
+message AuxiliarySchemaTarget {
+  string key = 1;
+  ResourceReference reference = 2;
+  optional string source_revision = 3;
+}
+
+message SchemaRequest {
+  AccessRoute route = 1;
+  string type = 2;
+  SchemaTarget target = 3;
+}
+
+message SchemaDocumentRequest {
+  SchemaRequest request = 1;
+  SchemaDocumentReference reference = 2;
 }
 
 message OptionalHealth {

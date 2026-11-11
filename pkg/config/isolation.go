@@ -25,7 +25,7 @@ type StateIsolationProvenance struct {
 	Capability    string `json:"capability"     yaml:"capability"`
 	SDKModule     string `json:"sdk_module"     yaml:"sdk_module"`
 	// SDKRevision identifies the selected SDK checkout commit observed by the builder.
-	SDKRevision   string `json:"sdk_revision"   yaml:"sdk_revision"`
+	SDKRevision string `json:"sdk_revision"   yaml:"sdk_revision"`
 	// SDKSourceSHA256 identifies the trusted builder's exact selected working-tree
 	// snapshot, including live edits to that checkout.
 	// Empty is reserved for immutable, clean, commit-only trusted builds.

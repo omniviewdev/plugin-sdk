@@ -277,7 +277,7 @@ func (p *PluginClient) StartResourcePortForwardSession(
 	if err := admissionError(); err != nil {
 		return nil, err
 	}
-	if response.GetResourceWireVersion() != resourcev2.WireVersion {
+	if response.GetResourceWireVersion() != resourceWireVersion {
 		return nil, resourcev2.NewError("UNSUPPORTED", "Resource wire version 2 is required.")
 	}
 	if response.GetSession() == nil || response.GetSession().GetResourceConnection() == nil {

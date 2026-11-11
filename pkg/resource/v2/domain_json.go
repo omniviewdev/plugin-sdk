@@ -425,7 +425,7 @@ func (v *SchemaBinding) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	value := SchemaBinding(out)
-	if err := validateSchema(value); err != nil {
+	if err := ValidateSchemaBinding(value); err != nil {
 		return err
 	}
 	*v = value
@@ -436,7 +436,7 @@ func (v *SchemaBinding) UnmarshalJSON(data []byte) error {
 func (v *Representation) UnmarshalJSON(data []byte) error {
 	type plain Representation
 	var out plain
-	if _, err := decodeDomainObject(data, &out, "id", "revision", "schema"); err != nil {
+	if _, err := decodeDomainObject(data, &out, "id", "revision"); err != nil {
 		return err
 	}
 	value := Representation(out)
@@ -671,7 +671,7 @@ func (v ScopeConstraint) MarshalJSON() ([]byte, error) {
 
 // MarshalJSON validates SchemaBinding and emits canonical JSON without mutating caller-owned containers.
 func (v SchemaBinding) MarshalJSON() ([]byte, error) {
-	if err := validateSchema(v); err != nil {
+	if err := ValidateSchemaBinding(v); err != nil {
 		return nil, err
 	}
 	type plain SchemaBinding
