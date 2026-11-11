@@ -10,6 +10,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
+	"github.com/omniviewdev/plugin-sdk/internal/obs"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	resourcepb "github.com/omniviewdev/plugin-sdk/proto/resource/v2"
@@ -63,7 +65,13 @@ func watchConnectionsHandler(srv any, stream grpc.ServerStream) error {
 			ConnectionsJson: out.GetJson(),
 		})
 	}
-	finish := func(err error) error { return rpcError(s.owner.classify(err)) }
+	closeStream := obs.StreamOpened("watch_connections")
+	defer closeStream()
+	finish := func(err error) error {
+		wireErr := rpcErrorContext(ctx, "watch_connections", s.owner.classify(err))
+		logging.Default().Debugw(ctx, "watch connections relay finished", "operation", "watch_connections", "error_code", obs.ErrorCode(err, resourcev2.ErrorCode(err)))
+		return wireErr
+	}
 	return relayAncillaryEvents(ctx, cancel, events, done, send, finish, "connection")
 }
 
@@ -104,20 +112,30 @@ func streamActionHandler(srv any, stream grpc.ServerStream) (result error) {
 	ctx, cancel := context.WithCancel(base)
 	defer cancel()
 	if fenceErr := s.owner.checkCatalogRoute(ctx, r.Action.GetRoute()); fenceErr != nil {
-		return rpcError(s.owner.classify(fenceErr))
+		actionRejected(ctx, span, "fence", fenceErr)
+		return rpcErrorContext(ctx, "stream_action", s.owner.classify(fenceErr))
 	}
 	if _, err = resourcev2.AdmitStreamingAction(ctx, s.owner.impl, in); err != nil {
-		return rpcError(err)
+		actionRejected(ctx, span, "admission", err)
+		return rpcErrorContext(ctx, "stream_action", err)
 	}
+	span.AddEvent("action.admitted")
 	descriptor, err := resourcev2.ResolveActionDescriptor(ctx, s.owner.impl, in, true)
 	if err != nil {
-		return rpcError(err)
+		actionRejected(ctx, span, "descriptor", err)
+		return rpcErrorContext(ctx, "stream_action", err)
 	}
+	span.AddEvent("action.descriptor_resolved", trace.WithAttributes(attribute.Bool("described", descriptor != nil)))
 	p, ok := s.owner.impl.(resourcev2.StreamingActioner)
 	if !ok {
-		return rpcError(unsupported("streaming action unsupported"))
+		unsupportedErr := unsupported("streaming action unsupported")
+		obs.Reject(ctx, nil, "stream_action", resourcev2.ErrorCode(unsupportedErr))
+		actionRejected(ctx, span, "admission", unsupportedErr)
+		return rpcErrorContext(ctx, "stream_action", unsupportedErr)
 	}
 	stage = "pre_ready"
+	closeStream := obs.StreamOpened("stream_action")
+	defer closeStream()
 	events := make(chan resourcev2.ActionEvent, 1)
 	done := make(chan error, 1)
 	go func() { done <- p.StreamAction(ctx, in, events) }()
@@ -133,6 +151,7 @@ func streamActionHandler(srv any, stream grpc.ServerStream) (result error) {
 		if err == nil && v.Type == "ready" {
 			stage = "post_ready"
 			span.AddEvent("action.ready")
+			span.AddEvent("action.readiness", trace.WithAttributes(attribute.String("action_phase", stage)))
 		}
 		if err == nil && v.Error != nil {
 			eventErrorCode = resourcev2.ErrorCode(v.Error)
@@ -146,13 +165,15 @@ func streamActionHandler(srv any, stream grpc.ServerStream) (result error) {
 	finish := func(err error) error {
 		if err != nil {
 			classified := s.owner.classify(err)
+			wireErr := rpcErrorContext(ctx, "stream_action", classified)
 			span.AddEvent("action.provider.failure", trace.WithAttributes(
-				attribute.String("omniview.error.code", actionTraceErrorCode(rpcError(classified))),
+				attribute.String("omniview.error.code", actionTraceErrorCode(wireErr)),
 				attribute.String("omniview.action.stage", stage),
 			))
-			return rpcError(classified)
+			return wireErr
 		}
 		if !ready {
+			actionReadinessViolation(ctx, "completed_without_ready")
 			return rpcError(invalid("action completed without native readiness"))
 		}
 		return nil
@@ -274,6 +295,7 @@ func (c *Client) StreamAction(
 		if receiveErr != nil {
 			if errors.Is(receiveErr, io.EOF) {
 				if !ready {
+					actionReadinessViolation(ctx, "completed_without_ready")
 					return invalid("action completed without native readiness")
 				}
 				return nil
@@ -341,6 +363,7 @@ func (s *ancillaryServer) sendActionEvent(
 	}
 	if v.Type == "ready" {
 		if *ready {
+			actionReadinessViolation(ctx, "duplicate_ready")
 			return invalid("duplicate action readiness")
 		}
 		if v.Error != nil {
@@ -348,6 +371,7 @@ func (s *ancillaryServer) sendActionEvent(
 		}
 		*ready = true
 	} else if !*ready {
+		actionReadinessViolation(ctx, "event_before_ready")
 		return invalid("action event before native readiness")
 	}
 	out := &resourcepb.ActionStreamEvent{Version: resourcev2.WireVersion, Type: v.Type}
@@ -446,6 +470,7 @@ func decodeActionEvent(p *resourcepb.ActionStreamEvent, ready *bool) (resourcev2
 		}
 		*ready = true
 	} else if !*ready {
+		actionReadinessViolation(context.Background(), "event_before_ready")
 		return resourcev2.ActionEvent{}, invalid("action event before native readiness")
 	}
 	if p.Type == "" {

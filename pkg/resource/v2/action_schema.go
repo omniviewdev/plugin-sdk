@@ -41,7 +41,7 @@ func ResolveActionDescriptor(
 	streaming bool,
 ) (*ActionDescriptor, error) {
 	if err := ValidateActionRequest(request); err != nil {
-		return nil, err
+		return nil, admissionRejected(ctx, "resolve_action_descriptor", err)
 	}
 	if resolver, ok := provider.(interface {
 		resolveActionDescriptor(context.Context, ActionRequest, bool) (*ActionDescriptor, error)
@@ -50,17 +50,17 @@ func ResolveActionDescriptor(
 	}
 	catalog, ok := provider.(ActionCatalog)
 	if !ok {
-		return unavailableActionDescriptor(request)
+		return admissionActionResult(ctx, "resolve_action_descriptor")(unavailableActionDescriptor(request))
 	}
 	target := actionOperationTarget(request)
 	descriptors, err := catalog.GetActions(ctx, request.Route, target.typ)
 	if err != nil {
 		if ErrorCode(err) == errorCodeUnsupported {
-			return unavailableActionDescriptor(request)
+			return admissionActionResult(ctx, "resolve_action_descriptor")(unavailableActionDescriptor(request))
 		}
 		return nil, err
 	}
-	return selectActionDescriptor(request, descriptors, streaming)
+	return admissionActionResult(ctx, "resolve_action_descriptor")(selectActionDescriptor(request, descriptors, streaming))
 }
 
 func unavailableActionDescriptor(request ActionRequest) (*ActionDescriptor, error) {
@@ -161,7 +161,7 @@ func (c *Controller[T]) resolveActionDescriptor(
 	streaming bool,
 ) (descriptor *ActionDescriptor, err error) {
 	var registration *Registration[T]
-	defer c.guard(&registration, &err)
+	defer c.guardContext(ctx, "resolve_action_descriptor", &registration, &err)
 	target := actionOperationTarget(request)
 	registration, _, err = c.resolve(
 		ctx,
@@ -177,7 +177,7 @@ func (c *Controller[T]) resolveActionDescriptor(
 		return descriptor, err
 	}
 	if registration.Actions == nil {
-		return unavailableActionDescriptor(request)
+		return admissionActionResult(ctx, "resolve_action_descriptor")(unavailableActionDescriptor(request))
 	}
-	return selectActionDescriptor(request, registration.Actions, streaming)
+	return admissionActionResult(ctx, "resolve_action_descriptor")(selectActionDescriptor(request, registration.Actions, streaming))
 }

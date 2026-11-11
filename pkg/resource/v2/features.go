@@ -105,7 +105,7 @@ func DetectFeatures(ctx context.Context, p Provider) (FeatureSet, error) {
 		if err != nil {
 			return FeatureSet{}, err
 		}
-		return f, ValidateFeatures(f)
+		return f, admissionRejected(ctx, "detect_features", ValidateFeatures(f))
 	}
 	f := FeatureSet{Traits: []Feature{}}
 	if _, ok := p.(ConnectionLifecycle); ok {

@@ -157,7 +157,18 @@ func (c *Controller[T]) classify(r *Registration[T], err error) (out error) {
 }
 
 func (c *Controller[T]) guard(r **Registration[T], err *error) {
-	if recover() != nil {
+	if recovered := recover(); recovered != nil {
+		guardPanic(context.Background(), "provider_handler", recovered)
+		*err = NewError("INTERNAL", "Provider handler panicked.")
+	}
+	*err = c.classify(*r, *err)
+}
+
+// guardContext is guard with the operation context so the panic is also recorded
+// as a span event on the caller's span. Call it directly from the deferred statement.
+func (c *Controller[T]) guardContext(ctx context.Context, operation string, r **Registration[T], err *error) {
+	if recovered := recover(); recovered != nil {
+		guardPanic(ctx, operation, recovered)
 		*err = NewError("INTERNAL", "Provider handler panicked.")
 	}
 	*err = c.classify(*r, *err)
