@@ -35,6 +35,7 @@ func IsFatalSourceTransportError(err error) bool {
 }
 
 var sourceBeginTimeout = 30 * time.Second
+
 const defaultSourceSnapshotProgressTimeout = 5 * time.Minute
 
 type sourceSnapshotProgressTimeoutKey struct{}
@@ -88,15 +89,15 @@ func (d *sourceDeadline) stop() {
 }
 
 type sourceClientStream struct {
-	stream   grpc.ClientStream
-	cancel   context.CancelFunc
-	ctx      context.Context
-	maxBatchItems uint32
-	deadline *sourceDeadline
+	stream          grpc.ClientStream
+	cancel          context.CancelFunc
+	ctx             context.Context
+	maxBatchItems   uint32
+	deadline        *sourceDeadline
 	snapshotTimeout time.Duration
-	tracker  *resourcev2.SourcePhaseTracker
-	admitted bool
-	once     sync.Once
+	tracker         *resourcev2.SourcePhaseTracker
+	admitted        bool
+	once            sync.Once
 }
 
 // sourceBeginTimedOut logs the begin-handshake timeout and returns its domain error.

@@ -144,9 +144,20 @@ func TestInvalidSourcePageWarnsWithoutProviderText(t *testing.T) {
 	h := newAdmissionObsHarness(t)
 	target := controllerTarget()
 	page := SourcePage{Records: make([]Record, 2)}
-	err := checkPage(page, ResourceType{}, target, 1)
+	ctx, span := otel.Tracer("test").Start(context.Background(), "test.parent")
+	err := checkPage(ctx, page, ResourceType{}, target, 1)
+	span.End()
 	if err == nil {
 		t.Fatal("expected page rejection")
+	}
+	var event bool
+	for _, recorded := range h.spans.GetSpans() {
+		for _, e := range recorded.Events {
+			event = event || (e.Name == "sdk.rejected" && strings.Contains(fmt.Sprint(e.Attributes), "check_page"))
+		}
+	}
+	if !event {
+		t.Fatal("missing sdk.rejected event on caller span")
 	}
 	var warned bool
 	for _, record := range h.sink.Records() {
@@ -156,5 +167,47 @@ func TestInvalidSourcePageWarnsWithoutProviderText(t *testing.T) {
 	}
 	if !warned {
 		t.Fatalf("missing warn record: %v", h.sink.Records())
+	}
+}
+
+func TestStreamingResolveActionDescriptorLaneRejectionIsObservable(t *testing.T) {
+	h := newAdmissionObsHarness(t)
+	calls := 0
+	descriptor := ActionDescriptor{ID: "run", Scope: ActionScopeType} // finite lane only
+	controller := scopedActionController(t, descriptor, descriptor, &calls)
+	ctx := acceptedControllerContext(context.Background(), t, controller)
+	ctx, span := otel.Tracer("test").Start(ctx, "test.parent")
+	before := admissionRejectionTotal()
+	_, err := ResolveActionDescriptor(ctx, controller, scopedActionRequest("west", Value{Kind: "null"}), true)
+	span.End()
+	assertControllerCode(t, err, "UNSUPPORTED")
+	if calls != 0 {
+		t.Fatal("descriptor resolution dispatched native action")
+	}
+	var event bool
+	for _, recorded := range h.spans.GetSpans() {
+		for _, e := range recorded.Events {
+			attrs := fmt.Sprint(e.Attributes)
+			if e.Name == "sdk.rejected" && strings.Contains(attrs, "UNSUPPORTED") &&
+				strings.Contains(attrs, "resolve_action_descriptor") {
+				event = true
+			}
+		}
+	}
+	if !event {
+		t.Fatal("missing sdk.rejected span event")
+	}
+	var logged bool
+	for _, record := range h.sink.Records() {
+		if record.Message == "request rejected" && record.Level == logging.LevelDebug &&
+			strings.Contains(fmt.Sprint(record.Fields), "resolve_action_descriptor") {
+			logged = true
+		}
+	}
+	if !logged {
+		t.Fatal("missing Debug request rejected record")
+	}
+	if admissionRejectionTotal() <= before {
+		t.Fatal("rejection metric did not increase")
 	}
 }

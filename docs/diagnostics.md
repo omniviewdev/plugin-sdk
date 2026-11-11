@@ -17,6 +17,19 @@ calls.Add(1,
 Register instruments once at start-up. Instruments are nil-safe, so a failed
 registration (`ErrInvalidMetric`, `ErrTooManyMetrics`) never needs a guard.
 
+## SDK measurements
+
+The SDK uses three instruments in the same process registry:
+
+| Metric | Kind | Attributes |
+|---|---|---|
+| `omniview.plugin.self.sdk.rejections` | counter | `operation`, `reason` |
+| `omniview.plugin.self.sdk.streams` | gauge | `operation` |
+| `omniview.plugin.self.sdk.connection.transitions` | counter | `phase`, `outcome` |
+
+These instruments share the 24-metric budget with plugin instruments. A plugin
+must use an SDK release that includes them and must be rebuilt to report them.
+
 ## Rules
 
 | Rule | Limit |

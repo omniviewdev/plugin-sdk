@@ -558,13 +558,13 @@ func ValidateOperationResult(request any, result any, descriptor ResourceType) e
 		if !ok {
 			return NewError("INTERNAL", "Enumeration returned the wrong result type.")
 		}
-		return checkPage(page, descriptor, request.Target, request.PageSize)
+		return checkPage(context.Background(), page, descriptor, request.Target, request.PageSize)
 	case NativeQueryRequest:
 		page, ok := result.(SourcePage)
 		if !ok {
 			return NewError("INTERNAL", "Native query returned the wrong result type.")
 		}
-		return checkPage(page, descriptor, request.Target, request.PageSize)
+		return checkPage(context.Background(), page, descriptor, request.Target, request.PageSize)
 	case MutationRequest:
 		record, ok := result.(Record)
 		if !ok {
@@ -701,12 +701,12 @@ func checkRecord(
 	return NewError("INTERNAL", "Provider response representation is not catalog-bound.")
 }
 
-func checkPage(page SourcePage, descriptor ResourceType, target ReadTarget, size uint32) error {
+func checkPage(ctx context.Context, page SourcePage, descriptor ResourceType, target ReadTarget, size uint32) error {
 	if err := ValidateSourcePage(page); err != nil {
-		return admissionPageInvalid(target, "page_shape", err)
+		return admissionPageInvalid(ctx, target, "page_shape", err)
 	}
 	if size != 0 && len(page.Records) > int(size) {
-		return admissionPageInvalid(target, "page_size_exceeded", NewError("INTERNAL", "Provider response exceeded requested source page size."))
+		return admissionPageInvalid(ctx, target, "page_size_exceeded", NewError("INTERNAL", "Provider response exceeded requested source page size."))
 	}
 	for i := range page.Records {
 		record := &page.Records[i]
@@ -719,11 +719,11 @@ func checkPage(page SourcePage, descriptor ResourceType, target ReadTarget, size
 			nil,
 			target.Scope,
 		); err != nil {
-			return admissionPageInvalid(target, "record_invalid", err)
+			return admissionPageInvalid(ctx, target, "record_invalid", err)
 		}
 		for j := range i {
 			if sameAddress(record.Reference.Address, page.Records[j].Reference.Address) {
-				return admissionPageInvalid(target, "duplicate_identity", NewError("INTERNAL", "Source page repeats resource identity."))
+				return admissionPageInvalid(ctx, target, "duplicate_identity", NewError("INTERNAL", "Source page repeats resource identity."))
 			}
 		}
 	}

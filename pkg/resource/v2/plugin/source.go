@@ -169,7 +169,7 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) (handlerErr error) {
 		begun := e.sequence != 0
 		e.mu.Unlock()
 		if !begun {
-			done <- rpcError(err)
+			done <- rpcErrorContext(ctx, "source_open", err)
 			return
 		}
 		if failureErr := e.failure(ctx, err); failureErr != nil {

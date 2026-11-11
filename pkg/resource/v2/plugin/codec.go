@@ -17,12 +17,12 @@ import (
 
 // envelope retains admission failure within a single RPC, without global state.
 type envelope struct {
-	message         proto.Message
-	err             error
-	legacyExec      bool
-	forceStrict     bool
-	legacyValidator func([]byte) error
-	sourceBatchLimit int
+	message            proto.Message
+	err                error
+	legacyExec         bool
+	forceStrict        bool
+	legacyValidator    func([]byte) error
+	sourceBatchLimit   int
 	legacySchemaClaims bool
 }
 type strictCodec struct{ fallback encoding.CodecV2 }

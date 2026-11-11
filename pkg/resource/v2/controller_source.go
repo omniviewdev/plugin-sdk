@@ -32,7 +32,7 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 		})
 	}
 	defer func() { endOpen(err) }()
-	defer c.guard(&registration, &err)
+	defer c.guardContext(ctx, "open_source", &registration, &err)
 	if err = ValidateSourceOpenRequest(request); err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func (c *Controller[T]) OpenSource(ctx context.Context, request SourceOpenReques
 			}
 			return err
 		}
-		if err = checkPage(page, descriptor, target, size); err != nil {
+		if err = checkPage(ctx, page, descriptor, target, size); err != nil {
 			return err
 		}
 		pages++

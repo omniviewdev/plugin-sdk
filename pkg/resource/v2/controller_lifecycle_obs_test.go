@@ -67,7 +67,7 @@ func (h *lifecycleObsHarness) spanNames() []string {
 func lifecycleObsAttr(span tracetest.SpanStub, key string) string {
 	for _, attr := range span.Attributes {
 		if string(attr.Key) == key {
-			return attr.Value.Emit()
+			return attr.Value.String()
 		}
 	}
 	return ""

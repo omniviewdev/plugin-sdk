@@ -17,7 +17,7 @@ import (
 // A nil discovered slice is a successful empty native snapshot, not a failure.
 func (c *Controller[T]) LoadConnections(ctx context.Context) (connections []types.Connection, err error) {
 	var r *Registration[T]
-	defer c.guard(&r, &err)
+	defer c.guardContext(ctx, "load_connections", &r, &err)
 	if err = c.requireLifecycle(); err != nil {
 		return nil, err
 	}

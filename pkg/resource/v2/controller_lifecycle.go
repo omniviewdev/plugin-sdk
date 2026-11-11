@@ -102,7 +102,7 @@ func (c *Controller[T]) WithConnection(
 	fn func(context.Context, types.Connection) error,
 ) (err error) {
 	var registration *Registration[T]
-	defer c.guard(&registration, &err)
+	defer c.guardContext(ctx, "with_connection", &registration, &err)
 	if c.cfg.Lifecycle == nil {
 		return NewError("UNSUPPORTED", "Connected utility context is unavailable.")
 	}
@@ -145,7 +145,7 @@ func (c *Controller[T]) WithClient(
 	fn func(context.Context, *T) error,
 ) (err error) {
 	var registration *Registration[T]
-	defer c.guard(&registration, &err)
+	defer c.guardContext(ctx, "with_client", &registration, &err)
 	ctx, client, done, err := c.lease(ctx, route)
 	if err != nil {
 		return err
@@ -245,7 +245,7 @@ func (c *Controller[T]) StartConnection(ctx context.Context, id string) (status 
 	ctx, span, finish := lifecycleStart(ctx, "start", id)
 	defer func() { finish(err) }()
 	var r *Registration[T]
-	defer c.guard(&r, &err)
+	defer c.guardContext(ctx, "start_connection", &r, &err)
 	_, err = c.connection(ctx, id)
 	if err != nil {
 		return status, err
@@ -395,7 +395,7 @@ func (c *Controller[T]) StopConnection(ctx context.Context, id string) (connecti
 	ctx, _, finish := lifecycleStart(ctx, "stop", id)
 	defer func() { finish(err) }()
 	var r *Registration[T]
-	defer c.guard(&r, &err)
+	defer c.guardContext(ctx, "stop_connection", &r, &err)
 	connection, err = c.GetConnection(ctx, id)
 	if err != nil {
 		return connection, err
@@ -476,7 +476,7 @@ func (c *Controller[T]) GetConnectionStatus(ctx context.Context, id string) (typ
 // Cancellation includes the caller and generation; callbacks must honor it.
 func (c *Controller[T]) CheckConnection(ctx context.Context, id string) (status types.ConnectionStatus, err error) {
 	var r *Registration[T]
-	defer c.guard(&r, &err)
+	defer c.guardContext(ctx, "check_connection", &r, &err)
 	connection, err := c.connection(ctx, id)
 	if err != nil {
 		return status, err

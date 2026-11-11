@@ -22,11 +22,10 @@ func admissionRejected(ctx context.Context, operation string, err error) error {
 
 // admissionPageInvalid reports a provider source page invariant violation. The
 // reason is a closed, SDK-authored token; provider text is never logged.
-func admissionPageInvalid(target ReadTarget, reason string, err error) error {
+func admissionPageInvalid(ctx context.Context, target ReadTarget, reason string, err error) error {
 	if err == nil {
 		return nil
 	}
-	ctx := context.Background()
 	logging.Default().Warnw(ctx, "provider source page invalid",
 		"reason", reason,
 		"source_id", target.Provider+"/"+target.Type+"/"+target.Representation,

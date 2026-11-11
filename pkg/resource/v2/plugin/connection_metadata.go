@@ -118,8 +118,9 @@ func watchConnectionMetadataHandler(srv any, stream grpc.ServerStream) error {
 		return sendResource(stream, &resourcepb.ConnectionStreamEvent{Version: resourcev2.WireVersion, ConnectionsJson: out.GetJson()})
 	})
 	classified := s.owner.classify(err)
-	logging.Default().Debugw(ctx, "metadata watch closed", "grpc_code", status.Code(rpcError(classified)).String(), "duration_ms", time.Since(openedAt).Milliseconds())
-	return rpcError(classified)
+	wireErr := rpcErrorContext(ctx, "watch_metadata", classified)
+	logging.Default().Debugw(ctx, "metadata watch closed", "grpc_code", status.Code(wireErr).String(), "duration_ms", time.Since(openedAt).Milliseconds())
+	return wireErr
 }
 
 // WatchConnectionMetadata forwards snapshots and removals until completion or cancellation.
