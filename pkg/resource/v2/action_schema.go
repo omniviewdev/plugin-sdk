@@ -151,6 +151,8 @@ func mergeScopedActionDescriptors[T any](registrations []Registration[T]) ([]Act
 }
 
 // resolveActionDescriptor selects the same scoped registration as finite dispatch.
+// The streaming lane only changes the execution lane the descriptor must declare;
+// AdmitStreamingAction admits the outer provider's streaming handler separately.
 func (c *Controller[T]) resolveActionDescriptor(
 	ctx context.Context,
 	request ActionRequest,
@@ -158,9 +160,6 @@ func (c *Controller[T]) resolveActionDescriptor(
 ) (descriptor *ActionDescriptor, err error) {
 	var registration *Registration[T]
 	defer c.guard(&registration, &err)
-	if streaming {
-		return descriptor, NewError(errorCodeUnsupported, "Streaming action handler is not implemented.")
-	}
 	target := actionOperationTarget(request)
 	registration, _, err = c.resolve(
 		ctx,
@@ -178,5 +177,5 @@ func (c *Controller[T]) resolveActionDescriptor(
 	if registration.Actions == nil {
 		return unavailableActionDescriptor(request)
 	}
-	return selectActionDescriptor(request, registration.Actions, false)
+	return selectActionDescriptor(request, registration.Actions, streaming)
 }
