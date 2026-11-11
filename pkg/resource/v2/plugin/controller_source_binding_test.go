@@ -13,9 +13,9 @@ import (
 
 func emptyBindingEnumeration(context.Context, *string, resourcev2.EnumerateRequest) (resourcev2.SourcePage, error) {
 	return resourcev2.SourcePage{
-		Records: []resourcev2.Record{},
-		Count: resourcev2.Count{Kind: "unknown"},
-		Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}},
+		Records:     []resourcev2.Record{},
+		Count:       resourcev2.Count{Kind: "unknown"},
+		Coverage:    resourcev2.Coverage{Kind: "complete", Paths: []string{}},
 		Consistency: resourcev2.ConsistencyBestEffort,
 	}, nil
 }

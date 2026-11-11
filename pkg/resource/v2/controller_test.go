@@ -12,11 +12,8 @@ import (
 )
 
 func controllerRepresentation() Representation {
-	return Representation{
-		ID:       "document",
-		Revision: "representation-1",
-		Schema:   SchemaBinding{State: "absent"},
-	}
+	return Representation{ID: "document",
+		Revision: "representation-1"}
 }
 
 func controllerAddress() ResourceAddress {

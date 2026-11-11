@@ -275,112 +275,31 @@ func TestSchemaDocumentBindingAndLocalRoot(t *testing.T) {
 		DocumentRef: &ref,
 		Root:        "#/$defs/a~1b/%E9%9B%AA",
 	}
-	if _, err := ToProtoEditorSchema(
-		EditorSchema{
-			Type:     "resource/type",
-			Key:      "default",
-			Language: "json",
-			Binding:  binding,
-		},
-	); err != nil {
+	if _, err := ToProtoSchemaBinding(binding); err != nil {
 		t.Fatal(err)
 	}
 	for _, root := range []string{"https://outside/schema", "#", "#/bad~2escape", "#/%ff", "#/%", "#/space here", "#/bad#fragment"} {
 		b := binding
 		b.Root = root
-		if _, err := ToProtoEditorSchema(
-			EditorSchema{
-				Type:     "resource/type",
-				Key:      "default",
-				Language: "json",
-				Binding:  b,
-			},
-		); ErrorCode(
-			err,
-		) != "INVALID_REQUEST" {
+		if _, err := ToProtoSchemaBinding(b); ErrorCode(err) != "INVALID_REQUEST" {
 			t.Fatalf("invalid root %q: %v", root, err)
 		}
 	}
 	both := binding
 	both.Document = []byte(`{}`)
-	if _, err := ToProtoEditorSchema(
-		EditorSchema{
-			Type:     "resource/type",
-			Key:      "default",
-			Language: "json",
-			Binding:  both,
-		},
-	); ErrorCode(
-		err,
-	) != "INVALID_REQUEST" {
+	if _, err := ToProtoSchemaBinding(both); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("ambiguous document binding: %v", err)
 	}
 	missing := binding
 	missing.DocumentRef = nil
-	if _, err := ToProtoEditorSchema(
-		EditorSchema{
-			Type:     "resource/type",
-			Key:      "default",
-			Language: "json",
-			Binding:  missing,
-		},
-	); ErrorCode(
-		err,
-	) != "INVALID_REQUEST" {
+	if _, err := ToProtoSchemaBinding(missing); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("missing document binding: %v", err)
 	}
 	inline := binding
 	inline.DocumentRef = nil
 	inline.Document = []byte(`{"x":1,"x":2}`)
-	if _, err := ToProtoEditorSchema(
-		EditorSchema{
-			Type:     "resource/type",
-			Key:      "default",
-			Language: "json",
-			Binding:  inline,
-		},
-	); ErrorCode(
-		err,
-	) != "INVALID_REQUEST" {
+	if _, err := ToProtoSchemaBinding(inline); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("duplicate schema JSON: %v", err)
-	}
-}
-
-func TestEditorSchemaKeyLanguageAndDuplicateRules(t *testing.T) {
-	base := EditorSchema{
-		Type: "helm/release", Key: "default/web", Language: "yaml", Binding: SchemaBinding{State: "absent"},
-	}
-	if _, err := ToProtoEditorSchema(base); err != nil {
-		t.Fatal(err)
-	}
-	maximal := base
-	maximal.Key = strings.Repeat("k", 256)
-	if _, err := ToProtoEditorSchema(maximal); err != nil {
-		t.Fatalf("256-byte key rejected: %v", err)
-	}
-	for name, mutate := range map[string]func(*EditorSchema){
-		"empty type":       func(s *EditorSchema) { s.Type = "" },
-		"empty key":        func(s *EditorSchema) { s.Key = "" },
-		"key over 256":     func(s *EditorSchema) { s.Key = strings.Repeat("k", 257) },
-		"control in key":   func(s *EditorSchema) { s.Key = "a\nb" },
-		"invalid utf8 key": func(s *EditorSchema) { s.Key = "\xff" },
-		"language xml":     func(s *EditorSchema) { s.Language = "xml" },
-		"invalid binding":  func(s *EditorSchema) { s.Binding = SchemaBinding{State: "known"} },
-	} {
-		schema := base
-		mutate(&schema)
-		if _, err := ToProtoEditorSchema(schema); ErrorCode(err) != "INVALID_REQUEST" {
-			t.Fatalf("%s admitted: %v", name, err)
-		}
-	}
-	other := base
-	other.Key = "default/api"
-	if err := ValidateEditorSchemaList([]EditorSchema{base, other}); err != nil {
-		t.Fatal(err)
-	}
-	err := ValidateEditorSchemaList([]EditorSchema{base, other, base})
-	if ErrorCode(err) != "INVALID_REQUEST" || !strings.Contains(err.Error(), "duplicate auxiliary editor schema") {
-		t.Fatalf("duplicate (type, key) admitted: %v", err)
 	}
 }
 
@@ -566,42 +485,14 @@ func TestUnavailableSchemaKeepsKnownProvenance(t *testing.T) {
 		Root:        "#/known~1root",
 		DocumentRef: &SchemaDocumentReference{ID: "document", Revision: "known-document-revision"},
 	}
-	adapterRoundTrip(
-		t,
-		EditorSchema{
-			Type:     "resource/type",
-			Key:      "default",
-			Language: "json",
-			Binding:  binding,
-		},
-		ToProtoEditorSchema,
-		FromProtoEditorSchema,
-	)
+	adapterRoundTrip(t, binding, ToProtoSchemaBinding, FromProtoSchemaBinding)
 	binding.Document = []byte(`{}`)
-	if _, err := ToProtoEditorSchema(
-		EditorSchema{
-			Type:     "resource/type",
-			Key:      "default",
-			Language: "json",
-			Binding:  binding,
-		},
-	); ErrorCode(
-		err,
-	) != "INVALID_REQUEST" {
+	if _, err := ToProtoSchemaBinding(binding); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("unavailable inline document: %v", err)
 	}
 	binding.Document = nil
 	binding.State = "absent"
-	if _, err := ToProtoEditorSchema(
-		EditorSchema{
-			Type:     "resource/type",
-			Key:      "default",
-			Language: "json",
-			Binding:  binding,
-		},
-	); ErrorCode(
-		err,
-	) != "INVALID_REQUEST" {
+	if _, err := ToProtoSchemaBinding(binding); ErrorCode(err) != "INVALID_REQUEST" {
 		t.Fatalf("absent schema has fabricated provenance: %v", err)
 	}
 }

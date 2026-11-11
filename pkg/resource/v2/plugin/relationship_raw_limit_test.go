@@ -33,7 +33,7 @@ func TestActualRawGRPCRelationshipTargetLimitBeforeDecode(t *testing.T) {
 			// reach the actual gRPC default-proto decoder, including the hostile 257th
 			// otherwise-valid binding. The raw field counter must reject it first.
 			wireRequest := &resourcepb.AncillaryRequest{
-				Version:                2,
+				Version:                resourcev2.WireVersion,
 				Operation:              "resolveRelationships",
 				RelationshipResolution: request,
 			}

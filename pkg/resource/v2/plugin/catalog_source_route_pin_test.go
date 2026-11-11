@@ -11,25 +11,25 @@ import (
 
 func TestActualGRPCQualifiedSourcePinPrecedence(t *testing.T) {
 	cases := []sourcePinCase{
-		{name: "qualified-only", qualifiedPin: "cat-1", provider: "test", connection: "explicit", accepted: true},
+		{name: "qualified-only", qualifiedCurrent: true, provider: "test", connection: "explicit", accepted: true},
 		{
-			name:         "qualified-over-wrong-default",
-			defaultPin:   "wrong-default",
-			qualifiedPin: "cat-1",
-			provider:     "test",
-			connection:   "explicit",
-			accepted:     true,
+			name:             "qualified-over-wrong-default",
+			defaultPin:       "wrong-default",
+			qualifiedCurrent: true,
+			provider:         "test",
+			connection:       "explicit",
+			accepted:         true,
 		},
 		{
-			name:         "wrong-qualified-no-default-fallback",
-			defaultPin:   "cat-1",
-			qualifiedPin: "wrong-qualified",
-			provider:     "test",
-			connection:   "explicit",
+			name:           "wrong-qualified-no-default-fallback",
+			defaultCurrent: true,
+			qualifiedPin:   "wrong-qualified",
+			provider:       "test",
+			connection:     "explicit",
 		},
 		{name: "retired-qualified", qualifiedPin: "retired-catalog", provider: "test", connection: "explicit"},
-		{name: "missing-route", qualifiedPin: "cat-1", provider: "test", connection: "other-connection"},
-		{name: "wrong-provider", qualifiedPin: "cat-1", provider: "other-provider", connection: "explicit"},
+		{name: "missing-route", qualifiedCurrent: true, provider: "test", connection: "other-connection"},
+		{name: "wrong-provider", qualifiedCurrent: true, provider: "other-provider", connection: "explicit"},
 		{name: "missing-all"},
 	}
 	for _, operation := range []string{"Get", "OpenSource"} {
@@ -43,6 +43,7 @@ func TestActualGRPCQualifiedSourcePinPrecedence(t *testing.T) {
 
 type sourcePinCase struct {
 	name, defaultPin, qualifiedPin, provider, connection string
+	defaultCurrent, qualifiedCurrent                     bool
 	accepted                                             bool
 }
 
@@ -53,8 +54,11 @@ func runQualifiedSourcePinScenario(t *testing.T, operation string, tc sourcePinC
 	server := grpc.NewServer()
 	RegisterServer(server, provider)
 	client := NewClient(pipe(t, server))
-	ctx := sourcePinScenarioContext(tc)
-	var err error
+	catalog, err := client.Catalog(context.Background(), resourcev2.CatalogRequest{Route: testGet().Route})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sourcePinScenarioContext(tc, catalog.Revision)
 	if operation == "Get" {
 		_, err = client.Get(ctx, testGet())
 	} else {
@@ -88,8 +92,14 @@ func runQualifiedSourcePinScenario(t *testing.T, operation string, tc sourcePinC
 	}
 }
 
-func sourcePinScenarioContext(tc sourcePinCase) context.Context {
+func sourcePinScenarioContext(tc sourcePinCase, currentRevision string) context.Context {
 	ctx := context.Background()
+	if tc.defaultCurrent {
+		tc.defaultPin = currentRevision
+	}
+	if tc.qualifiedCurrent {
+		tc.qualifiedPin = currentRevision
+	}
 	if tc.defaultPin != "" {
 		ctx = resourcev2.WithCatalogRevision(ctx, tc.defaultPin)
 	}

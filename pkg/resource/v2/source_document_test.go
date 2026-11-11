@@ -13,14 +13,10 @@ import (
 )
 
 func TestSourceDocumentProtoRoundTrip(t *testing.T) {
-	for _, schemaRevision := range []*string{nil, codecToken("schema-1")} {
-		name := "absent"
-		if schemaRevision != nil {
-			name = "present"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, revision := range []string{"format-1", "format-2"} {
+		t.Run(revision, func(t *testing.T) {
 			record := codecRecord()
-			record.Representation.Schema.Revision = schemaRevision
+			record.Representation.Revision = revision
 			record.Body.Map["integer"] = Value{Kind: "int64", Int: "-9223372036854775808"}
 			record.Body.Map["timestamp"] = Value{Kind: "timestamp", Timestamp: "1969-12-31T23:59:59.999999999Z"}
 			record.Body.Map["items"] = Value{Kind: "list", List: []Value{{Kind: "map", Map: map[string]Value{"present": {Kind: "null"}}}}}
@@ -35,19 +31,31 @@ func TestSourceDocumentProtoRoundTrip(t *testing.T) {
 				}},
 			}
 			wire, err := ToProtoSourceObservation(observation)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			size, err := SourceObservationWireSize(observation)
-			if err != nil || size != proto.Size(wire) { t.Fatalf("size = %d, protobuf = %d, error = %v", size, proto.Size(wire), err) }
-			if (wire.Record.Representation.SchemaRevision == nil) != (schemaRevision == nil) {
-				t.Fatal("schema revision presence lost")
+			if err != nil || size != proto.Size(wire) {
+				t.Fatalf("size = %d, protobuf = %d, error = %v", size, proto.Size(wire), err)
+			}
+			if wire.Record.Representation.Revision != revision {
+				t.Fatal("format revision lost")
 			}
 			data, err := proto.Marshal(wire)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			var decoded resourcepb.SourceObservation
-			if err := proto.Unmarshal(data, &decoded); err != nil { t.Fatal(err) }
+			if err := proto.Unmarshal(data, &decoded); err != nil {
+				t.Fatal(err)
+			}
 			got, err := FromProtoSourceObservation(&decoded)
-			if err != nil { t.Fatal(err) }
-			if !reflect.DeepEqual(got, observation) { t.Fatalf("round trip: got %#v, want %#v", got, observation) }
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, observation) {
+				t.Fatalf("round trip: got %#v, want %#v", got, observation)
+			}
 		})
 	}
 }
@@ -56,9 +64,9 @@ func TestDocumentCoverageJSONKnownAbsentArray(t *testing.T) {
 	member := "missing"
 	nonempty := DocumentCoverage{KnownAbsent: []DocumentFieldPath{{Segments: []FieldPathSegment{{Member: &member}}}}}
 	for _, tc := range []struct {
-		name string
+		name     string
 		coverage DocumentCoverage
-		want string
+		want     string
 	}{
 		{"nil", DocumentCoverage{}, `{"knownAbsent":[]}`},
 		{"empty", DocumentCoverage{KnownAbsent: []DocumentFieldPath{}}, `{"knownAbsent":[]}`},
@@ -66,32 +74,33 @@ func TestDocumentCoverageJSONKnownAbsentArray(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data, err := json.Marshal(tc.coverage)
-			if err != nil { t.Fatal(err) }
-			if string(data) != tc.want { t.Fatalf("json = %s, want %s", data, tc.want) }
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(data) != tc.want {
+				t.Fatalf("json = %s, want %s", data, tc.want)
+			}
 		})
 	}
 }
 
-func TestSourceDocumentBindingSchemaRevisionPresence(t *testing.T) {
+func TestSourceDocumentBindingFormatRevision(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		binding *string
-		record *string
-		valid bool
+		name    string
+		binding string
+		record  string
+		valid   bool
 	}{
-		{"both absent", nil, nil, true},
-		{"both present", codecToken("schema-1"), codecToken("schema-1"), true},
-		{"missing record revision", codecToken("schema-1"), nil, false},
-		{"unexpected record revision", nil, codecToken("schema-1"), false},
-		{"different revision", codecToken("schema-1"), codecToken("schema-2"), false},
+		{"matching format", "format-1", "format-1", true},
+		{"changed format", "format-1", "format-2", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			request := phaseRequest(SourceModeSnapshot)
-			request.Binding.Representation.Schema.Revision = tc.binding
+			request.Binding.Representation.Revision = tc.binding
 			tracker := NewSourcePhaseTracker(request, "")
 			phaseAdmit(t, tracker, phaseBegin(1, SourceModeSnapshot))
 			record := CompactSourceRecord(codecRecord())
-			record.Representation.SchemaRevision = tc.record
+			record.Representation.Revision = tc.record
 			frame := phaseFrame(2)
 			frame.Snapshot = &SourceSnapshot{Observations: []SourceObservation{{Record: record}}}
 			err := tracker.Admit(frame)
@@ -107,7 +116,7 @@ func TestSourceDocumentCoverageRejectsInvalidPaths(t *testing.T) {
 	index := uint32(0)
 	absent := DocumentFieldPath{Segments: []FieldPathSegment{{Member: &missing}}}
 	for _, tc := range []struct {
-		name string
+		name  string
 		paths []DocumentFieldPath
 	}{
 		{"empty path", []DocumentFieldPath{{}}},
@@ -126,20 +135,33 @@ func TestSourceDocumentCoverageRejectsInvalidPaths(t *testing.T) {
 }
 
 func TestSourceFrameJSONSequence(t *testing.T) {
-	for _, tc := range []struct { value uint64; text string }{
+	for _, tc := range []struct {
+		value uint64
+		text  string
+	}{
 		{1, "1"}, {9007199254740993, "9007199254740993"}, {math.MaxUint64, "18446744073709551615"},
 	} {
 		frame := phaseFrame(tc.value)
 		data, err := json.Marshal(frame)
-		if err != nil { t.Fatal(err) }
-		if !strings.Contains(string(data), `"sequence":"`+tc.text+`"`) { t.Fatalf("sequence not encoded as decimal text: %s", data) }
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), `"sequence":"`+tc.text+`"`) {
+			t.Fatalf("sequence not encoded as decimal text: %s", data)
+		}
 		var got SourceFrame
-		if err := json.Unmarshal(data, &got); err != nil || got.Sequence != tc.value { t.Fatalf("sequence round trip: %d, %v", got.Sequence, err) }
+		if err := json.Unmarshal(data, &got); err != nil || got.Sequence != tc.value {
+			t.Fatalf("sequence round trip: %d, %v", got.Sequence, err)
+		}
 	}
-	if _, err := json.Marshal(phaseFrame(0)); err == nil { t.Fatal("zero sequence accepted") }
+	if _, err := json.Marshal(phaseFrame(0)); err == nil {
+		t.Fatal("zero sequence accepted")
+	}
 	for _, text := range []string{`0`, `"0"`, `"01"`, `"+1"`, `"-1"`, `"1e3"`, `"18446744073709551616"`, `null`, `""`} {
 		var frame SourceFrame
-		if err := json.Unmarshal([]byte(`{"sequence":`+text+`}`), &frame); err == nil { t.Fatalf("accepted sequence %s", text) }
+		if err := json.Unmarshal([]byte(`{"sequence":`+text+`}`), &frame); err == nil {
+			t.Fatalf("accepted sequence %s", text)
+		}
 	}
 }
 
@@ -153,7 +175,7 @@ func TestSourceOpenWireSize(t *testing.T) {
 	native := scoped
 	native.Acquisition = SourceAcquisition{Kind: SourceAcquisitionNativeQuery, Language: "query", Query: &query}
 	for _, tc := range []struct {
-		name string
+		name    string
 		request SourceOpenRequest
 	}{
 		{"empty scope", emptyScope},
@@ -162,7 +184,9 @@ func TestSourceOpenWireSize(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			wire, err := ToProtoSourceOpenRequest(tc.request)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			if got, want := sourceOpenWireSize(tc.request), proto.Size(wire); got != want {
 				t.Fatalf("source open size = %d, want %d", got, want)
 			}
@@ -177,8 +201,8 @@ func TestSourceChangesWireSize(t *testing.T) {
 	index := uint32(128)
 	created := time.Unix(-1, 999999999).UTC()
 	observation := SourceObservation{
-		Record: CompactSourceRecord(record),
-		Metadata: &ResourceMetadata{Labels: map[string]string{"name": strings.Repeat("x", 128)}, CreatedAt: &created},
+		Record:      CompactSourceRecord(record),
+		Metadata:    &ResourceMetadata{Labels: map[string]string{"name": strings.Repeat("x", 128)}, CreatedAt: &created},
 		DisplayName: &display,
 		DocumentCoverage: DocumentCoverage{KnownAbsent: []DocumentFieldPath{
 			{Segments: []FieldPathSegment{{Member: &missing}}},
@@ -189,7 +213,7 @@ func TestSourceChangesWireSize(t *testing.T) {
 	remove := SourceChange{Kind: SourceChangeRemove, Reference: &record.Reference, SourceRevision: codecToken("revision")}
 	coverage := SourceCoverage{Enumeration: EnumerationPartial, Consistency: ConsistencyBestEffort, Limitations: []string{"limited", strings.Repeat("x", 128)}}
 	for _, tc := range []struct {
-		name string
+		name    string
 		changes SourceChanges
 	}{
 		{"upsert metadata and paths", SourceChanges{Changes: []SourceChange{upsert}}},
@@ -199,9 +223,13 @@ func TestSourceChangesWireSize(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			wire, err := ToProtoSourceChanges(tc.changes)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			got, err := SourceChangesWireSize(tc.changes)
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			if want := proto.Size(wire); got != want {
 				t.Fatalf("source changes size = %d, want %d", got, want)
 			}

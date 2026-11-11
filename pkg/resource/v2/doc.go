@@ -10,9 +10,9 @@
 // Actioner, connection lifecycle, and ancillary traits are independently optional.
 // Method presence does not advertise support: the catalog qualifies each operation
 // by type and scope. Create, mutation update, and delete have separate capabilities;
-// OperationSourceUpdates declares source-session continuity; AcquireOnConnect requests automatic
-// acquisition for a source-enabled type. Controller is optional. It supplies
-// one native-client registry, admission, leases, and retirement fences.
+// OperationSourceUpdates declares source-session continuity. AcquireOnConnect
+// retains explicit provider policy for supported consumers, not universal eager
+// inventory. Controller is optional; it owns one native-client registry and leases.
 // The executable examples show catalog-only and get-only composition, controller
 // startup/stop, and generation issuance without Controller.
 //
@@ -26,6 +26,16 @@
 // Custom providers own their source generation and use NewCatalogBindingEpoch
 // and BindCatalogRevision; CatalogBindingEpoch is an integration accessor, not
 // permission to parse opaque tokens.
+//
+// CatalogRequest observes installed support by default. Refresh explicitly asks
+// for eligible discovery; schema acquisition is never catalog readiness work.
+// Representation contains only body-format ID and revision for finite and source
+// records. SchemaResolver optionally resolves one exact SchemaRequest target.
+// Public SchemaDocumentRequest qualifies an exact reference with its target;
+// SchemaDocumentProvider remains the trusted held-reference lookup.
+// Initial source admission keeps the exact accepted observation. Ongoing fences
+// retain the original native epoch and selected operational contract, not global
+// catalog revisions, unrelated support, or presentation/schema observations.
 //
 // # Lifetimes and ownership
 //

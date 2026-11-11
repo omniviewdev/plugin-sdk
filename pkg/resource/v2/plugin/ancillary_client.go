@@ -149,34 +149,27 @@ func (c *Client) GetResourceDefinition(
 	return out, err
 }
 
-// GetEditorSchemas returns editor schema bindings for the selected route.
-func (c *Client) GetEditorSchemas(
+// ResolveSchema resolves one explicit target only when its optional trait is advertised.
+func (c *Client) ResolveSchema(
 	ctx context.Context,
-	route resourcev2.AccessRoute,
-) ([]resourcev2.EditorSchema, error) {
-	p, err := ancillaryRoute(route)
+	in resourcev2.SchemaRequest,
+) (resourcev2.SchemaBinding, error) {
+	p, err := resourcev2.ToProtoSchemaRequest(in)
 	if err != nil {
-		return nil, err
+		return resourcev2.SchemaBinding{}, err
 	}
-	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: ancillaryEditorSchemas, Route: p})
+	features, err := c.Features(ctx)
 	if err != nil {
-		return nil, err
+		return resourcev2.SchemaBinding{}, err
 	}
-	if r.GetEditorSchemas() == nil {
-		return nil, invalid("unexpected editor schemas result")
+	if !features.Has(resourcev2.FeatureSchemaResolver) {
+		return resourcev2.SchemaBinding{}, unsupported("schema resolution unsupported")
 	}
-	out := []resourcev2.EditorSchema{}
-	for _, item := range r.GetEditorSchemas().Schemas {
-		schema, err := resourcev2.FromProtoEditorSchema(item)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, schema)
+	r, err := c.ancillary(ctx, &resourcepb.AncillaryRequest{Operation: ancillaryResolveSchema, SchemaRequest: p})
+	if err != nil {
+		return resourcev2.SchemaBinding{}, err
 	}
-	if err = resourcev2.ValidateEditorSchemaList(out); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return resourcev2.FromProtoSchemaBinding(r.GetSchemaBinding())
 }
 
 // GetActions returns validated action descriptors for one resource type.

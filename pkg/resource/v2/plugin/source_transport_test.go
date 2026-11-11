@@ -30,9 +30,10 @@ func transportSourceRequest() resourcev2.SourceOpenRequest {
 
 type transportSourceProvider struct {
 	qualifiedProvider
-	callback     func(context.Context, resourcev2.SourceEmitter) error
-	capabilities []resourcev2.Capability
-	features     *resourcev2.FeatureSet
+	binding         testCatalogBinding
+	callback        func(context.Context, resourcev2.SourceEmitter) error
+	capabilities    []resourcev2.Capability
+	features        *resourcev2.FeatureSet
 	noSourceUpdates bool
 }
 
@@ -53,7 +54,10 @@ func (p *transportSourceProvider) Catalog(ctx context.Context, r resourcev2.Cata
 		c.Types[0].QueryDimensions = []resourcev2.Dimension{{Name: "region"}}
 		c.Types[0].Capabilities = p.capabilities
 	}
-	return c, err
+	if err != nil {
+		return resourcev2.Catalog{}, err
+	}
+	return p.binding.bind(c)
 }
 func (p *transportSourceProvider) OpenSource(ctx context.Context, _ resourcev2.SourceOpenRequest, e resourcev2.SourceEmitter) error {
 	return p.callback(ctx, e)
@@ -210,7 +214,6 @@ func TestSourceWireRejectsOversizedBatchBeforeDecode(t *testing.T) {
 		}
 	}
 }
-
 
 type hostileSourceServer struct {
 	resourcepb.UnimplementedResourceSourcesServer
@@ -892,9 +895,9 @@ func TestSourceEmitterRejectsWireComplexityOversize(t *testing.T) {
 		return resourcev2.SourceObservation{Record: resourcev2.CompactSourceRecord(item)}
 	}
 	for _, tc := range []struct {
-		name string
+		name         string
 		observations int
-		values int
+		values       int
 	}{
 		{"single snapshot observation", 1, 132000},
 		{"atomic changes", 2, 70000},
@@ -1404,5 +1407,40 @@ func TestSourceTransportHostileValueDepth(t *testing.T) {
 				t.Fatal("valid nested source body changed in transit")
 			}
 		})
+	}
+}
+
+func TestSourceUpdatesDoNotRequireFiniteEnumeration(t *testing.T) {
+	scope := resourcev2.QueryScope{{Dimension: "region", Match: resourcev2.ScopeAny}}
+	provider := &transportSourceProvider{
+		capabilities: []resourcev2.Capability{{
+			Operation: resourcev2.OperationSourceUpdates, Scope: scope, Guarantee: resourcev2.ContinuityBestEffort,
+		}},
+		callback: func(ctx context.Context, emitter resourcev2.SourceEmitter) error {
+			return emitter.EndSnapshot(ctx, resourcev2.SourceCoverage{
+				Enumeration: resourcev2.EnumerationExhausted, Consistency: resourcev2.ConsistencyBestEffort,
+			}, resourcev2.ContinuityBestEffort)
+		},
+	}
+	server := grpc.NewServer()
+	RegisterServer(server, provider)
+	client := NewClient(pipe(t, server))
+	request := transportSourceRequest()
+	request.Mode = resourcev2.SourceModeSnapshotAndUpdates
+	request.Target.Scope = scope
+	ctx := acceptedCatalogContext(context.Background(), t, client, request.Target.Route)
+	stream, err := client.OpenSourceStream(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	if frame, err := stream.Recv(); err != nil || frame.Begin == nil {
+		t.Fatalf("source-only begin: %+v %v", frame, err)
+	}
+	if frame, err := stream.Recv(); err != nil || frame.SnapshotEnd == nil || frame.SnapshotEnd.Continuity != resourcev2.ContinuityBestEffort {
+		t.Fatalf("source-only snapshot: %+v %v", frame, err)
+	}
+	if _, err := client.Enumerate(ctx, resourcev2.EnumerateRequest{Target: request.Target}); resourcev2.ErrorCode(err) != "UNSUPPORTED" {
+		t.Fatalf("source-only support granted finite enumeration: %v", err)
 	}
 }

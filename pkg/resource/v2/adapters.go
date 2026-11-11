@@ -122,7 +122,7 @@ func toSchemaBinding(v SchemaBinding) *resourcepb.SchemaBinding {
 }
 
 func toRepresentation(v Representation) *resourcepb.Representation {
-	return &resourcepb.Representation{Id: v.ID, Revision: v.Revision, Schema: toSchemaBinding(v.Schema)}
+	return &resourcepb.Representation{Id: v.ID, Revision: v.Revision}
 }
 
 func toDimension(v Dimension) *resourcepb.Dimension {
@@ -408,7 +408,7 @@ func (d *adapterDecoder) representation(p *resourcepb.Representation) Representa
 		d.fail("missing representation")
 		return Representation{}
 	}
-	return Representation{ID: p.Id, Revision: p.Revision, Schema: d.schema(p.Schema)}
+	return Representation{ID: p.Id, Revision: p.Revision}
 }
 
 func (d *adapterDecoder) dimension(p *resourcepb.Dimension) Dimension {
@@ -851,17 +851,30 @@ func FromProtoActionRequest(p *resourcepb.ActionInput) (ActionRequest, error) {
 	return fromProto(p, (*adapterDecoder).action, ValidateActionRequest)
 }
 
-// ToProtoCatalogRequest encodes the requested catalog route without connection discovery.
+// ToProtoCatalogRequest preserves explicit refresh intent and route selection.
 // It validates before encoding, returns nil on error, and owns output storage.
-func ToProtoCatalogRequest(v CatalogRequest) (*resourcepb.AccessRoute, error) {
-	return ToProtoAccessRoute(v.Route)
+func ToProtoCatalogRequest(v CatalogRequest) (*resourcepb.CatalogRequest, error) {
+	route, err := ToProtoAccessRoute(v.Route)
+	if err != nil {
+		return nil, err
+	}
+	return &resourcepb.CatalogRequest{Route: route, Refresh: v.Refresh}, nil
 }
 
-// FromProtoCatalogRequest decodes the requested catalog route without connection discovery.
+// FromProtoCatalogRequest decodes observation or explicit discovery refresh.
 // It rejects nil or invalid messages; successful output owns mutable storage.
-func FromProtoCatalogRequest(p *resourcepb.AccessRoute) (CatalogRequest, error) {
-	v, err := FromProtoAccessRoute(p)
-	return CatalogRequest{Route: v}, err
+func FromProtoCatalogRequest(p *resourcepb.CatalogRequest) (CatalogRequest, error) {
+	if p == nil {
+		return CatalogRequest{}, invalid("missing catalog request")
+	}
+	if err := admitProto(p); err != nil {
+		return CatalogRequest{}, err
+	}
+	route, err := FromProtoAccessRoute(p.Route)
+	if err != nil {
+		return CatalogRequest{}, err
+	}
+	return CatalogRequest{Route: route, Refresh: p.Refresh}, nil
 }
 
 func toSchemaDocumentReference(v SchemaDocumentReference) *resourcepb.SchemaDocumentReference {

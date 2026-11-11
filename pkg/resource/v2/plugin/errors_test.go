@@ -117,7 +117,7 @@ type actionCatalogServer struct {
 
 func (*actionCatalogServer) Call(ctx context.Context, request *resourcepb.Request) (*resourcepb.Response, error) {
 	if request.GetFeatures() != nil {
-		return &resourcepb.Response{Version: 2, Result: &resourcepb.Response_Features{Features: &resourcepb.FeatureSet{}}}, nil
+		return &resourcepb.Response{Version: resourcev2.WireVersion, Result: &resourcepb.Response_Features{Features: &resourcepb.FeatureSet{}}}, nil
 	}
 	p := &streamProvider{}
 	v, err := p.Catalog(ctx, resourcev2.CatalogRequest{})
@@ -125,7 +125,7 @@ func (*actionCatalogServer) Call(ctx context.Context, request *resourcepb.Reques
 		return nil, err
 	}
 	catalog, err := resourcev2.ToProtoCatalog(v)
-	return &resourcepb.Response{Version: 2, Result: &resourcepb.Response_Catalog{Catalog: catalog}}, err
+	return &resourcepb.Response{Version: resourcev2.WireVersion, Result: &resourcepb.Response_Catalog{Catalog: catalog}}, err
 }
 
 type unknownActionCodeServer struct {
@@ -145,10 +145,10 @@ func (*unknownActionCodeServer) StreamAction(
 	_ *resourcepb.ActionStreamRequest,
 	s resourcepb.ResourceAncillary_StreamActionServer,
 ) error {
-	if err := s.Send(&resourcepb.ActionStreamEvent{Version: 2, Type: "ready"}); err != nil {
+	if err := s.Send(&resourcepb.ActionStreamEvent{Version: resourcev2.WireVersion, Type: "ready"}); err != nil {
 		return err
 	}
-	return s.Send(&resourcepb.ActionStreamEvent{Version: 2, Type: "error", ErrorCode: "HOST_ROOT_GRANT"})
+	return s.Send(&resourcepb.ActionStreamEvent{Version: resourcev2.WireVersion, Type: "error", ErrorCode: "HOST_ROOT_GRANT"})
 }
 
 func TestUnknownActionErrorCodeRejectedBeforeDelivery(t *testing.T) {

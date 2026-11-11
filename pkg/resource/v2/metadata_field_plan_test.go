@@ -94,6 +94,52 @@ func TestMetadataCallerTypeVisibilityAndOmit(t *testing.T) {
 	}
 }
 
+func TestMetadataStringMapAdmissionBudgetParity(t *testing.T) {
+	type reflectedMap map[string]string
+	fixtures := []map[string]string{
+		nil, {}, {"a": "b"}, {"a": "b", "c": "d"}, {"\n": "<>"},
+		{string([]byte{0xff}): "value"}, {"key": string([]byte{0xff})},
+	}
+	for _, fixture := range fixtures {
+		v, oracle := reflect.ValueOf(fixture), reflect.ValueOf(reflectedMap(fixture))
+		for _, jsonOutput := range []bool{false, true} {
+			for _, depthLimit := range []int{0, 1, 2} {
+				for _, nodeLimit := range []int{1, 2, 3, 10} {
+					for _, fields := range []int{0, maxDomainFields - 1, maxDomainFields} {
+						for _, bytes := range []int{0, MaxMessageBytes - 1, MaxMessageBytes} {
+							got := metadataBudget{
+								depthLimit: depthLimit, nodeLimit: nodeLimit, fields: fields,
+								bytes: bytes, jsonOutput: jsonOutput,
+							}
+							want := got
+							gotErr, wantErr := got.visit(v, 0), want.visit(oracle, 0)
+							if got != want || ErrorCode(gotErr) != ErrorCode(wantErr) {
+								t.Fatalf("map=%q json=%v depth=%d nodes=%d fields=%d bytes=%d: got %+v / %v; want %+v / %v",
+									fixture, jsonOutput, depthLimit, nodeLimit, fields, bytes, got, gotErr, want, wantErr)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestMetadataStringMapAdmissionAllocations(t *testing.T) {
+	v := reflect.ValueOf(map[string]string{"a": "b", "c": "d"})
+	for _, jsonOutput := range []bool{false, true} {
+		allocs := testing.AllocsPerRun(100, func() {
+			budget := metadataBudget{depthLimit: 1, nodeLimit: 5, jsonOutput: jsonOutput}
+			if err := budget.visit(v, 0); err != nil {
+				panic(err)
+			}
+		})
+		if allocs != 0 {
+			t.Fatalf("json=%v: string-map admission allocated %g times", jsonOutput, allocs)
+		}
+	}
+}
+
 func TestMetadataFieldPlanTimestampAndInactiveValue(t *testing.T) {
 	invalidTime := time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
 	v := ConnectionMetadataEntry{ObservedAt: &invalidTime}

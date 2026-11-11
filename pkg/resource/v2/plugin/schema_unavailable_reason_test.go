@@ -24,62 +24,47 @@ type nativeSchemaReasonProvider struct {
 	endpoint string
 }
 
-func (p *nativeSchemaReasonProvider) GetEditorSchemas(
+func (p *nativeSchemaReasonProvider) ResolveSchema(
 	ctx context.Context,
-	_ resourcev2.AccessRoute,
-) ([]resourcev2.EditorSchema, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, p.endpoint+"/native", nil)
+	in resourcev2.SchemaRequest,
+) (resourcev2.SchemaBinding, error) {
+	path := "/native"
+	if in.Target.Auxiliary != nil {
+		path = "/helm"
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, p.endpoint+path, nil)
 	if err != nil {
-		return nil, err
+		return resourcev2.SchemaBinding{}, err
 	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return nil, err
+		return resourcev2.SchemaBinding{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusForbidden {
+		reason := "FORBIDDEN"
+		return resourcev2.SchemaBinding{State: "unavailable", UnavailableReason: &reason}, nil
+	}
+	if response.StatusCode != http.StatusOK {
+		return resourcev2.SchemaBinding{}, resourcev2.NewError("PROVIDER_ERROR", "Unexpected native schema status.")
 	}
 	document, err := io.ReadAll(response.Body)
-	response.Body.Close()
 	if err != nil {
-		return nil, err
+		return resourcev2.SchemaBinding{}, err
 	}
 	revision := "native-schema-v1"
-	native := resourcev2.EditorSchema{
-		Type:     "native:pod",
-		Key:      "default",
-		Language: "yaml",
-		Binding: resourcev2.SchemaBinding{
-			State:    "available",
-			Revision: &revision,
-			Dialect:  "https://json-schema.org/draft/2020-12/schema",
-			Document: document,
-		},
-	}
-	request, err = http.NewRequestWithContext(ctx, http.MethodGet, p.endpoint+"/helm", nil)
-	if err != nil {
-		return nil, err
-	}
-	response, err = http.DefaultClient.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusForbidden {
-		return nil, resourcev2.NewError("PROVIDER_ERROR", "Unexpected native schema status.")
-	}
-	reason := "FORBIDDEN"
-	helm := resourcev2.EditorSchema{
-		Type:     "helm:values",
-		Key:      "default",
-		Language: "yaml",
-		Binding: resourcev2.SchemaBinding{
-			State:             "unavailable",
-			UnavailableReason: &reason,
-		},
-	}
-	return []resourcev2.EditorSchema{native, helm}, nil
+	return resourcev2.SchemaBinding{
+		State:    "available",
+		Revision: &revision,
+		Dialect:  "https://json-schema.org/draft/2020-12/schema",
+		Document: document,
+	}, nil
 }
 
-func TestActualRPCSchemaUnavailableReasonRetainsNativeSchemas(t *testing.T) {
+func TestActualRPCSchemaUnavailableReasonIsTargeted(t *testing.T) {
+	requests := make(chan string, 3)
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r.URL.Path
 		if r.URL.Path == "/helm" {
 			http.Error(w, "sensitive native diagnostic must not cross wire", http.StatusForbidden)
 			return
@@ -96,20 +81,30 @@ func TestActualRPCSchemaUnavailableReasonRetainsNativeSchemas(t *testing.T) {
 	client := NewClient(pipe(t, server))
 	route := resourcev2.AccessRoute{Connection: "explicit"}
 	ctx := acceptedCatalogContext(context.Background(), t, client, route)
-	schemas, err := client.GetEditorSchemas(ctx, route)
-	if err != nil || len(schemas) != 2 {
-		t.Fatalf("native schemas lost after partial denial: %+v %v", schemas, err)
+	native, err := client.ResolveSchema(ctx, schemaFixtureRequest())
+	if err != nil || native.State != "available" || !strings.Contains(string(native.Document), "metadata") {
+		t.Fatalf("actual native document was not retained: %+v %v", native, err)
 	}
-	if schemas[0].Binding.State != "available" || !strings.Contains(string(schemas[0].Binding.Document), "metadata") {
-		t.Fatal("actual native document was not retained")
+	if path := <-requests; path != "/native" || len(requests) != 0 {
+		t.Fatalf("native demand fetched unrelated schemas: %q, remaining %d", path, len(requests))
 	}
-	binding := schemas[1].Binding
+	auxiliary := schemaFixtureRequest()
+	auxiliary.Target = resourcev2.SchemaTarget{Auxiliary: &resourcev2.AuxiliarySchemaTarget{
+		Key: "helm-values", Reference: testGet().Reference,
+	}}
+	binding, err := client.ResolveSchema(ctx, auxiliary)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if binding.State != "unavailable" || binding.UnavailableReason == nil ||
 		*binding.UnavailableReason != "FORBIDDEN" ||
 		len(binding.Document) != 0 {
 		t.Fatalf("unavailable role misrepresented: %+v", binding)
 	}
-	output, err := json.Marshal(schemas)
+	if path := <-requests; path != "/helm" || len(requests) != 0 {
+		t.Fatalf("auxiliary demand fetched unrelated schemas: %q, remaining %d", path, len(requests))
+	}
+	output, err := json.Marshal(binding)
 	if err != nil || strings.Contains(string(output), "sensitive") ||
 		!strings.Contains(string(output), `"unavailableReason":"FORBIDDEN"`) {
 		t.Fatalf("unsafe/unobservable availability reason: %s %v", output, err)
@@ -152,16 +147,7 @@ func TestSchemaUnavailableReasonStrictAdmissionBeforeDecode(t *testing.T) {
 				State:             tc.state,
 				UnavailableReason: &reason,
 			}
-			if _, err := resourcev2.ToProtoEditorSchema(
-				resourcev2.EditorSchema{
-					Type:     "resource/type",
-					Key:      "default",
-					Language: "json",
-					Binding:  value,
-				},
-			); resourcev2.ErrorCode(
-				err,
-			) != "INVALID_REQUEST" {
+			if _, err := resourcev2.ToProtoSchemaBinding(value); resourcev2.ErrorCode(err) != "INVALID_REQUEST" {
 				t.Fatalf("native invalid reason admitted: %v", err)
 			}
 			input, _ := json.Marshal(
@@ -191,84 +177,5 @@ func TestSchemaUnavailableReasonStrictAdmissionBeforeDecode(t *testing.T) {
 		err,
 	) != "INVALID_REQUEST" {
 		t.Fatalf("explicit null reason admitted: %v", err)
-	}
-}
-
-type duplicateEditorSchemaProvider struct {
-	qualifiedProvider
-
-	schemas []resourcev2.EditorSchema
-}
-
-func duplicateEditorSchemas() []resourcev2.EditorSchema {
-	schema := resourcev2.EditorSchema{
-		Type:     "helm:releases",
-		Key:      "default/web",
-		Language: "yaml",
-		Binding:  resourcev2.SchemaBinding{State: "absent"},
-	}
-	return []resourcev2.EditorSchema{schema, schema}
-}
-
-func (p *duplicateEditorSchemaProvider) GetEditorSchemas(
-	context.Context,
-	resourcev2.AccessRoute,
-) ([]resourcev2.EditorSchema, error) {
-	return p.schemas, nil
-}
-
-func TestActualRPCServerRejectsDuplicateAuxiliaryEditorSchemas(t *testing.T) {
-	provider := &duplicateEditorSchemaProvider{}
-	server := grpc.NewServer()
-	RegisterServer(server, provider)
-	client := NewClient(pipe(t, server))
-	route := resourcev2.AccessRoute{Connection: "explicit"}
-	ctx := acceptedCatalogContext(context.Background(), t, client, route)
-	distinct := duplicateEditorSchemas()
-	distinct[1].Key = "default/api"
-	provider.schemas = distinct
-	if schemas, err := client.GetEditorSchemas(ctx, route); err != nil || len(schemas) != 2 {
-		t.Fatalf("distinct auxiliary editor schemas rejected: %+v %v", schemas, err)
-	}
-	// The server boundary sanitizes messages; the code is the observable result.
-	provider.schemas = duplicateEditorSchemas()
-	schemas, err := client.GetEditorSchemas(ctx, route)
-	if resourcev2.ErrorCode(err) != "INVALID_REQUEST" || len(schemas) != 0 {
-		t.Fatalf("duplicate auxiliary editor schemas admitted by server: %+v %v", schemas, err)
-	}
-}
-
-type duplicateEditorSchemaWire struct {
-	resourcepb.UnimplementedResourceAncillaryServer
-}
-
-func (duplicateEditorSchemaWire) Call(
-	context.Context,
-	*resourcepb.AncillaryRequest,
-) (*resourcepb.AncillaryResponse, error) {
-	result := &resourcepb.EditorSchemas{}
-	for _, schema := range duplicateEditorSchemas() {
-		encoded, err := resourcev2.ToProtoEditorSchema(schema)
-		if err != nil {
-			return nil, err
-		}
-		result.Schemas = append(result.Schemas, encoded)
-	}
-	return &resourcepb.AncillaryResponse{
-		Version: resourcev2.WireVersion,
-		Result:  &resourcepb.AncillaryResponse_EditorSchemas{EditorSchemas: result},
-	}, nil
-}
-
-func TestActualRPCClientRejectsDuplicateAuxiliaryEditorSchemas(t *testing.T) {
-	server := grpc.NewServer()
-	resourcepb.RegisterResourceAncillaryServer(server, duplicateEditorSchemaWire{})
-	client := NewClient(pipe(t, server))
-	route := resourcev2.AccessRoute{Connection: "explicit"}
-	ctx := resourcev2.WithCatalogRevision(context.Background(), "revision")
-	schemas, err := client.GetEditorSchemas(ctx, route)
-	if resourcev2.ErrorCode(err) != "INVALID_REQUEST" ||
-		!strings.Contains(err.Error(), "duplicate auxiliary editor schema") {
-		t.Fatalf("duplicate auxiliary editor schemas admitted by client: %+v %v", schemas, err)
 	}
 }

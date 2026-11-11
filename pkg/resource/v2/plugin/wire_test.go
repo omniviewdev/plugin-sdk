@@ -101,11 +101,11 @@ func bytesField(n protowire.Number, v []byte) []byte {
 
 func requestValue(v []byte) []byte {
 	action := append(bytesField(4, v), bytesField(3, []byte("a"))...)
-	return append([]byte{8, 2}, bytesField(7, action)...)
+	return append([]byte{8, byte(resourcev2.WireVersion)}, bytesField(7, action)...)
 }
 
 func TestRawRequestAdmissionDefaultProto(t *testing.T) {
-	valid := append([]byte{8, 2}, bytesField(2, bytesField(1, []byte("c")))...)
+	valid := append([]byte{8, byte(resourcev2.WireVersion)}, bytesField(10, bytesField(1, bytesField(1, []byte("c"))))...)
 	ts := bytesField(7, []byte{8, 0, 8, 0})
 	entry := append(bytesField(1, []byte("k")), bytesField(2, []byte{16, 1})...)
 	duplicateMap := bytesField(9, append(bytesField(1, entry), bytesField(1, entry)...))
@@ -118,7 +118,7 @@ func TestRawRequestAdmissionDefaultProto(t *testing.T) {
 		fields = append(fields, 10, 0)
 	}
 	fieldRequest := append(
-		[]byte{8, 2},
+		[]byte{8, byte(resourcev2.WireVersion)},
 		bytesField(4, bytesField(1, bytesField(5, bytesField(1, bytesField(3, fields)))))...)
 	nodes := make([]byte, 0, 4*(MaxNodes+1))
 	for range MaxNodes + 1 {
@@ -129,7 +129,7 @@ func TestRawRequestAdmissionDefaultProto(t *testing.T) {
 		data []byte
 		code string
 	}{
-		{"duplicate scalar", append([]byte{8, 2}, valid...), "INVALID_REQUEST"},
+		{"duplicate scalar", append([]byte{8, byte(resourcev2.WireVersion)}, valid...), "INVALID_REQUEST"},
 		{"different oneof", requestValue([]byte{16, 1, 26, 0}), "INVALID_REQUEST"},
 		{"repeated message oneof", requestValue([]byte{10, 0, 10, 0}), "INVALID_REQUEST"},
 		{"timestamp duplicate", requestValue(ts), "INVALID_REQUEST"},
@@ -137,14 +137,14 @@ func TestRawRequestAdmissionDefaultProto(t *testing.T) {
 		{"unknown outer", append(valid, 120, 1), "UNSUPPORTED"},
 		{"unknown nested", requestValue([]byte{120, 1}), "UNSUPPORTED"},
 		{"wrong wire", []byte{10, 0}, "INVALID_REQUEST"},
-		{"truncated length", []byte{8, 2, 18, 5, 1}, "INVALID_REQUEST"},
+		{"truncated length", []byte{8, byte(resourcev2.WireVersion), 82, 5, 1}, "INVALID_REQUEST"},
 		{"truncated varint", []byte{8, 128}, "INVALID_REQUEST"},
 		{"group", []byte{11, 12}, "INVALID_REQUEST"},
-		{"utf8", append([]byte{8, 2}, bytesField(2, bytesField(1, []byte{255}))...), "INVALID_REQUEST"},
+		{"utf8", append([]byte{8, byte(resourcev2.WireVersion)}, bytesField(10, bytesField(1, bytesField(1, []byte{255})))...), "INVALID_REQUEST"},
 		{"depth", requestValue(deep), "RESOURCE_LIMIT"},
 		{"fields", fieldRequest, "RESOURCE_LIMIT"},
 		{"nodes", requestValue(bytesField(8, nodes)), "RESOURCE_LIMIT"},
-		{"version", append([]byte{8, 3}, valid[2:]...), "UNSUPPORTED"},
+		{"version", append([]byte{8, 2}, valid[2:]...), "UNSUPPORTED"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -193,14 +193,14 @@ func TestRawRequestAdmissionDefaultProto(t *testing.T) {
 func TestRawResponseAdmission(t *testing.T) {
 	cases := make([][]byte, 0, 10)
 	cases = append(cases,
-		[]byte{8, 2, 8, 2},
-		[]byte{8, 2, 120, 1},
-		append([]byte{8, 2}, bytesField(5, []byte{16, 1, 16, 1})...),
-		[]byte{8, 2, 42, 128},
+		[]byte{8, byte(resourcev2.WireVersion), 8, byte(resourcev2.WireVersion)},
+		[]byte{8, byte(resourcev2.WireVersion), 120, 1},
+		append([]byte{8, byte(resourcev2.WireVersion)}, bytesField(5, []byte{16, 1, 16, 1})...),
+		[]byte{8, byte(resourcev2.WireVersion), 42, 128},
 	)
 	entry := append(bytesField(1, []byte("k")), bytesField(2, []byte{10, 0})...)
 	for _, value := range [][]byte{{10, 0, 10, 0}, {16, 1, 26, 0}, bytesField(7, []byte{16, 0, 16, 0}), bytesField(9, append(bytesField(1, entry), bytesField(1, entry)...)), {26, 1, 255}, {16, 128}} {
-		cases = append(cases, append([]byte{8, 2}, bytesField(5, value)...))
+		cases = append(cases, append([]byte{8, byte(resourcev2.WireVersion)}, bytesField(5, value)...))
 	}
 	for _, data := range cases {
 		s := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{data: data}))
@@ -208,7 +208,7 @@ func TestRawResponseAdmission(t *testing.T) {
 		c := NewClient(pipe(t, s))
 		c.featureMode.Store(1) // This fixture supplies raw responses, not a feature RPC.
 		_, err := c.call(context.Background(), &resourcepb.Request{
-			Operation: &resourcepb.Request_Catalog{Catalog: &resourcepb.AccessRoute{Connection: "c"}},
+			Operation: &resourcepb.Request_CatalogRequest{CatalogRequest: &resourcepb.CatalogRequest{Route: &resourcepb.AccessRoute{Connection: "c"}}},
 		})
 		want := "INVALID_REQUEST"
 		if len(data) == 4 && data[2] == 120 {
@@ -239,7 +239,7 @@ func TestRawValueControls(t *testing.T) {
 		if err := proto.Unmarshal(data, &v); err != nil {
 			t.Fatal(err)
 		}
-		payload := append([]byte{8, 2}, bytesField(5, data)...)
+		payload := append([]byte{8, byte(resourcev2.WireVersion)}, bytesField(5, data)...)
 		s := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{data: payload}))
 		RegisterServer(s, &countProvider{})
 		c := NewClient(pipe(t, s))
@@ -247,7 +247,7 @@ func TestRawValueControls(t *testing.T) {
 		out, err := c.call(
 			context.Background(),
 			&resourcepb.Request{
-				Operation: &resourcepb.Request_Catalog{Catalog: &resourcepb.AccessRoute{Connection: "c"}},
+				Operation: &resourcepb.Request_CatalogRequest{CatalogRequest: &resourcepb.CatalogRequest{Route: &resourcepb.AccessRoute{Connection: "c"}}},
 			},
 		)
 		if err != nil {
@@ -348,7 +348,7 @@ func TestRawRetiredCatalogAuthorityHintRejected(t *testing.T) {
 	// strict version table must reject it, including an empty hint payload.
 	for _, hint := range [][]byte{nil, append(bytesField(1, []byte("legacy.v1")), bytesField(2, []byte("legacy-id"))...)} {
 		catalog := bytesField(4, hint)
-		data := append([]byte{8, 2}, bytesField(2, catalog)...)
+		data := append([]byte{8, byte(resourcev2.WireVersion)}, bytesField(2, catalog)...)
 		s := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{data: data}))
 		RegisterServer(s, &countProvider{})
 		client := NewClient(pipe(t, s))

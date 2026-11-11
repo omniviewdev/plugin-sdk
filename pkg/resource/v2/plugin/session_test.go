@@ -159,10 +159,7 @@ func TestRawDiagnosticMetadataRejectsDuplicatesAndMalformedValues(t *testing.T) 
 		err := conn.Invoke(
 			ctx,
 			resourcepb.ResourceProvider_Call_FullMethodName,
-			&resourcepb.Request{
-				Version:   2,
-				Operation: &resourcepb.Request_Catalog{Catalog: &resourcepb.AccessRoute{Connection: "explicit"}},
-			},
+			&resourcepb.Request{Version: resourcev2.WireVersion, Operation: &resourcepb.Request_CatalogRequest{CatalogRequest: &resourcepb.CatalogRequest{Route: &resourcepb.AccessRoute{Connection: "explicit"}}}},
 			&out,
 		)
 		if resourcev2.ErrorCode(domainError(err)) != "INVALID_REQUEST" {

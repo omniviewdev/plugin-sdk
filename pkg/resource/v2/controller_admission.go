@@ -694,7 +694,7 @@ func checkRecord(
 		return NewError("INTERNAL", "Provider response changed requested representation.")
 	}
 	for i := range descriptor.Representations {
-		if reflect.DeepEqual(descriptor.Representations[i], record.Representation) {
+		if descriptor.Representations[i] == record.Representation {
 			return nil
 		}
 	}

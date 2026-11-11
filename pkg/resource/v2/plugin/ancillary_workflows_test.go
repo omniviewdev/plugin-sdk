@@ -42,24 +42,17 @@ func (*ancillaryFixtureProvider) GetResourceDefinition(
 	}, nil
 }
 
-func (*ancillaryFixtureProvider) GetEditorSchemas(
+func (*ancillaryFixtureProvider) ResolveSchema(
 	context.Context,
-	resourcev2.AccessRoute,
-) ([]resourcev2.EditorSchema, error) {
+	resourcev2.SchemaRequest,
+) (resourcev2.SchemaBinding, error) {
 	revision := "schema-1"
-	return []resourcev2.EditorSchema{
-		{
-			Type:     "opaque/type",
-			Key:      "default",
-			Language: "yaml",
-			Binding: resourcev2.SchemaBinding{
-				State:       "available",
-				Revision:    &revision,
-				Dialect:     "json-schema",
-				DocumentRef: &resourcev2.SchemaDocumentReference{ID: "shared-document", Revision: "document-1"},
-				Root:        "#/definitions/Thing",
-			},
-		},
+	return resourcev2.SchemaBinding{
+		State:       "available",
+		Revision:    &revision,
+		Dialect:     "json-schema",
+		DocumentRef: &resourcev2.SchemaDocumentReference{ID: "shared-document", Revision: "document-1"},
+		Root:        "#/definitions/Thing",
 	}, nil
 }
 
@@ -151,13 +144,12 @@ func TestActualGRPCCanonicalAncillaryWorkflows(t *testing.T) {
 		definition.ColumnDefs[0].ResourceLink.ScopeAccessors[0].FieldPath != "metadata.namespace" {
 		t.Fatalf("definition: %v %v", definition, err)
 	}
-	schemas, err := c.GetEditorSchemas(ctx, route)
-	if err != nil || len(schemas) != 1 {
-		t.Fatalf("schemas: %v %v", schemas, err)
+	binding, err := c.ResolveSchema(ctx, schemaFixtureRequest())
+	if err != nil {
+		t.Fatalf("schema: %v %v", binding, err)
 	}
-	binding := schemas[0].Binding
 	if binding.DocumentRef == nil || binding.Root != "#/definitions/Thing" || len(binding.Document) != 0 {
-		t.Fatal("editor schema lost shared reference or root")
+		t.Fatal("schema binding lost shared reference or root")
 	}
 	document, err := c.GetSchemaDocument(ctx, route, *binding.DocumentRef)
 	if err != nil || document.Reference != *binding.DocumentRef {

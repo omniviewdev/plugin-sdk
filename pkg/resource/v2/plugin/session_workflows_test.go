@@ -193,7 +193,7 @@ func TestDiagnosticsCrossSourceSession(t *testing.T) {
 	RegisterServer(s, p)
 	c := NewClient(pipe(t, s))
 	ctx := resourcev2.WithSession(context.Background(), resourcev2.Session{RequestID: "source-request", RequesterID: "not-a-principal"})
-	ctx = resourcev2.WithCatalogRevision(ctx, "cat-1")
+	ctx = acceptedCatalogContext(ctx, t, c, sourcePinRequest().Target.Route)
 	stream, err := c.OpenSourceStream(ctx, sourcePinRequest())
 	if err != nil {
 		t.Fatal(err)

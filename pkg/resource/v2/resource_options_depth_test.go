@@ -25,7 +25,7 @@ func TestResourceOptionJSONValueDepth(t *testing.T) {
 	tooDeep := `{"kind":"map","value":{"child":` + strings.Repeat(`{"kind":"list","value":[`, resourcev2.MaxValueDepth) + `{"kind":"null"}` + strings.Repeat(`]}`, resourcev2.MaxValueDepth) + `}}`
 	for _, tc := range []struct {
 		name, prefix string
-		newValue func() any
+		newValue     func() any
 	}{
 		{"exec", `{"resource_plugin":"p","resource_key":"t","resource_data":`, func() any { return &exec.SessionOptions{} }},
 		{"logs", `{"resource_data":`, func() any { return &logs.CreateSessionOptions{} }},

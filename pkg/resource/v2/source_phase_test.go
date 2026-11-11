@@ -165,7 +165,7 @@ func TestSourcePhaseRules(t *testing.T) {
 		{"frame bytes", []SourceFrame{begin}, func() SourceFrame {
 			f := phaseFrame(2)
 			r := codecRecord()
-			r.Body.Map["large"] = Value{Kind: "string", String: strings.Repeat("x", 64 << 10)}
+			r.Body.Map["large"] = Value{Kind: "string", String: strings.Repeat("x", 64<<10)}
 			f.Snapshot = &SourceSnapshot{Observations: []SourceObservation{{Record: CompactSourceRecord(r)}}}
 			return f
 		}(), "RESOURCE_LIMIT"},

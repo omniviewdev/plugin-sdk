@@ -305,7 +305,7 @@ func (d *adapterDecoder) sourceCoverage(p *resourcepb.SourceCoverage) SourceCove
 }
 func toSourceObservation(v SourceObservation) *resourcepb.SourceObservation {
 	r := v.Record
-	p := &resourcepb.SourceObservation{Record: &resourcepb.SourceRecord{Reference: toResourceReference(r.Reference), Body: toValue(r.Body), Representation: &resourcepb.RepresentationRef{Id: r.Representation.ID, Revision: r.Representation.Revision, SchemaRevision: copyToken(r.Representation.SchemaRevision)}, Coverage: toCoverage(r.Coverage), SourceRevision: copyToken(r.SourceRevision)}, DisplayName: copyToken(v.DisplayName), DocumentCoverage: toDocumentCoverage(v.DocumentCoverage)}
+	p := &resourcepb.SourceObservation{Record: &resourcepb.SourceRecord{Reference: toResourceReference(r.Reference), Body: toValue(r.Body), Representation: toRepresentation(r.Representation), Coverage: toCoverage(r.Coverage), SourceRevision: copyToken(r.SourceRevision)}, DisplayName: copyToken(v.DisplayName), DocumentCoverage: toDocumentCoverage(v.DocumentCoverage)}
 	if v.Metadata != nil {
 		p.Metadata = toResourceMetadata(*v.Metadata)
 	}
@@ -321,8 +321,7 @@ func (d *adapterDecoder) sourceObservation(p *resourcepb.SourceObservation) Sour
 		d.fail("missing source record or representation")
 		return SourceObservation{}
 	}
-	ref := record.GetRepresentation()
-	v := SourceObservation{Record: SourceRecord{Reference: d.reference(record.GetReference()), Body: d.value(record.GetBody()), Representation: RepresentationRef{ID: ref.GetId(), Revision: ref.GetRevision(), SchemaRevision: copyToken(ref.SchemaRevision)}, Coverage: d.coverage(record.GetCoverage()), SourceRevision: copyToken(record.SourceRevision)}, DisplayName: copyToken(p.DisplayName), DocumentCoverage: d.documentCoverage(p.GetDocumentCoverage())}
+	v := SourceObservation{Record: SourceRecord{Reference: d.reference(record.GetReference()), Body: d.value(record.GetBody()), Representation: d.representation(record.GetRepresentation()), Coverage: d.coverage(record.GetCoverage()), SourceRevision: copyToken(record.SourceRevision)}, DisplayName: copyToken(p.DisplayName), DocumentCoverage: d.documentCoverage(p.GetDocumentCoverage())}
 	if p.GetMetadata() != nil {
 		m := d.metadata(p.GetMetadata())
 		v.Metadata = &m

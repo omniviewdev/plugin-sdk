@@ -78,10 +78,10 @@ func TestActualGRPCMalformedRelationshipRequestDoesNotDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, request := range []*resourcepb.AncillaryRequest{
-		{Version: 2, Operation: "resolveRelationships", Get: source},
-		{Version: 2, Operation: "resolveRelationships"},
-		{Version: 2, Operation: "resolveRelationships", RelationshipResolution: &resourcepb.RelationshipResolutionInput{}},
-		{Version: 2, Operation: "resolveRelationships", RelationshipResolution: &resourcepb.RelationshipResolutionInput{Source: source, Targets: []*resourcepb.ReadTarget{{}}}},
+		{Version: resourcev2.WireVersion, Operation: "resolveRelationships", Get: source},
+		{Version: resourcev2.WireVersion, Operation: "resolveRelationships"},
+		{Version: resourcev2.WireVersion, Operation: "resolveRelationships", RelationshipResolution: &resourcepb.RelationshipResolutionInput{}},
+		{Version: resourcev2.WireVersion, Operation: "resolveRelationships", RelationshipResolution: &resourcepb.RelationshipResolutionInput{Source: source, Targets: []*resourcepb.ReadTarget{{}}}},
 	} {
 		p := &relationshipBoundaryProvider{}
 		s := grpc.NewServer()
@@ -121,12 +121,9 @@ func (s *unboundRelationshipServer) Call(
 	if err != nil {
 		return nil, err
 	}
-	return &resourcepb.AncillaryResponse{
-		Version: 2,
-		Result: &resourcepb.AncillaryResponse_Resolved{
-			Resolved: &resourcepb.ResolvedRelationships{Relationships: []*resourcepb.ResolvedRelationship{p}},
-		},
-	}, nil
+	return &resourcepb.AncillaryResponse{Version: resourcev2.WireVersion, Result: &resourcepb.AncillaryResponse_Resolved{
+		Resolved: &resourcepb.ResolvedRelationships{Relationships: []*resourcepb.ResolvedRelationship{p}},
+	}}, nil
 }
 
 func TestActualGRPCClientRejectsUnboundRelationshipResponse(t *testing.T) {

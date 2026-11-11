@@ -72,7 +72,7 @@ func newSessionController(p *nativeProvider) *sessionController {
 			var observations []resource.SourceObservation
 			for _, page := range s.Pages {
 				for _, name := range page.Records {
-					r := nativeRecord(p.corpus.Record(name), s)
+					r := nativeRecord(p.corpus.Record(name))
 					r.Reference.Address.Authority = in.Target.Authority
 					observations = append(observations, resource.SourceObservation{Record: resource.CompactSourceRecord(r), Metadata: &resource.ResourceMetadata{Labels: map[string]string{"fixture": "container"}}})
 				}
@@ -87,7 +87,7 @@ func newSessionController(p *nativeProvider) *sessionController {
 				r := p.corpus.Record(update.Record)
 				r.Body = update.Body
 				r.Revision = update.Revision
-				obs := resource.SourceObservation{Record: resource.CompactSourceRecord(nativeRecord(r, s)), Metadata: &resource.ResourceMetadata{Labels: map[string]string{"fixture": "container"}}}
+				obs := resource.SourceObservation{Record: resource.CompactSourceRecord(nativeRecord(r)), Metadata: &resource.ResourceMetadata{Labels: map[string]string{"fixture": "container"}}}
 				obs.Record.Reference.Address.Authority = in.Target.Authority
 				if err = out.Changes(ctx, []resource.SourceChange{{Kind: resource.SourceChangeUpsert, Observation: &obs}}, nil); err != nil {
 					return err
@@ -108,7 +108,7 @@ func newSessionController(p *nativeProvider) *sessionController {
 }
 
 func sourceRequest(s Scenario, c Corpus, mode string) resource.SourceOpenRequest {
-	return resource.SourceOpenRequest{SessionID: "session-1", Generation: "generation-1", Target: target(s, c), Binding: resource.RepresentationBinding{Representation: representation(s)}, Mode: mode, Acquisition: resource.SourceAcquisition{Kind: resource.SourceAcquisitionEnumerate}, Limits: resource.SourceLimits{MaxFrameBytes: resource.MaxSourceFrameBytes, MaxBatchItems: resource.MaxSourceBatchItems}}
+	return resource.SourceOpenRequest{SessionID: "session-1", Generation: "generation-1", Target: target(s, c), Binding: resource.RepresentationBinding{Representation: representation()}, Mode: mode, Acquisition: resource.SourceAcquisition{Kind: resource.SourceAcquisitionEnumerate}, Limits: resource.SourceLimits{MaxFrameBytes: resource.MaxSourceFrameBytes, MaxBatchItems: resource.MaxSourceBatchItems}}
 }
 
 func TestCurrentSDKSourceSessions(t *testing.T) {

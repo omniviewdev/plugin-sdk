@@ -22,8 +22,8 @@ const (
 	FeatureScopeValues Feature = "scopeValues"
 	// FeaturePresentation enables resource presentation metadata.
 	FeaturePresentation Feature = "presentation"
-	// FeatureEditorSchemas enables editor schema bindings.
-	FeatureEditorSchemas Feature = "editorSchemas"
+	// FeatureSchemaResolver enables targeted schema resolution.
+	FeatureSchemaResolver Feature = "schemaResolver"
 	// FeatureSchemaDocuments enables acquisition of shared schema documents.
 	FeatureSchemaDocuments Feature = "schemaDocuments"
 	// FeatureRelationships enables scoped relationship resolution.
@@ -78,7 +78,7 @@ func ValidateFeatures(f FeatureSet) error {
 			FeatureConnectionOverlay,
 			FeatureScopeValues,
 			FeaturePresentation,
-			FeatureEditorSchemas,
+			FeatureSchemaResolver,
 			FeatureSchemaDocuments,
 			FeatureRelationships,
 			FeatureHealth,
@@ -105,7 +105,15 @@ func DetectFeatures(ctx context.Context, p Provider) (FeatureSet, error) {
 		if err != nil {
 			return FeatureSet{}, err
 		}
-		return f, admissionRejected(ctx, "detect_features", ValidateFeatures(f))
+		if err := ValidateFeatures(f); err != nil {
+			return f, admissionRejected(ctx, "detect_features", err)
+		}
+		if _, installed := p.(SchemaResolver); !installed && f.Has(FeatureSchemaResolver) {
+			f.Traits = slices.DeleteFunc(slices.Clone(f.Traits), func(trait Feature) bool {
+				return trait == FeatureSchemaResolver
+			})
+		}
+		return f, nil
 	}
 	f := FeatureSet{Traits: []Feature{}}
 	if _, ok := p.(ConnectionLifecycle); ok {
@@ -126,8 +134,8 @@ func DetectFeatures(ctx context.Context, p Provider) (FeatureSet, error) {
 	if _, ok := p.(PresentationProvider); ok {
 		f.Traits = append(f.Traits, FeaturePresentation)
 	}
-	if _, ok := p.(EditorSchemaProvider); ok {
-		f.Traits = append(f.Traits, FeatureEditorSchemas)
+	if _, ok := p.(SchemaResolver); ok {
+		f.Traits = append(f.Traits, FeatureSchemaResolver)
 	}
 	if _, ok := p.(SchemaDocumentProvider); ok {
 		f.Traits = append(f.Traits, FeatureSchemaDocuments)

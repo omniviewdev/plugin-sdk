@@ -1,5 +1,9 @@
 # Provider-native conformance corpus
 
+## 2026-11-10 targeted-schema cutover
+
+Current source fixtures now advertise only body formats, resolve schemas by explicit target, and serve exact held demanded references. Source fences retain selected operational contracts and native generation epochs. Retired schema/global-revision coupling tests were replaced with consumer-boundary safety cases. Resource RPC wire is `3`; utility wire remains independently `2`. No build/test/formatter ran in this implementation slice. Dated passing receipts below describe their original cohorts, not verification of this cutover.
+
 ## P45 canonical boundary
 
 `internal/resourceconformance/{corpus,native,oracles}.go` retains the P44 credential-free native records and independent finite semantic oracles unchanged. The `current_*_test.go` probes now target the new-major handwritten `pkg/resource/v2` domain through an actual disposable go-plugin child and `pkg/resource/v2/plugin.GRPCPlugin{Impl: provider}`. Generated protobuf remains transport-only. The fixture implements `Provider` directly, without the legacy resource controller, mandatory CRUD methods, GVK metadata or v1 imports.
@@ -20,7 +24,7 @@ The caller supplies the host-issued canonical authority in the admitted target/r
 
 Native document conversion uses `json.Decoder.UseNumber` and an explicit fixture policy: integer tokens become exact signed or unsigned values; `createdAt` is a declared native timestamp. No integer passes through `float64`, and no rounded JSON number is claimed to regain precision. Resource bodies cross gRPC as recursive tagged map values, not raw JSON bytes. The independent body and link oracles consume reconstructed native JSON only after transport, retaining exact numeric tokens.
 
-Each page asserts unknown count with no count value, source coverage, best-effort consistency and opaque cursor preservation. Catalog discovery separately reports complete coverage; absent native authority hints remain unknown, never synthesized from route or endpoint. A partial final page stays partial. Exhaustion means the selected accessible listing ended, not unrestricted inventory or an atomic snapshot. Schema binding transports available document/revision provenance or explicit absence with validation `none`; schema transport does not establish P07 schema admission. Snapshot-only freshness remains a native corpus expectation: finite acquisition makes no live freshness or gap-free guarantee.
+Each page asserts unknown count with no count value, source coverage, best-effort consistency and opaque cursor preservation. Catalog observation separately reports support coverage; absent native authority hints remain unknown. Partial final pages remain partial. Exhaustion means the selected accessible listing ended, not unrestricted inventory or atomic snapshot. Targeted schema resolution transports optional document/revision provenance, absence, or failure independently of browsing. It makes no provider validation claim and does not replace host P07 normalization. Finite acquisition makes no live freshness or gap-free guarantee.
 
 ## Independent optional operations
 

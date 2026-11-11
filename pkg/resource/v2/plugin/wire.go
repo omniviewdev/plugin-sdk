@@ -51,8 +51,7 @@ func unsupported(s string) error { return resourcev2.NewError("UNSUPPORTED", s) 
 // Nodes count raw protobuf message occurrences across the entire frame.
 type wireBudget struct {
 	fields, nodes, sourceBatchLimit int
-	source bool
-	legacySchemaClaims bool
+	source                          bool
 }
 
 func protoWireCost(m protoreflect.Message) (nodes, fields int) {
@@ -70,13 +69,13 @@ type wireMessage struct {
 	durationSeconds, durationNanos int64
 
 	schemaUnavailable, schemaReason bool
-	legacyValidationSeen bool
+	resolveSchema                   bool
 
 	keys map[wireKey]struct{}
 
 	records, relationshipTargets int
-	sourceBatchLimit int
-	source bool
+	sourceBatchLimit             int
+	source                       bool
 }
 
 // ValidateWire admits only the exact negotiated resource descriptor tree, before decoding.
@@ -85,14 +84,6 @@ func ValidateWire(data []byte, descriptor protoreflect.MessageDescriptor) error 
 }
 
 func validateWire(data []byte, descriptor protoreflect.MessageDescriptor, sourceBatchLimit int) error {
-	return validateWireMode(data, descriptor, sourceBatchLimit, false)
-}
-
-func validateLegacySchemaWire(data []byte, descriptor protoreflect.MessageDescriptor) error {
-	return validateWireMode(data, descriptor, resourcev2.MaxSourceBatchItems, true)
-}
-
-func validateWireMode(data []byte, descriptor protoreflect.MessageDescriptor, sourceBatchLimit int, legacySchemaClaims bool) error {
 	if len(data) > MaxWireBytes {
 		return limited("resource message exceeds byte limit")
 	}
@@ -105,11 +96,14 @@ func validateWireMode(data []byte, descriptor protoreflect.MessageDescriptor, so
 			return err
 		}
 	}
-	b := wireBudget{sourceBatchLimit: sourceBatchLimit, source: descriptor.FullName() == "omniview.resource.v2.SourceOpenRequest" || descriptor.FullName() == "omniview.resource.v2.SourceFrame", legacySchemaClaims: legacySchemaClaims}
+	b := wireBudget{sourceBatchLimit: sourceBatchLimit, source: descriptor.FullName() == "omniview.resource.v2.SourceOpenRequest" || descriptor.FullName() == "omniview.resource.v2.SourceFrame"}
 	return b.message(data, descriptor, 0)
 }
 
 func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, depth int) error {
+	if err := admitResourceContractVersion(data, d); err != nil {
+		return err
+	}
 	if depth > MaxDepth {
 		return limited("resource nesting exceeds limit")
 	}
@@ -128,33 +122,6 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 			return err
 		}
 		data = data[n:]
-		if b.legacySchemaClaims && d.FullName() == "omniview.resource.v2.SchemaBinding" && (number == 5 || number == 6) {
-			if wire != protowire.BytesType {
-				return invalid("wrong protobuf wire type")
-			}
-			if number == 5 {
-				if state.legacyValidationSeen {
-					return invalid("duplicate protobuf field")
-				}
-				state.legacyValidationSeen = true
-			}
-			size, prefix := protowire.ConsumeVarint(data)
-			if prefix < 0 || prefix != protowire.SizeVarint(size) {
-				return invalid("malformed protobuf length")
-			}
-			value, length := protowire.ConsumeBytes(data)
-			if length < 0 {
-				return invalid("malformed protobuf length")
-			}
-			if len(value) > MaxBodyBytes {
-				return limited("schema claim exceeds byte limit")
-			}
-			if !utf8.Valid(value) {
-				return invalid("invalid UTF-8")
-			}
-			data = data[length:]
-			continue
-		}
 		f := d.Fields().ByNumber(number)
 		if err = state.admitField(f); err != nil {
 			return err
@@ -395,6 +362,9 @@ func (b *wireBudget) consumeBytes(
 }
 
 func (s *wireMessage) validateBytes(f protoreflect.FieldDescriptor, v []byte) error {
+	if err := s.schemaContractBytes(f, v); err != nil {
+		return err
+	}
 	if s.source && f.Kind() == protoreflect.StringKind && s.descriptor.Name() != "Value" && len(v) > 64<<10 {
 		return limited("source text field exceeds limit")
 	}
@@ -509,7 +479,7 @@ func (s *wireMessage) finish() error {
 		s.seen&(uint64(1)<<s.descriptor.Fields().ByNumber(wireEntryValueField).Index()) == 0 {
 		return invalid("missing map entry value")
 	}
-	return nil
+	return s.finishSchemaContract()
 }
 
 func (s *wireMessage) validDuration() bool {

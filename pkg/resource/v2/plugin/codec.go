@@ -17,13 +17,12 @@ import (
 
 // envelope retains admission failure within a single RPC, without global state.
 type envelope struct {
-	message            proto.Message
-	err                error
-	legacyExec         bool
-	forceStrict        bool
-	legacyValidator    func([]byte) error
-	sourceBatchLimit   int
-	legacySchemaClaims bool
+	message          proto.Message
+	err              error
+	legacyExec       bool
+	forceStrict      bool
+	legacyValidator  func([]byte) error
+	sourceBatchLimit int
 }
 type strictCodec struct{ fallback encoding.CodecV2 }
 
@@ -100,8 +99,6 @@ func decodeResource(data mem.BufferSlice, p proto.Message, e *envelope, wrapped 
 		err = e.legacyValidator(buf.ReadOnlyData())
 	case wrapped && e.legacyExec:
 		err = ValidateLegacyExecWire(buf.ReadOnlyData())
-	case wrapped && e.legacySchemaClaims:
-		err = validateLegacySchemaWire(buf.ReadOnlyData(), p.ProtoReflect().Descriptor())
 	case wrapped && e.sourceBatchLimit > 0:
 		err = validateWire(buf.ReadOnlyData(), p.ProtoReflect().Descriptor(), e.sourceBatchLimit)
 	default:
@@ -109,9 +106,6 @@ func decodeResource(data mem.BufferSlice, p proto.Message, e *envelope, wrapped 
 	}
 	if err != nil {
 		return err
-	}
-	if wrapped && e.legacySchemaClaims {
-		return (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(buf.ReadOnlyData(), p)
 	}
 	return proto.Unmarshal(buf.ReadOnlyData(), p)
 }

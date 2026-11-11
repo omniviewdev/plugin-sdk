@@ -3,7 +3,7 @@
 [Docs home](README.md) · [Quickstart](quickstart.md) · [API reference](resource-v2-api.md)
 
 > [!IMPORTANT]
-> Resource v2 is the SDK v0.9 resource API. This guide describes its implemented provider contract.
+> This guide describes the SDK v0.20.0 resource-v2 provider contract with resource RPC wire `3`. Adopt it with the coordinated Omniview v0.36.0 and rebuilt plugin releases.
 
 Start with the [runnable notes plugin](../examples/resource-plugin). It advertises one type and implements only point reads. Add another operation only when your backend can honor its contract.
 
@@ -124,6 +124,8 @@ For real clients, bound native acquisition and honor request cancellation. A fin
 ## 6. Add metadata only when useful
 
 Schemas, presentation, relationships, health, and diagnostic events are independent optional traits. Start with the [extension map](resource-v2-api.md), rather than fabricating empty implementations.
+
+Catalog formats are only `Representation{ID, Revision}`. Resolve schemas only for an active consumer through `SchemaResolver.ResolveSchema` and an explicit `SchemaRequest` target. Default catalog observation performs no discovery or schema network work; `CatalogRequest.Refresh` requests eligible discovery explicitly. The embedded notes provider positively reports known schema absence for its exact native format; it rejects other targets rather than manufacturing absence.
 
 > [!WARNING]
 > Relationship target matching currently rejects a query-only dimension that is absent from object identity, even for `any`. Review the [known portability limitation](sdk-v1-v2-overview.md#known-limitations) before building that integration. Do not add invented identity coordinates as a workaround.

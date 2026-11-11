@@ -133,11 +133,11 @@ func readJSON(data []byte, byteLimit int, mode jsonReadMode) (any, error) {
 }
 
 type jsonTreeReader struct {
-	decoder       *json.Decoder
-	mode          jsonReadMode
-	nodes, fields int
-	inResourceData bool
-	inConnection bool
+	decoder           *json.Decoder
+	mode              jsonReadMode
+	nodes, fields     int
+	inResourceData    bool
+	inConnection      bool
 	resourceDataDepth int
 }
 

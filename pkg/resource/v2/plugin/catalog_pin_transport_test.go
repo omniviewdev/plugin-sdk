@@ -48,12 +48,9 @@ func TestCatalogPinRawMalformedAndMissingFailClosed(t *testing.T) {
 		err := conn.Invoke(
 			ctx,
 			resourcepb.ResourceProvider_Call_FullMethodName,
-			&resourcepb.Request{
-				Version: 2,
-				Operation: &resourcepb.Request_Get{
-					Get: &resourcepb.GetInput{Route: &resourcepb.AccessRoute{Connection: "explicit"}},
-				},
-			},
+			&resourcepb.Request{Version: resourcev2.WireVersion, Operation: &resourcepb.Request_Get{
+				Get: &resourcepb.GetInput{Route: &resourcepb.AccessRoute{Connection: "explicit"}},
+			}},
 			&out,
 		)
 		if resourcev2.ErrorCode(domainError(err)) != "RESET_REQUIRED" {

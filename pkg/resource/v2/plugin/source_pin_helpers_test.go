@@ -9,8 +9,9 @@ import (
 
 type sourcePinProvider struct {
 	qualifiedProvider
-	starts atomic.Int32
-	seen   chan resourcev2.Session
+	binding testCatalogBinding
+	starts  atomic.Int32
+	seen    chan resourcev2.Session
 }
 
 func (p *sourcePinProvider) Catalog(ctx context.Context, in resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
@@ -21,7 +22,10 @@ func (p *sourcePinProvider) Catalog(ctx context.Context, in resourcev2.CatalogRe
 			resourcev2.Capability{Operation: resourcev2.OperationSourceUpdates, Scope: resourcev2.QueryScope{}, Guarantee: resourcev2.ContinuityBestEffort},
 		)
 	}
-	return c, err
+	if err != nil {
+		return resourcev2.Catalog{}, err
+	}
+	return p.binding.bind(c)
 }
 
 func (p *sourcePinProvider) OpenSource(ctx context.Context, _ resourcev2.SourceOpenRequest, emitter resourcev2.SourceEmitter) error {

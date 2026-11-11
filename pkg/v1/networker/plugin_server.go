@@ -260,7 +260,7 @@ func (s *PluginServer) StartResourcePortForwardSession(
 		return nil, resourceplugin.ResourceRPCError(err)
 	}
 	out := &networkerpb.ResourcePortForwardSessionResponse{
-		ResourceWireVersion: resourcev2.WireVersion,
+		ResourceWireVersion: resourceWireVersion,
 		Session:             wire,
 	}
 	if err = validateFrame(out); err != nil {

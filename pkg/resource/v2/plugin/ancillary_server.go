@@ -16,7 +16,7 @@ const (
 	ancillaryDeleteConnection     = "deleteConnection"
 	ancillaryGroups               = "groups"
 	ancillaryDefinition           = "definition"
-	ancillaryEditorSchemas        = "editorSchemas"
+	ancillaryResolveSchema        = "resolveSchema"
 	ancillaryActions              = "actions"
 	ancillaryRelationships        = "relationships"
 	ancillaryResolveRelationships = "resolveRelationships"
@@ -128,7 +128,7 @@ func (s *ancillaryServer) call(
 		ancillarySchemaDocument,
 		ancillaryGroups,
 		ancillaryDefinition,
-		ancillaryEditorSchemas,
+		ancillaryResolveSchema,
 		ancillaryActions:
 		return s.presentationCall(ctx, r, route)
 	case ancillaryRelationships, ancillaryResolveRelationships, ancillaryHealth, ancillaryEvents:

@@ -89,15 +89,19 @@ func (d *sourceDeadline) stop() {
 }
 
 type sourceClientStream struct {
-	stream          grpc.ClientStream
-	cancel          context.CancelFunc
-	ctx             context.Context
-	maxBatchItems   uint32
-	deadline        *sourceDeadline
-	snapshotTimeout time.Duration
-	tracker         *resourcev2.SourcePhaseTracker
-	admitted        bool
-	once            sync.Once
+	stream           grpc.ClientStream
+	cancel           context.CancelFunc
+	ctx              context.Context
+	maxBatchItems    uint32
+	deadline         *sourceDeadline
+	snapshotTimeout  time.Duration
+	tracker          *resourcev2.SourcePhaseTracker
+	client           *Client
+	request          resourcev2.SourceOpenRequest
+	descriptor       resourcev2.ResourceType
+	nextCatalogCheck time.Time
+	admitted         bool
+	once             sync.Once
 }
 
 // sourceBeginTimedOut logs the begin-handshake timeout and returns its domain error.
@@ -169,7 +173,7 @@ func (c *Client) OpenSourceStream(ctx context.Context, r resourcev2.SourceOpenRe
 		return nil, domainError(err)
 	}
 	opened = true
-	return &sourceClientStream{stream: stream, cancel: cancel, ctx: ctx, maxBatchItems: r.Limits.MaxBatchItems, deadline: deadline, snapshotTimeout: snapshotTimeout, tracker: resourcev2.NewCatalogBoundSourcePhaseTracker(r, descriptor)}, nil
+	return &sourceClientStream{stream: stream, cancel: cancel, ctx: ctx, maxBatchItems: r.Limits.MaxBatchItems, deadline: deadline, snapshotTimeout: snapshotTimeout, tracker: resourcev2.NewCatalogBoundSourcePhaseTracker(r, descriptor), client: c, request: r, descriptor: descriptor, nextCatalogCheck: time.Now().Add(time.Second)}, nil
 }
 func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 	var zero resourcev2.SourceFrame
@@ -225,6 +229,17 @@ func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 		}
 		sourceFrameInvalid(s.ctx, "decode_failed")
 		return zero, resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
+	}
+	if s.client != nil && (f.Snapshot != nil || f.SnapshotEnd != nil || f.Changes != nil) && !time.Now().Before(s.nextCatalogCheck) {
+		s.nextCatalogCheck = time.Now().Add(time.Second)
+		catalog, err := s.client.Catalog(s.ctx, resourcev2.CatalogRequest{Route: s.request.Target.Route})
+		if err == nil {
+			err = resourcev2.CheckSourceCatalog(s.ctx, catalog, s.request, s.descriptor)
+		}
+		if err != nil {
+			s.Close()
+			return zero, err
+		}
 	}
 	if err = s.tracker.AdmitSized(f, proto.Size(p)); err != nil {
 		s.Close()

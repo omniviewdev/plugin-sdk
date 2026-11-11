@@ -86,6 +86,7 @@ type AncillaryRequest struct {
 	Limit                  uint32                       `protobuf:"varint,9,opt,name=limit,proto3" json:"limit,omitempty"`
 	DocumentRef            *SchemaDocumentReference     `protobuf:"bytes,10,opt,name=document_ref,json=documentRef,proto3" json:"document_ref,omitempty"`
 	RelationshipResolution *RelationshipResolutionInput `protobuf:"bytes,11,opt,name=relationship_resolution,json=relationshipResolution,proto3" json:"relationship_resolution,omitempty"`
+	SchemaRequest          *SchemaRequest               `protobuf:"bytes,12,opt,name=schema_request,json=schemaRequest,proto3" json:"schema_request,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -197,6 +198,13 @@ func (x *AncillaryRequest) GetRelationshipResolution() *RelationshipResolutionIn
 	return nil
 }
 
+func (x *AncillaryRequest) GetSchemaRequest() *SchemaRequest {
+	if x != nil {
+		return x.SchemaRequest
+	}
+	return nil
+}
+
 type AncillaryResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Version uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
@@ -208,7 +216,7 @@ type AncillaryResponse struct {
 	//	*AncillaryResponse_Health
 	//	*AncillaryResponse_Events
 	//	*AncillaryResponse_Document
-	//	*AncillaryResponse_EditorSchemas
+	//	*AncillaryResponse_SchemaBinding
 	Result        isAncillaryResponse_Result `protobuf_oneof:"result"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -312,10 +320,10 @@ func (x *AncillaryResponse) GetDocument() *SchemaDocument {
 	return nil
 }
 
-func (x *AncillaryResponse) GetEditorSchemas() *EditorSchemas {
+func (x *AncillaryResponse) GetSchemaBinding() *SchemaBinding {
 	if x != nil {
-		if x, ok := x.Result.(*AncillaryResponse_EditorSchemas); ok {
-			return x.EditorSchemas
+		if x, ok := x.Result.(*AncillaryResponse_SchemaBinding); ok {
+			return x.SchemaBinding
 		}
 	}
 	return nil
@@ -349,8 +357,8 @@ type AncillaryResponse_Document struct {
 	Document *SchemaDocument `protobuf:"bytes,7,opt,name=document,proto3,oneof"`
 }
 
-type AncillaryResponse_EditorSchemas struct {
-	EditorSchemas *EditorSchemas `protobuf:"bytes,8,opt,name=editor_schemas,json=editorSchemas,proto3,oneof"`
+type AncillaryResponse_SchemaBinding struct {
+	SchemaBinding *SchemaBinding `protobuf:"bytes,9,opt,name=schema_binding,json=schemaBinding,proto3,oneof"`
 }
 
 func (*AncillaryResponse_Json) isAncillaryResponse_Result() {}
@@ -365,32 +373,33 @@ func (*AncillaryResponse_Events) isAncillaryResponse_Result() {}
 
 func (*AncillaryResponse_Document) isAncillaryResponse_Result() {}
 
-func (*AncillaryResponse_EditorSchemas) isAncillaryResponse_Result() {}
+func (*AncillaryResponse_SchemaBinding) isAncillaryResponse_Result() {}
 
-type EditorSchema struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
-	Language      string                 `protobuf:"bytes,4,opt,name=language,proto3" json:"language,omitempty"`
-	Binding       *SchemaBinding         `protobuf:"bytes,5,opt,name=binding,proto3" json:"binding,omitempty"`
-	Key           string                 `protobuf:"bytes,6,opt,name=key,proto3" json:"key,omitempty"`
+type SchemaTarget struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Selection:
+	//
+	//	*SchemaTarget_Representation
+	//	*SchemaTarget_Auxiliary
+	Selection     isSchemaTarget_Selection `protobuf_oneof:"selection"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *EditorSchema) Reset() {
-	*x = EditorSchema{}
+func (x *SchemaTarget) Reset() {
+	*x = SchemaTarget{}
 	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *EditorSchema) String() string {
+func (x *SchemaTarget) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*EditorSchema) ProtoMessage() {}
+func (*SchemaTarget) ProtoMessage() {}
 
-func (x *EditorSchema) ProtoReflect() protoreflect.Message {
+func (x *SchemaTarget) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -402,61 +411,136 @@ func (x *EditorSchema) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use EditorSchema.ProtoReflect.Descriptor instead.
-func (*EditorSchema) Descriptor() ([]byte, []int) {
+// Deprecated: Use SchemaTarget.ProtoReflect.Descriptor instead.
+func (*SchemaTarget) Descriptor() ([]byte, []int) {
 	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *EditorSchema) GetType() string {
+func (x *SchemaTarget) GetSelection() isSchemaTarget_Selection {
 	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
-func (x *EditorSchema) GetLanguage() string {
-	if x != nil {
-		return x.Language
-	}
-	return ""
-}
-
-func (x *EditorSchema) GetBinding() *SchemaBinding {
-	if x != nil {
-		return x.Binding
+		return x.Selection
 	}
 	return nil
 }
 
-func (x *EditorSchema) GetKey() string {
+func (x *SchemaTarget) GetRepresentation() *Representation {
+	if x != nil {
+		if x, ok := x.Selection.(*SchemaTarget_Representation); ok {
+			return x.Representation
+		}
+	}
+	return nil
+}
+
+func (x *SchemaTarget) GetAuxiliary() *AuxiliarySchemaTarget {
+	if x != nil {
+		if x, ok := x.Selection.(*SchemaTarget_Auxiliary); ok {
+			return x.Auxiliary
+		}
+	}
+	return nil
+}
+
+type isSchemaTarget_Selection interface {
+	isSchemaTarget_Selection()
+}
+
+type SchemaTarget_Representation struct {
+	Representation *Representation `protobuf:"bytes,1,opt,name=representation,proto3,oneof"`
+}
+
+type SchemaTarget_Auxiliary struct {
+	Auxiliary *AuxiliarySchemaTarget `protobuf:"bytes,2,opt,name=auxiliary,proto3,oneof"`
+}
+
+func (*SchemaTarget_Representation) isSchemaTarget_Selection() {}
+
+func (*SchemaTarget_Auxiliary) isSchemaTarget_Selection() {}
+
+type AuxiliarySchemaTarget struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Key            string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Reference      *ResourceReference     `protobuf:"bytes,2,opt,name=reference,proto3" json:"reference,omitempty"`
+	SourceRevision *string                `protobuf:"bytes,3,opt,name=source_revision,json=sourceRevision,proto3,oneof" json:"source_revision,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *AuxiliarySchemaTarget) Reset() {
+	*x = AuxiliarySchemaTarget{}
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuxiliarySchemaTarget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuxiliarySchemaTarget) ProtoMessage() {}
+
+func (x *AuxiliarySchemaTarget) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuxiliarySchemaTarget.ProtoReflect.Descriptor instead.
+func (*AuxiliarySchemaTarget) Descriptor() ([]byte, []int) {
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *AuxiliarySchemaTarget) GetKey() string {
 	if x != nil {
 		return x.Key
 	}
 	return ""
 }
 
-type EditorSchemas struct {
+func (x *AuxiliarySchemaTarget) GetReference() *ResourceReference {
+	if x != nil {
+		return x.Reference
+	}
+	return nil
+}
+
+func (x *AuxiliarySchemaTarget) GetSourceRevision() string {
+	if x != nil && x.SourceRevision != nil {
+		return *x.SourceRevision
+	}
+	return ""
+}
+
+type SchemaRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Schemas       []*EditorSchema        `protobuf:"bytes,1,rep,name=schemas,proto3" json:"schemas,omitempty"`
+	Route         *AccessRoute           `protobuf:"bytes,1,opt,name=route,proto3" json:"route,omitempty"`
+	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	Target        *SchemaTarget          `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *EditorSchemas) Reset() {
-	*x = EditorSchemas{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[4]
+func (x *SchemaRequest) Reset() {
+	*x = SchemaRequest{}
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *EditorSchemas) String() string {
+func (x *SchemaRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*EditorSchemas) ProtoMessage() {}
+func (*SchemaRequest) ProtoMessage() {}
 
-func (x *EditorSchemas) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[4]
+func (x *SchemaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -467,14 +551,80 @@ func (x *EditorSchemas) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use EditorSchemas.ProtoReflect.Descriptor instead.
-func (*EditorSchemas) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{4}
+// Deprecated: Use SchemaRequest.ProtoReflect.Descriptor instead.
+func (*SchemaRequest) Descriptor() ([]byte, []int) {
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *EditorSchemas) GetSchemas() []*EditorSchema {
+func (x *SchemaRequest) GetRoute() *AccessRoute {
 	if x != nil {
-		return x.Schemas
+		return x.Route
+	}
+	return nil
+}
+
+func (x *SchemaRequest) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *SchemaRequest) GetTarget() *SchemaTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+type SchemaDocumentRequest struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Request       *SchemaRequest           `protobuf:"bytes,1,opt,name=request,proto3" json:"request,omitempty"`
+	Reference     *SchemaDocumentReference `protobuf:"bytes,2,opt,name=reference,proto3" json:"reference,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SchemaDocumentRequest) Reset() {
+	*x = SchemaDocumentRequest{}
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SchemaDocumentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SchemaDocumentRequest) ProtoMessage() {}
+
+func (x *SchemaDocumentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SchemaDocumentRequest.ProtoReflect.Descriptor instead.
+func (*SchemaDocumentRequest) Descriptor() ([]byte, []int) {
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SchemaDocumentRequest) GetRequest() *SchemaRequest {
+	if x != nil {
+		return x.Request
+	}
+	return nil
+}
+
+func (x *SchemaDocumentRequest) GetReference() *SchemaDocumentReference {
+	if x != nil {
+		return x.Reference
 	}
 	return nil
 }
@@ -488,7 +638,7 @@ type OptionalHealth struct {
 
 func (x *OptionalHealth) Reset() {
 	*x = OptionalHealth{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[5]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -500,7 +650,7 @@ func (x *OptionalHealth) String() string {
 func (*OptionalHealth) ProtoMessage() {}
 
 func (x *OptionalHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[5]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -513,7 +663,7 @@ func (x *OptionalHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OptionalHealth.ProtoReflect.Descriptor instead.
 func (*OptionalHealth) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{5}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *OptionalHealth) GetHealth() *ResourceHealth {
@@ -540,7 +690,7 @@ type RelationshipDescriptor struct {
 
 func (x *RelationshipDescriptor) Reset() {
 	*x = RelationshipDescriptor{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[6]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -552,7 +702,7 @@ func (x *RelationshipDescriptor) String() string {
 func (*RelationshipDescriptor) ProtoMessage() {}
 
 func (x *RelationshipDescriptor) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[6]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -565,7 +715,7 @@ func (x *RelationshipDescriptor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelationshipDescriptor.ProtoReflect.Descriptor instead.
 func (*RelationshipDescriptor) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{6}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RelationshipDescriptor) GetType() string {
@@ -641,7 +791,7 @@ type ScopeExtractor struct {
 
 func (x *ScopeExtractor) Reset() {
 	*x = ScopeExtractor{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[7]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -653,7 +803,7 @@ func (x *ScopeExtractor) String() string {
 func (*ScopeExtractor) ProtoMessage() {}
 
 func (x *ScopeExtractor) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[7]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -666,7 +816,7 @@ func (x *ScopeExtractor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScopeExtractor.ProtoReflect.Descriptor instead.
 func (*ScopeExtractor) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{7}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ScopeExtractor) GetDimension() string {
@@ -692,7 +842,7 @@ type RelationshipDescriptors struct {
 
 func (x *RelationshipDescriptors) Reset() {
 	*x = RelationshipDescriptors{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[8]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -704,7 +854,7 @@ func (x *RelationshipDescriptors) String() string {
 func (*RelationshipDescriptors) ProtoMessage() {}
 
 func (x *RelationshipDescriptors) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[8]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -717,7 +867,7 @@ func (x *RelationshipDescriptors) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelationshipDescriptors.ProtoReflect.Descriptor instead.
 func (*RelationshipDescriptors) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{8}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RelationshipDescriptors) GetDescriptors() []*RelationshipDescriptor {
@@ -738,7 +888,7 @@ type RelationshipTarget struct {
 
 func (x *RelationshipTarget) Reset() {
 	*x = RelationshipTarget{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[9]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -750,7 +900,7 @@ func (x *RelationshipTarget) String() string {
 func (*RelationshipTarget) ProtoMessage() {}
 
 func (x *RelationshipTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[9]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -763,7 +913,7 @@ func (x *RelationshipTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RelationshipTarget.ProtoReflect.Descriptor instead.
 func (*RelationshipTarget) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{9}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RelationshipTarget) GetReference() *ResourceReference {
@@ -797,7 +947,7 @@ type ResolvedRelationship struct {
 
 func (x *ResolvedRelationship) Reset() {
 	*x = ResolvedRelationship{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[10]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -809,7 +959,7 @@ func (x *ResolvedRelationship) String() string {
 func (*ResolvedRelationship) ProtoMessage() {}
 
 func (x *ResolvedRelationship) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[10]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -822,7 +972,7 @@ func (x *ResolvedRelationship) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolvedRelationship.ProtoReflect.Descriptor instead.
 func (*ResolvedRelationship) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{10}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ResolvedRelationship) GetDescriptor_() *RelationshipDescriptor {
@@ -848,7 +998,7 @@ type ResolvedRelationships struct {
 
 func (x *ResolvedRelationships) Reset() {
 	*x = ResolvedRelationships{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[11]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -860,7 +1010,7 @@ func (x *ResolvedRelationships) String() string {
 func (*ResolvedRelationships) ProtoMessage() {}
 
 func (x *ResolvedRelationships) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[11]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -873,7 +1023,7 @@ func (x *ResolvedRelationships) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolvedRelationships.ProtoReflect.Descriptor instead.
 func (*ResolvedRelationships) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{11}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ResolvedRelationships) GetRelationships() []*ResolvedRelationship {
@@ -897,7 +1047,7 @@ type HealthCondition struct {
 
 func (x *HealthCondition) Reset() {
 	*x = HealthCondition{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[12]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -909,7 +1059,7 @@ func (x *HealthCondition) String() string {
 func (*HealthCondition) ProtoMessage() {}
 
 func (x *HealthCondition) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[12]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -922,7 +1072,7 @@ func (x *HealthCondition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthCondition.ProtoReflect.Descriptor instead.
 func (*HealthCondition) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{12}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *HealthCondition) GetType() string {
@@ -980,7 +1130,7 @@ type ResourceHealth struct {
 
 func (x *ResourceHealth) Reset() {
 	*x = ResourceHealth{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[13]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -992,7 +1142,7 @@ func (x *ResourceHealth) String() string {
 func (*ResourceHealth) ProtoMessage() {}
 
 func (x *ResourceHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[13]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1005,7 +1155,7 @@ func (x *ResourceHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceHealth.ProtoReflect.Descriptor instead.
 func (*ResourceHealth) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{13}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ResourceHealth) GetStatus() string {
@@ -1058,7 +1208,7 @@ type ResourceEvent struct {
 
 func (x *ResourceEvent) Reset() {
 	*x = ResourceEvent{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[14]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1070,7 +1220,7 @@ func (x *ResourceEvent) String() string {
 func (*ResourceEvent) ProtoMessage() {}
 
 func (x *ResourceEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[14]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1083,7 +1233,7 @@ func (x *ResourceEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceEvent.ProtoReflect.Descriptor instead.
 func (*ResourceEvent) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{14}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ResourceEvent) GetType() string {
@@ -1144,7 +1294,7 @@ type ResourceEvents struct {
 
 func (x *ResourceEvents) Reset() {
 	*x = ResourceEvents{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[15]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1156,7 +1306,7 @@ func (x *ResourceEvents) String() string {
 func (*ResourceEvents) ProtoMessage() {}
 
 func (x *ResourceEvents) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[15]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1169,7 +1319,7 @@ func (x *ResourceEvents) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceEvents.ProtoReflect.Descriptor instead.
 func (*ResourceEvents) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{15}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ResourceEvents) GetEvents() []*ResourceEvent {
@@ -1189,7 +1339,7 @@ type ActionStreamRequest struct {
 
 func (x *ActionStreamRequest) Reset() {
 	*x = ActionStreamRequest{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[16]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1201,7 +1351,7 @@ func (x *ActionStreamRequest) String() string {
 func (*ActionStreamRequest) ProtoMessage() {}
 
 func (x *ActionStreamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[16]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1214,7 +1364,7 @@ func (x *ActionStreamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionStreamRequest.ProtoReflect.Descriptor instead.
 func (*ActionStreamRequest) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{16}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ActionStreamRequest) GetVersion() uint32 {
@@ -1246,7 +1396,7 @@ type ActionStreamEvent struct {
 
 func (x *ActionStreamEvent) Reset() {
 	*x = ActionStreamEvent{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[17]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1258,7 +1408,7 @@ func (x *ActionStreamEvent) String() string {
 func (*ActionStreamEvent) ProtoMessage() {}
 
 func (x *ActionStreamEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[17]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1271,7 +1421,7 @@ func (x *ActionStreamEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionStreamEvent.ProtoReflect.Descriptor instead.
 func (*ActionStreamEvent) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{17}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ActionStreamEvent) GetVersion() uint32 {
@@ -1319,7 +1469,7 @@ type ConnectionStreamEvent struct {
 
 func (x *ConnectionStreamEvent) Reset() {
 	*x = ConnectionStreamEvent{}
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[18]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1331,7 +1481,7 @@ func (x *ConnectionStreamEvent) String() string {
 func (*ConnectionStreamEvent) ProtoMessage() {}
 
 func (x *ConnectionStreamEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[18]
+	mi := &file_proto_resource_v2_ancillary_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1344,7 +1494,7 @@ func (x *ConnectionStreamEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectionStreamEvent.ProtoReflect.Descriptor instead.
 func (*ConnectionStreamEvent) Descriptor() ([]byte, []int) {
-	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{18}
+	return file_proto_resource_v2_ancillary_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ConnectionStreamEvent) GetVersion() uint32 {
@@ -1368,7 +1518,7 @@ const file_proto_resource_v2_ancillary_proto_rawDesc = "" +
 	"!proto/resource/v2/ancillary.proto\x12\x14omniview.resource.v2\x1a\x1eproto/resource/v2/domain.proto\"\x91\x01\n" +
 	"\x1bRelationshipResolutionInput\x126\n" +
 	"\x06source\x18\x01 \x01(\v2\x1e.omniview.resource.v2.GetInputR\x06source\x12:\n" +
-	"\atargets\x18\x02 \x03(\v2 .omniview.resource.v2.ReadTargetR\atargets\"\x89\x04\n" +
+	"\atargets\x18\x02 \x03(\v2 .omniview.resource.v2.ReadTargetR\atargets\"\xd5\x04\n" +
 	"\x10AncillaryRequest\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x1c\n" +
 	"\toperation\x18\x02 \x01(\tR\toperation\x127\n" +
@@ -1381,7 +1531,8 @@ const file_proto_resource_v2_ancillary_proto_rawDesc = "" +
 	"\x05limit\x18\t \x01(\rR\x05limit\x12P\n" +
 	"\fdocument_ref\x18\n" +
 	" \x01(\v2-.omniview.resource.v2.SchemaDocumentReferenceR\vdocumentRef\x12j\n" +
-	"\x17relationship_resolution\x18\v \x01(\v21.omniview.resource.v2.RelationshipResolutionInputR\x16relationshipResolution\"\x81\x04\n" +
+	"\x17relationship_resolution\x18\v \x01(\v21.omniview.resource.v2.RelationshipResolutionInputR\x16relationshipResolution\x12J\n" +
+	"\x0eschema_request\x18\f \x01(\v2#.omniview.resource.v2.SchemaRequestR\rschemaRequest\"\x97\x04\n" +
 	"\x11AncillaryResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12\x14\n" +
 	"\x04json\x18\x02 \x01(\fH\x00R\x04json\x12U\n" +
@@ -1390,16 +1541,24 @@ const file_proto_resource_v2_ancillary_proto_rawDesc = "" +
 	"\x06health\x18\x05 \x01(\v2$.omniview.resource.v2.OptionalHealthH\x00R\x06health\x12>\n" +
 	"\x06events\x18\x06 \x01(\v2$.omniview.resource.v2.ResourceEventsH\x00R\x06events\x12B\n" +
 	"\bdocument\x18\a \x01(\v2$.omniview.resource.v2.SchemaDocumentH\x00R\bdocument\x12L\n" +
-	"\x0eeditor_schemas\x18\b \x01(\v2#.omniview.resource.v2.EditorSchemasH\x00R\reditorSchemasB\b\n" +
-	"\x06result\"\xac\x01\n" +
-	"\fEditorSchema\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1a\n" +
-	"\blanguage\x18\x04 \x01(\tR\blanguage\x12=\n" +
-	"\abinding\x18\x05 \x01(\v2#.omniview.resource.v2.SchemaBindingR\abinding\x12\x10\n" +
-	"\x03key\x18\x06 \x01(\tR\x03keyJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\n" +
-	"file_matchR\x03uri\"M\n" +
-	"\rEditorSchemas\x12<\n" +
-	"\aschemas\x18\x01 \x03(\v2\".omniview.resource.v2.EditorSchemaR\aschemas\"N\n" +
+	"\x0eschema_binding\x18\t \x01(\v2#.omniview.resource.v2.SchemaBindingH\x00R\rschemaBindingB\b\n" +
+	"\x06resultJ\x04\b\b\x10\tR\x0eeditor_schemas\"\xb8\x01\n" +
+	"\fSchemaTarget\x12N\n" +
+	"\x0erepresentation\x18\x01 \x01(\v2$.omniview.resource.v2.RepresentationH\x00R\x0erepresentation\x12K\n" +
+	"\tauxiliary\x18\x02 \x01(\v2+.omniview.resource.v2.AuxiliarySchemaTargetH\x00R\tauxiliaryB\v\n" +
+	"\tselection\"\xb2\x01\n" +
+	"\x15AuxiliarySchemaTarget\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12E\n" +
+	"\treference\x18\x02 \x01(\v2'.omniview.resource.v2.ResourceReferenceR\treference\x12,\n" +
+	"\x0fsource_revision\x18\x03 \x01(\tH\x00R\x0esourceRevision\x88\x01\x01B\x12\n" +
+	"\x10_source_revision\"\x98\x01\n" +
+	"\rSchemaRequest\x127\n" +
+	"\x05route\x18\x01 \x01(\v2!.omniview.resource.v2.AccessRouteR\x05route\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\x12:\n" +
+	"\x06target\x18\x03 \x01(\v2\".omniview.resource.v2.SchemaTargetR\x06target\"\xa3\x01\n" +
+	"\x15SchemaDocumentRequest\x12=\n" +
+	"\arequest\x18\x01 \x01(\v2#.omniview.resource.v2.SchemaRequestR\arequest\x12K\n" +
+	"\treference\x18\x02 \x01(\v2-.omniview.resource.v2.SchemaDocumentReferenceR\treference\"N\n" +
 	"\x0eOptionalHealth\x12<\n" +
 	"\x06health\x18\x01 \x01(\v2$.omniview.resource.v2.ResourceHealthR\x06health\"\x85\x03\n" +
 	"\x16RelationshipDescriptor\x12\x12\n" +
@@ -1487,86 +1646,95 @@ func file_proto_resource_v2_ancillary_proto_rawDescGZIP() []byte {
 	return file_proto_resource_v2_ancillary_proto_rawDescData
 }
 
-var file_proto_resource_v2_ancillary_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
+var file_proto_resource_v2_ancillary_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_proto_resource_v2_ancillary_proto_goTypes = []any{
 	(*RelationshipResolutionInput)(nil), // 0: omniview.resource.v2.RelationshipResolutionInput
 	(*AncillaryRequest)(nil),            // 1: omniview.resource.v2.AncillaryRequest
 	(*AncillaryResponse)(nil),           // 2: omniview.resource.v2.AncillaryResponse
-	(*EditorSchema)(nil),                // 3: omniview.resource.v2.EditorSchema
-	(*EditorSchemas)(nil),               // 4: omniview.resource.v2.EditorSchemas
-	(*OptionalHealth)(nil),              // 5: omniview.resource.v2.OptionalHealth
-	(*RelationshipDescriptor)(nil),      // 6: omniview.resource.v2.RelationshipDescriptor
-	(*ScopeExtractor)(nil),              // 7: omniview.resource.v2.ScopeExtractor
-	(*RelationshipDescriptors)(nil),     // 8: omniview.resource.v2.RelationshipDescriptors
-	(*RelationshipTarget)(nil),          // 9: omniview.resource.v2.RelationshipTarget
-	(*ResolvedRelationship)(nil),        // 10: omniview.resource.v2.ResolvedRelationship
-	(*ResolvedRelationships)(nil),       // 11: omniview.resource.v2.ResolvedRelationships
-	(*HealthCondition)(nil),             // 12: omniview.resource.v2.HealthCondition
-	(*ResourceHealth)(nil),              // 13: omniview.resource.v2.ResourceHealth
-	(*ResourceEvent)(nil),               // 14: omniview.resource.v2.ResourceEvent
-	(*ResourceEvents)(nil),              // 15: omniview.resource.v2.ResourceEvents
-	(*ActionStreamRequest)(nil),         // 16: omniview.resource.v2.ActionStreamRequest
-	(*ActionStreamEvent)(nil),           // 17: omniview.resource.v2.ActionStreamEvent
-	(*ConnectionStreamEvent)(nil),       // 18: omniview.resource.v2.ConnectionStreamEvent
-	(*GetInput)(nil),                    // 19: omniview.resource.v2.GetInput
-	(*ReadTarget)(nil),                  // 20: omniview.resource.v2.ReadTarget
-	(*AccessRoute)(nil),                 // 21: omniview.resource.v2.AccessRoute
-	(*Value)(nil),                       // 22: omniview.resource.v2.Value
-	(*SchemaDocumentReference)(nil),     // 23: omniview.resource.v2.SchemaDocumentReference
-	(*SchemaDocument)(nil),              // 24: omniview.resource.v2.SchemaDocument
-	(*SchemaBinding)(nil),               // 25: omniview.resource.v2.SchemaBinding
-	(*ScopeEntry)(nil),                  // 26: omniview.resource.v2.ScopeEntry
-	(*ResourceReference)(nil),           // 27: omniview.resource.v2.ResourceReference
-	(*TimestampValue)(nil),              // 28: omniview.resource.v2.TimestampValue
-	(*ActionInput)(nil),                 // 29: omniview.resource.v2.ActionInput
+	(*SchemaTarget)(nil),                // 3: omniview.resource.v2.SchemaTarget
+	(*AuxiliarySchemaTarget)(nil),       // 4: omniview.resource.v2.AuxiliarySchemaTarget
+	(*SchemaRequest)(nil),               // 5: omniview.resource.v2.SchemaRequest
+	(*SchemaDocumentRequest)(nil),       // 6: omniview.resource.v2.SchemaDocumentRequest
+	(*OptionalHealth)(nil),              // 7: omniview.resource.v2.OptionalHealth
+	(*RelationshipDescriptor)(nil),      // 8: omniview.resource.v2.RelationshipDescriptor
+	(*ScopeExtractor)(nil),              // 9: omniview.resource.v2.ScopeExtractor
+	(*RelationshipDescriptors)(nil),     // 10: omniview.resource.v2.RelationshipDescriptors
+	(*RelationshipTarget)(nil),          // 11: omniview.resource.v2.RelationshipTarget
+	(*ResolvedRelationship)(nil),        // 12: omniview.resource.v2.ResolvedRelationship
+	(*ResolvedRelationships)(nil),       // 13: omniview.resource.v2.ResolvedRelationships
+	(*HealthCondition)(nil),             // 14: omniview.resource.v2.HealthCondition
+	(*ResourceHealth)(nil),              // 15: omniview.resource.v2.ResourceHealth
+	(*ResourceEvent)(nil),               // 16: omniview.resource.v2.ResourceEvent
+	(*ResourceEvents)(nil),              // 17: omniview.resource.v2.ResourceEvents
+	(*ActionStreamRequest)(nil),         // 18: omniview.resource.v2.ActionStreamRequest
+	(*ActionStreamEvent)(nil),           // 19: omniview.resource.v2.ActionStreamEvent
+	(*ConnectionStreamEvent)(nil),       // 20: omniview.resource.v2.ConnectionStreamEvent
+	(*GetInput)(nil),                    // 21: omniview.resource.v2.GetInput
+	(*ReadTarget)(nil),                  // 22: omniview.resource.v2.ReadTarget
+	(*AccessRoute)(nil),                 // 23: omniview.resource.v2.AccessRoute
+	(*Value)(nil),                       // 24: omniview.resource.v2.Value
+	(*SchemaDocumentReference)(nil),     // 25: omniview.resource.v2.SchemaDocumentReference
+	(*SchemaDocument)(nil),              // 26: omniview.resource.v2.SchemaDocument
+	(*SchemaBinding)(nil),               // 27: omniview.resource.v2.SchemaBinding
+	(*Representation)(nil),              // 28: omniview.resource.v2.Representation
+	(*ResourceReference)(nil),           // 29: omniview.resource.v2.ResourceReference
+	(*ScopeEntry)(nil),                  // 30: omniview.resource.v2.ScopeEntry
+	(*TimestampValue)(nil),              // 31: omniview.resource.v2.TimestampValue
+	(*ActionInput)(nil),                 // 32: omniview.resource.v2.ActionInput
 }
 var file_proto_resource_v2_ancillary_proto_depIdxs = []int32{
-	19, // 0: omniview.resource.v2.RelationshipResolutionInput.source:type_name -> omniview.resource.v2.GetInput
-	20, // 1: omniview.resource.v2.RelationshipResolutionInput.targets:type_name -> omniview.resource.v2.ReadTarget
-	21, // 2: omniview.resource.v2.AncillaryRequest.route:type_name -> omniview.resource.v2.AccessRoute
-	19, // 3: omniview.resource.v2.AncillaryRequest.get:type_name -> omniview.resource.v2.GetInput
-	22, // 4: omniview.resource.v2.AncillaryRequest.value:type_name -> omniview.resource.v2.Value
-	23, // 5: omniview.resource.v2.AncillaryRequest.document_ref:type_name -> omniview.resource.v2.SchemaDocumentReference
+	21, // 0: omniview.resource.v2.RelationshipResolutionInput.source:type_name -> omniview.resource.v2.GetInput
+	22, // 1: omniview.resource.v2.RelationshipResolutionInput.targets:type_name -> omniview.resource.v2.ReadTarget
+	23, // 2: omniview.resource.v2.AncillaryRequest.route:type_name -> omniview.resource.v2.AccessRoute
+	21, // 3: omniview.resource.v2.AncillaryRequest.get:type_name -> omniview.resource.v2.GetInput
+	24, // 4: omniview.resource.v2.AncillaryRequest.value:type_name -> omniview.resource.v2.Value
+	25, // 5: omniview.resource.v2.AncillaryRequest.document_ref:type_name -> omniview.resource.v2.SchemaDocumentReference
 	0,  // 6: omniview.resource.v2.AncillaryRequest.relationship_resolution:type_name -> omniview.resource.v2.RelationshipResolutionInput
-	8,  // 7: omniview.resource.v2.AncillaryResponse.relationships:type_name -> omniview.resource.v2.RelationshipDescriptors
-	11, // 8: omniview.resource.v2.AncillaryResponse.resolved:type_name -> omniview.resource.v2.ResolvedRelationships
-	5,  // 9: omniview.resource.v2.AncillaryResponse.health:type_name -> omniview.resource.v2.OptionalHealth
-	15, // 10: omniview.resource.v2.AncillaryResponse.events:type_name -> omniview.resource.v2.ResourceEvents
-	24, // 11: omniview.resource.v2.AncillaryResponse.document:type_name -> omniview.resource.v2.SchemaDocument
-	4,  // 12: omniview.resource.v2.AncillaryResponse.editor_schemas:type_name -> omniview.resource.v2.EditorSchemas
-	25, // 13: omniview.resource.v2.EditorSchema.binding:type_name -> omniview.resource.v2.SchemaBinding
-	3,  // 14: omniview.resource.v2.EditorSchemas.schemas:type_name -> omniview.resource.v2.EditorSchema
-	13, // 15: omniview.resource.v2.OptionalHealth.health:type_name -> omniview.resource.v2.ResourceHealth
-	26, // 16: omniview.resource.v2.RelationshipDescriptor.target_scope:type_name -> omniview.resource.v2.ScopeEntry
-	7,  // 17: omniview.resource.v2.RelationshipDescriptor.scope_extractors:type_name -> omniview.resource.v2.ScopeExtractor
-	6,  // 18: omniview.resource.v2.RelationshipDescriptors.descriptors:type_name -> omniview.resource.v2.RelationshipDescriptor
-	27, // 19: omniview.resource.v2.RelationshipTarget.reference:type_name -> omniview.resource.v2.ResourceReference
-	21, // 20: omniview.resource.v2.RelationshipTarget.route:type_name -> omniview.resource.v2.AccessRoute
-	6,  // 21: omniview.resource.v2.ResolvedRelationship.descriptor:type_name -> omniview.resource.v2.RelationshipDescriptor
-	9,  // 22: omniview.resource.v2.ResolvedRelationship.targets:type_name -> omniview.resource.v2.RelationshipTarget
-	10, // 23: omniview.resource.v2.ResolvedRelationships.relationships:type_name -> omniview.resource.v2.ResolvedRelationship
-	28, // 24: omniview.resource.v2.HealthCondition.last_probe_time:type_name -> omniview.resource.v2.TimestampValue
-	28, // 25: omniview.resource.v2.HealthCondition.last_transition_time:type_name -> omniview.resource.v2.TimestampValue
-	28, // 26: omniview.resource.v2.ResourceHealth.since:type_name -> omniview.resource.v2.TimestampValue
-	12, // 27: omniview.resource.v2.ResourceHealth.conditions:type_name -> omniview.resource.v2.HealthCondition
-	28, // 28: omniview.resource.v2.ResourceEvent.first_seen:type_name -> omniview.resource.v2.TimestampValue
-	28, // 29: omniview.resource.v2.ResourceEvent.last_seen:type_name -> omniview.resource.v2.TimestampValue
-	14, // 30: omniview.resource.v2.ResourceEvents.events:type_name -> omniview.resource.v2.ResourceEvent
-	29, // 31: omniview.resource.v2.ActionStreamRequest.action:type_name -> omniview.resource.v2.ActionInput
-	22, // 32: omniview.resource.v2.ActionStreamEvent.data:type_name -> omniview.resource.v2.Value
-	1,  // 33: omniview.resource.v2.ResourceAncillary.Call:input_type -> omniview.resource.v2.AncillaryRequest
-	1,  // 34: omniview.resource.v2.ResourceAncillary.WatchConnections:input_type -> omniview.resource.v2.AncillaryRequest
-	16, // 35: omniview.resource.v2.ResourceAncillary.StreamAction:input_type -> omniview.resource.v2.ActionStreamRequest
-	1,  // 36: omniview.resource.v2.ResourceAncillary.WatchConnectionMetadata:input_type -> omniview.resource.v2.AncillaryRequest
-	2,  // 37: omniview.resource.v2.ResourceAncillary.Call:output_type -> omniview.resource.v2.AncillaryResponse
-	18, // 38: omniview.resource.v2.ResourceAncillary.WatchConnections:output_type -> omniview.resource.v2.ConnectionStreamEvent
-	17, // 39: omniview.resource.v2.ResourceAncillary.StreamAction:output_type -> omniview.resource.v2.ActionStreamEvent
-	18, // 40: omniview.resource.v2.ResourceAncillary.WatchConnectionMetadata:output_type -> omniview.resource.v2.ConnectionStreamEvent
-	37, // [37:41] is the sub-list for method output_type
-	33, // [33:37] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	5,  // 7: omniview.resource.v2.AncillaryRequest.schema_request:type_name -> omniview.resource.v2.SchemaRequest
+	10, // 8: omniview.resource.v2.AncillaryResponse.relationships:type_name -> omniview.resource.v2.RelationshipDescriptors
+	13, // 9: omniview.resource.v2.AncillaryResponse.resolved:type_name -> omniview.resource.v2.ResolvedRelationships
+	7,  // 10: omniview.resource.v2.AncillaryResponse.health:type_name -> omniview.resource.v2.OptionalHealth
+	17, // 11: omniview.resource.v2.AncillaryResponse.events:type_name -> omniview.resource.v2.ResourceEvents
+	26, // 12: omniview.resource.v2.AncillaryResponse.document:type_name -> omniview.resource.v2.SchemaDocument
+	27, // 13: omniview.resource.v2.AncillaryResponse.schema_binding:type_name -> omniview.resource.v2.SchemaBinding
+	28, // 14: omniview.resource.v2.SchemaTarget.representation:type_name -> omniview.resource.v2.Representation
+	4,  // 15: omniview.resource.v2.SchemaTarget.auxiliary:type_name -> omniview.resource.v2.AuxiliarySchemaTarget
+	29, // 16: omniview.resource.v2.AuxiliarySchemaTarget.reference:type_name -> omniview.resource.v2.ResourceReference
+	23, // 17: omniview.resource.v2.SchemaRequest.route:type_name -> omniview.resource.v2.AccessRoute
+	3,  // 18: omniview.resource.v2.SchemaRequest.target:type_name -> omniview.resource.v2.SchemaTarget
+	5,  // 19: omniview.resource.v2.SchemaDocumentRequest.request:type_name -> omniview.resource.v2.SchemaRequest
+	25, // 20: omniview.resource.v2.SchemaDocumentRequest.reference:type_name -> omniview.resource.v2.SchemaDocumentReference
+	15, // 21: omniview.resource.v2.OptionalHealth.health:type_name -> omniview.resource.v2.ResourceHealth
+	30, // 22: omniview.resource.v2.RelationshipDescriptor.target_scope:type_name -> omniview.resource.v2.ScopeEntry
+	9,  // 23: omniview.resource.v2.RelationshipDescriptor.scope_extractors:type_name -> omniview.resource.v2.ScopeExtractor
+	8,  // 24: omniview.resource.v2.RelationshipDescriptors.descriptors:type_name -> omniview.resource.v2.RelationshipDescriptor
+	29, // 25: omniview.resource.v2.RelationshipTarget.reference:type_name -> omniview.resource.v2.ResourceReference
+	23, // 26: omniview.resource.v2.RelationshipTarget.route:type_name -> omniview.resource.v2.AccessRoute
+	8,  // 27: omniview.resource.v2.ResolvedRelationship.descriptor:type_name -> omniview.resource.v2.RelationshipDescriptor
+	11, // 28: omniview.resource.v2.ResolvedRelationship.targets:type_name -> omniview.resource.v2.RelationshipTarget
+	12, // 29: omniview.resource.v2.ResolvedRelationships.relationships:type_name -> omniview.resource.v2.ResolvedRelationship
+	31, // 30: omniview.resource.v2.HealthCondition.last_probe_time:type_name -> omniview.resource.v2.TimestampValue
+	31, // 31: omniview.resource.v2.HealthCondition.last_transition_time:type_name -> omniview.resource.v2.TimestampValue
+	31, // 32: omniview.resource.v2.ResourceHealth.since:type_name -> omniview.resource.v2.TimestampValue
+	14, // 33: omniview.resource.v2.ResourceHealth.conditions:type_name -> omniview.resource.v2.HealthCondition
+	31, // 34: omniview.resource.v2.ResourceEvent.first_seen:type_name -> omniview.resource.v2.TimestampValue
+	31, // 35: omniview.resource.v2.ResourceEvent.last_seen:type_name -> omniview.resource.v2.TimestampValue
+	16, // 36: omniview.resource.v2.ResourceEvents.events:type_name -> omniview.resource.v2.ResourceEvent
+	32, // 37: omniview.resource.v2.ActionStreamRequest.action:type_name -> omniview.resource.v2.ActionInput
+	24, // 38: omniview.resource.v2.ActionStreamEvent.data:type_name -> omniview.resource.v2.Value
+	1,  // 39: omniview.resource.v2.ResourceAncillary.Call:input_type -> omniview.resource.v2.AncillaryRequest
+	1,  // 40: omniview.resource.v2.ResourceAncillary.WatchConnections:input_type -> omniview.resource.v2.AncillaryRequest
+	18, // 41: omniview.resource.v2.ResourceAncillary.StreamAction:input_type -> omniview.resource.v2.ActionStreamRequest
+	1,  // 42: omniview.resource.v2.ResourceAncillary.WatchConnectionMetadata:input_type -> omniview.resource.v2.AncillaryRequest
+	2,  // 43: omniview.resource.v2.ResourceAncillary.Call:output_type -> omniview.resource.v2.AncillaryResponse
+	20, // 44: omniview.resource.v2.ResourceAncillary.WatchConnections:output_type -> omniview.resource.v2.ConnectionStreamEvent
+	19, // 45: omniview.resource.v2.ResourceAncillary.StreamAction:output_type -> omniview.resource.v2.ActionStreamEvent
+	20, // 46: omniview.resource.v2.ResourceAncillary.WatchConnectionMetadata:output_type -> omniview.resource.v2.ConnectionStreamEvent
+	43, // [43:47] is the sub-list for method output_type
+	39, // [39:43] is the sub-list for method input_type
+	39, // [39:39] is the sub-list for extension type_name
+	39, // [39:39] is the sub-list for extension extendee
+	0,  // [0:39] is the sub-list for field type_name
 }
 
 func init() { file_proto_resource_v2_ancillary_proto_init() }
@@ -1582,15 +1750,20 @@ func file_proto_resource_v2_ancillary_proto_init() {
 		(*AncillaryResponse_Health)(nil),
 		(*AncillaryResponse_Events)(nil),
 		(*AncillaryResponse_Document)(nil),
-		(*AncillaryResponse_EditorSchemas)(nil),
+		(*AncillaryResponse_SchemaBinding)(nil),
 	}
+	file_proto_resource_v2_ancillary_proto_msgTypes[3].OneofWrappers = []any{
+		(*SchemaTarget_Representation)(nil),
+		(*SchemaTarget_Auxiliary)(nil),
+	}
+	file_proto_resource_v2_ancillary_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_resource_v2_ancillary_proto_rawDesc), len(file_proto_resource_v2_ancillary_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   19,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

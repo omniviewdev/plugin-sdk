@@ -3,7 +3,7 @@
 Use the Go SDK to expose resources, terminals, logs, metrics, forwarding, and tools from your backend.
 
 > [!IMPORTANT]
-> These guides describe the resource-v2 contract for SDK v0.9. Adopt it with the coordinated Omniview v0.11 and rebuilt plugin releases. This is a breaking resource migration, not a compatibility layer for resource-v1 plugins.
+> These guides describe the resource-v2 contract for SDK v0.20.0, targeting coordinated Omniview v0.36.0 and rebuilt plugins. Resource RPC wire is `3`, host callback broker is `2`, and resource-aware utilities remain independently wire `2`. This is a breaking resource migration, not a compatibility layer for older resource cohorts.
 
 ## Start here
 

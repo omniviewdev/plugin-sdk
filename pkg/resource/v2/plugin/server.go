@@ -170,7 +170,7 @@ func (s *server) dispatch(ctx context.Context, r *resourcepb.Request) (*resource
 	switch op := r.Operation.(type) {
 	case *resourcepb.Request_Features:
 		return s.dispatchFeatures(ctx)
-	case *resourcepb.Request_Catalog:
+	case *resourcepb.Request_CatalogRequest:
 		return s.dispatchCatalog(ctx, op)
 	case *resourcepb.Request_Get:
 		return s.dispatchGet(ctx, op)
@@ -207,9 +207,9 @@ func (s *server) dispatchFeatures(ctx context.Context) (*resourcepb.Response, er
 	return out, nil
 }
 
-func (s *server) dispatchCatalog(ctx context.Context, op *resourcepb.Request_Catalog) (*resourcepb.Response, error) {
+func (s *server) dispatchCatalog(ctx context.Context, op *resourcepb.Request_CatalogRequest) (*resourcepb.Response, error) {
 	out := &resourcepb.Response{}
-	in, err := resourcev2.FromProtoCatalogRequest(op.Catalog)
+	in, err := resourcev2.FromProtoCatalogRequest(op.CatalogRequest)
 	if err != nil {
 		return nil, err
 	}

@@ -38,9 +38,6 @@ func TestResourceExecActualGRPCNativeCatalogAdmission(t *testing.T) {
 							{
 								ID:       "document",
 								Revision: "representation-1",
-								Schema: resourcev2.SchemaBinding{
-									State: "absent",
-								},
 							},
 						},
 						Capabilities: []resourcev2.Capability{},

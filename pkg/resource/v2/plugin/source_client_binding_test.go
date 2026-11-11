@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"google.golang.org/grpc"
 	"testing"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestSourceClientRejectsUnboundPeerRecords(t *testing.T) {
-	for _, mutation := range []string{"revision", "schema", "identity"} {
+	for _, mutation := range []string{"revision", "identity"} {
 		for _, phase := range []string{"snapshot", "upsert", "remove"} {
 			if phase == "remove" && mutation != "identity" {
 				continue
@@ -32,10 +33,6 @@ func TestSourceClientRejectsUnboundPeerRecords(t *testing.T) {
 				}
 				frames := []resourcev2.SourceFrame{{Begin: &resourcev2.SourceBegin{Mode: request.Mode}}}
 				observation := resourcev2.SourceObservation{Record: resourcev2.CompactSourceRecord(record)}
-				if mutation == "schema" {
-					revision := "unaccepted-schema"
-					observation.Record.Representation.SchemaRevision = &revision
-				}
 				if phase == "snapshot" {
 					frames = append(frames, resourcev2.SourceFrame{Snapshot: &resourcev2.SourceSnapshot{Observations: []resourcev2.SourceObservation{observation}}})
 				} else {
@@ -74,5 +71,36 @@ func TestSourceClientRejectsUnboundPeerRecords(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+type unboundSourceProvider struct{ transportSourceProvider }
+
+func (p *unboundSourceProvider) Catalog(ctx context.Context, request resourcev2.CatalogRequest) (resourcev2.Catalog, error) {
+	catalog, err := p.transportSourceProvider.Catalog(ctx, request)
+	catalog.Revision = "unbound-native-generation"
+	return catalog, err
+}
+
+func TestSourceRejectsUnboundNativeGenerationBeforeDispatch(t *testing.T) {
+	called := make(chan struct{}, 1)
+	provider := &unboundSourceProvider{transportSourceProvider: transportSourceProvider{
+		callback: func(context.Context, resourcev2.SourceEmitter) error {
+			called <- struct{}{}
+			return nil
+		},
+	}}
+	server := grpc.NewServer()
+	RegisterServer(server, provider)
+	client := NewClient(pipe(t, server))
+	request := transportSourceRequest()
+	ctx := acceptedCatalogContext(context.Background(), t, client, request.Target.Route)
+	if _, err := client.OpenSourceStream(ctx, request); resourcev2.ErrorCode(err) != "RESET_REQUIRED" {
+		t.Fatalf("unbound native generation admitted: %v", err)
+	}
+	select {
+	case <-called:
+		t.Fatal("unbound source reached native dispatch")
+	default:
 	}
 }

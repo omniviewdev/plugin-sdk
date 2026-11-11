@@ -48,13 +48,13 @@ type PresentationProvider interface {
 	GetResourceDefinition(context.Context, AccessRoute, string) (ResourceDefinition, error)
 }
 
-// EditorSchemaProvider lists auxiliary editor schemas (documents that are not
-// catalog representations) for an explicit route. Absence and acquisition
-// failure are distinct binding states; nil means none. Calls may run concurrently: honor cancellation, synchronize
-// shared state, and keep returned containers stable during SDK use.
-// Implementing this interface does not grant create or update capability.
-type EditorSchemaProvider interface {
-	GetEditorSchemas(context.Context, AccessRoute) ([]EditorSchema, error)
+// SchemaResolver resolves one explicitly selected representation or auxiliary
+// resource schema. It never enumerates schema bindings or selects a default
+// representation. Absence of this optional interface means unsupported enrichment.
+// Calls may run concurrently; honor cancellation and return stable, independently
+// owned bindings. Schema resolution does not grant resource or document access.
+type SchemaResolver interface {
+	ResolveSchema(context.Context, SchemaRequest) (SchemaBinding, error)
 }
 
 // SchemaDocumentProvider resolves an explicit schema-document reference without
@@ -63,6 +63,8 @@ type EditorSchemaProvider interface {
 // than a zero document; public error text must not disclose private source URLs
 // or diagnostics. Calls may run concurrently; honor cancellation and return
 // independently owned, stable document containers.
+// This provider-only lookup is not a public document grant. Public consumers
+// independently admit a target-qualified SchemaDocumentRequest.
 type SchemaDocumentProvider interface {
 	GetSchemaDocument(context.Context, AccessRoute, SchemaDocumentReference) (SchemaDocument, error)
 }

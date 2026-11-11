@@ -10,8 +10,8 @@ import (
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 
-// ResourceSessionWireVersion identifies the canonical resource log-session wire contract.
-const ResourceSessionWireVersion = resourcev2.WireVersion
+// ResourceSessionWireVersion identifies the independent canonical log-session wire.
+const ResourceSessionWireVersion uint32 = 2
 
 // ResourceSessionProvider extends the existing log lifecycle without converting
 // resource bodies through JSON maps or Struct. Resource data remains a canonical

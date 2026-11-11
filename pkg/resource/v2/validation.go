@@ -116,7 +116,8 @@ var metadataFieldPlans = buildMetadataFieldPlans(
 	reflect.TypeFor[GetRequest](), reflect.TypeFor[EnumerateRequest](),
 	reflect.TypeFor[NativeQueryRequest](), reflect.TypeFor[MutationRequest](),
 	reflect.TypeFor[ActionRequest](), reflect.TypeFor[SourcePage](),
-	reflect.TypeFor[SchemaDocument](), reflect.TypeFor[EditorSchema](),
+	reflect.TypeFor[SchemaBinding](), reflect.TypeFor[SchemaDocument](),
+	reflect.TypeFor[SchemaRequest](), reflect.TypeFor[SchemaDocumentRequest](),
 	reflect.TypeFor[ResourceGroup](), reflect.TypeFor[ResourceDefinition](),
 	reflect.TypeFor[ActionDescriptor](), reflect.TypeFor[ActionEvent](),
 	reflect.TypeFor[ResourceHealth](), reflect.TypeFor[ResourceEvent](),
@@ -386,6 +387,18 @@ func (b *metadataBudget) mapEntries(v reflect.Value, depth int) error {
 	b.fields += v.Len()
 	if b.fields > maxDomainFields {
 		return limited("domain field limit")
+	}
+	// Typed iteration avoids reflective key/value copies for metadata string maps.
+	if values, ok := reflect.TypeAssert[map[string]string](v); ok {
+		for key, value := range values {
+			if err := b.valueString(key, depth+1); err != nil {
+				return err
+			}
+			if err := b.valueString(value, depth+1); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	it := v.MapRange()
 	for it.Next() {
@@ -751,7 +764,8 @@ func ValidateSchemaUnavailableReason(reason string) error {
 	return nil
 }
 
-func validateSchema(s SchemaBinding) error {
+// ValidateSchemaBinding checks an optional schema observation without fetching documents.
+func ValidateSchemaBinding(s SchemaBinding) error {
 	if err := admission(s); err != nil {
 		return err
 	}
@@ -809,7 +823,7 @@ func validateRepresentation(r Representation) error {
 	if err := text(r.Revision, true); err != nil {
 		return err
 	}
-	return validateSchema(r.Schema)
+	return nil
 }
 
 func validateCoverage(c Coverage) error {
@@ -869,7 +883,7 @@ func validateCount(c Count) error {
 	return nil
 }
 
-// ValidateCatalog checks type, representation, schema, and scoped capability declarations.
+// ValidateCatalog checks type, body-format, and scoped capability declarations.
 // It validates structure, not caller authorization or live source availability.
 func ValidateCatalog(c Catalog) error {
 	if err := admission(c); err != nil {
@@ -1373,27 +1387,6 @@ func referenceWireSize(r ResourceReference) int {
 	return messageFieldSize(addressWireSize(r.Address)) + optionalStringFieldSize(r.Incarnation)
 }
 
-func schemaWireSize(s SchemaBinding) int {
-	size := stringFieldSize(
-		s.State,
-	) + optionalStringFieldSize(
-		s.Revision,
-	) + stringFieldSize(
-		s.Dialect,
-	) + stringFieldSize(
-		s.Root,
-	) + optionalStringFieldSize(
-		s.UnavailableReason,
-	)
-	if len(s.Document) > 0 {
-		size += messageFieldSize(len(s.Document))
-	}
-	if s.DocumentRef != nil {
-		size += messageFieldSize(stringFieldSize(s.DocumentRef.ID) + stringFieldSize(s.DocumentRef.Revision))
-	}
-	return size
-}
-
 func coverageWireSize(c Coverage) int {
 	size := stringFieldSize(c.Kind) + stringFieldSize(c.Reason)
 	for _, path := range c.Paths {
@@ -1407,8 +1400,6 @@ func recordWireSize(r Record) int {
 		r.Representation.ID,
 	) + stringFieldSize(
 		r.Representation.Revision,
-	) + messageFieldSize(
-		schemaWireSize(r.Representation.Schema),
 	)
 	return messageFieldSize(
 		referenceWireSize(r.Reference),

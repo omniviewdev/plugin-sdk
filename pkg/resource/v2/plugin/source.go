@@ -3,7 +3,6 @@ package plugin
 import (
 	"context"
 	"errors"
-	"reflect"
 	"sync"
 	"time"
 
@@ -33,14 +32,17 @@ type sourceDelivery struct {
 }
 
 type sourceEmitter struct {
-	mu              sync.Mutex
-	ctx             context.Context
-	request         resourcev2.SourceOpenRequest
-	tracker         *resourcev2.SourcePhaseTracker
-	queue           chan sourceDelivery
-	stalled         chan struct{}
-	sequence        uint64
-	ended, terminal bool
+	mu               sync.Mutex
+	ctx              context.Context
+	request          resourcev2.SourceOpenRequest
+	owner            *server
+	descriptor       resourcev2.ResourceType
+	nextCatalogCheck time.Time
+	tracker          *resourcev2.SourcePhaseTracker
+	queue            chan sourceDelivery
+	stalled          chan struct{}
+	sequence         uint64
+	ended, terminal  bool
 }
 
 func sourceAdmission(ctx context.Context, p resourcev2.Provider, r resourcev2.SourceOpenRequest) (resourcev2.ResourceType, error) {
@@ -56,9 +58,17 @@ func sourceAdmission(ctx context.Context, p resourcev2.Provider, r resourcev2.So
 	if err != nil {
 		return resourcev2.ResourceType{}, err
 	}
+	if err := resourcev2.CheckCatalogRevisionForRoute(ctx, catalog, r.Target.Route); err != nil {
+		return resourcev2.ResourceType{}, err
+	}
+	if _, err := resourcev2.CatalogBindingEpoch(catalog.Revision); err != nil {
+		return resourcev2.ResourceType{}, err
+	}
 	var acquisition any = resourcev2.EnumerateRequest{Target: r.Target}
 	var native *resourcev2.NativeQueryRequest
-	if r.Acquisition.Kind == resourcev2.SourceAcquisitionNativeQuery {
+	if r.Mode == resourcev2.SourceModeSnapshotAndUpdates {
+		acquisition = r.Target
+	} else if r.Acquisition.Kind == resourcev2.SourceAcquisitionNativeQuery {
 		native = &resourcev2.NativeQueryRequest{Target: r.Target, Language: r.Acquisition.Language, Query: *r.Acquisition.Query}
 		acquisition = *native
 	}
@@ -71,14 +81,8 @@ func sourceAdmission(ctx context.Context, p resourcev2.Provider, r resourcev2.So
 			return resourcev2.ResourceType{}, err
 		}
 	}
-	if r.Mode == resourcev2.SourceModeSnapshotAndUpdates {
-		typ, err = resourcev2.AdmitCatalogOperation(catalog, r.Target)
-		if err != nil {
-			return resourcev2.ResourceType{}, err
-		}
-	}
 	for _, candidate := range typ.Representations {
-		if candidate.ID == r.Target.Representation && reflect.DeepEqual(candidate, r.Binding.Representation) {
+		if candidate.ID == r.Target.Representation && candidate == r.Binding.Representation {
 			return typ, nil
 		}
 	}
@@ -127,15 +131,13 @@ func sourceOpenHandler(srv any, stream grpc.ServerStream) (handlerErr error) {
 	}()
 	queue := make(chan sourceDelivery, 1)
 	stalled := make(chan struct{})
-	e := &sourceEmitter{ctx: ctx, request: r, queue: queue, stalled: stalled}
+	e := &sourceEmitter{ctx: ctx, request: r, owner: s.owner, queue: queue, stalled: stalled, nextCatalogCheck: time.Now().Add(time.Second)}
 	done := make(chan error, 1)
 	go func() {
 		defer close(done)
 		descriptor, err := sourceAdmission(ctx, s.owner.impl, r)
-		if err == nil {
-			err = s.owner.checkCatalogRoute(ctx, p.GetTarget().GetRoute())
-		}
 		e.tracker = resourcev2.NewCatalogBoundSourcePhaseTracker(r, descriptor)
+		e.descriptor = descriptor
 		if err == nil {
 			provider, ok := s.owner.impl.(resourcev2.SourceProvider)
 			if !ok {
@@ -277,6 +279,16 @@ func (e *sourceEmitter) send(ctx context.Context, f resourcev2.SourceFrame) erro
 }
 
 func (e *sourceEmitter) sendEncoded(f resourcev2.SourceFrame, p *resourcepb.SourceFrame) error {
+	if e.owner != nil && (f.Snapshot != nil || f.SnapshotEnd != nil || f.Changes != nil) && !time.Now().Before(e.nextCatalogCheck) {
+		e.nextCatalogCheck = time.Now().Add(time.Second)
+		catalog, err := e.owner.impl.Catalog(e.ctx, resourcev2.CatalogRequest{Route: e.request.Target.Route})
+		if err != nil {
+			return err
+		}
+		if err := resourcev2.CheckSourceCatalog(e.ctx, catalog, e.request, e.descriptor); err != nil {
+			return err
+		}
+	}
 	if err := e.tracker.AdmitSized(f, proto.Size(p)); err != nil {
 		return err
 	}
@@ -436,6 +448,13 @@ func (e *sourceEmitter) failure(ctx context.Context, err error) error {
 		return nil
 	}
 	code := resourcev2.ErrorCode(err)
+	if code == "RESET_REQUIRED" {
+		err := e.send(ctx, resourcev2.SourceFrame{Reset: &resourcev2.SourceReset{Reason: resourcev2.SourceResetBindingChanged, Message: "source binding changed"}})
+		if err == nil {
+			e.terminal = true
+		}
+		return err
+	}
 	message := "source operation failed"
 	var typed *resourcev2.ResourceOperationError
 	if errors.As(err, &typed) && code == "INTERNAL" && typed.Message == "source ended before snapshot boundary" {

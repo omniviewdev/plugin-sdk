@@ -114,7 +114,8 @@ message SchemaBinding {
 message Representation {
   string id = 1;
   string revision = 2;
-  SchemaBinding schema = 3;
+  reserved 3;
+  reserved "schema", "schema_revision";
 }
 
 message Dimension {
@@ -165,6 +166,11 @@ message Catalog {
   // Retired catalog field; never reuse its tag.
   reserved 4;
   Coverage coverage = 5;
+}
+
+message CatalogRequest {
+  AccessRoute route = 1;
+  bool refresh = 2;
 }
 
 message ReadTarget {
@@ -262,8 +268,10 @@ message FeatureSet {
 // state/start/check use status_json.
 message Request {
   uint32 version = 1;
+  reserved 2;
+  reserved "catalog";
   oneof operation {
-    AccessRoute catalog = 2;
+    CatalogRequest catalog_request = 10;
     GetInput get = 3;
     EnumerateInput enumerate = 4;
     NativeQueryInput native_query = 5;

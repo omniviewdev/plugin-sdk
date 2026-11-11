@@ -50,8 +50,8 @@ func (s *ancillaryServer) presentationCall(
 		return s.schemaDocument(ctx, r, route)
 	case ancillaryGroups, ancillaryDefinition:
 		return s.resourcePresentation(ctx, r, route)
-	case ancillaryEditorSchemas:
-		return s.editorSchemas(ctx, route)
+	case ancillaryResolveSchema:
+		return s.resolveSchema(ctx, r)
 	case ancillaryActions:
 		return s.actionCatalog(ctx, r, route)
 	default:
@@ -142,36 +142,43 @@ func (s *ancillaryServer) resourcePresentation(
 	return presentationJSON(v)
 }
 
-func (s *ancillaryServer) editorSchemas(
+func (s *ancillaryServer) resolveSchema(
 	ctx context.Context,
-	route resourcev2.AccessRoute,
+	r *resourcepb.AncillaryRequest,
 ) (*resourcepb.AncillaryResponse, error) {
-	impl := s.owner.impl
-	out := &resourcepb.AncillaryResponse{Version: resourcev2.WireVersion}
-	if route.Connection == "" {
-		return nil, invalid("missing access route")
-	}
-	p, ok := impl.(resourcev2.EditorSchemaProvider)
-	if !ok {
-		return nil, unsupported("editor schemas unsupported")
-	}
-	v, err := p.GetEditorSchemas(ctx, route)
+	request, err := resourcev2.FromProtoSchemaRequest(r.SchemaRequest)
 	if err != nil {
 		return nil, err
 	}
-	if err = resourcev2.ValidateEditorSchemaList(v); err != nil {
+	p, ok := s.owner.impl.(resourcev2.SchemaResolver)
+	if !ok {
+		return nil, unsupported("schema resolution unsupported")
+	}
+	features, err := resourcev2.DetectFeatures(ctx, s.owner.impl)
+	if err != nil {
 		return nil, err
 	}
-	result := &resourcepb.EditorSchemas{}
-	for i := range v {
-		schema, err := resourcev2.ToProtoEditorSchema(v[i])
-		if err != nil {
-			return nil, err
-		}
-		result.Schemas = append(result.Schemas, schema)
+	if !features.Has(resourcev2.FeatureSchemaResolver) {
+		return nil, unsupported("schema resolution unsupported")
 	}
-	out.Result = &resourcepb.AncillaryResponse_EditorSchemas{EditorSchemas: result}
-	return out, nil
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	binding, err := p.ResolveSchema(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result, err := resourcev2.ToProtoSchemaBinding(binding)
+	if err != nil {
+		return nil, err
+	}
+	return &resourcepb.AncillaryResponse{
+		Version: resourcev2.WireVersion,
+		Result:  &resourcepb.AncillaryResponse_SchemaBinding{SchemaBinding: result},
+	}, nil
 }
 
 func (s *ancillaryServer) actionCatalog(

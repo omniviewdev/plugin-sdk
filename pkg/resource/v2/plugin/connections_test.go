@@ -90,7 +90,7 @@ func (s *maliciousConnectionServer) Call(_ context.Context, in *resourcepb.Reque
 	default:
 		out.ConnectionJson = []byte(`{"id":"other"}`)
 	}
-	return &resourcepb.Response{Version: 2, Result: &resourcepb.Response_Connection{Connection: out}}, nil
+	return &resourcepb.Response{Version: resourcev2.WireVersion, Result: &resourcepb.Response_Connection{Connection: out}}, nil
 }
 
 func TestClientBindsUntrustedConnectionResponseIDs(t *testing.T) {

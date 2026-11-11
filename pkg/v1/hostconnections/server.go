@@ -39,7 +39,7 @@ func RegisterServer(reg grpc.ServiceRegistrar, service Service) {
 }
 
 // Call validates callback variants before the host service authorizes and dispatches them.
-// Only discovery, finite reads, and revision-checked updates enter the service.
+// Only discovery, targeted schemas, finite reads, and revision-checked updates enter the service.
 func (s *server) Call(ctx context.Context, req *pb.CallRequest) (out *pb.CallResponse, err error) {
 	defer func() {
 		if err != nil {
@@ -76,23 +76,36 @@ func (s *server) Call(ctx context.Context, req *pb.CallRequest) (out *pb.CallRes
 			return nil, e
 		}
 		return &pb.CallResponse{Result: &pb.CallResponse_ResolvedTarget{ResolvedTarget: &pb.ResolvedTarget{TargetId: result.TargetID, Target: t}}}, nil
-	case *pb.CallRequest_SchemaDocument:
-		if target != "" || op.SchemaDocument == nil {
+	case *pb.CallRequest_ResolveSchema:
+		if target != "" || op.ResolveSchema == nil {
 			return nil, invalid()
 		}
-		route, e := resourcev2.FromProtoAccessRoute(op.SchemaDocument.GetRoute())
+		in, e := resourcev2.FromProtoSchemaRequest(op.ResolveSchema)
 		if e != nil {
 			return nil, e
 		}
-		ref, e := resourcev2.FromProtoSchemaDocumentReference(op.SchemaDocument.GetReference())
+		binding, e := s.service.ResolveSchema(ctx, token, owner, in)
 		if e != nil {
 			return nil, e
 		}
-		d, e := s.service.GetSchemaDocument(ctx, token, owner, route, ref)
+		p, e := resourcev2.ToProtoSchemaBinding(binding)
 		if e != nil {
 			return nil, e
 		}
-		if d.Reference != ref {
+		return &pb.CallResponse{Result: &pb.CallResponse_SchemaBinding{SchemaBinding: p}}, nil
+	case *pb.CallRequest_SchemaDocumentRequest:
+		if target != "" || op.SchemaDocumentRequest == nil {
+			return nil, invalid()
+		}
+		in, e := resourcev2.FromProtoSchemaDocumentRequest(op.SchemaDocumentRequest)
+		if e != nil {
+			return nil, e
+		}
+		d, e := s.service.GetSchemaDocument(ctx, token, owner, in)
+		if e != nil {
+			return nil, e
+		}
+		if d.Reference != in.Reference {
 			return nil, invalid()
 		}
 		p, e := resourcev2.ToProtoSchemaDocument(d)
@@ -106,11 +119,11 @@ func (s *server) Call(ctx context.Context, req *pb.CallRequest) (out *pb.CallRes
 		}
 		r := &resourcepb.Response{Version: resourcev2.WireVersion}
 		switch v := op.Resource.Operation.(type) {
-		case *resourcepb.Request_Catalog:
+		case *resourcepb.Request_CatalogRequest:
 			if target != "" {
 				return nil, invalid()
 			}
-			in, e := resourcev2.FromProtoCatalogRequest(v.Catalog)
+			in, e := resourcev2.FromProtoCatalogRequest(v.CatalogRequest)
 			if e != nil {
 				return nil, e
 			}

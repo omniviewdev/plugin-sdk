@@ -118,7 +118,7 @@ func TestSourceOpenAndWireVersion(t *testing.T) {
 			Representation: r.Representation.ID,
 		},
 		Binding: RepresentationBinding{Representation: r.Representation},
-		Mode: SourceModeSnapshot, Acquisition: SourceAcquisition{Kind: SourceAcquisitionEnumerate},
+		Mode:    SourceModeSnapshot, Acquisition: SourceAcquisition{Kind: SourceAcquisitionEnumerate},
 		Limits: SourceLimits{MaxFrameBytes: MinSourceFrameBytes, MaxBatchItems: 1},
 	}
 	adapterRoundTrip(t, request, ToProtoSourceOpenRequest, FromProtoSourceOpenRequest)

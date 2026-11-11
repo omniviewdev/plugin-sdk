@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -90,4 +91,23 @@ func acceptedQualifiedCatalogContext(
 		t.Fatal(err)
 	}
 	return resourcev2.WithCatalogRevisionForRoute(ctx, provider, route, catalog.Revision)
+}
+
+type testCatalogBinding struct {
+	once  sync.Once
+	epoch string
+	err   error
+}
+
+func (b *testCatalogBinding) bind(catalog resourcev2.Catalog) (resourcev2.Catalog, error) {
+	b.once.Do(func() { b.epoch, b.err = resourcev2.NewCatalogBindingEpoch() })
+	if b.err != nil {
+		return resourcev2.Catalog{}, b.err
+	}
+	revision, err := resourcev2.BindCatalogRevision(b.epoch, catalog.Revision)
+	if err != nil {
+		return resourcev2.Catalog{}, err
+	}
+	catalog.Revision = revision
+	return catalog, nil
 }
