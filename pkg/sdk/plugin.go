@@ -33,6 +33,11 @@ import (
 // that the engine and plugin can negotiate the highest common version.
 const CurrentProtocolVersion = 1
 
+// LogLevelEnvironment names the environment variable the host uses to set the
+// initial plugin log level (trace, debug, info, warn, error). It is ignored when
+// PluginOpts.Debug is set.
+const LogLevelEnvironment = "OMNIVIEW_PLUGIN_LOG_LEVEL"
+
 // PluginOpts is the options for creating a new plugin.
 type PluginOpts struct {
 	// ID is the unique identifier for the plugin
@@ -101,6 +106,16 @@ func NewPlugin(opts PluginOpts) *Plugin {
 	if opts.Debug {
 		level.Set(logging.LevelDebug)
 	}
+	// The host passes its plugin log ship level here. Debug mode wins, and an
+	// invalid value keeps Info; the warning is emitted once the logger exists.
+	invalidEnvLevel := ""
+	if envLevel := os.Getenv(LogLevelEnvironment); !opts.Debug && envLevel != "" {
+		if parsed, parseErr := logging.ParseLevel(envLevel); parseErr == nil {
+			level.Set(parsed)
+		} else {
+			invalidEnvLevel = envLevel
+		}
+	}
 
 	runtimeBackend := logging.NewDefaultHCLBackend(meta.ID, level.Level()).Named("runtime")
 	sdkLogger := logging.New(logging.Config{
@@ -112,6 +127,10 @@ func NewPlugin(opts PluginOpts) *Plugin {
 		},
 	})
 	logging.SetDefault(sdkLogger)
+	if invalidEnvLevel != "" {
+		sdkLogger.Warnw(context.Background(), "invalid "+LogLevelEnvironment,
+			"value", invalidEnvLevel)
+	}
 
 	// init the settings provider
 	settingsProvider := pkgsettings.NewProvider(pkgsettings.ProviderOpts{

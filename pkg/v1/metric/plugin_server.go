@@ -9,8 +9,10 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	"github.com/omniviewdev/plugin-sdk/pkg/utils"
 	metricpb "github.com/omniviewdev/plugin-sdk/proto/v1/metric"
 )
 
@@ -164,9 +166,12 @@ func (s *PluginServer) serveStream(
 	recv func() (*metricpb.MetricStreamInput, error),
 	send func(StreamOutput) error,
 	ready func() error,
-) error {
+) (streamErr error) {
+	parent, obsStream := utils.BeginStream(parent, logging.Default().Named("metric.plugin.server"), "metric", "metric_stream")
+	defer func() { obsStream.Close(parent, streamErr) }()
 	parent, parseError := resourceplugin.IncomingSessionContext(parent)
 	if parseError != nil {
+		obsStream.OpenFailed(parent, parseError)
 		return resourceplugin.ResourceRPCError(parseError)
 	}
 	ctx, cancel := context.WithCancel(parent)
@@ -174,13 +179,16 @@ func (s *PluginServer) serveStream(
 	in := make(chan StreamInput)
 	out, err := s.openMetricStream(ctx, resource, in)
 	if err != nil {
+		obsStream.OpenFailed(ctx, err)
 		return resourceplugin.ResourceRPCError(err)
 	}
 	if ready != nil {
 		if err = ready(); err != nil {
+			obsStream.OpenFailed(ctx, err)
 			return err
 		}
 	}
+	obsStream.OpenDone()
 	failures := make(chan error, 1)
 	go receiveMetricInputs(ctx, resource, recv, in, failures)
 	for {

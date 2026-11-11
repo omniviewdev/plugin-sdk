@@ -5,9 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 
+	"github.com/omniviewdev/plugin-sdk/internal/obs"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	pb "github.com/omniviewdev/plugin-sdk/proto/v1/activity"
 	"google.golang.org/grpc"
@@ -58,23 +61,29 @@ func (b *Binding) Close() error {
 }
 
 func (b *Binding) call(ctx context.Context, operation string, request any) (Record, error) {
+	log := logging.Default().Named("activity.client")
 	if b == nil {
+		log.Debugw(ctx, "activity report skipped", "operation", operation, "error_code", "unavailable")
 		return Record{}, ErrUnavailable
 	}
 	b.mu.RLock()
 	conn := b.conn
 	b.mu.RUnlock()
 	if conn == nil {
+		log.Debugw(ctx, "activity report skipped", "operation", operation, "error_code", "unavailable")
 		return Record{}, ErrUnavailable
 	}
 	if err := ValidateRequest(operation, request); err != nil {
+		log.Debugw(ctx, "activity report invalid", "operation", operation, "error_code", "invalid_request")
 		return Record{}, err
 	}
 	payload, err := json.Marshal(request)
 	if err != nil {
+		log.Debugw(ctx, "activity report encode failed", "operation", operation, "error_type", fmt.Sprintf("%T", err))
 		return Record{}, err
 	}
 	if len(payload) > maxRequestBytes {
+		log.Debugw(ctx, "activity report too large", "operation", operation, "payload_bytes", len(payload))
 		return Record{}, errors.New("activity payload exceeds limit")
 	}
 	response, err := pb.NewActivityReporterClient(conn).Report(ctx, &pb.ReportRequest{
@@ -83,10 +92,12 @@ func (b *Binding) call(ctx context.Context, operation string, request any) (Reco
 		Payload:   payload,
 	})
 	if err != nil {
+		log.Debugw(ctx, "activity report failed", "operation", operation, "grpc_code", status.Code(err).String())
 		return Record{}, err
 	}
 	var record Record
 	if err := decodeLimit(response.Record, &record, maxResponseBytes); err != nil {
+		log.Warnw(ctx, "activity response invalid", "operation", operation, "response_bytes", len(response.Record))
 		return Record{}, err
 	}
 	return record, nil
@@ -145,7 +156,9 @@ func decodeLimit(data []byte, out any, limit int) error {
 }
 
 func (s *reporterServer) Report(ctx context.Context, req *pb.ReportRequest) (*pb.ReportResponse, error) {
+	log := logging.Default().Named("activity.server")
 	if req.Version != Version {
+		obs.Reject(ctx, log, "activity_report", "unsupported_version", "version", req.Version)
 		return nil, status.Error(codes.FailedPrecondition, "Unsupported activity version.")
 	}
 	var record Record
@@ -191,16 +204,22 @@ func (s *reporterServer) Report(ctx context.Context, req *pb.ReportRequest) (*pb
 			return s.reporter.ResolveAlert(ctx, v)
 		})
 	default:
+		obs.Reject(ctx, log, "activity_report", "unknown_operation")
 		return nil, status.Error(codes.InvalidArgument, "Unknown activity operation.")
 	}
 	if err != nil {
 		if _, ok := status.FromError(err); ok {
+			log.Debugw(ctx, "activity report failed", "operation", req.Operation, "error_code", obs.ErrorCode(err, ""))
 			return nil, err
 		}
+		// The reporter's error text is masked from the plugin; keep only its Go type locally.
+		log.Debugw(ctx, "activity report rejected", "operation", req.Operation,
+			"error_code", "invalid_request", "error_type", fmt.Sprintf("%T", err))
 		return nil, status.Error(codes.InvalidArgument, "Activity report rejected.")
 	}
 	data, err := json.Marshal(record)
 	if err != nil || len(data) > maxResponseBytes {
+		log.Warnw(ctx, "activity response unavailable", "operation", req.Operation, "response_bytes", len(data))
 		return nil, status.Error(codes.Internal, "Activity response unavailable.")
 	}
 	return &pb.ReportResponse{Record: data}, nil

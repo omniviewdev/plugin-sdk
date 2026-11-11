@@ -4,6 +4,9 @@ package settings
 import (
 	"context"
 	"errors"
+	"fmt"
+	logging "github.com/omniviewdev/plugin-sdk/log"
+	"google.golang.org/grpc/status"
 	"time"
 
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -24,7 +27,8 @@ var _ Provider = (*Client)(nil)
 func (c *Client) ListSettings() map[string]settings.Setting {
 	resp, err := c.client.ListSettings(context.Background(), &emptypb.Empty{})
 	if err != nil {
-		// we should never error here since the receiver never emits one
+		// the receiver never emits an error, so a failure here is transport-level
+		settingsClientLog().Warnw(context.Background(), "settings list failed", "grpc_code", status.Code(err).String())
 		return nil
 	}
 
@@ -95,9 +99,13 @@ func (c *Client) CommitSettings(
 	}
 	if persist != nil {
 		if err = persist(normalized); err != nil {
-			_ = stream.Send(&settingspb.CommitSettingsRequest{
+			if sendErr := stream.Send(&settingspb.CommitSettingsRequest{
 				Phase: &settingspb.CommitSettingsRequest_Persisted{Persisted: false},
-			})
+			}); sendErr != nil {
+				settingsClientLog().Debugw(ctx, "settings persist abort send failed",
+					"grpc_code", status.Code(sendErr).String())
+			}
+			settingsClientLog().Warnw(ctx, "settings persistence failed", "error_type", fmt.Sprintf("%T", err))
 			return settings.CommitResult{}, err
 		}
 	}
@@ -106,14 +114,19 @@ func (c *Client) CommitSettings(
 		Phase: &settingspb.CommitSettingsRequest_Persisted{Persisted: true},
 	}
 	if err = stream.Send(ack); err != nil {
+		settingsClientLog().Warnw(ctx, "settings commit outcome uncertain",
+			"reason", "ack_send_failed", "grpc_code", status.Code(err).String())
 		return uncertain, nil
 	}
 	response, err = stream.Recv()
 	if err != nil || response.GetResult() == nil {
+		settingsClientLog().Warnw(ctx, "settings commit outcome uncertain",
+			"reason", "result_missing", "grpc_code", status.Code(err).String())
 		return uncertain, nil
 	}
 	result := response.GetResult()
 	if !result.GetCommitted() {
+		settingsClientLog().Warnw(ctx, "settings commit outcome uncertain", "reason", "not_committed")
 		return uncertain, nil
 	}
 	return settings.CommitResult{
@@ -138,3 +151,5 @@ func (c *Client) ValidateSetting(id string, value any) (settings.ValidationResul
 	}
 	return settings.ValidationResult{Valid: resp.Valid, Code: resp.Code, Message: resp.Message}, nil
 }
+
+func settingsClientLog() logging.Logger { return logging.Default().Named("settings.plugin.client") }

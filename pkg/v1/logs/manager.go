@@ -873,6 +873,7 @@ func (m *Manager) streamWithReconnect(
 	}
 	ss.session.Status = LogSessionStatusError
 	ss.mu.Unlock()
+	logger.Warnw(ctx, "log stream reconnect attempts exhausted", "source", source.ID, "attempts", ReconnectMaxAttempts)
 	m.emitEvent(ss.session.ID, LogStreamEvent{
 		Type:      StreamEventStreamError,
 		SourceID:  source.ID,
@@ -1126,7 +1127,10 @@ func (m *Manager) handleCommands(ctx context.Context, in <-chan StreamInput) {
 			case StreamCommandResume:
 				ss.setStatus(LogSessionStatusActive)
 			case StreamCommandClose:
-				_ = m.CloseSession(nil, input.SessionID)
+				if err := m.CloseSession(nil, input.SessionID); err != nil {
+					m.log.Debugw(ctx, "stream close command failed",
+						"session_id", input.SessionID, "error_type", fmt.Sprintf("%T", err))
+				}
 			}
 		}
 	}
@@ -1138,6 +1142,10 @@ func (m *Manager) emitEvent(sessionID string, event LogStreamEvent) {
 	ss := m.sessions[sessionID]
 	m.mu.RUnlock()
 	if ss == nil || ss.ctx.Err() != nil {
+		if m.log != nil {
+			m.log.Debugw(context.Background(), "log event dropped for closed session",
+				"session_id", sessionID, "event_type", fmt.Sprint(event.Type))
+		}
 		return
 	}
 	if sink != nil {

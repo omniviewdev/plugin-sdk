@@ -2,7 +2,9 @@
 package command
 
 import (
+	"context"
 	"errors"
+	"fmt"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -49,9 +51,23 @@ func (m *Manager) Call(
 	target string,
 	payload []byte,
 ) ([]byte, error) {
+	callCtx := commandLogContext(ctx)
 	handler, ok := m.handlers[target]
 	if !ok {
+		m.log.Debugw(callCtx, "command handler not found", "path", target)
 		return nil, ErrHandlerNotFound
 	}
-	return handler(ctx, payload)
+	result, err := handler(ctx, payload)
+	if err != nil {
+		m.log.Debugw(callCtx, "command handler failed",
+			"path", target, "error_type", fmt.Sprintf("%T", err), "payload_bytes", len(payload))
+	}
+	return result, err
+}
+
+func commandLogContext(pc *types.PluginContext) context.Context {
+	if pc != nil && pc.Context != nil {
+		return pc.Context
+	}
+	return context.Background()
 }

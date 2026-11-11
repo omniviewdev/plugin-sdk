@@ -2,6 +2,8 @@ package command
 
 import (
 	"context"
+	"fmt"
+	logging "github.com/omniviewdev/plugin-sdk/log"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -25,10 +27,14 @@ func (s *PluginServer) Call(
 ) (*commandpb.CallCommandResponse, error) {
 	pctx := types.PluginContextFromContext(ctx)
 	if pctx == nil {
+		logging.Default().Named("command.plugin.server").Debugw(ctx, "command call rejected",
+			"error_code", "missing_plugin_context")
 		return nil, status.Errorf(codes.InvalidArgument, "missing plugin context")
 	}
 	resp, err := s.Impl.Call(pctx, req.GetPath(), req.GetBody())
 	if err != nil {
+		logging.Default().Named("command.plugin.server").Debugw(ctx, "command call failed",
+			"path", req.GetPath(), "error_type", fmt.Sprintf("%T", err))
 		return nil, status.Errorf(codes.Internal, "failed to call command: %v", err)
 	}
 

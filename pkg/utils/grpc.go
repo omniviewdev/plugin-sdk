@@ -12,14 +12,20 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/interceptors"
 )
 
-// streamingMethodFilter returns an otelgrpc Filter that skips long-lived
-// streaming RPCs to avoid unbounded spans.
-func streamingMethodFilter() otelgrpc.Filter {
+// StreamingMethodFilter returns an otelgrpc Filter that skips long-lived
+// streaming RPCs. These streams can run for the entire plugin lifetime and
+// would produce never-ending spans, so they are covered by manual open-phase
+// spans instead. Short-lived unary RPCs are always traced. It is the single
+// list used by both server and client stats handlers.
+func StreamingMethodFilter() otelgrpc.Filter {
 	skip := []string{
 		"/WatchConnections",
 		".ResourceSources/Open",
 		"/Stream",
 		"/StreamMetrics",
+		"/StreamResourceMetrics",
+		"/WatchConnectionMetadata",
+		"/CommitSettings",
 		"/StreamAction",
 		"/Run",
 	}
@@ -40,7 +46,7 @@ func RegisterServerOpts(opts []grpc.ServerOption, log logging.Logger) []grpc.Ser
 
 	opts = append(opts,
 		grpc.StatsHandler(otelgrpc.NewServerHandler(
-			otelgrpc.WithFilter(streamingMethodFilter()),
+			otelgrpc.WithFilter(StreamingMethodFilter()),
 		)),
 		grpc.ChainUnaryInterceptor(unaryinterceptors...),
 		grpc.ChainStreamInterceptor(streaminterceptors...),

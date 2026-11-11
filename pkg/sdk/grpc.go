@@ -7,41 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"strings"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	grpcMetadata "google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/stats"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
+	"github.com/omniviewdev/plugin-sdk/pkg/utils"
 )
-
-// streamingMethodFilter returns an otelgrpc Filter that skips long-lived
-// streaming RPCs. These streams can run for the entire plugin lifetime
-// (hours/days) and would produce unusable, never-ending spans that bloat
-// memory and Tempo storage. Short-lived unary RPCs are always traced.
-func streamingMethodFilter() otelgrpc.Filter {
-	// Streaming methods that should NOT get otelgrpc spans.
-	// Matched by suffix so we don't need full package paths.
-	skip := []string{
-		"/WatchConnections",
-		".ResourceSources/Open",
-		"/Stream",
-		"/StreamMetrics",
-		"/StreamAction",
-		"/Run",
-	}
-	return func(info *stats.RPCTagInfo) bool {
-		for _, suffix := range skip {
-			if strings.HasSuffix(info.FullMethodName, suffix) {
-				return false
-			}
-		}
-		return true
-	}
-}
 
 // ErrNoPluginContext is returned when no plugin context is found in the context.
 var ErrNoPluginContext = errors.New("no plugin context in context")
@@ -144,7 +118,7 @@ func withClientOpts(opts []grpc.DialOption, log logging.Logger) []grpc.DialOptio
 	}
 	opts = append(opts,
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler(
-			otelgrpc.WithFilter(streamingMethodFilter()),
+			otelgrpc.WithFilter(utils.StreamingMethodFilter()),
 		)),
 		grpc.WithChainUnaryInterceptor(ClientPluginContextInterceptor(log)),
 		grpc.WithChainStreamInterceptor(StreamClientPluginContextInterceptor(log)),

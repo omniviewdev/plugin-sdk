@@ -45,6 +45,14 @@ Use `plugin.SetLogLevel(...)` to update level dynamically:
 plugin.SetLogLevel(logging.LevelDebug)
 ```
 
+### Initial level from the host (`OMNIVIEW_PLUGIN_LOG_LEVEL`)
+
+`sdk.NewPlugin` reads `OMNIVIEW_PLUGIN_LOG_LEVEL` (`trace`, `debug`, `info`, `warn`, `error`, `fatal`; case-insensitive) and applies it before the runtime logging backend is built. The host sets it from its plugin log-ship level and only when log shipping is enabled, so a plugin restart is required to pick up a change.
+
+- `PluginOpts.Debug = true` always wins and keeps Debug.
+- An unset or empty variable keeps Info.
+- An invalid value keeps Info and logs a Warn `invalid OMNIVIEW_PLUGIN_LOG_LEVEL` with the offending value (a level name, not a secret).
+
 ## Testing With Sink Assertions
 
 Use the recording sink:
