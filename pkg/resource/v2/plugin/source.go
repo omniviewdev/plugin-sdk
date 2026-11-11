@@ -20,6 +20,8 @@ import (
 
 var sourceSendStallTimeout = 5 * time.Second
 
+const sourceCatalogCheckTimeout = 5 * time.Second
+
 type sourceServer struct {
 	resourcepb.UnimplementedResourceSourcesServer
 	owner *server
@@ -88,6 +90,21 @@ func sourceAdmission(ctx context.Context, p resourcev2.Provider, r resourcev2.So
 	}
 	obs.Reject(ctx, logging.Default(), "open_source", "RESET_REQUIRED", "reason", "binding_changed")
 	return resourcev2.ResourceType{}, resourcev2.NewError("RESET_REQUIRED", "source binding changed")
+}
+
+// sourceCatalogCheck bounds one periodic fence without cancelling the source.
+// Providers must honor cancellation; the deadline does not preempt in-process code.
+func sourceCatalogCheck(ctx context.Context, provider resourcev2.Provider, request resourcev2.SourceOpenRequest, descriptor resourcev2.ResourceType) error {
+	ctx, cancel := context.WithTimeout(ctx, sourceCatalogCheckTimeout)
+	defer cancel()
+	catalog, err := provider.Catalog(ctx, resourcev2.CatalogRequest{Route: request.Target.Route})
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err != nil {
+		return err
+	}
+	return resourcev2.CheckSourceCatalog(ctx, catalog, request, descriptor)
 }
 
 func registerSources(s *grpc.Server, owner *server) {
@@ -281,11 +298,7 @@ func (e *sourceEmitter) send(ctx context.Context, f resourcev2.SourceFrame) erro
 func (e *sourceEmitter) sendEncoded(f resourcev2.SourceFrame, p *resourcepb.SourceFrame) error {
 	if e.owner != nil && (f.Snapshot != nil || f.SnapshotEnd != nil || f.Changes != nil) && !time.Now().Before(e.nextCatalogCheck) {
 		e.nextCatalogCheck = time.Now().Add(time.Second)
-		catalog, err := e.owner.impl.Catalog(e.ctx, resourcev2.CatalogRequest{Route: e.request.Target.Route})
-		if err != nil {
-			return err
-		}
-		if err := resourcev2.CheckSourceCatalog(e.ctx, catalog, e.request, e.descriptor); err != nil {
+		if err := sourceCatalogCheck(e.ctx, e.owner.impl, e.request, e.descriptor); err != nil {
 			return err
 		}
 	}

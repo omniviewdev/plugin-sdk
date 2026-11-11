@@ -157,7 +157,7 @@ All types below live in [domain.go](../pkg/resource/v2/domain.go). Request conta
 
 | Request | Fields beyond explicit route/reference/target |
 | --- | --- |
-| `CatalogRequest` | `Route` only; discovery does not implicitly start a client |
+| `CatalogRequest` | `Route`, optional `Refresh` for explicit discovery refresh; discovery does not implicitly start a client |
 | `GetRequest` | `Route`, `Reference`, explicit `Representation` |
 | `EnumerateRequest` | `Target`, `PageSize`, optional source `Cursor` |
 | `NativeQueryRequest` | `Target`, `Language`, typed `Query`, `PageSize`, optional `Cursor` |

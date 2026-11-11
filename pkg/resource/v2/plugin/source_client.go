@@ -149,12 +149,12 @@ func (c *Client) OpenSourceStream(ctx context.Context, r resourcev2.SourceOpenRe
 		}
 		return nil, err
 	}
-	ctx, err = outgoingSession(ctx)
+	streamCtx, err := outgoingSession(ctx)
 	if err != nil {
 		return nil, err
 	}
 	cancel := func() { cancelCause(context.Canceled) }
-	stream, err := c.conn.NewStream(ctx, &resourcepb.ResourceSources_ServiceDesc.Streams[0], resourcepb.ResourceSources_Open_FullMethodName, grpc.MaxCallRecvMsgSize(int(r.Limits.MaxFrameBytes)), grpc.MaxCallSendMsgSize(256<<10), grpc.PartialMessageReadTimeout(5*time.Second))
+	stream, err := c.conn.NewStream(streamCtx, &resourcepb.ResourceSources_ServiceDesc.Streams[0], resourcepb.ResourceSources_Open_FullMethodName, grpc.MaxCallRecvMsgSize(int(r.Limits.MaxFrameBytes)), grpc.MaxCallSendMsgSize(256<<10), grpc.PartialMessageReadTimeout(5*time.Second))
 	if err != nil {
 		if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
 			return nil, sourceBeginTimedOut(ctx, r.SessionID)
@@ -232,11 +232,7 @@ func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 	}
 	if s.client != nil && (f.Snapshot != nil || f.SnapshotEnd != nil || f.Changes != nil) && !time.Now().Before(s.nextCatalogCheck) {
 		s.nextCatalogCheck = time.Now().Add(time.Second)
-		catalog, err := s.client.Catalog(s.ctx, resourcev2.CatalogRequest{Route: s.request.Target.Route})
-		if err == nil {
-			err = resourcev2.CheckSourceCatalog(s.ctx, catalog, s.request, s.descriptor)
-		}
-		if err != nil {
+		if err := sourceCatalogCheck(s.ctx, s.client, s.request, s.descriptor); err != nil {
 			s.Close()
 			return zero, err
 		}
