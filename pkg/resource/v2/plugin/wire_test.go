@@ -361,3 +361,84 @@ func TestRawRetiredCatalogAuthorityHintRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestActualGRPCCatalogEnvironmentIdentityIsPerType(t *testing.T) {
+	cluster := &resourcev2.EnvironmentIdentity{Scheme: "kubernetes.namespace-uid.v1", ID: "cluster-uid"}
+	descriptor := func(name string, environment *resourcev2.EnvironmentIdentity) resourcev2.ResourceType {
+		return resourcev2.ResourceType{
+			Type: name, IdentityDimensions: []resourcev2.Dimension{}, QueryDimensions: []resourcev2.Dimension{},
+			Representations: []resourcev2.Representation{testRepresentation()}, Capabilities: []resourcev2.Capability{},
+			Environment: environment,
+		}
+	}
+	want := resourcev2.Catalog{
+		Provider: "mixed", Revision: "mixed-1", Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}},
+		Types: []resourcev2.ResourceType{descriptor("cluster/pod", cluster), descriptor("localHelm/chart", nil), descriptor("cluster/service", cluster)},
+	}
+	s := grpc.NewServer()
+	RegisterServer(s, &mixedAuthorityProvider{catalog: want})
+	client := NewClient(pipe(t, s))
+	got, err := client.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "route"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("catalog changed across gRPC:\ngot %#v\nwant %#v", got, want)
+	}
+	if got.Types[1].Environment != nil {
+		t.Fatal("a type without a declared environment inherited its neighbours'")
+	}
+	got.Types[0].Environment.ID = "changed"
+	if got.Types[2].Environment.ID != cluster.ID || cluster.ID != "cluster-uid" {
+		t.Fatal("decoded environments share storage")
+	}
+}
+
+// rawCatalogWithType wraps one encoded ResourceType in an otherwise valid
+// catalog response, so a test controls exactly the bytes of that type.
+func rawCatalogWithType(resourceType []byte) []byte {
+	coverage := bytesField(1, []byte("complete"))
+	catalog := bytesField(1, []byte("p"))
+	catalog = append(catalog, bytesField(2, resourceType)...)
+	catalog = append(catalog, bytesField(3, []byte("r"))...)
+	catalog = append(catalog, bytesField(5, coverage)...)
+	return append([]byte{8, byte(resourcev2.WireVersion)}, bytesField(2, catalog)...)
+}
+
+func TestRawCatalogEnvironmentFieldAdmission(t *testing.T) {
+	environment := append(bytesField(1, []byte("kubernetes.namespace-uid.v1")), bytesField(2, []byte("cluster-uid"))...)
+	base := bytesField(1, []byte("cluster/pod"))
+	// The strict admission that rejects an unknown field is what makes a provider
+	// that declares an environment unreadable to a receiver built before it
+	// existed: that receiver sees field 13 exactly as this one sees field 99.
+	cases := map[string]struct {
+		resourceType []byte
+		class        string
+	}{
+		"declared":           {append(append([]byte(nil), base...), bytesField(13, environment)...), ""},
+		"absent":             {base, ""},
+		"duplicate field":    {append(append(append([]byte(nil), base...), bytesField(13, environment)...), bytesField(13, environment)...), "INVALID_REQUEST"},
+		"unknown field":      {append(append([]byte(nil), base...), bytesField(99, environment)...), "UNSUPPORTED"},
+		"empty environment":  {append(append([]byte(nil), base...), bytesField(13, nil)...), "INVALID_REQUEST"},
+		"unknown inner":      {append(append([]byte(nil), base...), bytesField(13, append(append([]byte(nil), environment...), bytesField(9, []byte("x"))...))...), "UNSUPPORTED"},
+		"duplicate id field": {append(append([]byte(nil), base...), bytesField(13, append(append([]byte(nil), environment...), bytesField(2, []byte("other"))...))...), "INVALID_REQUEST"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			s := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{data: rawCatalogWithType(tc.resourceType)}))
+			RegisterServer(s, &countProvider{})
+			client := NewClient(pipe(t, s))
+			client.featureMode.Store(1) // This fixture supplies raw responses, not a feature RPC.
+			catalog, err := client.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}})
+			if got := resourcev2.ErrorCode(err); got != tc.class {
+				t.Fatalf("class %q, want %q: %v", got, tc.class, err)
+			}
+			if err == nil {
+				declared := catalog.Types[0].Environment
+				if (name == "declared") != (declared != nil) || (declared != nil && (declared.Scheme != "kubernetes.namespace-uid.v1" || declared.ID != "cluster-uid")) {
+					t.Fatalf("decoded environment %#v", declared)
+				}
+			}
+		})
+	}
+}

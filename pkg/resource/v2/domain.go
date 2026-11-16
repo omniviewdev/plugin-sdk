@@ -209,6 +209,9 @@ type ResourceType struct {
 	Capabilities        []Capability            `json:"capabilities"`
 	NativeAuthorityHint *NativeAuthorityHint    `json:"nativeAuthorityHint,omitempty"`
 	AcquireOnConnect    bool                    `json:"acquireOnConnect"`
+	// Environment optionally declares the durable identity of the target behind
+	// this type, as evidence for history and correlation. It is never authority.
+	Environment *EnvironmentIdentity `json:"environment,omitempty"`
 }
 
 // CatalogRequest observes support through one explicit access route. Refresh
@@ -232,6 +235,34 @@ const (
 	ContinuityConnectionLocal = "connectionLocal"
 	// ContinuityStableNative claims native identity continuity; the host still assigns authority.
 	ContinuityStableNative = "stableNative"
+)
+
+// EnvironmentIdentity names the real-world target behind a route: what is still
+// the same target after a connection stops and starts, a profile is edited, or
+// the host or plugin restarts. It is evidence for history and correlation only.
+// It is never an address component, authority, grant or permission, and equal
+// values never permit sharing a body, cache, grant or projection between routes.
+//
+// A provider derives it from a fact about the target itself: a Kubernetes
+// cluster's kube-system namespace UID, an AWS account's partition and ID, or a
+// database server's system identifier. It must never come from a local path, a
+// profile or connection name, an endpoint URL, or a credential. A provider that
+// cannot establish such a fact omits the identity instead of guessing.
+//
+// Scheme names the kind of fact and carries its version, for example
+// "kubernetes.namespace-uid.v1". A provider that changes what ID means issues a
+// new scheme so histories never merge across meanings. The host partitions
+// environments by plugin, so Scheme need only be unique within one provider.
+type EnvironmentIdentity struct {
+	Scheme string `json:"scheme"`
+	ID     string `json:"id"`
+}
+
+const (
+	// MaxEnvironmentSchemeBytes and MaxEnvironmentIDBytes bound a value that every
+	// type of a route repeats and that durable stores use as part of a key.
+	MaxEnvironmentSchemeBytes = 128
+	MaxEnvironmentIDBytes     = 512
 )
 
 // Catalog describes support observed through the requested route. Revision is

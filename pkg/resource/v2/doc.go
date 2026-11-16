@@ -27,6 +27,12 @@
 // and BindCatalogRevision; CatalogBindingEpoch is an integration accessor, not
 // permission to parse opaque tokens.
 //
+// ResourceType.Environment optionally declares a durable EnvironmentIdentity: a
+// fact about the target itself that outlives connection stops, profile edits and
+// restarts. NewDurableReference derives a DurableReference from it for history
+// and correlation. It never replaces authority, which stays the only identity
+// used for authorization, and equal values never permit sharing.
+//
 // CatalogRequest observes installed support by default. Refresh explicitly asks
 // for eligible discovery; schema acquisition is never catalog readiness work.
 // Representation contains only body-format ID and revision for finite and source

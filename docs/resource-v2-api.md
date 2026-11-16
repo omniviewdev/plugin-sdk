@@ -107,6 +107,8 @@ Identity and access are separate:
 | `ResourceReference` | `Address`; optional `Incarnation` observation | A source revision |
 | `AccessRoute` | Explicit `Connection` | Identity, permission, or an implicit default |
 | `ReadTarget` | `Route`, `Provider`, `Authority`, `Type`, query `Scope`, `Representation` | A host query plan |
+| `EnvironmentIdentity` | `Scheme`, `ID` declared per `ResourceType` | Authority, permission, or a profile or endpoint name |
+| `DurableReference` | `Environment`, `Provider`, `Type`, identity `Scope`, `ID`; optional `Incarnation` | An authorization identity |
 
 `NativeAuthorityHint` is metadata only. Equal hints do not grant authority or establish sharing.
 
@@ -137,6 +139,27 @@ work and rejects late results after cancellation or retirement. An advertised
 catalog/descriptor observation is not replaced with a fresh one to make a stale
 request succeed. These fences are not rollback guarantees: a native side effect
 may have begun before cancellation or retirement is observed.
+
+### Durable identity
+
+`Authority` is host-issued and connection-local. The host retires it when a connection stops, when its endpoint or credentials change, and on the first catalog observation after a restart, so it cannot name a resource across those events. Use it, and `ResourceAddress`, for authorization, consent, call binding and reference currency, exactly as before.
+
+History and correlation need an identity that survives those events. A provider declares one per `ResourceType` as `Environment`, a fact about the target itself that stays equal for the same target and differs between distinct targets:
+
+| Provider | `Scheme` | `ID` |
+| --- | --- | --- |
+| Kubernetes | `kubernetes.namespace-uid.v1` | UID of the `kube-system` namespace |
+| AWS | `aws.account.v1` | `<partition>:<account ID>`; keep region as an identity dimension |
+| GCP | `gcp.project-number.v1` | Project number, not the project name |
+| Database server | `postgres.system-identifier.v1` | Value of `pg_control_system().system_identifier` |
+
+Never derive it from a local path, a profile or connection name, an endpoint URL, or a credential. Omit it when no such fact is established; types that declare none have no durable identity. A provider that changes what an `ID` means must issue a new `Scheme` (and bump its version) so histories never merge across meanings. `Scheme` is limited to `MaxEnvironmentSchemeBytes` and `ID` to `MaxEnvironmentIDBytes`; neither may contain control characters.
+
+`NewDurableReference(environment, reference)` drops the authority and returns the `DurableReference` of a `ResourceReference`: environment, provider, type, scope ordered by dimension, native ID, and the optional `Incarnation`. `DurableAddress.Key` returns its canonical, version-tagged string key. The incarnation is outside the key: deleting and recreating an object keeps its identity and changes its incarnation, while an object with another name, scope or target is another identity.
+
+Equal durable identities are correlation evidence only. They never permit sharing a body, cache, grant or projection between routes, and a host must keep authorizing every read through the current route. An open source session keeps one environment for its whole life: a changed declaration is a changed source contract and retires the session like a changed `NativeAuthorityHint`.
+
+`environment` is an optional protobuf field (13) of `ResourceType`; `WireVersion` is unchanged. Older SDK receivers with strict unknown-field admission require a compatible SDK upgrade before providers declare an environment, so release hosts before the providers that declare one.
 
 ### Scope lookup
 

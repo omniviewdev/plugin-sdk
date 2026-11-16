@@ -151,12 +151,23 @@ message ResourceType {
   bool acquire_on_connect = 11;
   // Optional descriptive metadata; does not grant capability.
   string description = 12;
+  // Optional durable identity of the target behind this type. It is evidence for
+  // history and correlation only; it never grants authority or permission.
+  EnvironmentIdentity environment = 13;
 }
 
 message NativeAuthorityHint {
   string scheme = 1;
   string id = 2;
   string continuity = 3;
+}
+
+// EnvironmentIdentity is a plugin-declared fact about the real-world target
+// that equals itself across reconnects, profile edits and restarts. The host
+// never uses it as authority.
+message EnvironmentIdentity {
+  string scheme = 1;
+  string id = 2;
 }
 
 message Catalog {

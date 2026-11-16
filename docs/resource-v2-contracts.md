@@ -70,7 +70,7 @@ Create/update/delete catalog declarations are independent: `OperationCreate`, `O
 
 ## Route-qualified admission
 
-Connection selects access, not identity. Addresses contain provider, host-issued authority, opaque type, identity scope, and opaque ID. Incarnation and source revision remain optional opaque observations. Neither a native authority hint nor equal hints grant authority or sharing rights.
+Connection selects access, not identity. Addresses contain provider, host-issued authority, opaque type, identity scope, and opaque ID. Incarnation and source revision remain optional opaque observations. Neither a native authority hint nor equal hints grant authority or sharing rights. A declared `EnvironmentIdentity` is history and correlation evidence only: it is never part of an address, and a `DurableReference` built from it never replaces the host-issued authority for authorization (see [durable identity](resource-v2-api.md#durable-identity)).
 
 The default and qualified helpers serve different call shapes:
 

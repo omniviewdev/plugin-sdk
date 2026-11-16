@@ -477,6 +477,60 @@ func (v *NativeAuthorityHint) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// UnmarshalJSON decodes EnvironmentIdentity, rejecting duplicate members, unknown fields, and invalid domain values.
+func (v *EnvironmentIdentity) UnmarshalJSON(data []byte) error {
+	type plain EnvironmentIdentity
+	var out plain
+	if _, err := decodeDomainObject(data, &out, "scheme", "id"); err != nil {
+		return err
+	}
+	value := EnvironmentIdentity(out)
+	if err := validateEnvironmentIdentity(value); err != nil {
+		return err
+	}
+	*v = value
+	return nil
+}
+
+// UnmarshalJSON decodes DurableAddress, rejecting duplicate members, unknown fields, and invalid domain values.
+func (v *DurableAddress) UnmarshalJSON(data []byte) error {
+	type plain DurableAddress
+	var out plain
+	if _, err := decodeDomainObject(data, &out, "environment", "provider", "type", "scope", "id"); err != nil {
+		return err
+	}
+	value := DurableAddress(out)
+	if value.Scope == nil {
+		return invalid("address scope must be array")
+	}
+	if err := validateDurableAddress(value); err != nil {
+		return err
+	}
+	// This storage belongs to the decoder; never sort caller-owned slices.
+	sort.Slice(value.Scope, func(i, j int) bool { return value.Scope[i].Dimension < value.Scope[j].Dimension })
+	*v = value
+	return nil
+}
+
+// UnmarshalJSON decodes DurableReference, rejecting duplicate members, unknown fields, and invalid domain values.
+func (v *DurableReference) UnmarshalJSON(data []byte) error {
+	type plain DurableReference
+	var out plain
+	object, err := decodeDomainObject(data, &out, "address")
+	if err != nil {
+		return err
+	}
+	if err := rejectNullTokens(object, "incarnation"); err != nil {
+		return err
+	}
+	value := DurableReference(out)
+	if err := validateDurableReference(value); err != nil {
+		return err
+	}
+	*v = value
+	return nil
+}
+
 // UnmarshalJSON decodes Coverage, rejecting duplicate members, unknown fields, and invalid domain values.
 func (v *Coverage) UnmarshalJSON(data []byte) error {
 	type plain Coverage
@@ -595,7 +649,7 @@ func (v *ResourceType) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	if err := rejectNullTokens(object, "nativeAuthorityHint", "nativeQueries", "modelRepresentation", "description"); err != nil {
+	if err := rejectNullTokens(object, "nativeAuthorityHint", "nativeQueries", "modelRepresentation", "description", "environment"); err != nil {
 		return err
 	}
 	value := ResourceType(out)

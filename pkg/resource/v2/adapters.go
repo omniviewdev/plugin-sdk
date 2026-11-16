@@ -154,6 +154,9 @@ func toResourceType(v ResourceType) *resourcepb.ResourceType {
 	if v.NativeAuthorityHint != nil {
 		p.NativeAuthorityHint = toNativeAuthorityHint(*v.NativeAuthorityHint)
 	}
+	if v.Environment != nil {
+		p.Environment = &resourcepb.EnvironmentIdentity{Scheme: v.Environment.Scheme, Id: v.Environment.ID}
+	}
 	for i, query := range v.NativeQueries {
 		schema, _ := json.Marshal(query.InputSchema)
 		p.NativeQueries[i] = &resourcepb.NativeQueryDescriptor{
@@ -452,6 +455,9 @@ func (d *adapterDecoder) resourceType(p *resourcepb.ResourceType) ResourceType {
 	if p.NativeAuthorityHint != nil {
 		hint := d.nativeAuthorityHint(p.NativeAuthorityHint)
 		v.NativeAuthorityHint = &hint
+	}
+	if p.Environment != nil {
+		v.Environment = &EnvironmentIdentity{Scheme: p.Environment.Scheme, ID: p.Environment.Id}
 	}
 	for i, query := range p.NativeQueries {
 		if query == nil {

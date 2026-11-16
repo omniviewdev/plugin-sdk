@@ -906,6 +906,11 @@ func ValidateCatalog(c Catalog) error {
 				return err
 			}
 		}
+		if t.Environment != nil {
+			if err := validateEnvironmentIdentity(*t.Environment); err != nil {
+				return err
+			}
+		}
 		if err := text(t.Type, true); err != nil {
 			return err
 		}
