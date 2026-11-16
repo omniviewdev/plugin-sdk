@@ -151,9 +151,9 @@ message ResourceType {
   bool acquire_on_connect = 11;
   // Optional descriptive metadata; does not grant capability.
   string description = 12;
-  // Optional durable identity of the target behind this type. It is evidence for
-  // history and correlation only; it never grants authority or permission.
-  EnvironmentIdentity environment = 13;
+  // Optional fingerprints of the target behind this type. They are evidence for
+  // history and correlation only; they never grant authority or permission.
+  repeated EnvironmentIdentity environment = 13;
 }
 
 message NativeAuthorityHint {
@@ -162,12 +162,17 @@ message NativeAuthorityHint {
   string continuity = 3;
 }
 
-// EnvironmentIdentity is a plugin-declared fact about the real-world target
-// that equals itself across reconnects, profile edits and restarts. The host
-// never uses it as authority.
+// EnvironmentIdentity is one plugin-declared fingerprint of the real-world
+// target: a fact about the target itself that stays equal while the target is
+// the same, whoever observes it. A type declares one or more. The host never
+// uses a fingerprint as authority.
 message EnvironmentIdentity {
   string scheme = 1;
   string id = 2;
+  // "strong" identifies the environment; "weak" is a correlation hint only.
+  string strength = 3;
+  // One environment has exactly one value of this scheme at a time.
+  bool exclusive = 4;
 }
 
 message Catalog {

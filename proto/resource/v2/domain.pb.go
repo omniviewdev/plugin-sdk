@@ -1327,9 +1327,9 @@ type ResourceType struct {
 	AcquireOnConnect      bool                     `protobuf:"varint,11,opt,name=acquire_on_connect,json=acquireOnConnect,proto3" json:"acquire_on_connect,omitempty"`
 	// Optional descriptive metadata; does not grant capability.
 	Description string `protobuf:"bytes,12,opt,name=description,proto3" json:"description,omitempty"`
-	// Optional durable identity of the target behind this type. It is evidence for
-	// history and correlation only; it never grants authority or permission.
-	Environment   *EnvironmentIdentity `protobuf:"bytes,13,opt,name=environment,proto3" json:"environment,omitempty"`
+	// Optional fingerprints of the target behind this type. They are evidence for
+	// history and correlation only; they never grant authority or permission.
+	Environment   []*EnvironmentIdentity `protobuf:"bytes,13,rep,name=environment,proto3" json:"environment,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1448,7 +1448,7 @@ func (x *ResourceType) GetDescription() string {
 	return ""
 }
 
-func (x *ResourceType) GetEnvironment() *EnvironmentIdentity {
+func (x *ResourceType) GetEnvironment() []*EnvironmentIdentity {
 	if x != nil {
 		return x.Environment
 	}
@@ -1515,13 +1515,18 @@ func (x *NativeAuthorityHint) GetContinuity() string {
 	return ""
 }
 
-// EnvironmentIdentity is a plugin-declared fact about the real-world target
-// that equals itself across reconnects, profile edits and restarts. The host
-// never uses it as authority.
+// EnvironmentIdentity is one plugin-declared fingerprint of the real-world
+// target: a fact about the target itself that stays equal while the target is
+// the same, whoever observes it. A type declares one or more. The host never
+// uses a fingerprint as authority.
 type EnvironmentIdentity struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Scheme        string                 `protobuf:"bytes,1,opt,name=scheme,proto3" json:"scheme,omitempty"`
-	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Scheme string                 `protobuf:"bytes,1,opt,name=scheme,proto3" json:"scheme,omitempty"`
+	Id     string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// "strong" identifies the environment; "weak" is a correlation hint only.
+	Strength string `protobuf:"bytes,3,opt,name=strength,proto3" json:"strength,omitempty"`
+	// One environment has exactly one value of this scheme at a time.
+	Exclusive     bool `protobuf:"varint,4,opt,name=exclusive,proto3" json:"exclusive,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1568,6 +1573,20 @@ func (x *EnvironmentIdentity) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *EnvironmentIdentity) GetStrength() string {
+	if x != nil {
+		return x.Strength
+	}
+	return ""
+}
+
+func (x *EnvironmentIdentity) GetExclusive() bool {
+	if x != nil {
+		return x.Exclusive
+	}
+	return false
 }
 
 type Catalog struct {
@@ -3111,16 +3130,18 @@ const file_proto_resource_v2_domain_proto_rawDesc = "" +
 	" \x03(\v2+.omniview.resource.v2.NativeQueryDescriptorR\rnativeQueries\x12,\n" +
 	"\x12acquire_on_connect\x18\v \x01(\bR\x10acquireOnConnect\x12 \n" +
 	"\vdescription\x18\f \x01(\tR\vdescription\x12K\n" +
-	"\venvironment\x18\r \x01(\v2).omniview.resource.v2.EnvironmentIdentityR\venvironment\"]\n" +
+	"\venvironment\x18\r \x03(\v2).omniview.resource.v2.EnvironmentIdentityR\venvironment\"]\n" +
 	"\x13NativeAuthorityHint\x12\x16\n" +
 	"\x06scheme\x18\x01 \x01(\tR\x06scheme\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x1e\n" +
 	"\n" +
 	"continuity\x18\x03 \x01(\tR\n" +
-	"continuity\"=\n" +
+	"continuity\"w\n" +
 	"\x13EnvironmentIdentity\x12\x16\n" +
 	"\x06scheme\x18\x01 \x01(\tR\x06scheme\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\"\xbd\x01\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12\x1a\n" +
+	"\bstrength\x18\x03 \x01(\tR\bstrength\x12\x1c\n" +
+	"\texclusive\x18\x04 \x01(\bR\texclusive\"\xbd\x01\n" +
 	"\aCatalog\x12\x1a\n" +
 	"\bprovider\x18\x01 \x01(\tR\bprovider\x128\n" +
 	"\x05types\x18\x02 \x03(\v2\".omniview.resource.v2.ResourceTypeR\x05types\x12\x1a\n" +

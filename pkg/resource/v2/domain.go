@@ -209,9 +209,9 @@ type ResourceType struct {
 	Capabilities        []Capability            `json:"capabilities"`
 	NativeAuthorityHint *NativeAuthorityHint    `json:"nativeAuthorityHint,omitempty"`
 	AcquireOnConnect    bool                    `json:"acquireOnConnect"`
-	// Environment optionally declares the durable identity of the target behind
-	// this type, as evidence for history and correlation. It is never authority.
-	Environment *EnvironmentIdentity `json:"environment,omitempty"`
+	// Environment optionally declares fingerprints of the target behind this
+	// type, as evidence for history and correlation. It is never authority.
+	Environment []EnvironmentIdentity `json:"environment,omitempty"`
 }
 
 // CatalogRequest observes support through one explicit access route. Refresh
@@ -237,32 +237,57 @@ const (
 	ContinuityStableNative = "stableNative"
 )
 
-// EnvironmentIdentity names the real-world target behind a route: what is still
-// the same target after a connection stops and starts, a profile is edited, or
-// the host or plugin restarts. It is evidence for history and correlation only.
-// It is never an address component, authority, grant or permission, and equal
-// values never permit sharing a body, cache, grant or projection between routes.
+// EnvironmentIdentity is one fingerprint of the real-world target behind a
+// route: a fact about the target itself that stays equal while the target is the
+// same, whatever connection, profile, credential or process observes it. A type
+// declares one or more, because what a caller may read varies with its
+// permissions. Two declarations refer to the same environment when they share a
+// strong fingerprint (see SameEnvironment).
+//
+// A fingerprint is evidence for history and correlation only. It is never an
+// address component, authority, grant or permission, and equal fingerprints
+// never permit sharing a body, cache, grant or projection between routes, or
+// grant access to history.
 //
 // A provider derives it from a fact about the target itself: a Kubernetes
-// cluster's kube-system namespace UID, an AWS account's partition and ID, or a
-// database server's system identifier. It must never come from a local path, a
-// profile or connection name, an endpoint URL, or a credential. A provider that
-// cannot establish such a fact omits the identity instead of guessing.
+// cluster's kube-system namespace UID or the public key of its root CA, an AWS
+// account and region, or a database server's system identifier. It must never
+// come from a local path, a profile or connection name, an endpoint URL, or a
+// credential. A provider that cannot establish a fact omits it instead of
+// guessing.
 //
 // Scheme names the kind of fact and carries its version, for example
 // "kubernetes.namespace-uid.v1". A provider that changes what ID means issues a
 // new scheme so histories never merge across meanings. The host partitions
-// environments by plugin, so Scheme need only be unique within one provider.
+// fingerprints by plugin, so Scheme need only be unique within one provider.
 type EnvironmentIdentity struct {
 	Scheme string `json:"scheme"`
 	ID     string `json:"id"`
+	// Strength is EnvironmentStrong or EnvironmentWeak.
+	Strength string `json:"strength"`
+	// Exclusive declares that one environment has exactly one value of this
+	// scheme at a time, so two declarations that carry different values of it are
+	// different environments even when they share another strong fingerprint. It
+	// is valid only on a strong fingerprint.
+	Exclusive bool `json:"exclusive,omitempty"`
 }
 
 const (
-	// MaxEnvironmentSchemeBytes and MaxEnvironmentIDBytes bound a value that every
-	// type of a route repeats and that durable stores use as part of a key.
+	// EnvironmentStrong marks a fingerprint that identifies its environment. A
+	// provider emits it only when the value is unique to one environment in
+	// practice and stable for that environment's life.
+	EnvironmentStrong = "strong"
+	// EnvironmentWeak marks a correlation hint that unrelated environments may
+	// share, or that comes from local configuration. It never identifies.
+	EnvironmentWeak = "weak"
+)
+
+const (
+	// These bound a declaration that every type of a route repeats and that
+	// durable stores use as part of a key.
 	MaxEnvironmentSchemeBytes = 128
 	MaxEnvironmentIDBytes     = 512
+	MaxEnvironmentIdentities  = 16
 )
 
 // Catalog describes support observed through the requested route. Revision is

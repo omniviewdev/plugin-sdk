@@ -154,8 +154,13 @@ func toResourceType(v ResourceType) *resourcepb.ResourceType {
 	if v.NativeAuthorityHint != nil {
 		p.NativeAuthorityHint = toNativeAuthorityHint(*v.NativeAuthorityHint)
 	}
-	if v.Environment != nil {
-		p.Environment = &resourcepb.EnvironmentIdentity{Scheme: v.Environment.Scheme, Id: v.Environment.ID}
+	if len(v.Environment) > 0 {
+		p.Environment = make([]*resourcepb.EnvironmentIdentity, len(v.Environment))
+		for i, fingerprint := range v.Environment {
+			p.Environment[i] = &resourcepb.EnvironmentIdentity{
+				Scheme: fingerprint.Scheme, Id: fingerprint.ID, Strength: fingerprint.Strength, Exclusive: fingerprint.Exclusive,
+			}
+		}
 	}
 	for i, query := range v.NativeQueries {
 		schema, _ := json.Marshal(query.InputSchema)
@@ -456,8 +461,17 @@ func (d *adapterDecoder) resourceType(p *resourcepb.ResourceType) ResourceType {
 		hint := d.nativeAuthorityHint(p.NativeAuthorityHint)
 		v.NativeAuthorityHint = &hint
 	}
-	if p.Environment != nil {
-		v.Environment = &EnvironmentIdentity{Scheme: p.Environment.Scheme, ID: p.Environment.Id}
+	if len(p.Environment) > 0 {
+		v.Environment = make([]EnvironmentIdentity, len(p.Environment))
+		for i, fingerprint := range p.Environment {
+			if fingerprint == nil {
+				d.fail("missing environment identity")
+				continue
+			}
+			v.Environment[i] = EnvironmentIdentity{
+				Scheme: fingerprint.Scheme, ID: fingerprint.Id, Strength: fingerprint.Strength, Exclusive: fingerprint.Exclusive,
+			}
+		}
 	}
 	for i, query := range p.NativeQueries {
 		if query == nil {

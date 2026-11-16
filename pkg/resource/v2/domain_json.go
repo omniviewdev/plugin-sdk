@@ -481,7 +481,7 @@ func (v *NativeAuthorityHint) UnmarshalJSON(data []byte) error {
 func (v *EnvironmentIdentity) UnmarshalJSON(data []byte) error {
 	type plain EnvironmentIdentity
 	var out plain
-	if _, err := decodeDomainObject(data, &out, "scheme", "id"); err != nil {
+	if _, err := decodeDomainObject(data, &out, "scheme", "id", "strength"); err != nil {
 		return err
 	}
 	value := EnvironmentIdentity(out)
@@ -496,7 +496,7 @@ func (v *EnvironmentIdentity) UnmarshalJSON(data []byte) error {
 func (v *DurableAddress) UnmarshalJSON(data []byte) error {
 	type plain DurableAddress
 	var out plain
-	if _, err := decodeDomainObject(data, &out, "environment", "provider", "type", "scope", "id"); err != nil {
+	if _, err := decodeDomainObject(data, &out, "provider", "type", "scope", "id"); err != nil {
 		return err
 	}
 	value := DurableAddress(out)
@@ -516,7 +516,7 @@ func (v *DurableAddress) UnmarshalJSON(data []byte) error {
 func (v *DurableReference) UnmarshalJSON(data []byte) error {
 	type plain DurableReference
 	var out plain
-	object, err := decodeDomainObject(data, &out, "address")
+	object, err := decodeDomainObject(data, &out, "environment", "address")
 	if err != nil {
 		return err
 	}

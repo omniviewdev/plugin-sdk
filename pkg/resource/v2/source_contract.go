@@ -14,7 +14,7 @@ func SourceOperationalContractEqual(previous, current ResourceType, request Sour
 		!sameSourceDimensions(previous.IdentityDimensions, current.IdentityDimensions) ||
 		!sameSourceDimensions(previous.QueryDimensions, current.QueryDimensions) ||
 		!sameSourceAuthorityHint(previous.NativeAuthorityHint, current.NativeAuthorityHint) ||
-		!sameSourceEnvironment(previous.Environment, current.Environment) ||
+		!EnvironmentContinuous(previous.Environment, current.Environment) ||
 		!sourceDeclaresBinding(previous, request.Binding.Representation) ||
 		!sourceDeclaresBinding(current, request.Binding.Representation) {
 		return false
@@ -69,7 +69,7 @@ func CheckSourceCatalog(ctx context.Context, catalog Catalog, request SourceOpen
 		if !sameSourceDimensions(admitted.IdentityDimensions, current.IdentityDimensions) ||
 			!sameSourceDimensions(admitted.QueryDimensions, current.QueryDimensions) ||
 			current.NativeAuthorityHint != nil && !sameSourceAuthorityHint(admitted.NativeAuthorityHint, current.NativeAuthorityHint) ||
-			current.Environment != nil && !sameSourceEnvironment(admitted.Environment, current.Environment) {
+			HasStrongEnvironment(current.Environment) && !EnvironmentContinuous(admitted.Environment, current.Environment) {
 			return NewError("RESET_REQUIRED", "Selected source identity changed.")
 		}
 		for _, format := range current.Representations {
@@ -114,15 +114,6 @@ func sameSourceDimensions(a, b []Dimension) bool {
 }
 
 func sameSourceAuthorityHint(a, b *NativeAuthorityHint) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
-}
-
-// An open source reports one durable environment for its whole lifetime, so a
-// changed declaration retires it exactly as a changed authority hint does.
-func sameSourceEnvironment(a, b *EnvironmentIdentity) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
