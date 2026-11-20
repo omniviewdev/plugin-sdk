@@ -311,7 +311,7 @@ type ResourceOperationError struct {
 }
 ```
 
-Keep raw diagnostics in `Err`. `Unwrap` exposes them locally; JSON and `Error()` exclude them. The host retains final redaction, trusted provenance, and recovery policy.
+Keep raw diagnostics in `Err`. `Unwrap` exposes them locally; JSON and `Error()` exclude them. The host retains final redaction, trusted provenance, and recovery policy. Across the resource transport the classification and `Message` cross (as a `LocalizedMessage` detail of the gRPC status, only for a reviewed class, valid UTF-8, at most `plugin.MaxErrorMessageBytes` bytes); `Title`, `Suggestions` and `Err` do not. A provider built on an older SDK sends the classification only, and its `Message` arrives empty.
 
 | Condition | Classification |
 | --- | --- |

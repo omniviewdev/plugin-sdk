@@ -25,10 +25,16 @@ func NewTransportEnvelope(message proto.Message, legacyExec bool) *TransportEnve
 // AdmissionError returns the raw-wire admission failure retained during decoding.
 func (e *envelope) AdmissionError() error { return e.err }
 
-// ResourceRPCError converts a domain error into a public-safe gRPC status.
+// ResourceRPCError converts a domain error into a public-safe gRPC status that
+// carries the classification only. It is the encoder the sibling services share
+// (resource exec, host connections), and none of them has ever put a sentence on
+// the wire: the resource provider server, which does, carries it by itself.
 func ResourceRPCError(err error) error { return rpcError(err) }
 
-// ResourceDomainError restores a classified resource error from a gRPC status.
+// ResourceDomainError restores a classified resource error from a gRPC status. When
+// the status carries the provider's sentence (a bounded English LocalizedMessage
+// beside the classification) it is the error's Message; otherwise Message is empty.
+// Title and Suggestions are never restored. The error keeps the status in Err.
 func ResourceDomainError(err error) error { return domainError(err) }
 
 func strictRoot(d protoreflect.MessageDescriptor) bool {

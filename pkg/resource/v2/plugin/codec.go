@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"unicode/utf8"
 
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -11,6 +12,7 @@ import (
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/protoadapt"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 )
@@ -110,11 +112,52 @@ func decodeResource(data mem.BufferSlice, p proto.Message, e *envelope, wrapped 
 	return proto.Unmarshal(buf.ReadOnlyData(), p)
 }
 
-func rpcError(err error) error { return rpcErrorContext(context.Background(), "", err) }
+// MaxErrorMessageBytes bounds the sentence a classified error carries across the
+// resource transport. Text that is longer, or not valid UTF-8, is not carried: the
+// receiver gets the classification and no sentence.
+const MaxErrorMessageBytes = 2048
 
-// rpcErrorContext maps err to its wire status. When it masks provider text it
-// records the mask on the span in ctx; operation names the RPC when known.
+// errorMessageLocale marks the LocalizedMessage detail that carries a provider's
+// sentence. The detail rides in the gRPC status beside the ErrorInfo that carries
+// the classification; it is not a field of any resource message, so the strict
+// admission of resource messages never sees it, and a reader that does not know
+// it skips it.
+const errorMessageLocale = "en"
+
+// carriedMessage returns the sentence of a provider's classified error as it may
+// cross the transport. A nil error, an error without Message, and an error of a class
+// that is not reviewed (the encoder sends INTERNAL for it) carry none. Title and
+// Suggestions never cross: the host owns the title of a class, and its advice.
+func carriedMessage(typed *resourcev2.ResourceOperationError) string {
+	if typed == nil || !resourcev2.IsErrorCode(typed.Code) {
+		return ""
+	}
+	return boundedMessage(typed.Message)
+}
+
+// boundedMessage returns message when it may cross the transport, and "" otherwise.
+func boundedMessage(message string) string {
+	if len(message) > MaxErrorMessageBytes || !utf8.ValidString(message) {
+		return ""
+	}
+	return message
+}
+
+// rpcError maps an error the SDK itself raised (admission, session, version) to its
+// wire status. It carries the classification only: the text of such an error is the
+// SDK's, and the sibling services that share this encoder through ResourceRPCError
+// have never carried text.
+func rpcError(err error) error { return wireStatus(context.Background(), "", err, false) }
+
+// rpcErrorContext maps an error a provider returned to its wire status. It carries
+// the classification and, when the provider's error has one, its sentence. When it
+// masks provider text it records the mask on the span in ctx; operation names the
+// RPC when known.
 func rpcErrorContext(ctx context.Context, operation string, err error) error {
+	return wireStatus(ctx, operation, err, true)
+}
+
+func wireStatus(ctx context.Context, operation string, err error, carrySentence bool) error {
 	if err == nil {
 		return nil
 	}
@@ -161,8 +204,12 @@ func rpcErrorContext(ctx context.Context, operation string, err error) error {
 	case "TIMEOUT":
 		grpcCode = codes.DeadlineExceeded
 	}
+	details := []protoadapt.MessageV1{&errdetails.ErrorInfo{Reason: code, Domain: resourceErrorDomain}}
+	if sentence := carriedMessage(typed); carrySentence && sentence != "" {
+		details = append(details, &errdetails.LocalizedMessage{Locale: errorMessageLocale, Message: sentence})
+	}
 	s := status.New(grpcCode, "resource operation failed")
-	detailed, e := s.WithDetails(&errdetails.ErrorInfo{Reason: code, Domain: resourceErrorDomain})
+	detailed, e := s.WithDetails(details...)
 	if e != nil {
 		return s.Err()
 	}
@@ -184,13 +231,28 @@ func domainError(err error) error {
 		recordErrorMasked(context.Background(), "client", err, codes.Unknown.String(), "")
 		return status.Error(codes.Unknown, "resource transport failed")
 	}
+	var info *errdetails.ErrorInfo
+	message, sawMessage := "", false
 	for _, d := range st.Details() {
-		if info, ok := d.(*errdetails.ErrorInfo); ok && info.Domain == resourceErrorDomain {
-			if !resourcev2.IsErrorCode(info.Reason) {
-				return status.Error(codes.Internal, "invalid resource error classification")
+		switch detail := d.(type) {
+		case *errdetails.ErrorInfo:
+			if info == nil && detail.Domain == resourceErrorDomain {
+				info = detail
 			}
-			return &resourcev2.ResourceOperationError{Err: err, Code: info.Reason, Message: "resource operation failed"}
+		case *errdetails.LocalizedMessage:
+			if !sawMessage && detail.GetLocale() == errorMessageLocale {
+				// The first English sentence decides, even when it is dropped: a later
+				// one never takes its place.
+				sawMessage = true
+				message = boundedMessage(detail.GetMessage())
+			}
 		}
+	}
+	if info != nil {
+		if !resourcev2.IsErrorCode(info.Reason) {
+			return status.Error(codes.Internal, "invalid resource error classification")
+		}
+		return &resourcev2.ResourceOperationError{Err: err, Code: info.Reason, Message: message}
 	}
 	recordErrorMasked(context.Background(), "client", err, st.Code().String(), "")
 	return status.Error(st.Code(), "resource transport failed")
