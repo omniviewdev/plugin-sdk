@@ -214,20 +214,24 @@ func (c *Controller[T]) startClient(spanCtx context.Context, s *clientSlot[T]) {
 		}
 	}()
 	connection := cloneConnection(s.connection)
+	timeout, err := c.acquisitionTimeout(s.ctx)
+	if err != nil {
+		s.err = err
+		return
+	}
 	session, _ := SessionFromContext(s.ctx)
 	session.Connection = &connection
-	ctx := WithSession(s.ctx, session)
-	span.AddEvent("create_client")
-	s.client, s.err = c.cfg.Lifecycle.CreateClient(ctx, connection)
-	if s.err == nil && s.client == nil {
-		s.err = NewError("INTERNAL", "CreateClient returned a nil client.")
-	}
-	if s.err == nil && c.cfg.Lifecycle.OnStart != nil {
-		span.AddEvent("on_start")
-		s.err = c.cfg.Lifecycle.OnStart(ctx, connection, s.client)
-	}
-	if s.err == nil {
-		s.err = s.ctx.Err()
+	ctx := newAcquisitionContext(WithSession(s.ctx, session), timeout)
+	results := make(chan acquisitionResult[T], 1)
+	go c.acquire(spanCtx, s, ctx, connection, results)
+	select {
+	case result := <-results:
+		s.client, s.err = result.client, result.err
+	case <-ctx.expired:
+		// The acquisition is abandoned: its late result, if any, is destroyed by
+		// acquire. Nothing it produces can reach this slot.
+		span.AddEvent("acquisition_timeout")
+		s.err = acquisitionTimeoutError(timeout)
 	}
 }
 
@@ -236,6 +240,10 @@ func (c *Controller[T]) startClient(spanCtx context.Context, s *clientSlot[T]) {
 // cancellation of another waiter only ends that wait. Accepted generations then
 // outlive the initiating request. CreateClient and OnStart must both succeed
 // before CONNECTED, which reports lifecycle registration, not network health.
+// They must also finish within the acquisition timeout (default 10 seconds; see
+// ConnectionAcquisitionTimeoutSetting); otherwise the start fails with TIMEOUT,
+// the slot is freed and waiters are released. See Lifecycle for callbacks that
+// ignore their context.
 //
 // Failure drains and destroys any returned client and retains only safe FAILED
 // status. A later explicit call retries with a fresh generation. Unknown IDs are

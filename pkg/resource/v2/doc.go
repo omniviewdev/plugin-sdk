@@ -50,12 +50,18 @@
 // callback containers for later mutation. Watch targets and connection snapshots
 // have independent ownership; native opaque handles do not become copyable.
 //
-// Providers may opt into a shared acquisition-timeout preference by registering
-// ConnectionAcquisitionTimeoutSetting and resolving ConnectionAcquisitionTimeout
-// once at each initial acquisition or catalog refresh. Apply the duration with
-// context.WithTimeout to that work, not the retained client's generation context.
-// The setting accepts 1-300 whole seconds, defaults to 10, and takes effect on
-// the next acquisition. Earlier caller cancellation/deadlines still win.
+// Every connection start is bounded by an acquisition deadline: CreateClient and
+// OnStart share one budget that begins when CreateClient is called. The budget is
+// the ConnectionAcquisitionTimeoutSetting value when the provider registers it,
+// otherwise the default: 1-300 whole seconds, default 10, applied to the next
+// start. When it passes, the start fails with TIMEOUT, the pending slot is freed,
+// waiters are released and a later start can succeed. The deadline ends when
+// acquisition succeeds; it is never the lifetime of the client or its generation
+// context. See Lifecycle for the guarantee when CreateClient ignores its context.
+// Providers resolve ConnectionAcquisitionTimeout themselves only for other
+// acquisition work such as catalog refresh, applying it with context.WithTimeout
+// to that work, not the retained client's generation context.
+// Earlier caller cancellation/deadlines still win.
 // This policy does not schedule requests or know any provider's protocol.
 //
 // # Public connection facts

@@ -75,6 +75,17 @@ Nil client plus nil error is invalid. A nonnil client returned with an error is 
 
 Keep hook configuration and nested registration scopes immutable after construction. Synchronize mutable state captured by callbacks.
 
+### Acquisition deadline
+
+`StartConnection` bounds acquisition: `CreateClient` and `OnStart` together must finish within the connection acquisition timeout, measured from the start of `CreateClient`. The default is 10 seconds. A provider that registers `resourcev2.ConnectionAcquisitionTimeoutSetting()` lets users choose 1 to 300 whole seconds; the value applies to the next start. There is no other knob and no per-call override.
+
+- Both hooks receive a context that reports the deadline while acquisition runs. The deadline ends when acquisition succeeds. The retained client, the generation context and every later lease context have no deadline, and a context retained from `CreateClient` stays live until the generation ends.
+- If the deadline passes first, the start fails with `TIMEOUT`, `FAILED` status is recorded, the pending slot is freed, every waiter (`StartConnection`, `StopConnection`, `CheckConnection`, leases) is released, and a later start can succeed.
+- Hooks run on a goroutine owned by the SDK, so the release does not depend on the hook returning. A hook that honors its context returns promptly. A hook that ignores its context keeps running until it returns; the SDK cannot stop it and does not wait for it. If it later returns a client, the SDK tears that client down once (`OnStop`, then `DestroyClient`) and never makes it usable. A new start may begin while the old call is still running, so such a hook can overlap itself.
+- A provider that already applies its own timeout in `OnStart` nests inside this deadline; the earlier deadline wins, so the setting is the upper bound.
+
+Compatibility: a `CreateClient` plus `OnStart` that takes longer than the default now fails with `TIMEOUT` instead of waiting. Slow native authentication (for example interactive or exec-based credential plugins) must register the setting and be configured for a larger value, up to 300 seconds, or move slow work out of acquisition.
+
 ## Load, start, and use one profile
 
 The runnable [`ExampleLifecycle`](../pkg/resource/v2/example_test.go) uses an in-memory example client to demonstrate ownership, not a real network connection. Copy its control flow; replace its client hooks with your native implementation.

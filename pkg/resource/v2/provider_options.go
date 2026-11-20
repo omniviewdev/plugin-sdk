@@ -79,6 +79,24 @@ type Registration[ClientT any] struct {
 // CreateClient receives a generation context: the initiating request can cancel
 // startup until construction finishes, but a successful start outlives that request.
 // Stop, reconfiguration, Close, or startup failure cancel the generation.
+//
+// Acquisition deadline: CreateClient and OnStart together must finish within the
+// connection acquisition timeout (ConnectionAcquisitionTimeoutSetting, 1-300
+// seconds, default 10 when the provider does not register the setting). Both
+// receive a context that carries that deadline while acquisition runs. The
+// deadline bounds acquisition only: once OnStart returns successfully the
+// context reports no deadline and lives until the generation ends. Contexts
+// derived during acquisition keep the deadline they observed. A provider that
+// applies its own acquisition timeout in OnStart nests inside this one; the
+// earlier deadline wins, so the setting is the upper bound.
+// A CreateClient slower than the timeout fails the start with TIMEOUT.
+// When the deadline passes the SDK releases the slot, every waiter and the
+// creating StartConnection call even if CreateClient or OnStart ignores its
+// context: those callbacks run on a goroutine owned by the SDK. A callback that
+// ignores its context keeps running until it returns; the SDK cannot stop it. A
+// client it returns after the deadline is torn down once (OnStop, then
+// DestroyClient) and never becomes usable. A later start can begin immediately,
+// so a callback that ignores its context may overlap its own earlier call.
 // A nil client with nil error is invalid. Every returned nonnil client is destroyed
 // exactly once, including clients returned with an error or rejected by OnStart.
 //
