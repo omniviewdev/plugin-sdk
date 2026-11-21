@@ -23,12 +23,14 @@ jobs:
           cache: true
       - name: go version
         run: go version
-      - name: "before the fix (the loaders as on main) the new tests must fail"
+      - name: "before the fix (the files are never closed again) the real-file tests must fail"
         continue-on-error: true
         run: |
-          cp pkg/types/plugin.go /tmp/plugin.go.fixed
-          git show origin/main:pkg/types/plugin.go > pkg/types/plugin.go
-          go test ./pkg/types/ -run 'ClosesItsFile' -count=1 -v 2>&1 | head -80
-          cp /tmp/plugin.go.fixed pkg/types/plugin.go
-      - name: "after the fix the same tests must pass"
-        run: go test ./pkg/types/ -count=1 -v 2>&1 | head -120
+          sed -i 's/closeErr := configFile.Close()/var closeErr error/; s/closeErr := mdFile.Close()/var closeErr error/' pkg/types/plugin.go
+          git diff --stat
+          go test ./pkg/types/ -run 'ClosesItsFile' -count=1 -v 2>&1 | head -80 || true
+          git checkout -- pkg/types/plugin.go
+      - name: "after the fix the whole package must pass"
+        run: |
+          git diff --stat
+          go test ./pkg/types/ -count=1 -v 2>&1 | head -150
