@@ -75,6 +75,27 @@ Nil client plus nil error is invalid. A nonnil client returned with an error is 
 
 Keep hook configuration and nested registration scopes immutable after construction. Synchronize mutable state captured by callbacks.
 
+### Acquisition deadline
+
+`StartConnection` bounds acquisition: `CreateClient` and `OnStart` together must finish within the connection acquisition timeout, measured from the start of `CreateClient`. The default is 60 seconds. The bound exists to stop a start hanging forever, not to hurry it. Interactive credential helpers (exec plugins such as `aws eks get-token` behind SSO, OIDC browser logins, MFA prompts) routinely take tens of seconds, and client-go's exec authenticator ignores its context, so a short default would fail legitimate logins and leave the helper running.
+
+A plugin changes the bound in two ways. There is no per-connection and no per-call override.
+
+- Register `resourcev2.ConnectionAcquisitionTimeoutSetting()`. Users then choose 1 to 300 whole seconds, and the value applies to the next start. Until they choose one, the value is the setting's `Default`.
+- If your starts legitimately take longer than 60 seconds for everyone, set `Default` (an `int` from 1 to 300) on the returned `settings.Setting` before registering it. Users can still change it within 1 to 300.
+
+A plugin that does not register the setting always gets the default. The controller never fails a start because of the stored value: one that cannot be read, or is not a whole number, uses the default, and one outside 1 to 300 is clamped into that range. Each case is logged as a warning without the provider's error text.
+
+- Both hooks receive a context that reports the deadline while acquisition runs and is canceled with `context.DeadlineExceeded` when it passes. The deadline ends when acquisition succeeds. The retained client, the generation context and every later lease context have no deadline, and a context retained from `CreateClient` stays live until the generation ends.
+- A context derived from the hook context reports its parent's deadline, so it follows that change: a child made with a longer `context.WithTimeout` has no deadline after a successful start, and a child with an earlier timeout of its own keeps it. What does not follow is a deadline copied onto the wire while acquisition ran. A gRPC stream opened in `CreateClient` or `OnStart` with the hook's context carries the remaining acquisition time, and its server cancels the stream at the deadline although the start succeeded. Open long-lived streams and calls after the start succeeds, or from a context the client owns and cancels in `DestroyClient`, never from the hook's context.
+- If the deadline passes first, the start fails with `TIMEOUT`, `FAILED` status is recorded, the pending slot is freed, every waiter (`StartConnection`, `StopConnection`, `CheckConnection`, leases) is released, and a later start can succeed. The `TIMEOUT` carries one sentence for the user: the limit, and that the plugin's connection timeout setting can raise it.
+- If the generation is canceled first (the creator cancels, or `StopConnection`, reconfiguration or `Close` runs), the start fails with `CANCELLED` and is not recorded as `FAILED`. Hooks that honor the cancellation return within moments, and the client they return is torn down before the call returns, as for any failed start. Hooks that ignore it are abandoned after one second, the same way as at the deadline.
+- Hooks run on a goroutine owned by the SDK, so the release does not depend on the hook returning. A hook that honors its context returns promptly. A hook that ignores its context keeps running until it returns; the SDK cannot stop it and does not wait for it. If it later returns a client, the SDK tears that client down once (`OnStop`, then `DestroyClient`) and never makes it usable: it does not call `OnStart` for it, though a hook already inside `OnStart` when the start was abandoned finishes that call.
+- A new start may begin while the old call is still running, so such a hook can overlap itself. The late client's `OnStop` and `DestroyClient` may also run concurrently with the next generation's hooks for the same connection ID, even after `Close` has returned. State keyed by connection ID in these hooks must tolerate that.
+- A provider that already applies its own timeout in `OnStart` nests inside this deadline; the earlier deadline wins, so the setting is the upper bound.
+
+Compatibility: a `CreateClient` plus `OnStart` that takes longer than the bound now fails with `TIMEOUT` instead of waiting. A start that takes longer than 60 seconds by design (slow interactive or exec-based credential helpers) needs the setting registered with a larger `Default`, up to 300 seconds, or its slow work moved out of acquisition. A helper process that ignores its context keeps running after the timeout, and a retry starts another: the SDK cannot stop it.
+
 ## Load, start, and use one profile
 
 The runnable [`ExampleLifecycle`](../pkg/resource/v2/example_test.go) uses an in-memory example client to demonstrate ownership, not a real network connection. Copy its control flow; replace its client hooks with your native implementation.

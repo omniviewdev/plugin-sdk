@@ -79,6 +79,41 @@ type Registration[ClientT any] struct {
 // CreateClient receives a generation context: the initiating request can cancel
 // startup until construction finishes, but a successful start outlives that request.
 // Stop, reconfiguration, Close, or startup failure cancel the generation.
+//
+// Acquisition deadline: CreateClient and OnStart together must finish within the
+// connection acquisition timeout. The default is 60 seconds. A provider that
+// registers ConnectionAcquisitionTimeoutSetting lets users choose 1 to 300 seconds,
+// and one whose starts legitimately take longer for everyone sets Default on that
+// setting before registering it. A plugin that does not register the setting
+// always gets the default. Both hooks receive a context that carries the deadline
+// while acquisition runs and is canceled with DeadlineExceeded when it passes. The
+// deadline bounds acquisition only: once OnStart returns successfully the
+// context reports no deadline and lives until the generation ends. A context
+// derived from it reports its parent's deadline, so it follows that change unless
+// it sets an earlier deadline of its own. A deadline copied onto the wire while
+// acquisition ran does not: a gRPC stream opened in CreateClient or OnStart with
+// the hook's context is canceled by its server at the deadline although the start
+// succeeded. Open such streams after the start succeeds, or from a context the
+// client owns and cancels in DestroyClient. A provider that applies its own
+// acquisition timeout in OnStart nests inside this one; the earlier deadline wins,
+// so the setting is the upper bound.
+// A start slower than the timeout fails with TIMEOUT. When the deadline passes
+// the SDK releases the slot, every waiter and the creating StartConnection call
+// even if CreateClient or OnStart ignores its context: those callbacks run on a
+// goroutine owned by the SDK. The same holds when the generation is canceled (the
+// creator cancels, or StopConnection, reconfiguration or Close runs): callbacks
+// that honor the cancellation return within moments and their client is torn down
+// before the call returns, as for any failed start; callbacks that ignore it are
+// abandoned after one second, and the start fails with CANCELLED. A callback that
+// ignores its context keeps running until it returns; the SDK cannot stop it. A
+// client it returns after the start was abandoned is torn down once (OnStop, then
+// DestroyClient) and never becomes usable; the SDK does not call OnStart for it,
+// though a callback already inside OnStart at that moment finishes it. A later
+// start can begin immediately, so a callback that ignores its context may overlap
+// its own earlier call, and OnStop and DestroyClient of a late client may run
+// concurrently with the next generation's hooks for the same connection, even
+// after Close has returned: state keyed by the connection ID in these hooks must
+// tolerate that.
 // A nil client with nil error is invalid. Every returned nonnil client is destroyed
 // exactly once, including clients returned with an error or rejected by OnStart.
 //

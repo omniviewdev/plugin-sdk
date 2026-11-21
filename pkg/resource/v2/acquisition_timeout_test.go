@@ -60,3 +60,12 @@ func TestConnectionAcquisitionTimeoutRejectsInvalidRuntimePolicy(t *testing.T) {
 		}
 	}
 }
+
+// A provider that resolves the bound for work of its own, and never registered the
+// setting, gets the default rather than an error.
+func TestConnectionAcquisitionTimeoutUsesTheDefaultForAnUnregisteredSetting(t *testing.T) {
+	ctx := WithSession(context.Background(), Session{PluginConfig: pluginSettings(t, false, 0)})
+	if got, err := ConnectionAcquisitionTimeout(ctx); err != nil || got != time.Minute {
+		t.Fatalf("timeout = %v, %v, want the 1m0s default", got, err)
+	}
+}

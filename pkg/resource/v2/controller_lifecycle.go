@@ -214,20 +214,21 @@ func (c *Controller[T]) startClient(spanCtx context.Context, s *clientSlot[T]) {
 		}
 	}()
 	connection := cloneConnection(s.connection)
+	timeout := c.acquisitionTimeout(s.ctx)
 	session, _ := SessionFromContext(s.ctx)
 	session.Connection = &connection
-	ctx := WithSession(s.ctx, session)
-	span.AddEvent("create_client")
-	s.client, s.err = c.cfg.Lifecycle.CreateClient(ctx, connection)
-	if s.err == nil && s.client == nil {
-		s.err = NewError("INTERNAL", "CreateClient returned a nil client.")
-	}
-	if s.err == nil && c.cfg.Lifecycle.OnStart != nil {
-		span.AddEvent("on_start")
-		s.err = c.cfg.Lifecycle.OnStart(ctx, connection, s.client)
-	}
-	if s.err == nil {
-		s.err = s.ctx.Err()
+	ctx := newAcquisitionContext(WithSession(s.ctx, session), timeout, cancelGrace)
+	results := make(chan acquisitionResult[T], 1)
+	go c.acquire(spanCtx, s, ctx, connection, results)
+	select {
+	case result := <-results:
+		s.client, s.err = result.client, result.err
+	case <-ctx.abandoned:
+		// The acquisition is abandoned: its late result, if any, is destroyed by
+		// acquire. Nothing it produces can reach this slot.
+		var event string
+		event, s.err = ctx.abandonment()
+		span.AddEvent(event)
 	}
 }
 
@@ -236,6 +237,12 @@ func (c *Controller[T]) startClient(spanCtx context.Context, s *clientSlot[T]) {
 // cancellation of another waiter only ends that wait. Accepted generations then
 // outlive the initiating request. CreateClient and OnStart must both succeed
 // before CONNECTED, which reports lifecycle registration, not network health.
+// They must also finish within the acquisition timeout (default 60 seconds; see
+// ConnectionAcquisitionTimeoutSetting); otherwise the start fails with TIMEOUT,
+// the slot is freed and waiters are released. A start whose generation is
+// canceled (the creator cancels, or StopConnection, reconfiguration or Close
+// runs) is released the same way once its callbacks have had a moment to return.
+// See Lifecycle for callbacks that ignore their context.
 //
 // Failure drains and destroys any returned client and retains only safe FAILED
 // status. A later explicit call retries with a fresh generation. Unknown IDs are
@@ -390,7 +397,9 @@ func (c *Controller[T]) stopSlot(s *clientSlot[T]) error {
 //
 // After retirement begins, caller cancellation does not skip draining or cleanup.
 // This can block on callbacks that ignore cancellation; never call synchronously
-// from work holding this generation's lease or from its lifecycle callbacks.
+// from work holding this generation's lease or from its lifecycle callbacks. A
+// pending start is the exception: its callbacks are abandoned after one second if
+// they ignore the cancellation (see Lifecycle), so waiting for startup is bounded.
 func (c *Controller[T]) StopConnection(ctx context.Context, id string) (connection types.Connection, err error) {
 	ctx, _, finish := lifecycleStart(ctx, "stop", id)
 	defer func() { finish(err) }()
@@ -516,7 +525,10 @@ func (c *Controller[T]) CheckConnection(ctx context.Context, id string) (status 
 // drains leases, and destroys clients. Repeated and concurrent calls return the
 // same accumulated teardown error. Close has no timeout: callbacks must observe
 // cancellation and cleanup must terminate. Never call it synchronously from a
-// leased callback or lifecycle callback whose completion Close must await.
+// leased callback or lifecycle callback whose completion Close must await. A
+// pending start whose callbacks ignore the cancellation is abandoned after one
+// second; Close does not wait for them, and the client they return later is torn
+// down after Close has returned (see Lifecycle).
 func (c *Controller[T]) Close() error {
 	c.closeOnce.Do(func() {
 		c.mu.Lock()

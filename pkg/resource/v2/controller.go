@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
@@ -51,6 +52,9 @@ type Controller[ClientT any] struct {
 	catalogNonce     [32]byte
 	metadata         map[string]*connectionMetadataState[ClientT]
 	metadataWatchers map[*metadataWatcher]struct{}
+	// acquisitionTimeout resolves the bound on one connection start. It is
+	// startAcquisitionTimeout except in tests, which use millisecond bounds.
+	acquisitionTimeout func(context.Context) time.Duration
 }
 
 type clientSlot[T any] struct {
@@ -119,6 +123,8 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 		failedStarts:      make(map[string]bool),
 		metadata:          make(map[string]*connectionMetadataState[T]),
 		metadataWatchers:  make(map[*metadataWatcher]struct{}),
+
+		acquisitionTimeout: startAcquisitionTimeout,
 	}
 	// Close owns cancellation after construction; the controller outlives this call.
 	//nolint:gosec // G118: Close cancels the owned controller lifetime.
