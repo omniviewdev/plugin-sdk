@@ -52,12 +52,17 @@
 //
 // Every connection start is bounded by an acquisition deadline: CreateClient and
 // OnStart share one budget that begins when CreateClient is called. The budget is
-// the ConnectionAcquisitionTimeoutSetting value when the provider registers it,
-// otherwise the default: 1-300 whole seconds, default 10, applied to the next
-// start. When it passes, the start fails with TIMEOUT, the pending slot is freed,
-// waiters are released and a later start can succeed. The deadline ends when
-// acquisition succeeds; it is never the lifetime of the client or its generation
-// context. See Lifecycle for the guarantee when CreateClient ignores its context.
+// 60 seconds unless the provider registers ConnectionAcquisitionTimeoutSetting, in
+// which case users choose 1-300 whole seconds, applied to the next start; a
+// provider whose starts legitimately take longer sets Default on that setting
+// before registering it. The bound exists to stop a start hanging forever, not to
+// hurry it: interactive credential helpers (SSO, OIDC browser logins, MFA prompts)
+// routinely take tens of seconds. When it passes, the start fails with TIMEOUT,
+// the pending slot is freed, waiters are released and a later start can succeed. A
+// canceled start is released the same way once its callbacks have had a moment to
+// return. The deadline ends when acquisition succeeds; it is never the lifetime of
+// the client or its generation context. See Lifecycle for the guarantee when
+// CreateClient ignores its context.
 // Providers resolve ConnectionAcquisitionTimeout themselves only for other
 // acquisition work such as catalog refresh, applying it with context.WithTimeout
 // to that work, not the retained client's generation context.

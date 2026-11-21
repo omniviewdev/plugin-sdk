@@ -36,7 +36,7 @@ func shortAcquisitionController(t *testing.T, cfg Config[string]) *Controller[st
 func acquisitionController(t *testing.T, cfg Config[string], timeout time.Duration) *Controller[string] {
 	t.Helper()
 	c := newTestController(t, cfg)
-	c.acquisitionTimeout = func(context.Context) (time.Duration, error) { return timeout, nil }
+	c.acquisitionTimeout = func(context.Context) time.Duration { return timeout }
 	if _, err := c.LoadConnections(context.Background()); err != nil {
 		t.Fatal(err)
 	}
