@@ -176,31 +176,61 @@ func (p *Plugin) ToInfo() PluginInfo {
 }
 
 // LoadPluginMetadata loads the metadata for a plugin from the given path.
+//
+// The plugin.yaml it opens is closed before the function returns, on every
+// path: Windows refuses to rename or remove a plugin's directory while a file
+// inside it is open, and waiting for the garbage collector to finalize the
+// file would leave an update or an uninstall failing until it happens to run.
 func LoadPluginMetadata(path string) (config.PluginMeta, error) {
-	var settings config.PluginMeta
-
 	configFile, err := os.Open(path + "/plugin.yaml")
 	if err != nil {
 		return config.PluginMeta{}, fmt.Errorf("error loading plugin config file: %w", err)
 	}
 
-	yamlParser := yaml.NewDecoder(configFile)
-	if err = yamlParser.Decode(&settings); err != nil {
+	return decodePluginMetadata(configFile)
+}
+
+// decodePluginMetadata decodes the manifest from configFile and closes it. A
+// failure to close is returned only when the decode itself succeeded, so it
+// never hides the reason the manifest could not be read.
+func decodePluginMetadata(configFile io.ReadCloser) (settings config.PluginMeta, err error) {
+	defer func() {
+		if closeErr := configFile.Close(); closeErr != nil && err == nil {
+			settings, err = config.PluginMeta{}, fmt.Errorf("error closing plugin config file: %w", closeErr)
+		}
+	}()
+
+	if err = yaml.NewDecoder(configFile).Decode(&settings); err != nil {
 		return config.PluginMeta{}, fmt.Errorf("error parsing plugin config file: %w", err)
 	}
 
 	return settings, nil
 }
 
-// LoadPluginMarkdown loads the plugin markdown from the filesystem.
+// LoadPluginMarkdown loads the plugin markdown from the filesystem. Like
+// LoadPluginMetadata, it closes the README.md it opens before it returns.
 func LoadPluginMarkdown(path string) (string, error) {
 	mdFile, err := os.Open(path + "/README.md")
 	if err != nil {
 		return "", fmt.Errorf("error loading plugin markdown file: %w", err)
 	}
+
+	return readPluginMarkdown(mdFile)
+}
+
+// readPluginMarkdown reads all of mdFile and closes it. A failure to close is
+// returned only when the read itself succeeded.
+func readPluginMarkdown(mdFile io.ReadCloser) (markdown string, err error) {
+	defer func() {
+		if closeErr := mdFile.Close(); closeErr != nil && err == nil {
+			markdown, err = "", fmt.Errorf("error closing plugin markdown file: %w", closeErr)
+		}
+	}()
+
 	md, err := io.ReadAll(mdFile)
 	if err != nil {
 		return "", fmt.Errorf("error reading plugin markdown file: %w", err)
 	}
+
 	return string(md), nil
 }
