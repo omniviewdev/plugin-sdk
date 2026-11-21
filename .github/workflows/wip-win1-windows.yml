@@ -23,12 +23,12 @@ jobs:
           cache: true
       - name: go version
         run: go version
-      - name: before the fix (the loaders as on main): the new tests must fail
+      - name: "before the fix (the loaders as on main) the new tests must fail"
         continue-on-error: true
         run: |
           cp pkg/types/plugin.go /tmp/plugin.go.fixed
           git show origin/main:pkg/types/plugin.go > pkg/types/plugin.go
           go test ./pkg/types/ -run 'ClosesItsFile' -count=1 -v 2>&1 | grep -E '^(---|ok|FAIL|PASS)|^\s+---|Error:|Messages|Access|denied|another process' | head -60
           cp /tmp/plugin.go.fixed pkg/types/plugin.go
-      - name: after the fix: the same tests must pass
+      - name: "after the fix the same tests must pass"
         run: go test ./pkg/types/ -count=1 -v 2>&1 | grep -E '^(---|ok|FAIL|PASS)|^\s+---|Error:|Messages' | head -60
