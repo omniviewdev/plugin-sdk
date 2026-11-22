@@ -24,6 +24,16 @@ enum LogStreamEventType {
     LOG_STREAM_EVENT_RECONNECTED = 4;
     LOG_STREAM_EVENT_STREAM_ENDED = 5;
     LOG_STREAM_EVENT_SESSION_READY = 6;
+    // One source's replay, the lines it already held when its stream opened, has been
+    // delivered: the lines it sends after this event, until its stream opens again, are
+    // live. source_id names the source. Sent at most once for each opening of the source's
+    // stream (a source that reopens delivers its tail again and is caught up again), and
+    // only to a session that asked for replay markers with
+    // params["omniview.log.replay-markers"] = "1" and whose plugin accepted (the create
+    // reply carries params["omniview.log.replay-markers.accepted"] = "1"). A reader built
+    // before this value existed decodes it as SOURCE_ADDED, so a reader must not ask
+    // unless its own SDK knows it.
+    LOG_STREAM_EVENT_SOURCE_CAUGHT_UP = 7;
 }
 
 enum LogStreamCommand {
@@ -61,6 +71,11 @@ message LogLine {
     bytes content = 5;
     LogLineOrigin origin = 6;
     LogLevel level = 7;
+    reserved 8;
+    // True for a line of a source's replay: one of the first lines of its stream, the
+    // ones the source already held when the stream opened, up to the source's next
+    // SOURCE_CAUGHT_UP event. Set only on a session whose plugin accepted replay markers.
+    bool replay = 9;
 }
 
 message LogSource {

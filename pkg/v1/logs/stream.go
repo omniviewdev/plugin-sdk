@@ -10,8 +10,10 @@ import (
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 
-// LogLineOrigin indicates the origin of a log line.
-type LogLineOrigin int
+// LogLineOrigin indicates the origin of a log line. It is an int32 rather than an int
+// so that a [LogLine], which is allocated once per line, stays in the 96-byte size
+// class it had before [LogLine.Replay] existed.
+type LogLineOrigin int32
 
 const (
 	// LogLineOriginCurrent identifies output from the current source instance.
@@ -118,7 +120,14 @@ type LogLine struct {
 	Timestamp time.Time         `json:"timestamp"`
 	Content   string            `json:"content"`
 	Origin    LogLineOrigin     `json:"origin"`
-	Level     LogLevel          `json:"level"`
+	// Replay is true for a line of a source's replay: one of the first lines of its
+	// stream, the ones the source already held when the stream opened, up to the
+	// source's next [StreamEventSourceCaughtUp] event. It is set only on a session
+	// whose plugin accepted replay markers ([LogSession.ReplayMarkers]); on any other
+	// it is false for every line and says nothing about whether the line is replay. It
+	// sits beside Origin, in the word that field leaves free, so the struct does not grow.
+	Replay bool     `json:"replay,omitempty"`
+	Level  LogLevel `json:"level"`
 }
 
 // ToProto encodes the line content and timestamp, sharing its Labels map.
@@ -131,6 +140,7 @@ func (l *LogLine) ToProto() *logspb.LogLine {
 		Content:   []byte(l.Content),
 		Origin:    l.Origin.ToProto(),
 		Level:     l.Level.ToProto(),
+		Replay:    l.Replay,
 	}
 }
 
@@ -148,6 +158,7 @@ func LogLineFromProto(p *logspb.LogLine) LogLine {
 		Content:   string(p.GetContent()),
 		Origin:    LogLineOriginFromProto(p.GetOrigin()),
 		Level:     LogLevelFromProto(p.GetLevel()),
+		Replay:    p.GetReplay(),
 	}
 }
 
@@ -207,7 +218,19 @@ const (
 	StreamEventStreamEnded
 	// StreamEventSessionReady announces completion of session source setup.
 	StreamEventSessionReady
+	// StreamEventSourceCaughtUp announces that one source's replay has been delivered:
+	// the lines it sends after this event, until its stream opens again, are live. It
+	// is sent only to a session that asked for replay markers with
+	// [ParamReplayMarkers] and whose plugin accepted ([LogSession.ReplayMarkers]), at
+	// most once for each opening of the source's stream: a source that reopens
+	// delivers its tail again and is caught up again.
+	StreamEventSourceCaughtUp
 )
+
+// StreamEventUnknown is what a reader decodes an event kind it does not know to.
+// It has no wire value and is never sent: a newer plugin's event must neither
+// vanish nor pass for a source joining the session.
+const StreamEventUnknown LogStreamEventType = -1
 
 // String returns the event name or a numeric description for unknown values.
 func (t LogStreamEventType) String() string {
@@ -226,12 +249,16 @@ func (t LogStreamEventType) String() string {
 		return "StreamEnded"
 	case StreamEventSessionReady:
 		return "SessionReady"
+	case StreamEventSourceCaughtUp:
+		return "SourceCaughtUp"
+	case StreamEventUnknown:
+		return "Unknown"
 	default:
 		return fmt.Sprintf("LogStreamEventType(%d)", int(t))
 	}
 }
 
-// ToProto encodes the event kind, defaulting unknown values to source-added.
+// ToProto encodes the event kind; a value with no wire counterpart encodes as source-added.
 func (t LogStreamEventType) ToProto() logspb.LogStreamEventType {
 	switch t {
 	case StreamEventSourceAdded:
@@ -248,11 +275,16 @@ func (t LogStreamEventType) ToProto() logspb.LogStreamEventType {
 		return logspb.LogStreamEventType_LOG_STREAM_EVENT_STREAM_ENDED
 	case StreamEventSessionReady:
 		return logspb.LogStreamEventType_LOG_STREAM_EVENT_SESSION_READY
+	case StreamEventSourceCaughtUp:
+		return logspb.LogStreamEventType_LOG_STREAM_EVENT_SOURCE_CAUGHT_UP
+	case StreamEventUnknown:
+		// Nothing on the wire stands for an event kind the reader did not know.
 	}
 	return logspb.LogStreamEventType_LOG_STREAM_EVENT_SOURCE_ADDED
 }
 
-// LogStreamEventTypeFromProto decodes the event kind, defaulting unknown values to source-added.
+// LogStreamEventTypeFromProto decodes the event kind. A kind this SDK does not know
+// (a newer plugin's) decodes to [StreamEventUnknown], never to a source joining.
 func LogStreamEventTypeFromProto(p logspb.LogStreamEventType) LogStreamEventType {
 	switch p {
 	case logspb.LogStreamEventType_LOG_STREAM_EVENT_SOURCE_ADDED:
@@ -269,8 +301,10 @@ func LogStreamEventTypeFromProto(p logspb.LogStreamEventType) LogStreamEventType
 		return StreamEventStreamEnded
 	case logspb.LogStreamEventType_LOG_STREAM_EVENT_SESSION_READY:
 		return StreamEventSessionReady
+	case logspb.LogStreamEventType_LOG_STREAM_EVENT_SOURCE_CAUGHT_UP:
+		return StreamEventSourceCaughtUp
 	}
-	return StreamEventSourceAdded
+	return StreamEventUnknown
 }
 
 // LogStreamEvent represents a lifecycle event during streaming.
