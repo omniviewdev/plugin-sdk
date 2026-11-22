@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
+	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -179,9 +180,19 @@ func (c *PluginClient) UpdateSessionOptions(
 		},
 	)
 	if err != nil {
-		return nil, err
+		return nil, updateError(err)
 	}
 	return LogSessionFromProto(resp.GetSession()), nil
+}
+
+// updateError restores the classification of a refusal the plugin sent: an update
+// that would start a source of a session that has ended. Any other failure reaches
+// the caller as it always did.
+func updateError(err error) error {
+	if restored := resourceplugin.ResourceDomainError(err); errors.As(restored, new(*resourcev2.ResourceOperationError)) {
+		return restored
+	}
+	return err
 }
 
 // Stream forwards input and output until cancellation or transport termination.

@@ -197,6 +197,18 @@ markers with `logs.ParamReplayMarkers` be told where each source's replay ends
 (`LogSession.ReplayMarkers`, known from the create reply). The handler's own stream is
 delivered unchanged. See the README's "Replay markers" section for the contract.
 
+A session can gain sources while it is alive: `UpdateSessionOptions` with
+`enabled_sources` restarts every enabled source that is not running, including one
+that ended on its own. A session is alive while its initial sources run and, after
+that, while any other producer does: the watcher of dynamic sources, a source it
+added, a source an update restarted. When the last has returned the session has
+ended. `STREAM_ENDED` is sent and no source starts again: an update that would start
+one is refused with a `CONFLICT` error and changes nothing, and so is one that lands
+while the session is being closed. An update that starts no source (other options, a
+selection that names none that is not running) is applied as ever, to an ended
+session too. The refusal keeps its `CONFLICT` classification across the plugin
+boundary.
+
 ## Next
 
 - [Expose a resource type and implement Get](resources.md).
