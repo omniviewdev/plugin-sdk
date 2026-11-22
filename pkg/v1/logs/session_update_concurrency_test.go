@@ -237,7 +237,7 @@ func TestOverlappingUpdatesLeaveTheSourcesTheLastStoredSelectionEnables(t *testi
 		time.Sleep(time.Millisecond)
 	}
 
-	ss.producers.mu.Lock() // freezes whichever update has to reserve a producer, at the reservation
+	thaw := ss.producers.Freeze() // freezes whichever update has to reserve a producer, at the reservation
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		if _, err := r.update(r.session.ID, selection("")); err != nil {
@@ -257,7 +257,7 @@ func TestOverlappingUpdatesLeaveTheSourcesTheLastStoredSelectionEnables(t *testi
 	case <-secondDone:
 	case <-time.After(150 * time.Millisecond):
 	}
-	ss.producers.mu.Unlock()
+	thaw()
 	wg.Wait()
 
 	r.waitSettled(enabledBy(r.storedSelection(), []string{"a", "b"}), "after both updates")

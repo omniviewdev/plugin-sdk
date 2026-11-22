@@ -99,9 +99,19 @@ func (c *PluginClient) CreateSession(
 		proto,
 	)
 	if err != nil {
-		return nil, err
+		return nil, createError(err)
 	}
 	return NewSessionFromProto(resp.GetSession()), nil
+}
+
+// createError restores the classification of a refusal the plugin sent: a start that a manager
+// that has been closed refused with CONNECTION_ERROR. Any other failure reaches the caller as it
+// always did, status and sentence included.
+func createError(err error) error {
+	if restored := resourceplugin.ResourceDomainError(err); errors.As(restored, new(*resourcev2.ResourceOperationError)) {
+		return restored
+	}
+	return err
 }
 
 // CreateResourceSession validates options and response admission without legacy fallback.

@@ -27,9 +27,6 @@ func SetClock(m *Manager, c timeutil.Clock) {
 	m.clock = c
 }
 
-// WaitDone blocks until all session goroutines have completed.
-func WaitDone(m *Manager) { m.wg.Wait() }
-
 // Sessions returns a defensive copy of the internal sessions map for test inspection.
 func Sessions(m *Manager) map[string]*sessionState {
 	m.mu.RLock()

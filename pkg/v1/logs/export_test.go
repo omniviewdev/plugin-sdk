@@ -16,11 +16,6 @@ func SetClock(m *Manager, c timeutil.Clock) {
 	m.clock = c
 }
 
-// WaitDone blocks until all session goroutines have completed.
-func WaitDone(m *Manager) {
-	m.wg.Wait()
-}
-
 // ExtractTimestampForBench exposes extractTimestamp for benchmarking.
 func ExtractTimestampForBench(line []byte) (time.Time, string) {
 	return extractTimestamp(line)

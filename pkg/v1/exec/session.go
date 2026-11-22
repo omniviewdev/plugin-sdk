@@ -82,6 +82,13 @@ type sessionState struct {
 
 	ttyResize bool // if true, manager calls terminal.Resize(); else sends to resize chan
 	nextSeq   uint64
+
+	// emitMu orders the session's output: data and signals are handed to the sink under it,
+	// and ended is set under it once the Close signal is out. The Close signal is the last
+	// thing a session sends: data still on its way when the session ends is delivered first,
+	// and data that comes after the signal is dropped (it stays in the buffer).
+	emitMu sync.Mutex
+	ended  bool
 }
 
 // snapshot returns a deep copy of the session for safe external reads.

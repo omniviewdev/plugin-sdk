@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/omniviewdev/plugin-sdk/internal/producers"
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
@@ -66,8 +67,8 @@ type sessionState struct {
 	// producers tracks the watcher of dynamic sources, the sources it adds and the
 	// sources an options update restarts, so that orchestrateSession can wait for
 	// them before it publishes the end, and a session that has ended can say so to
-	// an update that would start one. See producerGroup for the session's states.
-	producers producerGroup
+	// an update that would start one. See [producers.Group] for the session's states.
+	producers producers.Group
 
 	// sourceSem limits concurrent streaming goroutines per session.
 	// Initialized once in orchestrateSession before any sources launch.
@@ -146,7 +147,7 @@ func (s *sessionState) startProducers(n int) bool {
 	if s.ctx.Err() != nil {
 		return false
 	}
-	return s.producers.start(n)
+	return s.producers.Start(n)
 }
 
 // ---------------------------------------------------------------------------
@@ -178,9 +179,13 @@ type Manager struct {
 
 	mu       sync.RWMutex
 	sessions map[string]*sessionState
-	closed   bool
+	closed   bool              // set by Close and Wait: no session is admitted from then on
 	out      chan StreamOutput // nil when Sink provided via config
-	wg       sync.WaitGroup
+
+	// running counts the sessions that were admitted and have not finished: one producer
+	// per session, started under mu with the check of closed, so that Close and Wait,
+	// which set closed under mu before they wait, cannot miss a session or race one.
+	running producers.Group
 }
 
 var _ Provider = (*Manager)(nil)
@@ -384,14 +389,20 @@ func (m *Manager) createSession(
 	if m.closed {
 		m.mu.Unlock()
 		cancel()
-		return nil, nil, resourceError("CONNECTION_ERROR", "Log manager is closed.")
+		return nil, nil, closedError()
 	}
 	if _, exists := m.sessions[sessionID]; exists {
 		m.mu.Unlock()
 		cancel()
 		return nil, nil, resourceError("CONFLICT", "Log session ID already exists.")
 	}
-	m.wg.Add(1)
+	if !m.running.Start(1) {
+		// Not reachable: the group ends only after Close or Wait has set closed, which
+		// is checked above, under the lock that admits.
+		m.mu.Unlock()
+		cancel()
+		return nil, nil, closedError()
+	}
 	m.sessions[sessionID] = ss
 	m.mu.Unlock()
 
@@ -468,7 +479,7 @@ func (m *Manager) CloseSession(_ *types.PluginContext, sessionID string) error {
 // flight plausible). The lock is not held while an update announces what it changed.
 //
 // A session can take a source for as long as it is alive: while its initial sources
-// run, and afterwards while one of its producers still does (see producerGroup). Once
+// run, and afterwards while one of its producers still does (see [producers.Group]). Once
 // the last producer has returned, or the session is being closed, an update that would
 // start a source is refused with a CONFLICT error (see [resourcev2.ErrorCode]) and
 // changes nothing: not the options, not the sources. An update that starts no source is
@@ -527,12 +538,20 @@ func (m *Manager) Stream(ctx context.Context, in chan StreamInput) (chan StreamO
 	return m.out, nil
 }
 
-// Wait blocks until all session goroutines finish.
+// Wait stops the manager from taking sessions, as Close does, and blocks until the sessions
+// it holds have finished. Unlike Close it cancels none of them: a session that ends on its
+// own is waited for, one that follows its source until it is closed is waited for until it
+// is. A start that comes after Wait began, or that races it, is refused with a
+// CONNECTION_ERROR (see [resourcev2.ErrorCode]), never admitted and never lost.
 func (m *Manager) Wait() {
-	m.wg.Wait()
+	m.mu.Lock()
+	m.closed = true
+	m.mu.Unlock()
+	m.running.Wait()
 }
 
-// Close cancels all active sessions and waits for their goroutines to finish.
+// Close refuses every later session start, cancels the active sessions and waits for their
+// goroutines to finish. It may be called more than once, and concurrently, as may Wait.
 func (m *Manager) Close() {
 	m.mu.Lock()
 	m.closed = true
@@ -542,7 +561,12 @@ func (m *Manager) Close() {
 		delete(m.sessions, id)
 	}
 	m.mu.Unlock()
-	m.wg.Wait()
+	m.running.Wait()
+}
+
+// closedError is what a start gets from a manager that has been closed, or has begun to wait.
+func closedError() error {
+	return resourceError("CONNECTION_ERROR", "Log manager is closed.")
 }
 
 // ---------------------------------------------------------------------------
@@ -550,7 +574,7 @@ func (m *Manager) Close() {
 // ---------------------------------------------------------------------------
 
 func (m *Manager) orchestrateSession(ss *sessionState) {
-	defer m.wg.Done()
+	defer m.running.Done()
 	defer m.finalizeSession(ss)
 
 	// Initialize the session-level concurrency semaphore once, before any
@@ -656,9 +680,9 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 	// because fanOutSources blocks until all source goroutines complete.
 	if opts.Options.Follow && result.Events != nil {
 		// The group is open until finalizeSession waits, so start cannot be refused.
-		if ss.producers.start(1) {
+		if ss.producers.Start(1) {
 			go func() {
-				defer ss.producers.done()
+				defer ss.producers.Done()
 				m.watchSourceEvents(ss, h, result.Events, logger)
 			}()
 		}
@@ -671,7 +695,7 @@ func (m *Manager) orchestrateSession(ss *sessionState) {
 // group ends when the last producer returns; an update that arrives after that is
 // refused instead of starting a source the session would never wait for.
 func (m *Manager) finalizeSession(ss *sessionState) {
-	ss.producers.wait()
+	ss.producers.Wait()
 	if ss.status() != LogSessionStatusError {
 		ss.setStatus(LogSessionStatusClosed)
 	}
@@ -1117,11 +1141,11 @@ func (m *Manager) watchSourceEvents(
 				ss.mu.RLock()
 				currentOpts := ss.opts
 				ss.mu.RUnlock()
-				if !ss.producers.start(1) {
+				if !ss.producers.Start(1) {
 					return // unreachable: the watcher is a producer itself, so the group cannot have ended
 				}
 				go func(src LogSource, opts CreateSessionOptions, ctx context.Context, run *sourceRun) {
-					defer ss.producers.done()
+					defer ss.producers.Done()
 					m.launchRegisteredSource(ctx, run, ss, handler, src, opts, logger)
 				}(event.Source, currentOpts, sourceCtx, run)
 
@@ -1287,7 +1311,7 @@ func (m *Manager) changeSources(ss *sessionState, selection string) (sourceChang
 			for _, src := range restart {
 				ctx, run, ok := ss.registerLocked(src.ID)
 				if !ok { // not reachable: sourceMu is held and the source had no run; give the reservation back
-					ss.producers.done()
+					ss.producers.Done()
 					continue
 				}
 				change.restart = append(change.restart, pendingSource{source: src, ctx: ctx, run: run})
@@ -1338,7 +1362,7 @@ func (m *Manager) startChangedSources(ss *sessionState, change sourceChange) {
 			Timestamp: m.clock.Now(),
 		})
 		go func(p pendingSource) {
-			defer ss.producers.done()
+			defer ss.producers.Done()
 			m.launchRegisteredSource(p.ctx, p.run, ss, change.handler, p.source, opts, logger)
 		}(p)
 	}
