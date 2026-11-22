@@ -91,7 +91,7 @@ func (o CreateSessionOptions) ToProto() (*logspb.CreateLogSessionRequest, error)
 		SessionId:   o.SessionID,
 		ResourceKey: o.ResourceKey,
 		ResourceId:  o.ResourceID,
-		Options:     o.Options.ToProto(),
+		Options:     requestOptions(&o.Options),
 	}
 	if o.HasResourceIntent() {
 		p.ResourceWireVersion = ResourceSessionWireVersion

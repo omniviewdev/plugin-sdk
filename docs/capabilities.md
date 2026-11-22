@@ -191,6 +191,12 @@ channel retains bounded early output before the transport attaches. A slow or
 unattached consumer applies backpressure, and session cancellation unblocks
 output delivery rather than waiting for the transport to drain.
 
+A handler that sets `logs.Handler.ReplayCount` lets a reader that asks for replay
+markers with `logs.ParamReplayMarkers` be told where each source's replay ends
+(`LogLine.Replay`, `StreamEventSourceCaughtUp`) and whether they will come at all
+(`LogSession.ReplayMarkers`, known from the create reply). The handler's own stream is
+delivered unchanged. See the README's "Replay markers" section for the contract.
+
 A session can gain sources while it is alive: `UpdateSessionOptions` with
 `enabled_sources` restarts every enabled source that is not running, including one
 that ended on its own. A session is alive while its initial sources run and, after

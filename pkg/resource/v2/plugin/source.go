@@ -102,6 +102,13 @@ func sourceCatalogCheck(ctx context.Context, provider resourcev2.Provider, reque
 		return ctx.Err()
 	}
 	if err != nil {
+		// A peer can report its own deadline before this context's timer has set
+		// ctx.Err(). The caller's cancellation was checked above and still wins; a
+		// provider classification is never reclassified.
+		var typed *resourcev2.ResourceOperationError
+		if !errors.As(err, &typed) && status.Code(err) == codes.DeadlineExceeded {
+			return context.DeadlineExceeded
+		}
 		return err
 	}
 	return resourcev2.CheckSourceCatalog(ctx, catalog, request, descriptor)
