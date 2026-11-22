@@ -139,7 +139,7 @@ func (c *Client) WatchConnectionMetadata(ctx context.Context, sink resourcev2.Co
 	if err != nil {
 		return domainError(err)
 	}
-	if err = s.SendMsg(&resourcepb.AncillaryRequest{Version: resourcev2.WireVersion, Operation: watchConnectionMetadataOperation}); err != nil {
+	if err = s.SendMsg(&resourcepb.AncillaryRequest{Version: c.wire, Operation: watchConnectionMetadataOperation}); err != nil {
 		return domainError(err)
 	}
 	if err = s.CloseSend(); err != nil {
@@ -157,7 +157,7 @@ func (c *Client) WatchConnectionMetadata(ctx context.Context, sink resourcev2.Co
 		if e.err != nil {
 			return e.err
 		}
-		if p.Version != resourcev2.WireVersion {
+		if p.Version != c.wire {
 			return unsupported("unsupported stream response version")
 		}
 		var event resourcev2.ConnectionMetadataEvent

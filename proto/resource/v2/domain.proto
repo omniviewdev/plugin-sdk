@@ -151,6 +151,9 @@ message ResourceType {
   bool acquire_on_connect = 11;
   // Optional descriptive metadata; does not grant capability.
   string description = 12;
+  // Wire 4. REQUIRED from wire 4 on (a catalog type without it is refused);
+  // absent and unknown to a wire-3 reader (an older strict reader rejects it).
+  string environment = 13;
 }
 
 message NativeAuthorityHint {

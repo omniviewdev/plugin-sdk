@@ -31,7 +31,7 @@ import (
 // CurrentProtocolVersion is the SDK protocol version that this SDK release
 // implements. It is used as the key in go-plugin's VersionedPlugins map so
 // that the engine and plugin can negotiate the highest common version.
-const CurrentProtocolVersion = 1
+const CurrentProtocolVersion = 2
 
 // LogLevelEnvironment names the environment variable the host uses to set the
 // initial plugin log level (trace, debug, info, warn, error). It is ignored when

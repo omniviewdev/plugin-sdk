@@ -19,6 +19,10 @@ type GRPCPlugin struct {
 
 	Impl             resourcev2.Provider
 	SettingsProvider pkgsettings.Provider
+	// PeerWire is the resource wire of the plugin a host's client talks to; a host
+	// puts one GRPCPlugin per go-plugin protocol version it reads in VersionedPlugins.
+	// Zero means the current wire. Plugins leave it unset.
+	PeerWire uint32
 }
 
 // GRPCServer registers resource services with the plugin's gRPC server.
@@ -29,7 +33,10 @@ func (p *GRPCPlugin) GRPCServer(_ *goplugin.GRPCBroker, s *grpc.Server) error {
 
 // GRPCClient constructs the remote resource provider client.
 func (p *GRPCPlugin) GRPCClient(_ context.Context, _ *goplugin.GRPCBroker, c *grpc.ClientConn) (any, error) {
-	return NewClient(c), nil
+	if p.PeerWire == 0 {
+		return NewClient(c), nil
+	}
+	return NewClientWire(c, p.PeerWire), nil
 }
 
 // ServerOptions bounds incoming and outgoing resource frames.

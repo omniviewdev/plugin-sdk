@@ -11,8 +11,8 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/lifecycle"
 )
 
-func TestCurrentProtocolVersion_IsOne(t *testing.T) {
-	assert.Equal(t, 1, CurrentProtocolVersion)
+func TestCurrentProtocolVersion_IsTwo(t *testing.T) {
+	assert.Equal(t, 2, CurrentProtocolVersion)
 }
 
 func TestRegisterLifecycle_UseCurrentProtocolVersion(t *testing.T) {

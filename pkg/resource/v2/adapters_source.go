@@ -468,7 +468,7 @@ func toSourceFrame(v SourceFrame) *resourcepb.SourceFrame {
 	return p
 }
 func (d *adapterDecoder) sourceFrame(p *resourcepb.SourceFrame) SourceFrame {
-	if p.GetVersion() != WireVersion {
+	if p.GetVersion() != d.version() {
 		d.fail("invalid wire version")
 	}
 	v := SourceFrame{SessionID: p.GetSessionId(), Generation: p.GetGeneration(), Sequence: p.GetSequence()}
@@ -574,4 +574,22 @@ func ToProtoSourceFrame(v SourceFrame) (*resourcepb.SourceFrame, error) {
 }
 func FromProtoSourceFrame(p *resourcepb.SourceFrame) (SourceFrame, error) {
 	return fromProto(p, (*adapterDecoder).sourceFrame, validateSourceFrameAdapter)
+}
+
+// FromProtoSourceFrameWire decodes a frame sent by a plugin that speaks wire.
+func FromProtoSourceFrameWire(p *resourcepb.SourceFrame, wire uint32) (SourceFrame, error) {
+	return fromProto(p, func(d *adapterDecoder, p *resourcepb.SourceFrame) SourceFrame {
+		d.wire = wire
+		return d.sourceFrame(p)
+	}, validateSourceFrameAdapter)
+}
+
+// ToProtoSourceOpenRequestWire encodes an open request for a plugin that speaks wire.
+func ToProtoSourceOpenRequestWire(v SourceOpenRequest, wire uint32) (*resourcepb.SourceOpenRequest, error) {
+	p, err := ToProtoSourceOpenRequest(v)
+	if err != nil {
+		return nil, err
+	}
+	p.Version = wire
+	return p, nil
 }

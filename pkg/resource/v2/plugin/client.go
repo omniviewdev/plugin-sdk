@@ -16,10 +16,21 @@ type Client struct {
 	conn        grpc.ClientConnInterface
 	featureMode atomic.Uint32
 	features    atomic.Pointer[resourcev2.FeatureSet]
+	// wire is the resource wire of the plugin on the other end: what this client
+	// stamps on a request, expects on a response, and decodes a catalog with.
+	wire uint32
 }
 
-// NewClient binds resource operations to an existing gRPC connection.
-func NewClient(c grpc.ClientConnInterface) *Client { return &Client{conn: c} }
+// NewClient binds resource operations to an existing gRPC connection to a plugin
+// that speaks the current resource wire.
+func NewClient(c grpc.ClientConnInterface) *Client { return NewClientWire(c, resourcev2.WireVersion) }
+
+// NewClientWire binds resource operations to a connection to a plugin that speaks
+// the given resource wire (the host learns it from the go-plugin protocol the
+// handshake negotiated). A wire this process does not read is an error on the first call.
+func NewClientWire(c grpc.ClientConnInterface, wire uint32) *Client {
+	return &Client{conn: c, wire: wire}
+}
 
 func (c *Client) call(ctx context.Context, r *resourcepb.Request) (*resourcepb.Response, error) {
 	finiteOrCatalog := r.GetCatalogRequest() != nil || r.GetGet() != nil || r.GetEnumerate() != nil ||
@@ -34,7 +45,7 @@ func (c *Client) call(ctx context.Context, r *resourcepb.Request) (*resourcepb.R
 	if err != nil {
 		return nil, err
 	}
-	r.Version = resourcev2.WireVersion
+	r.Version = c.wire
 	out := &resourcepb.Response{}
 	e := &envelope{message: out}
 	if err := c.conn.Invoke(
@@ -50,7 +61,7 @@ func (c *Client) call(ctx context.Context, r *resourcepb.Request) (*resourcepb.R
 	if e.err != nil {
 		return nil, e.err
 	}
-	if out.Version != resourcev2.WireVersion {
+	if out.Version != c.wire {
 		return nil, unsupported("unsupported response wire version")
 	}
 	return out, nil
@@ -69,7 +80,7 @@ func (c *Client) Catalog(ctx context.Context, in resourcev2.CatalogRequest) (res
 	if out.GetCatalog() == nil {
 		return resourcev2.Catalog{}, invalid("unexpected response result")
 	}
-	catalog, err := resourcev2.FromProtoCatalog(out.GetCatalog())
+	catalog, err := resourcev2.FromProtoCatalogWire(out.GetCatalog(), c.wire)
 	if err != nil {
 		return resourcev2.Catalog{}, err
 	}

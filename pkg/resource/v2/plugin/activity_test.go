@@ -26,7 +26,7 @@ func TestActionActivitySurvivesProtobufWire(t *testing.T) {
 		t.Fatal(err)
 	}
 	ready := true
-	event, err := decodeActionEvent(&received, &ready)
+	event, err := decodeActionEvent(&received, &ready, resourcev2.WireVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,12 +34,12 @@ func TestActionActivitySurvivesProtobufWire(t *testing.T) {
 		t.Fatalf("lost typed activity: %#v", event)
 	}
 	received.Type = "output"
-	if _, err := decodeActionEvent(&received, &ready); err == nil {
+	if _, err := decodeActionEvent(&received, &ready, resourcev2.WireVersion); err == nil {
 		t.Fatal("presentation replaced required business output")
 	}
 	ready = false
 	received.Type = "progress"
-	if _, err := decodeActionEvent(&received, &ready); err == nil {
+	if _, err := decodeActionEvent(&received, &ready, resourcev2.WireVersion); err == nil {
 		t.Fatal("presentation bypassed native readiness")
 	}
 }
@@ -63,7 +63,7 @@ func TestActivityPresentationEncodedBoundary(t *testing.T) {
 		ready := true
 		_, receiveErr := decodeActionEvent(&resourcepb.ActionStreamEvent{
 			Version: resourcev2.WireVersion, Type: "progress", ActivityJson: payload,
-		}, &ready)
+		}, &ready, resourcev2.WireVersion)
 		if extra == "" {
 			if len(payload) != resourcev2.MaxActivityPresentationBytes || validationErr != nil || receiveErr != nil {
 				t.Fatalf("boundary rejected: size=%d validation=%v receive=%v", len(payload), validationErr, receiveErr)

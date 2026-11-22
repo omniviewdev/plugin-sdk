@@ -21,7 +21,7 @@ func (c *Client) ancillary(
 	if err != nil {
 		return nil, err
 	}
-	in.Version = resourcev2.WireVersion
+	in.Version = c.wire
 	out := &resourcepb.AncillaryResponse{}
 	e := &envelope{message: out}
 	if err := c.conn.Invoke(
@@ -37,7 +37,7 @@ func (c *Client) ancillary(
 	if e.err != nil {
 		return nil, e.err
 	}
-	if out.Version != resourcev2.WireVersion {
+	if out.Version != c.wire {
 		return nil, unsupported("unsupported ancillary response version")
 	}
 	return out, nil

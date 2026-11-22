@@ -101,12 +101,27 @@ func (b *protoAdmissionBudget) scalar(fd protoreflect.FieldDescriptor, v protore
 type adapterDecoder struct {
 	err   error
 	nodes int
+	// wire is the wire of the peer the message came from; 0 means the current one.
+	// A field that exists only from a later wire is required only when the peer
+	// speaks it.
+	wire uint32
 }
 
 func (d *adapterDecoder) fail(detail string) {
 	if d.err == nil {
 		d.err = invalid(detail)
 	}
+}
+
+// reads reports whether the peer speaks wire or later.
+func (d *adapterDecoder) reads(wire uint32) bool { return d.wire == 0 || d.wire >= wire }
+
+// version is the wire version a message of the peer must name: the peer's wire, or the current one.
+func (d *adapterDecoder) version() uint32 {
+	if d.wire == 0 {
+		return WireVersion
+	}
+	return d.wire
 }
 func (d *adapterDecoder) value(p *resourcepb.Value) Value { return d.valueAt(p, 0) }
 func (d *adapterDecoder) valueAt(p *resourcepb.Value, depth int) Value {

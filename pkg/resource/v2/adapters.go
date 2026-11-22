@@ -143,6 +143,7 @@ func toResourceType(v ResourceType) *resourcepb.ResourceType {
 		DefaultRepresentation: v.DefaultRepresentation,
 		ModelRepresentation:   v.ModelRepresentation,
 		AcquireOnConnect:      v.AcquireOnConnect,
+		Environment:           v.Environment,
 		IdentityDimensions:    make([]*resourcepb.Dimension, len(v.IdentityDimensions)),
 		QueryDimensions:       make([]*resourcepb.Dimension, len(v.QueryDimensions)),
 		Representations:       make([]*resourcepb.Representation, len(v.Representations)),
@@ -441,10 +442,14 @@ func (d *adapterDecoder) resourceType(p *resourcepb.ResourceType) ResourceType {
 		DefaultRepresentation: p.DefaultRepresentation,
 		ModelRepresentation:   p.ModelRepresentation,
 		AcquireOnConnect:      p.GetAcquireOnConnect(),
+		Environment:           p.GetEnvironment(),
 		IdentityDimensions:    make([]Dimension, len(p.IdentityDimensions)),
 		QueryDimensions:       make([]Dimension, len(p.QueryDimensions)),
 		Representations:       make([]Representation, len(p.Representations)),
 		Capabilities:          make([]Capability, len(p.Capabilities)),
+	}
+	if p.GetEnvironment() == "" && d.reads(4) {
+		d.fail("resource type requires an environment")
 	}
 	if len(p.NativeQueries) > 0 {
 		v.NativeQueries = make([]NativeQueryDescriptor, len(p.NativeQueries))
@@ -747,14 +752,37 @@ func FromProtoResourceReference(p *resourcepb.ResourceReference) (ResourceRefere
 
 // ToProtoCatalog encodes catalog declarations and coverage without granting capabilities.
 // It validates before encoding, returns nil on error, and owns output storage.
+// The producer speaks the current wire, so every field required from it is required here.
 func ToProtoCatalog(v Catalog) (*resourcepb.Catalog, error) {
-	return toProto(v, ValidateCatalog, toCatalog)
+	return toProto(v, validateCatalogProduced, toCatalog)
+}
+
+// validateCatalogProduced is ValidateCatalog plus what the current wire requires of a producer.
+func validateCatalogProduced(c Catalog) error {
+	if err := ValidateCatalog(c); err != nil {
+		return err
+	}
+	for i := range c.Types {
+		if c.Types[i].Environment == "" {
+			return invalid("resource type requires an environment")
+		}
+	}
+	return nil
 }
 
 // FromProtoCatalog decodes catalog declarations and coverage without granting capabilities.
 // It rejects nil or invalid messages; successful output owns mutable storage.
 func FromProtoCatalog(p *resourcepb.Catalog) (Catalog, error) {
-	return fromProto(p, (*adapterDecoder).catalog, ValidateCatalog)
+	return FromProtoCatalogWire(p, WireVersion)
+}
+
+// FromProtoCatalogWire decodes a catalog sent by a peer that speaks wire. A field
+// that exists only from a later wire is not required of an earlier peer.
+func FromProtoCatalogWire(p *resourcepb.Catalog, wire uint32) (Catalog, error) {
+	return fromProto(p, func(d *adapterDecoder, p *resourcepb.Catalog) Catalog {
+		d.wire = wire
+		return d.catalog(p)
+	}, ValidateCatalog)
 }
 
 // ToProtoReadTarget encodes route-qualified scope without catalog admission.

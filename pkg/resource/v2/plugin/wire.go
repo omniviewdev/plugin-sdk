@@ -52,6 +52,8 @@ func unsupported(s string) error { return resourcev2.NewError("UNSUPPORTED", s) 
 type wireBudget struct {
 	fields, nodes, sourceBatchLimit int
 	source                          bool
+	// wire is the resource wire the root message named in its version field; 0 until one did.
+	wire uint32
 }
 
 func protoWireCost(m protoreflect.Message) (nodes, fields int) {
@@ -76,6 +78,8 @@ type wireMessage struct {
 	records, relationshipTargets int
 	sourceBatchLimit             int
 	source                       bool
+	// wire is the wire of the root this message is part of; 0 outside a versioned resource root.
+	wire uint32
 }
 
 // ValidateWire admits only the exact negotiated resource descriptor tree, before decoding.
@@ -101,8 +105,12 @@ func validateWire(data []byte, descriptor protoreflect.MessageDescriptor, source
 }
 
 func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, depth int) error {
-	if err := admitResourceContractVersion(data, d); err != nil {
+	speaks, err := admitResourceContractVersion(data, d)
+	if err != nil {
 		return err
+	}
+	if speaks != 0 {
+		b.wire = speaks
 	}
 	if depth > MaxDepth {
 		return limited("resource nesting exceeds limit")
@@ -111,7 +119,7 @@ func (b *wireBudget) message(data []byte, d protoreflect.MessageDescriptor, dept
 	if b.nodes > MaxNodes {
 		return limited("resource nodes exceed limit")
 	}
-	state := wireMessage{descriptor: d, versionField: utilityVersionField(d), sourceBatchLimit: b.sourceBatchLimit, source: b.source}
+	state := wireMessage{descriptor: d, versionField: utilityVersionField(d), sourceBatchLimit: b.sourceBatchLimit, source: b.source, wire: b.wire}
 	for len(data) > 0 {
 		b.fields++
 		if b.fields > MaxFields {
@@ -156,7 +164,7 @@ func consumeWireTag(data []byte) (protowire.Number, protowire.Type, int, error) 
 }
 
 func (s *wireMessage) admitField(f protoreflect.FieldDescriptor) error {
-	if f == nil {
+	if f == nil || s.wire != 0 && fieldSince[f.FullName()] > s.wire {
 		return unsupported("unknown resource protobuf field")
 	}
 	if f.Index() >= wirePresenceBits {

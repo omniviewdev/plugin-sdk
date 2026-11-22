@@ -213,7 +213,7 @@ func (c *Client) WatchConnections(ctx context.Context, out chan<- []types.Connec
 		ctx,
 		0,
 		resourcepb.ResourceAncillary_WatchConnections_FullMethodName,
-		&resourcepb.AncillaryRequest{Version: resourcev2.WireVersion, Operation: "watchConnections"},
+		&resourcepb.AncillaryRequest{Version: c.wire, Operation: "watchConnections"},
 	)
 	if err != nil {
 		return err
@@ -230,7 +230,7 @@ func (c *Client) WatchConnections(ctx context.Context, out chan<- []types.Connec
 		if e.err != nil {
 			return e.err
 		}
-		if p.Version != resourcev2.WireVersion {
+		if p.Version != c.wire {
 			return unsupported("unsupported stream response version")
 		}
 		var v []types.Connection
@@ -284,14 +284,14 @@ func (c *Client) StreamAction(
 		ctx,
 		1,
 		resourcepb.ResourceAncillary_StreamAction_FullMethodName,
-		&resourcepb.ActionStreamRequest{Version: resourcev2.WireVersion, Action: p},
+		&resourcepb.ActionStreamRequest{Version: c.wire, Action: p},
 	)
 	if err != nil {
 		return err
 	}
 	ready := false
 	for {
-		v, receiveErr := receiveActionEvent(s, &ready, descriptor)
+		v, receiveErr := receiveActionEvent(s, &ready, descriptor, c.wire)
 		if receiveErr != nil {
 			if errors.Is(receiveErr, io.EOF) {
 				if !ready {
@@ -327,6 +327,7 @@ func receiveActionEvent(
 	stream grpc.ClientStream,
 	ready *bool,
 	descriptor *resourcev2.ActionDescriptor,
+	wire uint32,
 ) (resourcev2.ActionEvent, error) {
 	p := &resourcepb.ActionStreamEvent{}
 	e := &envelope{message: p}
@@ -339,7 +340,7 @@ func receiveActionEvent(
 	if e.err != nil {
 		return resourcev2.ActionEvent{}, e.err
 	}
-	v, err := decodeActionEvent(p, ready)
+	v, err := decodeActionEvent(p, ready, wire)
 	if err != nil {
 		return resourcev2.ActionEvent{}, err
 	}
@@ -460,8 +461,8 @@ func drainAncillaryEvents[T any](
 	}
 }
 
-func decodeActionEvent(p *resourcepb.ActionStreamEvent, ready *bool) (resourcev2.ActionEvent, error) {
-	if p.Version != resourcev2.WireVersion {
+func decodeActionEvent(p *resourcepb.ActionStreamEvent, ready *bool, wire uint32) (resourcev2.ActionEvent, error) {
+	if p.Version != wire {
 		return resourcev2.ActionEvent{}, unsupported("unsupported stream response version")
 	}
 	if p.Type == "ready" {

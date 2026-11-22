@@ -104,6 +104,14 @@ type sourceClientStream struct {
 	once             sync.Once
 }
 
+// wire is the resource wire of the plugin this session is open to.
+func (s *sourceClientStream) wire() uint32 {
+	if s.client != nil {
+		return s.client.wire
+	}
+	return resourcev2.WireVersion
+}
+
 // sourceBeginTimedOut logs the begin-handshake timeout and returns its domain error.
 func sourceBeginTimedOut(ctx context.Context, sourceID string) error {
 	trace.SpanFromContext(ctx).AddEvent("source.begin_timeout")
@@ -138,7 +146,7 @@ func (c *Client) OpenSourceStream(ctx context.Context, r resourcev2.SourceOpenRe
 			cancelCause(context.Canceled)
 		}
 	}()
-	p, err := resourcev2.ToProtoSourceOpenRequest(r)
+	p, err := resourcev2.ToProtoSourceOpenRequestWire(r, c.wire)
 	if err != nil {
 		return nil, err
 	}
@@ -216,12 +224,12 @@ func (s *sourceClientStream) Recv() (resourcev2.SourceFrame, error) {
 		sourceFrameInvalid(s.ctx, "envelope_error")
 		return zero, resourcev2.NewError("PROVIDER_ERROR", "invalid source frame")
 	}
-	if p.GetVersion() != resourcev2.WireVersion {
+	if p.GetVersion() != s.wire() {
 		s.Close()
 		sourceFrameInvalid(s.ctx, "wire_version")
 		return zero, resourcev2.NewError("PROVIDER_ERROR", "invalid source wire version")
 	}
-	f, err := resourcev2.FromProtoSourceFrame(p)
+	f, err := resourcev2.FromProtoSourceFrameWire(p, s.wire())
 	if err != nil {
 		s.Close()
 		if resourcev2.ErrorCode(err) == "RESOURCE_LIMIT" {

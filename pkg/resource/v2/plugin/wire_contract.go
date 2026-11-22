@@ -1,51 +1,81 @@
 package plugin
 
 import (
+	"sync/atomic"
+
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+// readWireFloor is the oldest resource wire this process reads. A plugin keeps the
+// default, the current wire only; a host that dual-reads lowers it once at start
+// (SetReadWireFloor) and then sends and expects each peer's own wire (NewClientWire).
+var readWireFloor atomic.Uint32
+
+func init() { readWireFloor.Store(resourcev2.WireVersion) }
+
+// SetReadWireFloor makes this process read every resource wire from floor to
+// resourcev2.WireVersion. A message is admitted against the descriptor tree as it
+// was at the wire its own version field names.
+func SetReadWireFloor(floor uint32) error {
+	if floor < resourcev2.FloorWireVersion || floor > resourcev2.WireVersion {
+		return unsupported("resource wire floor outside what this SDK can read")
+	}
+	readWireFloor.Store(floor)
+	return nil
+}
+
+// fieldSince names, by full name, every field of omniview.resource.v2 that does not
+// exist before a wire. A reader that admits an earlier wire rejects them as unknown,
+// exactly as the reader of that wire always did. Every strict-lane field added after
+// wire 3 needs a row here; the descriptor-digest golden test the SDK0 plan asks for is
+// what would keep that true.
+var fieldSince = map[protoreflect.FullName]uint32{
+	"omniview.resource.v2.ResourceType.environment": 4,
+}
+
 // admitResourceContractVersion rejects incompatible cohorts before descending
-// into their changed payload shapes. Utility and callback handshakes retain
-// their own independent protocol versions.
-func admitResourceContractVersion(data []byte, descriptor protoreflect.MessageDescriptor) error {
+// into their changed payload shapes, and returns the wire the message speaks (0
+// for a message that carries no resource wire version). Utility and callback
+// handshakes retain their own independent protocol versions.
+func admitResourceContractVersion(data []byte, descriptor protoreflect.MessageDescriptor) (uint32, error) {
 	if descriptor.ParentFile().Package() != "omniview.resource.v2" {
-		return nil
+		return 0, nil
 	}
 	field := descriptor.Fields().ByName("version")
 	if field == nil {
-		return nil
+		return 0, nil
 	}
 	for len(data) > 0 {
 		number, wire, count, err := consumeWireTag(data)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		data = data[count:]
 		if wire == protowire.StartGroupType || wire == protowire.EndGroupType {
-			return invalid("invalid protobuf wire type")
+			return 0, invalid("invalid protobuf wire type")
 		}
 		if number == field.Number() {
 			if wire != protowire.VarintType {
-				return invalid("invalid resource wire version field")
+				return 0, invalid("invalid resource wire version field")
 			}
 			value, count := protowire.ConsumeVarint(data)
 			if count < 0 || count != protowire.SizeVarint(value) {
-				return invalid("malformed resource wire version")
+				return 0, invalid("malformed resource wire version")
 			}
-			if value != uint64(resourcev2.WireVersion) {
-				return unsupported("unsupported resource wire version; coordinated SDK cohort required")
+			if value < uint64(readWireFloor.Load()) || value > uint64(resourcev2.WireVersion) {
+				return 0, unsupported("unsupported resource wire version; coordinated SDK cohort required")
 			}
-			return nil
+			return uint32(value), nil
 		}
 		count = protowire.ConsumeFieldValue(number, wire, data)
 		if count < 0 {
-			return invalid("malformed resource protobuf field")
+			return 0, invalid("malformed resource protobuf field")
 		}
 		data = data[count:]
 	}
-	return unsupported("unsupported resource wire version; coordinated SDK cohort required")
+	return 0, unsupported("unsupported resource wire version; coordinated SDK cohort required")
 }
 
 func (s *wireMessage) requireFields(numbers ...protoreflect.FieldNumber) error {

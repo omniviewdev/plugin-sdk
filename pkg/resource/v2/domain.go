@@ -10,7 +10,14 @@ import (
 )
 
 // WireVersion identifies the resource transport contract, not a catalog revision.
-const WireVersion uint32 = 3
+// It is the wire a plugin built on this SDK speaks, and the newest a host built
+// on it reads.
+const WireVersion uint32 = 4
+
+// FloorWireVersion is the oldest resource wire a host built on this SDK can be
+// told to read (resourceplugin.SetReadWireFloor). A plugin never reads below
+// WireVersion.
+const FloorWireVersion uint32 = 3
 
 // ScopeEntry is one literal identity dimension, not a query constraint.
 // Empty Value is meaningful only when the declared dimension permits it.
@@ -209,6 +216,9 @@ type ResourceType struct {
 	Capabilities        []Capability            `json:"capabilities"`
 	NativeAuthorityHint *NativeAuthorityHint    `json:"nativeAuthorityHint,omitempty"`
 	AcquireOnConnect    bool                    `json:"acquireOnConnect"`
+	// Environment is required from wire 4 on: a catalog type without one is refused
+	// by a wire-4 reader and by the producer's own admission. A wire-3 peer has none.
+	Environment string `json:"environment,omitempty"`
 }
 
 // CatalogRequest observes support through one explicit access route. Refresh

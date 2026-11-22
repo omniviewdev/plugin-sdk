@@ -95,6 +95,7 @@ func catalog(ctx context.Context, request resourcev2.CatalogRequest) (resourcev2
 			DisplayName:           "Note",
 			Representations:       []resourcev2.Representation{nativeRepresentation()},
 			DefaultRepresentation: representationID,
+			Environment:           "embedded-notes",
 			Capabilities: []resourcev2.Capability{{
 				Operation: resourcev2.OperationGet,
 				Scope:     resourcev2.QueryScope{},
