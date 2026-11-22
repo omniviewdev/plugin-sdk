@@ -95,6 +95,13 @@ type Handler struct {
 	// counting its complete lines, and nothing else: it needs none of the lines); a
 	// source that knows its boundary natively returns it.
 	//
+	// Count what the stream Handler will open delivers first, not what the source
+	// holds: a source of 50,000 lines opened with a tail of 1000 has a replay of 1000.
+	// Everything that limits that stream (tail, since, limit, IncludePrevious: it is
+	// the same request) limits the count. A count above what the stream delivers is
+	// the likeliest mistake and it fails silently: every line is flagged replay for
+	// good and the caught-up event never comes (see below).
+	//
 	// A count says how many lines come first, and the SDK flags that many, whichever
 	// lines they turn out to be. If the source changed between the count and the open,
 	// they can differ from the lines counted (the window of a tail-limited stream moves
@@ -105,10 +112,13 @@ type Handler struct {
 	// lines flagged as replay until the count is reached, and the caught-up event
 	// follows the counted line: a source that stays quiet holds it back, and until it
 	// comes the reader cannot tell the source's lines are live. None of this changes
-	// which lines are delivered. A count that cannot be given is an error: the attempt
-	// fails as a failed open does (retried, then reported) and no caught-up event is
-	// sent for it. Like Handler, ReplayCount is not bounded by the SDK: honour the
-	// context it is given.
+	// which lines are delivered. A count that cannot be given is an error, and a
+	// negative count is one: the attempt fails as a failed open does (retried, then
+	// reported) and no caught-up event is sent for it. Like Handler, ReplayCount is
+	// not bounded by the SDK: honour the context it is given. For different sources
+	// of one session it can run at the same time, and while it runs it holds the
+	// source's concurrency slot as the open does. For a session that asked, the
+	// caught-up event is sent whether or not the session set IncludeSourceEvents.
 	//
 	// A session for a group resource (a key with a [SourceResolver]) streams its
 	// resolved sources through the registered handler with the smallest key, so that

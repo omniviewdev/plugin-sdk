@@ -47,7 +47,10 @@ caught-up event as `SourceAdded`, an event for a source joining.
 A handler takes part by setting `logs.Handler.ReplayCount` beside `Handler`. `Handler` is
 unchanged: it opens one stream per source, its replay and its live lines together, with
 the request it always got, and the SDK never splits or filters that stream.
-`ReplayCount(ctx, req)` returns how many lines at the head of that stream are replay.
+`ReplayCount(ctx, req)` returns how many lines at the head of that stream are replay: it
+counts what that stream delivers first, not what the source holds (a source of 50,000
+lines opened with a tail of 1000 has a replay of 1000; a larger number flags every line
+for good and the caught-up event never comes).
 For a session that asked, the SDK calls it just before it opens a source's stream (and
 again before each reopening), so the open is later by that call; it flags that many
 lines `LogLine.Replay`, and sends the caught-up event for the source after the last of
@@ -80,6 +83,11 @@ What a reader may rely on, and what it may not:
   caught up again, as the repeated tail was before; a source that is disabled and enabled
   again does too. A source that is cancelled, removed or closed, or whose stream ends
   before the counted lines, is not caught up for that opening.
+  Two openings of one source can overlap: when an update disables and enables a source
+  while its old opening is still delivering its last counted line, that line and the old
+  opening's event arrive after the new opening's event. Both openings are counted and
+  marked, so the reader sees the source caught up twice, the second time for the old
+  opening.
 - A count that cannot be given (`ReplayCount` returns an error or a negative number) fails
   the attempt as a failed open does: it is retried with the reconnect backoff and
   reported with `StreamError` when the attempts run out.
@@ -87,6 +95,9 @@ What a reader may rely on, and what it may not:
   source. A source queued behind `MaxConcurrentStreamsPerSession` sends no event and no
   line until a slot frees. `LogSession.ReplayMarkers` says whether the caught-up event
   can come, not when; a reader that needs a bound sets its own.
+- The caught-up event is sent to a reader that asked whether or not the session set
+  `IncludeSourceEvents`. `ReplayCount` can run at the same time for different sources of
+  one session, and while it runs it holds the source's concurrency slot as the open does.
 
 ## Settings validation
 
