@@ -55,7 +55,13 @@ type sessionState struct {
 	done   chan struct{} // closed when all goroutines for this session complete
 
 	sourceMu   sync.Mutex
-	sourceCtxs map[string]context.CancelFunc
+	sourceCtxs map[string]*sourceRun
+
+	// updateMu serialises the options updates from the sources they restart to the
+	// sources they cancel and the options they store, so that the update that commits
+	// last decides which sources run. It is held across no event send, no call into
+	// plugin code and no wait. Lock order: updateMu, then sourceMu, then ss.mu.
+	updateMu sync.Mutex
 
 	// producers tracks the watcher of dynamic sources, the sources it adds and the
 	// sources an options update restarts, so that orchestrateSession can wait for
@@ -369,7 +375,7 @@ func (m *Manager) createSession(
 		ctx:        ctx,
 		cancel:     cancel,
 		done:       make(chan struct{}),
-		sourceCtxs: make(map[string]context.CancelFunc),
+		sourceCtxs: make(map[string]*sourceRun),
 		opts:       opts,
 		pluginCtx:  &pctxCopy,
 	}
@@ -456,6 +462,11 @@ func (m *Manager) CloseSession(_ *types.PluginContext, sessionID string) error {
 // The enabled_sources parameter cancels disabled sources and restarts enabled sources
 // that are not running, including sources that ended on their own.
 //
+// Updates are serialised per session, from the sources they restart to the options they
+// store, so the update that commits last decides which sources run, however many overlap
+// (the log viewer syncs 300 ms after the last change, so a slow plugin makes two in
+// flight plausible). The lock is not held while an update announces what it changed.
+//
 // A session can take a source for as long as it is alive: while its initial sources
 // run, and afterwards while one of its producers still does (see producerGroup). Once
 // the last producer has returned, or the session is being closed, an update that would
@@ -474,29 +485,35 @@ func (m *Manager) UpdateSessionOptions(
 		return nil, fmt.Errorf("log session %s not found", sessionID)
 	}
 
-	ss.mu.RLock()
-	opts.Reference = ss.opts.Reference
-	opts.Route = ss.opts.Route
-	ss.mu.RUnlock()
+	var change sourceChange
+	err := func() error {
+		ss.updateMu.Lock()
+		defer ss.updateMu.Unlock()
 
-	// The sources to restart are settled first, so that a refusal changes nothing.
-	selection, hasSelection := opts.Params["enabled_sources"]
-	var restart []LogSource
-	if hasSelection {
-		var err error
-		if restart, err = ss.reserveRestarts(selection); err != nil {
-			return nil, err
+		ss.mu.RLock()
+		opts.Reference = ss.opts.Reference
+		opts.Route = ss.opts.Route
+		ss.mu.RUnlock()
+
+		// The sources are settled first, so that a refusal changes nothing.
+		if selection, ok := opts.Params["enabled_sources"]; ok {
+			var err error
+			if change, err = m.changeSources(ss, selection); err != nil {
+				return err
+			}
 		}
+
+		ss.mu.Lock()
+		ss.session.Options = opts
+		ss.opts.Options = opts
+		ss.mu.Unlock()
+		return nil
+	}()
+	if err != nil {
+		return nil, err
 	}
 
-	ss.mu.Lock()
-	ss.session.Options = opts
-	ss.opts.Options = opts
-	ss.mu.Unlock()
-
-	if hasSelection {
-		m.applyEnabledSources(ss, selection, restart)
-	}
+	m.startChangedSources(ss, change)
 
 	snap := ss.snapshot()
 	return &snap, nil
@@ -731,17 +748,10 @@ func (m *Manager) fanOutSources(
 
 // registerSourceCtx creates and registers the per-source cancel handle.
 // Returns false if the source is already registered/running.
-func (m *Manager) registerSourceCtx(ss *sessionState, sourceID string) (context.Context, bool) {
-	sourceCtx, sourceCancel := context.WithCancel(ss.ctx)
+func (m *Manager) registerSourceCtx(ss *sessionState, sourceID string) (context.Context, *sourceRun, bool) {
 	ss.sourceMu.Lock()
-	if _, exists := ss.sourceCtxs[sourceID]; exists {
-		ss.sourceMu.Unlock()
-		sourceCancel()
-		return nil, false
-	}
-	ss.sourceCtxs[sourceID] = sourceCancel
-	ss.sourceMu.Unlock()
-	return sourceCtx, true
+	defer ss.sourceMu.Unlock()
+	return ss.registerLocked(sourceID)
 }
 
 // launchSource registers a cancellable context for the source, acquires the
@@ -758,17 +768,18 @@ func (m *Manager) launchSource(
 	opts CreateSessionOptions,
 	logger logging.Logger,
 ) {
-	sourceCtx, ok := m.registerSourceCtx(ss, source.ID)
+	sourceCtx, run, ok := m.registerSourceCtx(ss, source.ID)
 	if !ok {
 		return
 	}
-	m.launchRegisteredSource(sourceCtx, ss, handler, source, opts, logger)
+	m.launchRegisteredSource(sourceCtx, run, ss, handler, source, opts, logger)
 }
 
 // launchRegisteredSource launches a source that already has an entry in
 // ss.sourceCtxs.
 func (m *Manager) launchRegisteredSource(
 	sourceCtx context.Context,
+	run *sourceRun,
 	ss *sessionState,
 	handler Handler,
 	source LogSource,
@@ -780,9 +791,7 @@ func (m *Manager) launchRegisteredSource(
 	select {
 	case ss.sourceSem <- struct{}{}:
 	case <-sourceCtx.Done():
-		ss.sourceMu.Lock()
-		delete(ss.sourceCtxs, source.ID)
-		ss.sourceMu.Unlock()
+		ss.deregister(source.ID, run)
 		// Count as "ready" so the session doesn't get stuck in INITIALIZING
 		// waiting for a source that will never stream.
 		m.markSourceReady(ss, source.ID)
@@ -792,14 +801,12 @@ func (m *Manager) launchRegisteredSource(
 
 	// If cancelled while waiting, bail out.
 	if sourceCtx.Err() != nil {
-		ss.sourceMu.Lock()
-		delete(ss.sourceCtxs, source.ID)
-		ss.sourceMu.Unlock()
+		ss.deregister(source.ID, run)
 		m.markSourceReady(ss, source.ID)
 		return
 	}
 
-	m.streamSource(sourceCtx, ss, handler, source, opts, logger)
+	m.streamSource(sourceCtx, run, ss, handler, source, opts, logger)
 }
 
 // ---------------------------------------------------------------------------
@@ -808,6 +815,7 @@ func (m *Manager) launchRegisteredSource(
 
 func (m *Manager) streamSource(
 	sourceCtx context.Context,
+	run *sourceRun,
 	ss *sessionState,
 	handler Handler,
 	source LogSource,
@@ -821,11 +829,7 @@ func (m *Manager) streamSource(
 	// SourceRemoved cancelling the entry in sourceCtxs also cancels
 	// this streaming goroutine — no independent context needed.
 
-	defer func() {
-		ss.sourceMu.Lock()
-		delete(ss.sourceCtxs, source.ID)
-		ss.sourceMu.Unlock()
-	}()
+	defer ss.deregister(source.ID, run)
 
 	if opts.Options.IncludeSourceEvents {
 		m.emitEvent(ss.session.ID, LogStreamEvent{
@@ -1096,7 +1100,7 @@ func (m *Manager) watchSourceEvents(
 
 			switch event.Type {
 			case SourceAdded:
-				sourceCtx, shouldLaunch := m.registerSourceCtx(ss, event.Source.ID)
+				sourceCtx, run, shouldLaunch := m.registerSourceCtx(ss, event.Source.ID)
 				if !shouldLaunch {
 					continue
 				}
@@ -1116,16 +1120,16 @@ func (m *Manager) watchSourceEvents(
 				if !ss.producers.start(1) {
 					return // unreachable: the watcher is a producer itself, so the group cannot have ended
 				}
-				go func(src LogSource, opts CreateSessionOptions, ctx context.Context) {
+				go func(src LogSource, opts CreateSessionOptions, ctx context.Context, run *sourceRun) {
 					defer ss.producers.done()
-					m.launchRegisteredSource(ctx, ss, handler, src, opts, logger)
-				}(event.Source, currentOpts, sourceCtx)
+					m.launchRegisteredSource(ctx, run, ss, handler, src, opts, logger)
+				}(event.Source, currentOpts, sourceCtx, run)
 
 			case SourceRemoved:
 				// Cancel the source's streaming goroutine so it stops retrying
 				ss.sourceMu.Lock()
-				if cancel, ok := ss.sourceCtxs[event.Source.ID]; ok {
-					cancel()
+				if run, ok := ss.sourceCtxs[event.Source.ID]; ok {
+					run.cancel()
 				}
 				ss.sourceMu.Unlock()
 
@@ -1218,52 +1222,84 @@ func (m *Manager) closeAll() {
 // ---------------------------------------------------------------------------
 
 // sessionEndedError is what an update gets when the session can no longer start the
-// sources it asks for. Its text is public-safe.
+// sources it asks for. The classification crosses the plugin boundary; the sentence
+// does not, as for every other error the plugin servers carry (see ResourceRPCError):
+// the host composes its own.
 func sessionEndedError() error {
 	return resourceError("CONFLICT", "Log session has ended; its sources can no longer be started.")
 }
 
-// reserveRestarts finds the sources an enabled_sources selection brings back, those it
-// names (or all, when it is empty) that are not running, and registers a producer for
-// each, all or none. When there are such sources and the session can no longer take
-// them it returns the refusal and has registered nothing. Each registered producer
-// must be balanced by applyEnabledSources.
-func (s *sessionState) reserveRestarts(selection string) ([]LogSource, error) {
-	allEnabled := selection == ""
-	enabled := enabledSourceIDs(selection)
-
-	s.sourceMu.Lock()
-	snap := s.snapshot()
-	var restart []LogSource
-	for _, src := range snap.ActiveSources {
-		if !allEnabled && !enabled[src.ID] {
-			continue
-		}
-		if _, running := s.sourceCtxs[src.ID]; !running {
-			restart = append(restart, src)
-		}
-	}
-	s.sourceMu.Unlock()
-
-	if len(restart) > 0 && !s.startProducers(len(restart)) {
-		return nil, sessionEndedError()
-	}
-	return restart, nil
+// sourceChange is what an options update settled about the session's sources.
+type sourceChange struct {
+	removed []LogStreamEvent // the sources it cancelled
+	restart []pendingSource  // the sources it registered and reserved a producer for
+	handler Handler          // starts the restarted sources
 }
 
-// applyEnabledSources cancels the running sources a selection leaves out and starts
-// the producers reserved for the sources it brings back.
-func (m *Manager) applyEnabledSources(ss *sessionState, selection string, restart []LogSource) {
+// pendingSource is a source an update registered and has yet to start.
+type pendingSource struct {
+	source LogSource
+	ctx    context.Context
+	run    *sourceRun
+}
+
+// changeSources settles what an enabled_sources selection does to the sources. The
+// caller holds updateMu. It brings back the sources the selection names (or all, when it
+// is empty) that are not running: it reserves a producer for each, all or none, and
+// registers them. It cancels the running sources the selection leaves out. When there
+// are sources to bring back and the session can no longer take them it returns the
+// refusal and has changed nothing. Registering here, not when a source's goroutine
+// starts, is what lets the next update see the sources this one is about to start; every
+// reserved producer is balanced by startChangedSources.
+func (m *Manager) changeSources(ss *sessionState, selection string) (sourceChange, error) {
 	allEnabled := selection == ""
 	enabled := enabledSourceIDs(selection)
 
-	var removedEvents []LogStreamEvent
+	ss.mu.RLock()
+	resourceKey := ss.opts.ResourceKey
+	ss.mu.RUnlock()
+	handler, haveHandler := m.registry.FindHandler(resourceKey)
+	if !haveHandler {
+		handler, haveHandler = m.registry.AnyHandler()
+	}
+
 	ss.sourceMu.Lock()
-	for sourceID, cancel := range ss.sourceCtxs {
+	defer ss.sourceMu.Unlock()
+
+	var change sourceChange
+	if haveHandler {
+		var restart []LogSource
+		listed := make(map[string]bool) // a source can be listed twice (a watcher can add one again)
+		for _, src := range ss.snapshot().ActiveSources {
+			if (!allEnabled && !enabled[src.ID]) || listed[src.ID] {
+				continue
+			}
+			listed[src.ID] = true
+			if _, running := ss.sourceCtxs[src.ID]; !running {
+				restart = append(restart, src)
+			}
+		}
+		if len(restart) > 0 {
+			if !ss.startProducers(len(restart)) {
+				return sourceChange{}, sessionEndedError()
+			}
+			change.handler = handler
+			for _, src := range restart {
+				ctx, run, ok := ss.registerLocked(src.ID)
+				if !ok { // not reachable: sourceMu is held and the source had no run; give the reservation back
+					ss.producers.done()
+					continue
+				}
+				change.restart = append(change.restart, pendingSource{source: src, ctx: ctx, run: run})
+			}
+		}
+	}
+
+	for sourceID, run := range ss.sourceCtxs {
 		if !allEnabled && !enabled[sourceID] {
-			cancel()
+			run.cancel()
 			delete(ss.sourceCtxs, sourceID)
-			removedEvents = append(removedEvents, LogStreamEvent{
+			change.removed = append(change.removed, LogStreamEvent{
 				Type:      StreamEventSourceRemoved,
 				SourceID:  sourceID,
 				Message:   fmt.Sprintf("Source disabled: %s", sourceID),
@@ -1271,12 +1307,17 @@ func (m *Manager) applyEnabledSources(ss *sessionState, selection string, restar
 			})
 		}
 	}
-	ss.sourceMu.Unlock()
+	return change, nil
+}
 
-	for _, evt := range removedEvents {
+// startChangedSources announces what changeSources settled and starts the producers it
+// reserved. It runs without updateMu: the events go through the output, which can block
+// for as long as its consumer does.
+func (m *Manager) startChangedSources(ss *sessionState, change sourceChange) {
+	for _, evt := range change.removed {
 		m.emitEvent(ss.session.ID, evt)
 	}
-	if len(restart) == 0 {
+	if len(change.restart) == 0 {
 		return
 	}
 
@@ -1285,38 +1326,26 @@ func (m *Manager) applyEnabledSources(ss *sessionState, selection string, restar
 	opts := ss.opts
 	ss.mu.RUnlock()
 
-	// Find a handler for restarting
-	handler, ok := m.registry.FindHandler(opts.ResourceKey)
-	if !ok {
-		handler, ok = m.registry.AnyHandler()
-	}
-	if !ok {
-		for range restart {
-			ss.producers.done() // nothing to restart them with: give the reservations back
-		}
-		return
-	}
-
 	logger := m.log.With(logging.String("session_id", ss.session.ID))
-	for _, src := range restart {
+	for _, p := range change.restart {
 		// Announced before it starts, so that nothing the source sends precedes the
-		// event, and the event precedes the end of the session: the producer registered
+		// event, and the event precedes the end of the session: the producer reserved
 		// for it keeps the session open until it returns.
 		m.emitEvent(ss.session.ID, LogStreamEvent{
 			Type:      StreamEventSourceAdded,
-			SourceID:  src.ID,
-			Message:   fmt.Sprintf("Source re-enabled: %s", src.ID),
+			SourceID:  p.source.ID,
+			Message:   fmt.Sprintf("Source re-enabled: %s", p.source.ID),
 			Timestamp: m.clock.Now(),
 		})
-		go func(s LogSource) {
+		go func(p pendingSource) {
 			defer ss.producers.done()
-			m.launchSource(ss, handler, s, opts, logger)
-		}(src)
+			m.launchRegisteredSource(p.ctx, p.run, ss, change.handler, p.source, opts, logger)
+		}(p)
 	}
 }
 
 // enabledSourceIDs parses explicit source selections. An empty selection is
-// interpreted separately by reserveRestarts and applyEnabledSources as enabling every source.
+// interpreted separately by changeSources as enabling every source.
 func enabledSourceIDs(selection string) map[string]bool {
 	enabled := make(map[string]bool)
 	for id := range strings.SplitSeq(selection, ",") {

@@ -20,15 +20,6 @@ func waitInBackground(g *producerGroup) <-chan struct{} {
 	return returned
 }
 
-func isClosed(c <-chan struct{}) bool {
-	select {
-	case <-c:
-		return true
-	default:
-		return false
-	}
-}
-
 func awaitClosed(t *testing.T, c <-chan struct{}, what string) {
 	t.Helper()
 	select {
@@ -59,15 +50,10 @@ func TestProducerGroupWaitReturnsOnlyWhenTheLastProducerReturns(t *testing.T) {
 	g.start(2)
 	returned := waitInBackground(&g)
 
-	time.Sleep(settle)
-	if isClosed(returned) {
-		t.Fatal("wait returned with two producers running")
-	}
+	awaitWaiting(t, &g)
+	assertStillWaiting(t, returned, "wait returned with two producers running")
 	g.done()
-	time.Sleep(settle)
-	if isClosed(returned) {
-		t.Fatal("wait returned with one producer running")
-	}
+	assertStillWaiting(t, returned, "wait returned with one producer running")
 	g.done()
 	awaitClosed(t, returned, "wait to return after the last producer")
 }
@@ -84,16 +70,13 @@ func TestProducerGroupAdmitsWhileClosingAndAProducerRuns(t *testing.T) {
 	var g producerGroup
 	g.start(1)
 	returned := waitInBackground(&g)
-	time.Sleep(settle)
+	awaitWaiting(t, &g) // the group is closing: wait has begun and a producer runs
 
 	if !g.start(1) {
 		t.Fatal("a closing group with a running producer refused a producer")
 	}
 	g.done() // the first producer returns; the second is still running
-	time.Sleep(settle)
-	if isClosed(returned) {
-		t.Fatal("wait returned while the producer admitted during the wait was still running")
-	}
+	assertStillWaiting(t, returned, "wait returned while the producer admitted during the wait was still running")
 	g.done()
 	awaitClosed(t, returned, "wait to return after the admitted producer")
 }
@@ -104,7 +87,7 @@ func TestProducerGroupRefusesOnceTheLastProducerReturnedWhileClosing(t *testing.
 	var g producerGroup
 	g.start(1)
 	returned := waitInBackground(&g)
-	time.Sleep(settle)
+	awaitWaiting(t, &g) // the last producer returns while the group is closing, not before
 	g.done()
 	awaitClosed(t, returned, "wait to return")
 
@@ -149,10 +132,9 @@ func TestProducerGroupWaitMayBeCalledAgainAndByManyAtOnce(t *testing.T) {
 	var g producerGroup
 	g.start(1)
 	first, second := waitInBackground(&g), waitInBackground(&g)
-	time.Sleep(settle)
-	if isClosed(first) || isClosed(second) {
-		t.Fatal("a wait returned with a producer running")
-	}
+	awaitWaiting(t, &g)
+	assertStillWaiting(t, first, "a wait returned with a producer running")
+	assertStillWaiting(t, second, "a wait returned with a producer running")
 	g.done()
 	awaitClosed(t, first, "the first wait")
 	awaitClosed(t, second, "the second wait")
@@ -215,5 +197,37 @@ func TestProducerGroupUnderContention(t *testing.T) {
 		if g.running != 0 {
 			t.Fatalf("%d producers left registered", g.running)
 		}
+	}
+}
+
+// awaitWaiting returns once wait has marked the group closing, which it does under the
+// lock before it blocks: from then on a test that starts or finishes a producer does so
+// to a closing group, not to a group the waiting goroutine has not reached yet.
+func awaitWaiting(t *testing.T, g *producerGroup) {
+	t.Helper()
+	deadline := time.Now().Add(lifecycleWait)
+	for {
+		g.mu.Lock()
+		waiting := g.waiting
+		g.mu.Unlock()
+		if waiting {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for wait to start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// assertStillWaiting fails when returned is closed. A wait that has not returned cannot
+// be proved by waiting, so this gives a returning wait a moment to show itself: it can
+// miss a wait that returns late, and it never fails a correct one.
+func assertStillWaiting(t *testing.T, returned <-chan struct{}, msg string) {
+	t.Helper()
+	select {
+	case <-returned:
+		t.Fatal(msg)
+	case <-time.After(settle):
 	}
 }
