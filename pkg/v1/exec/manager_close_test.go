@@ -111,6 +111,7 @@ func TestCloseWaitsForASessionItAdmittedThatIsNotRunningYet(t *testing.T) {
 			started := r.startAsync(kind, "admitted")
 			awaitClosed(t, launch.reached, "the start to admit its session")
 			closed := r.closeAsync()
+			awaitTrue(t, func() bool { return exec.ManagerClosed(r.m) }, "Close to begin: it has cancelled the session that is not running yet")
 			assertStillBlocked(t, closed, "Close returned while a session it had to cancel was admitted and not running yet")
 			launch.release()
 
@@ -226,6 +227,8 @@ func TestAStartThatReachesAdmissionWhileCloseIsWaitingIsRefused(t *testing.T) {
 			awaitClosed(t, handler.reached, "the start to reach its handler")
 
 			closed := r.closeAsync() // sets closed, cancels "running", and waits for it
+			// The late start has to reach admission after Close closed it: wait for that event, not for a pause.
+			awaitTrue(t, func() bool { return exec.ManagerClosed(r.m) }, "Close to stop admitting sessions")
 			assertStillBlocked(t, closed, "Close returned while a session could not end")
 			handler.release() // the start reaches admission while Close is waiting
 

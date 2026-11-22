@@ -55,7 +55,6 @@ type env struct {
 	outputAtClose atomic.Int64
 
 	fresh atomic.Int64
-	hung  atomic.Bool // a Close did not return
 
 	outcomes sync.Map // "operation: outcome" -> *atomic.Int64, see saw
 
@@ -146,7 +145,7 @@ func (e *env) close() {
 	select {
 	case <-e.r.closeAsync():
 	case <-time.After(closeBound):
-		e.hung.Store(true)
+		e.r.closeHung.Store(true) // the rig's cleanup does not wait for the same sessions again
 		e.fail("Close did not return within %s", closeBound)
 		return
 	}
@@ -163,11 +162,11 @@ func (e *env) close() {
 // after the goroutines that run operations have returned.
 func (e *env) finish(cancelStream context.CancelFunc) {
 	e.t.Helper()
-	if !e.hung.Load() {
+	if !e.r.closeHung.Load() {
 		e.close()
 	}
 	cancelStream()
-	if !e.hung.Load() {
+	if !e.r.closeHung.Load() {
 		if at, now := e.outputAtClose.Load(), e.r.sink.total.Load(); now != at {
 			e.fail("%d outputs were delivered after Close returned", now-at)
 		}
@@ -178,7 +177,7 @@ func (e *env) finish(cancelStream context.CancelFunc) {
 	for _, failure := range e.failures {
 		e.t.Error(failure)
 	}
-	if e.hung.Load() {
+	if e.r.closeHung.Load() {
 		e.t.FailNow() // the manager is still running sessions: nothing after this can be trusted
 	}
 }

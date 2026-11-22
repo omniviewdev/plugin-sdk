@@ -258,6 +258,7 @@ type rig struct {
 
 	admitted   atomic.Int64 // starts that returned a session
 	closeBegan atomic.Bool  // set before the first Close call: a refusal is only legitimate after it
+	closeHung  atomic.Bool  // a Close did not return within closeBound: sessions are still running
 }
 
 // newRig returns a manager with one handler for legacy sessions and one for resource sessions.
@@ -265,8 +266,24 @@ type rig struct {
 func newRig(t testing.TB) *rig {
 	t.Helper()
 	r := newUnownedRig()
-	t.Cleanup(r.m.Close)
+	t.Cleanup(func() { r.closeAtCleanup(t) })
 	return r
+}
+
+// closeAtCleanup closes the manager of a test that did not, within closeBound. Manager.Close
+// waits for every admitted session on every call, so a second Close after one that was found
+// hung would wait for the same session for ever: the test has failed already, and waiting
+// again would turn its bounded failure into the suite's timeout. A Close that was found hung
+// is not repeated, and one that hangs now is reported.
+func (r *rig) closeAtCleanup(t testing.TB) {
+	if r.closeHung.Load() {
+		return
+	}
+	select {
+	case <-r.closeAsync():
+	case <-time.After(closeBound):
+		t.Errorf("the manager did not close within %s when the test ended", closeBound)
+	}
 }
 
 // newUnownedRig is newRig for a test that makes many managers and closes each itself.
@@ -429,6 +446,20 @@ func assertStillBlocked(t testing.TB, c <-chan struct{}, msg string) {
 	case <-c:
 		t.Fatal(msg)
 	case <-time.After(settle):
+	}
+}
+
+// awaitTrue fails the test when cond does not come true within mustHappen. It polls state that
+// goroutines reach by themselves: the positive event a test needs to see before it goes on,
+// where a pause only suggests that they have run.
+func awaitTrue(t testing.TB, cond func() bool, what string) {
+	t.Helper()
+	deadline := time.Now().Add(mustHappen)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

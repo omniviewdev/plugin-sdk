@@ -202,6 +202,19 @@ func startHeld(t *testing.T, mgr *logs.Manager, reached <-chan struct{}) {
 	}
 }
 
+// awaitAdmissionClosed waits until the manager has stopped taking sessions, the event after
+// which a start must be refused. A pause cannot show it: it only shows that nothing returned.
+func awaitAdmissionClosed(t *testing.T, mgr *logs.Manager, by string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !logs.ManagerClosed(mgr) {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s to stop the manager taking sessions", by)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // While Wait is waiting for a session, the manager takes no other: the start is refused, not
 // admitted into a group that is only closing.
 func TestAStartWhileWaitIsWaitingIsRefused(t *testing.T) {
@@ -209,14 +222,15 @@ func TestAStartWhileWaitIsWaitingIsRefused(t *testing.T) {
 	startHeld(t, mgr, reached)
 	waited := make(chan struct{})
 	go func() { mgr.Wait(); close(waited) }()
-	select {
-	case <-waited:
-		t.Fatal("Wait returned while a session could not end")
-	case <-time.After(100 * time.Millisecond):
-	}
+	awaitAdmissionClosed(t, mgr, "Wait")
 
 	if session, err := startFinite(mgr, "during"); !isRefusal(err) || session != nil {
 		t.Errorf("a start while Wait was waiting (%+v, %v); want the refusal CONNECTION_ERROR", session, err)
+	}
+	select { // the held sink keeps the session from ending: Wait is still waiting for it
+	case <-waited:
+		t.Fatal("Wait returned while a session could not end")
+	case <-time.After(100 * time.Millisecond):
 	}
 	open()
 	select {
@@ -232,14 +246,15 @@ func TestAStartWhileCloseIsWaitingIsRefused(t *testing.T) {
 	startHeld(t, mgr, reached)
 	closed := make(chan struct{})
 	go func() { mgr.Close(); close(closed) }()
-	select {
-	case <-closed:
-		t.Fatal("Close returned while a session could not end")
-	case <-time.After(100 * time.Millisecond):
-	}
+	awaitAdmissionClosed(t, mgr, "Close")
 
 	if session, err := startFinite(mgr, "during"); !isRefusal(err) || session != nil {
 		t.Errorf("a start while Close was waiting (%+v, %v); want the refusal CONNECTION_ERROR", session, err)
+	}
+	select { // the held sink keeps the session from ending: Close is still waiting for it
+	case <-closed:
+		t.Fatal("Close returned while a session could not end")
+	case <-time.After(100 * time.Millisecond):
 	}
 	open()
 	select {
