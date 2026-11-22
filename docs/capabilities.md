@@ -191,6 +191,18 @@ channel retains bounded early output before the transport attaches. A slow or
 unattached consumer applies backpressure, and session cancellation unblocks
 output delivery rather than waiting for the transport to drain.
 
+A session can gain sources while it is alive: `UpdateSessionOptions` with
+`enabled_sources` restarts every enabled source that is not running, including one
+that ended on its own. A session is alive while its initial sources run and, after
+that, while any other producer does: the watcher of dynamic sources, a source it
+added, a source an update restarted. When the last has returned the session has
+ended. `STREAM_ENDED` is sent and no source starts again: an update that would start
+one is refused with a `CONFLICT` error and changes nothing, and so is one that lands
+while the session is being closed. An update that starts no source (other options, a
+selection that names none that is not running) is applied as ever, to an ended
+session too. The refusal keeps its `CONFLICT` classification across the plugin
+boundary.
+
 ## Next
 
 - [Expose a resource type and implement Get](resources.md).

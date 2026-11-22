@@ -226,6 +226,13 @@ func (s *PluginServer) UpdateSessionOptions(
 		LogSessionOptionsFromProto(in.GetOptions()),
 	)
 	if err != nil {
+		// A refusal the manager classified (a session that has ended) keeps its
+		// classification across the transport, as CloseSession's does. Any other
+		// failure is reported as it always was.
+		var classified *resourcev2.ResourceOperationError
+		if errors.As(err, &classified) {
+			return nil, resourceplugin.ResourceRPCError(err)
+		}
 		return nil, status.Errorf(codes.Internal, "failed to update session options: %v", err)
 	}
 
