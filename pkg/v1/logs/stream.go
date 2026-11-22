@@ -445,11 +445,15 @@ type LogStreamRequest struct {
 	// second) or because it has none: the SDK drops the lines it already read, those
 	// stamped before SinceTime and the first few stamped exactly at it (sources stamp
 	// many lines alike), so a handler never has to tell its own lines apart. SinceTime
-	// is the latest timestamp read. When the lines read carried none, it is the
-	// instant the replay was requested: the follow can then repeat a line the replay
-	// read, which has no timestamp to tell it apart, but cannot miss one; a source
-	// that holds a position of its own (an offset, a sequence number) should hand
-	// that over itself.
+	// is the latest timestamp read, in the source's own time domain. When the lines
+	// read carried none, it is the instant the replay was requested, read from the
+	// SDK's clock: the follow can then repeat a line the replay read, which has no
+	// timestamp to tell it apart, and it misses none provided the source's clock is
+	// not behind the SDK's (a source's time filter judges a line by its own clock, so
+	// a line produced just after the replay can carry a timestamp before the
+	// instant). A handler for a remote source can subtract the skew it tolerates from
+	// SinceTime, and a source that holds a position of its own (an offset, a sequence
+	// number) should hand that over itself.
 	//
 	// When SinceTime is nil, or is only the caller's own, nothing was read: continue
 	// from the start of the caller's window (its SinceSeconds still applies; without

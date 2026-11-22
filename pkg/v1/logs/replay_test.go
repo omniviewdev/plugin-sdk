@@ -960,7 +960,9 @@ func TestRequestsNeverCarryTheAcceptanceKey(t *testing.T) {
 
 // With no timestamp on its lines a replay gives the follow nothing to continue
 // after, so the follow starts at the instant the replay was requested: it may
-// repeat a line the replay read, never miss one produced while it was reading.
+// repeat a line the replay read, and misses none produced while it was reading
+// when the source's clock and the SDK's agree (here both are this process's;
+// with a source clock behind the SDK's a handler subtracts the skew it tolerates).
 func TestFollowAfterAnUntimestampedReplayCoversTheSeam(t *testing.T) {
 	type produced struct {
 		at   time.Time
