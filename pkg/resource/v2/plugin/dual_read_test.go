@@ -138,3 +138,26 @@ func TestHostClientOnWire3ReadsAWire3PluginAndWire4ClientIsRefusedByIt(t *testin
 		t.Fatalf("wrong wire must come back as a typed UNSUPPORTED, got %v", err)
 	}
 }
+
+// Source sessions are the other strict lane the shipped plugin uses: a frame of a wire-3 peer is admitted by
+// the strict reader at floor 3 and decoded against the wire it names, and is refused as a wire-4 frame.
+func TestDualReadSourceFramesFollowThePeerWire(t *testing.T) {
+	withFloor(t, resourcev2.FloorWireVersion)
+	frame := &resourcepb.SourceFrame{
+		Version: 3, SessionId: "s", Generation: "g", Sequence: 1,
+		Payload: &resourcepb.SourceFrame_Begin{Begin: &resourcepb.SourceBegin{Mode: "snapshot"}},
+	}
+	if err := admit(t, frame); err != nil {
+		t.Fatalf("a wire-3 source frame must be admitted at floor 3: %v", err)
+	}
+	if _, err := resourcev2.FromProtoSourceFrameWire(frame, 3); err != nil {
+		t.Fatalf("decoded as the wire it names: %v", err)
+	}
+	if _, err := resourcev2.FromProtoSourceFrameWire(frame, 4); err == nil {
+		t.Fatal("a wire-3 frame read as a wire-4 frame must be refused")
+	}
+	frame.Version = 4
+	if _, err := resourcev2.FromProtoSourceFrameWire(frame, 4); err != nil {
+		t.Fatalf("a wire-4 frame read as wire 4: %v", err)
+	}
+}
