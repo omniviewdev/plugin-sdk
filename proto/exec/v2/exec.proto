@@ -1,0 +1,1549 @@
+// The exec lane of the Omniview plugin SDK: run a command in a target (a Pod, a container, a host, a VM)
+// either interactively (Open: one stream per session) or as one bounded, non-interactive run (Run).
+//
+// This file is a public contract. A released message, field number, enum value or RPC never changes meaning and is
+// never reused. The reviewed listing of the contract (proto/exec/v2/exec.contract.golden, which a test compares with
+// this file's descriptor) and buf breaking against the last release tag in CI fail a change that is not additive.
+//
+// Conventions that hold for every message below:
+//
+//   - ABSENCE IS UNKNOWN, one rule for the whole file. A fact that a producer may not know is written so that "not
+//     known" is a value of its own and never the zero value of its type: a bool fact is `optional bool`; a numeric
+//     fact whose zero is a real value is `optional`; an enum fact has an UNSPECIFIED zero; a message fact is absent; a
+//     list whose emptiness is a fact ("no signals") is wrapped in a message so that absent differs from empty. A field
+//     that is none of these is one of: a request the host makes (its zero is the documented default); a limit or a
+//     size whose zero is not a real value; an identifier or a sequence number; a counter the SDK itself observed (zero
+//     is a count); or a field of an arm that exists only when the fact is known. The field's comment says which. A
+//     consumer never turns "unknown" into false, zero, none or exit 0.
+//   - An UNSPECIFIED enum value is "unknown", never the nearest named value. Where it has a documented safe reading
+//     for a decision (CLOSE_MODE_UNSPECIFIED is read as GRACEFUL, MARK_TRUST_UNSPECIFIED as UNVERIFIED,
+//     KILL_BEHAVIOR_UNSPECIFIED as "the process may survive") the enum's comment says so. A value that a reader does
+//     not know (a newer peer) is read as UNSPECIFIED.
+//   - Classes, reasons and facts cross this wire; free text does not. The host writes the words. The one bounded
+//     exception, Failed.public_message, is optional, reviewed-classes-only and never authority.
+//   - Requests (every message the host sends to ask or to start something, and the first frame of Open) are STRICT:
+//     a plugin refuses a request that carries a field it does not know, at any depth and inside the elements of a
+//     repeated message too (UNSUPPORTED), because a request field can change what a command may do. For that reason a
+//     request carries no map: a name/value list is a repeated NameValue, whose encoding is identical to a map entry's
+//     and whose unknown fields can be seen. A host therefore sends a field an older plugin may not know only after
+//     DescribeResponse.features lists the feature that gates it. Frames and responses are LENIENT: a field or a
+//     frame kind a reader does not know is ignored, and counted.
+//   - Capabilities have two levels: the target kind's UPPER BOUND in Describe, and each session's EFFECTIVE set in its
+//     facts, which may only narrow it (see Capabilities).
+//   - A session has exactly one end, and a stream exactly one last frame (see ServerFrame and Ended).
+//   - Names: a message or field that the Go author API also names carries the same word there (pkg/v1/exec).
+//
+// A REFUSAL is a gRPC status that the SDK sends itself, before it hands a command to the author's function: the answer
+// to a request it did not accept, so nothing ran and a host may retry (Open, Run and every other RPC that starts or
+// ends a command). It carries a google.rpc.ErrorInfo with domain "omniview.sdk.exec.v2", reason = the ErrorClass name
+// without its prefix ("FORBIDDEN"), and metadata keys "reason" (the ErrorReason name without its prefix), "program",
+// "selection_name", "selection_value" and "retry_after_ms" for the ErrorFacts that are set; a bounded
+// google.rpc.LocalizedMessage (locale "en") carries Error.Message for a reviewed class. Options is a read, it starts no
+// command: a failure of the author's callback is also a status (the classified class, INTERNAL when the callback broke
+// the contract) and a host may retry it. EVERYTHING AFTER A COMMAND WAS HANDED OVER IS DATA, never a status: once the
+// command was handed to the author's function, how it ended is part of the result, because the command may have run
+// and may still be running. A session ends with Ended (an End: exited, signaled, closed, failed or lost); a run ends
+// with RunResult (an Outcome: exited, signaled, timed out, cancelled, failed or lost), which keeps the output read so
+// far and says whether the process may survive. A refusal establishes that nothing ran; whether a retry can succeed
+// depends on its class and reason (CONSENT_REQUIRED, FORBIDDEN and INVALID_REQUEST stay refused until the request or
+// the host's state changes; LIMIT, UNAVAILABLE and CONNECTION may pass), so a host retries a refusal only when its
+// class and reason say a retry can help, and never a failed or lost end. A status that is not a refusal in this sense
+// (the call was cancelled, its deadline expired, the connection broke, the plugin died, or any gRPC status without
+// this ErrorInfo) can arrive after the command was handed over and says nothing about whether it ran: it never
+// authorizes an automatic retry of a command.
+syntax = "proto3";
+
+package omniview.sdk.exec.v2;
+
+import "proto/resource/v2/domain.proto";
+
+option go_package = "github.com/omniviewdev/plugin-sdk/proto/exec/v2;execv2";
+
+// Exec is the exec lane. It lives on the existing go-plugin capability "exec", beside the legacy
+// omniview.sdk.exec.v1.ExecPlugin service. A plugin that does not serve it answers Unimplemented to every method.
+service Exec {
+  // Describe lists what this plugin can run commands in (the target kinds), what each kind can do at most and the
+  // limits it enforces. Static: it needs no connection and returns the same answer for the life of the process.
+  rpc Describe(DescribeRequest) returns (DescribeResponse);
+
+  // Options lists what a user can choose for one resource before running a command in it (for a Pod: its
+  // containers, each with its state), so that a picker shows real states. Admitted like any resource utility
+  // call: the caller's connection, the route and the catalog pin are checked before the plugin's callback runs.
+  rpc Options(OptionsRequest) returns (OptionsResponse);
+
+  // Open is one interactive session: ONE stream per session at a time. The first client frame opens a new command or
+  // attaches to an existing session. The last server frame of the stream is Ended (the session is over; a session has
+  // at most one Ended, and none when it ended while no stream was attached: its end is the tombstone's) or Detached
+  // (this stream left and the session lives on: the host asked, or another stream took the session over). Served when
+  // DescribeResponse.features lists FEATURE_SESSION.
+  rpc Open(stream ClientFrame) returns (stream ServerFrame);
+
+  // Run is one bounded, non-interactive command with one answer. Once the command was handed to the target the SDK
+  // answers with a RunResult whatever happened (an exit, a signal, a timeout, a cancel, a failure, a loss); the only
+  // status the SDK itself sends is a refusal, when nothing ran. A call that is cancelled, whose deadline expires or
+  // whose connection breaks before the RunResult arrives ends with a status of the transport's own, which says nothing
+  // about whether the command ran and never authorizes a retry (see the file header). Served when
+  // DescribeResponse.features lists FEATURE_RUN.
+  rpc Run(RunRequest) returns (RunResult);
+
+  // RunStream is Run with its output as it happens; cancelling the call cancels the run. It ends with RunEnded under
+  // the same rule. Served when DescribeResponse.features lists FEATURE_RUN_STREAM.
+  rpc RunStream(RunRequest) returns (stream RunEvent);
+
+  // ListSessions lists the plugin's sessions, including recently ended ones (tombstones). Served when
+  // DescribeResponse.features lists FEATURE_SESSION_MANAGEMENT.
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+
+  // ReadOutput is a cursor read of a session's replay ring. Served when DescribeResponse.features lists
+  // FEATURE_SESSION_MANAGEMENT.
+  rpc ReadOutput(ReadOutputRequest) returns (ReadOutputResponse);
+
+  // EndSession ends a session that has no attached stream. Served when DescribeResponse.features lists
+  // FEATURE_SESSION_MANAGEMENT.
+  rpc EndSession(EndSessionRequest) returns (EndSessionResponse);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Shared
+// ---------------------------------------------------------------------------------------------------------------
+
+// Size is a terminal size in character cells.
+//
+// Set by: the host (Start.size, Resize.size); the SDK (SessionFacts.size, Resized.size, Replay.size).
+// Absent: cols and rows both zero is "no size" (none requested, none applied, or not known). A size with exactly
+// one zero dimension is invalid.
+message Size {
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+// NameValue is one name and its value in a request: a selection choice, an environment variable, a label. A request
+// carries a repeated NameValue and never a map: the encoding is identical to a map entry's (field 1 the name, field 2
+// the value), and a repeated message can be checked for unknown fields where a map entry cannot. A name appears at
+// most once in a list: a duplicate is INVALID_REQUEST, never "the last one wins".
+message NameValue {
+  string name = 1;
+  string value = 2;
+}
+
+// TargetRef names one thing to run a command in, or to ask about: a canonical resource reference, the route of the
+// connection that reaches it, and the choices already made for it.
+//
+// Set by: the host, on every request that addresses a resource (Options, Start, RunRequest).
+// route: REQUIRED, and must be the caller's connection: the plugin refuses a route that is not the connection the
+// call arrived on (INVALID_REQUEST). reference: REQUIRED, canonical, with its incarnation when the host has one; a
+// reference whose incarnation differs from the live resource's is CONFLICT / TARGET_REPLACED.
+// selection: the choices made from Options, one NameValue per option (name: the option's name, "container"; value: the
+// choice's value, "app"), each option at most once. Empty means "the target's default for every option". Options
+// itself refuses a non-empty selection (INVALID_REQUEST).
+message TargetRef {
+  omniview.resource.v2.ResourceReference reference = 1;
+  omniview.resource.v2.AccessRoute route = 2;
+  repeated NameValue selection = 3;
+}
+
+// Stream says which of a command's output streams a chunk of bytes belongs to.
+enum Stream {
+  // Unknown. Never produced by the SDK.
+  STREAM_UNSPECIFIED = 0;
+  // The one combined stream of a command that runs with a terminal (a tty merges stdout and stderr).
+  STREAM_TTY = 1;
+  // The standard output of a command that runs without a terminal.
+  STREAM_STDOUT = 2;
+  // The standard error of a command that runs without a terminal.
+  STREAM_STDERR = 3;
+}
+
+// Signal is a process signal the host may ask a target to deliver (ClientFrame.signal). Ctrl+C in a terminal is
+// the byte 0x03 sent as input, not this.
+enum Signal {
+  // Unknown or not set. Never deliverable.
+  SIGNAL_UNSPECIFIED = 0;
+  SIGNAL_INT = 1;
+  SIGNAL_QUIT = 2;
+  SIGNAL_TERM = 3;
+  SIGNAL_KILL = 4;
+  SIGNAL_HUP = 5;
+  SIGNAL_USR1 = 6;
+  SIGNAL_USR2 = 7;
+}
+
+// FactMode says how a target provides a fact about a running session (the foreground process, the current
+// directory).
+enum FactMode {
+  // The producer did not say. A consumer treats the fact as unavailable for every decision and never probes it, and
+  // does not claim that the target cannot provide it.
+  FACT_MODE_UNSPECIFIED = 0;
+  // The target provides no such fact: the consumer shows nothing and never probes.
+  FACT_MODE_NONE = 1;
+  // The consumer may ask (ClientFrame.query) and the target answers; the SDK never pushes it.
+  FACT_MODE_PULL = 2;
+  // The target pushes the fact when it changes (a Fact frame with query_id 0); the consumer may also ask.
+  FACT_MODE_PUSH = 3;
+}
+
+// KillBehavior says what ending a session (Close, a detach timeout, a retired connection) does to the process the
+// target runs.
+enum KillBehavior {
+  // The producer did not say. Read as "the process may survive".
+  KILL_BEHAVIOR_UNSPECIFIED = 0;
+  // Ending the session terminates the process (a pty hangup, an ssh channel close).
+  KILL_BEHAVIOR_TERMINATES = 1;
+  // Ending the session usually terminates the process; the target cannot promise it.
+  KILL_BEHAVIOR_BEST_EFFORT = 2;
+  // Ending the session only closes the stream; the process may keep running (Kubernetes exec, Docker exec).
+  KILL_BEHAVIOR_CLOSES_STREAM_ONLY = 3;
+}
+
+// Survival says what outlives a restart of the host (not a reload of its window or a break of its stream, which
+// every session survives while the plugin process lives, for its lease).
+enum Survival {
+  // The producer did not say. A consumer never offers to reattach, and does not claim that nothing survives.
+  SURVIVAL_UNSPECIFIED = 0;
+  // Nothing: a restart of the host ends the command with its session.
+  SURVIVAL_NONE = 1;
+  // The command's process survives and a new session can reach it; the scrollback does not.
+  SURVIVAL_TARGET_PROCESS = 2;
+  // The process and its scrollback survive (the command is a terminal multiplexer such as tmux new -A).
+  SURVIVAL_TARGET_SESSION = 3;
+}
+
+// ExitReport says what a target can ever say about how a command ended, so that a consumer neither waits for nor
+// invents a status the target cannot produce.
+enum ExitReport {
+  // The producer did not say. A consumer reads no status as promised. The SDK refuses to register a target that
+  // can run commands and leaves this unspecified.
+  EXIT_REPORT_UNSPECIFIED = 0;
+  // The target reports no status of the process at all (Kubernetes attach): the session ends Closed, Lost or Failed,
+  // or, when the transport itself relays a code of its own, Exited with EXIT_SOURCE_TRANSPORT, whose code is the
+  // transport's and never the command's. Never Exited from the process (PROCESS or SIGNAL_FOLDED), never Signaled.
+  EXIT_REPORT_NONE = 1;
+  // The target reports an exit code (Kubernetes exec): a command that ended with a status ends Exited, never
+  // Signaled; a session whose connection was retired, whose status channel was lost before a code arrived or that
+  // failed ends Closed, Lost or Failed, and a consumer never waits for a code that did not arrive.
+  EXIT_REPORT_CODE = 2;
+  // The target reports an exit code or a signal (a pty, ssh).
+  EXIT_REPORT_CODE_AND_SIGNAL = 3;
+}
+
+// StallBehavior says what a reader that stops reading does to the target.
+enum StallBehavior {
+  // The producer did not say. The SDK refuses to register a target that can run commands and leaves this
+  // unspecified.
+  STALL_BEHAVIOR_UNSPECIFIED = 0;
+  // A stalled reader slows the process (a pty, ssh with per-channel windows): the SDK blocks the author's Write
+  // and nothing is lost.
+  STALL_BEHAVIOR_PROPAGATES = 1;
+  // A stalled reader stalls every channel and loses the tail (Kubernetes, Docker): the SDK drains the target
+  // eagerly into the replay ring, counts what the ring overwrites and never blocks the target on the host.
+  STALL_BEHAVIOR_LOSSY = 2;
+}
+
+// IntegrationMode says how shell integration (OSC 133/633/7 marks) reaches a target that has no argv or env
+// control of its shell. A helper binary inside the target is not offered.
+enum IntegrationMode {
+  // Not said. In a request: no integration was asked for. In facts: not known what was applied.
+  INTEGRATION_MODE_UNSPECIFIED = 0;
+  // No integration (in IntegrationFacts.mode: none was applied; in a request: none is asked for).
+  INTEGRATION_MODE_NONE = 1;
+  // The SDK rewrites the command to [sh, -c, <fixed bootstrap script>, --, <the requested argv...>]; the script
+  // loads the integration and then execs the requested shell. Nothing is typed into the user's terminal. Never
+  // applied without IntegrationRequest.consent.
+  INTEGRATION_MODE_ARGV_WRAPPER = 2;
+}
+
+// Feature is a part of the contract that a plugin's SDK build serves. DescribeResponse.features lists the features a
+// build serves; a consumer uses a feature only when the build lists it AND, where the feature depends on the target,
+// the target's Capabilities allow it. Start.features lists the opt-in features a session asks for.
+enum Feature {
+  // Unknown. Never listed.
+  FEATURE_UNSPECIFIED = 0;
+  // Typed Mark frames from OSC 133/633/7 in the output, bytes untouched. Opt-in per session (Start.features).
+  FEATURE_MARKS = 1;
+  // Sessions that outlive their stream: Attach, Detach, Detached, ReadOutput, ListSessions, EndSession, the replay
+  // ring, the lease and the tombstone.
+  FEATURE_SESSION_MANAGEMENT = 2;
+  // RunStream.
+  FEATURE_RUN_STREAM = 3;
+  // Start.env and RunRequest.env are honored (for a target whose Capabilities.env is set).
+  FEATURE_ENV = 4;
+  // Start.cwd and RunRequest.cwd are honored (for a target whose Capabilities.cwd is set).
+  FEATURE_CWD = 5;
+  // ClientFrame.close_input (stdin EOF) is honored (for a target whose Capabilities.stdin_eof is set).
+  FEATURE_STDIN_EOF = 6;
+  // Terminal-mode tracking for the attach reply and an exact mode reset. Opt-in per session (Start.features).
+  FEATURE_MODES = 7;
+  // Start.integration is honored (for a target whose Capabilities.integration lists the mode).
+  FEATURE_INTEGRATION = 8;
+  // Open: interactive sessions are served.
+  FEATURE_SESSION = 9;
+  // Run: bounded runs are served.
+  FEATURE_RUN = 10;
+}
+
+// ErrorClass is the SDK's closed vocabulary of why something failed, the subset the exec lane uses. The host words
+// the failure from the class, the ErrorReason and the ErrorFacts.
+enum ErrorClass {
+  // Unknown class. Read as INTERNAL.
+  ERROR_CLASS_UNSPECIFIED = 0;
+  // The target's own authorization refused (cluster RBAC on pods/exec).
+  ERROR_CLASS_FORBIDDEN = 1;
+  // The credentials the plugin holds for the target are missing or were refused.
+  ERROR_CLASS_UNAUTHORIZED = 2;
+  // The target, the executable or the session does not exist.
+  ERROR_CLASS_NOT_FOUND = 3;
+  // The request conflicts with the current state (the incarnation changed, the session id is in use).
+  ERROR_CLASS_CONFLICT = 4;
+  // The target cannot serve now (the container is not running).
+  ERROR_CLASS_UNAVAILABLE = 5;
+  // The connection to the target failed or was retired.
+  ERROR_CLASS_CONNECTION = 6;
+  // A bound on time was reached.
+  ERROR_CLASS_TIMEOUT = 7;
+  // The request is malformed or breaks a bound it declares.
+  ERROR_CLASS_INVALID_REQUEST = 8;
+  // The request asks for something this plugin, SDK build or target does not support.
+  ERROR_CLASS_UNSUPPORTED = 9;
+  // A declared limit was reached (too many sessions, too many runs, input too large).
+  ERROR_CLASS_LIMIT = 10;
+  // The call or the command was cancelled.
+  ERROR_CLASS_CANCELLED = 11;
+  // The plugin failed in a way it cannot classify, or broke this contract.
+  ERROR_CLASS_INTERNAL = 12;
+}
+
+// ErrorReason says why, within a class; closed, and always paired with the class(es) listed beside it. Any other
+// pairing is a bug of the producer (the SDK replaces it with INTERNAL). ERROR_REASON_UNSPECIFIED pairs with every
+// class.
+enum ErrorReason {
+  // No reason beyond the class.
+  ERROR_REASON_UNSPECIFIED = 0;
+  // FORBIDDEN: the target's own authorization denied the exec.
+  ERROR_REASON_TARGET_DENIED = 1;
+  // NOT_FOUND: the target is gone (the Pod was deleted).
+  ERROR_REASON_TARGET_GONE = 2;
+  // CONFLICT: the target's incarnation changed since the host observed it.
+  ERROR_REASON_TARGET_REPLACED = 3;
+  // UNAVAILABLE: the target exists and cannot run commands now (the container is not running).
+  ERROR_REASON_NOT_RUNNING = 4;
+  // NOT_FOUND: the program to run does not exist in the target (no shell in the image); ErrorFacts.program names it.
+  ERROR_REASON_NO_SUCH_EXECUTABLE = 5;
+  // UNSUPPORTED: the target cannot give the command a terminal.
+  ERROR_REASON_TTY_UNSUPPORTED = 6;
+  // LIMIT: the plugin holds SessionLimits.max_sessions sessions.
+  ERROR_REASON_TOO_MANY_SESSIONS = 7;
+  // LIMIT: the plugin runs RunLimits.max_concurrent runs.
+  ERROR_REASON_TOO_MANY_RUNS = 8;
+  // LIMIT: an input frame or stdin exceeds its declared maximum.
+  ERROR_REASON_INPUT_TOO_LARGE = 9;
+  // CONNECTION: the connection the call arrived on was retired.
+  ERROR_REASON_CONNECTION_RETIRED = 10;
+  // CONFLICT: the session id is in use by a live session.
+  ERROR_REASON_SESSION_EXISTS = 11;
+  // NOT_FOUND: no such session (never existed, or its tombstone expired).
+  ERROR_REASON_SESSION_UNKNOWN = 12;
+  // INVALID_REQUEST: a mode that needs the host's consent was requested without it.
+  ERROR_REASON_CONSENT_REQUIRED = 13;
+  // LIMIT: the command's input queue is full and the stream's window is closed; the host sends again when the
+  // window opens. Raised by the plugin, and by a host's client that applies the same bound locally.
+  ERROR_REASON_INPUT_BACKLOG = 14;
+}
+
+// ErrorFacts are the bounded facts a refusal carries so that the host can word it without free text.
+//
+// Set by: the plugin's author (exec.ErrorFacts) or the SDK. Each string is at most 256 bytes of UTF-8 without
+// control characters. Absent (empty or zero) means the fact does not apply.
+message ErrorFacts {
+  // The program that was not found (ERROR_REASON_NO_SUCH_EXECUTABLE).
+  string program = 1;
+  // The name of the selection the failure concerns ("container").
+  string selection_name = 2;
+  // The value of that selection ("app").
+  string selection_value = 3;
+  // When retrying can help: how long to wait. Zero means no advice, not "retry now".
+  uint32 retry_after_ms = 4;
+}
+
+// SignalSet is a list of signals that can be empty: an absent SignalSet is "not known", a present empty one is "none".
+message SignalSet {
+  repeated Signal signals = 1;
+}
+
+// IntegrationModeSet is a list of integration modes that can be empty: absent is "not known", present and empty is
+// "none".
+message IntegrationModeSet {
+  repeated IntegrationMode modes = 1;
+}
+
+// Capabilities is what a target can do, at two levels.
+//
+// TargetInfo.capabilities is the kind's UPPER BOUND: the most any session of the kind can do, declared by the plugin's
+// author at registration (exec.Capabilities) and fixed for the life of the plugin process. A consumer may use it
+// before any session exists (which controls a picker offers, which request it never sends).
+// SessionFacts.capabilities is what THIS session can do, EFFECTIVE. At Opened it is the kind's upper bound narrowed by
+// Choice.capabilities of every choice the request's selection names: the session's MODE (a Kubernetes exec or attach),
+// declared with the choice, so a host knows it before anything opens. Started narrows it further only by what the
+// author learned at run time and never carries the mode; a later attach's Opened carries the latest effective set. A
+// session may only NARROW, never widen: for every field below, a choice's value is at most the kind's and a Started's
+// at most the one Opened carried, under the order given at the field; the SDK enforces it, replacing a value above its
+// bound with the bound's and logging the author's bug. EVERY capability can be narrowed, so one target kind can serve
+// modes that differ (a Kubernetes Pod: exec reports an exit code and does not survive a host restart, attach reports
+// no status and does). A consumer that holds a session reads that session's facts and never Describe; a consumer that
+// has only Describe reads each field as "the most it can do".
+//
+// Absent: a Capabilities message that is absent (TargetInfo or SessionFacts) means the producer did not declare
+// capabilities: unknown, to be read as nothing promised. Inside a present message a field that is absent (a bool or a
+// set) or UNSPECIFIED (an enum) is not known; false, an empty set and NONE are the producer's statement that the
+// target cannot. The SDK always writes every field it knows. UNSPECIFIED (or an absent field) is below every value of
+// an order: a kind that did not say promises nothing, so a session cannot claim more than that, and a session that
+// reports UNSPECIFIED has not reported the field, so the value it narrows stands.
+message Capabilities {
+  // The target can run a command with a terminal (a pty). Order: false < true.
+  optional bool tty = 1;
+  // Without a terminal, stderr arrives as its own stream (STREAM_STDERR). Order: false < true.
+  optional bool separate_stderr = 2;
+  // The target honors a resize after the command started. Order: false < true.
+  optional bool resize = 3;
+  // The target honors Start.size before the first output; false means the first prompt is laid out at the target's
+  // own size. Order: false < true.
+  optional bool initial_size = 4;
+  // ClientFrame.close_input half-closes the command's stdin. Order: false < true.
+  optional bool stdin_eof = 5;
+  // The signals ClientFrame.signal can deliver; a present empty set means none: the host offers only Close. Order:
+  // inclusion (a session's set is a subset of the kind's).
+  SignalSet signals = 6;
+  // What ending a session does to the process. Order: CLOSES_STREAM_ONLY < BEST_EFFORT < TERMINATES.
+  KillBehavior kill = 7;
+  // Start.env and RunRequest.env are honored; false means a request that carries env is refused (UNSUPPORTED). Order:
+  // false < true.
+  optional bool env = 8;
+  // Start.cwd and RunRequest.cwd are honored; false means a request that carries cwd is refused (UNSUPPORTED). Order:
+  // false < true.
+  optional bool cwd = 9;
+  // How the target provides the current directory of the session. Order: NONE < PULL < PUSH.
+  FactMode cwd_fact = 10;
+  // How the target provides whether a command is running in the foreground. Order: NONE < PULL < PUSH.
+  FactMode foreground_fact = 11;
+  // What outlives a restart of the host. Order: NONE < TARGET_PROCESS < TARGET_SESSION.
+  Survival host_restart = 12;
+  // What the target can say about how a command ended. Order: NONE < CODE < CODE_AND_SIGNAL.
+  ExitReport exit_report = 13;
+  // What a reader that stops reading does to the target. Order: LOSSY < PROPAGATES.
+  StallBehavior stall = 14;
+  // The author reports the health of the transport to the target (Link frames). False means the consumer sees only
+  // the health of the host-to-plugin leg. Order: false < true.
+  optional bool link_health = 15;
+  // The integration modes the target accepts; never applied without the host's consent flag. A present empty set means
+  // none. Order: inclusion.
+  IntegrationModeSet integration = 16;
+}
+
+// SessionLimits are the bounds an interactive session is served under.
+//
+// Set by: the plugin's author (exec.SessionLimits, zero fields take the SDK's defaults); the SDK reports the
+// effective value in Describe and in each session's facts.
+// Absent: in Describe, TargetInfo.session absent means the target serves no interactive sessions. A present section
+// carries effective, non-zero bounds: the SDK never sends an all-zero section, and a consumer refuses a present
+// all-zero section as a malformed description. A single zero field inside a non-zero section, from another producer,
+// reads as unstated (unknown), never unlimited.
+message SessionLimits {
+  // The most sessions the plugin holds at once for this target kind.
+  uint32 max_sessions = 1;
+  // The largest ClientFrame.input, in bytes.
+  uint32 max_input_frame = 2;
+  // The replay ring a session gets when Start.replay_bytes is zero, in bytes.
+  uint32 replay_bytes = 3;
+  // The largest replay ring Start.replay_bytes may ask for, in bytes.
+  uint32 max_replay_bytes = 4;
+  // The lease a detached session gets when Start.detach_timeout_ms or Detach.lease_ms is zero, in milliseconds.
+  uint32 detach_timeout_ms = 5;
+  // The largest lease the host may ask for, in milliseconds.
+  uint32 max_detach_timeout_ms = 6;
+  // The largest value of either dimension of a Size.
+  uint32 max_dimension = 7;
+}
+
+// RunLimits are the bounds a bounded run is served under.
+//
+// Set by: the plugin's author (exec.RunLimits, zero fields take the SDK's defaults); the SDK reports the effective
+// value in Describe. Absent: in Describe, TargetInfo.run absent means the target serves no runs. A present section
+// carries effective, non-zero bounds: the SDK never sends an all-zero section, and a consumer refuses a present
+// all-zero section as a malformed description. A single zero field inside a non-zero section, from another producer,
+// reads as unstated (unknown), never unlimited.
+message RunLimits {
+  // The timeout a run gets when RunRequest.timeout_ms is zero, in milliseconds.
+  uint32 default_timeout_ms = 1;
+  // The largest RunRequest.timeout_ms; above it the run is refused (INVALID_REQUEST), never clamped.
+  uint32 max_timeout_ms = 2;
+  // The per-stream output cap a run gets when OutputLimits is zero, in bytes.
+  uint32 default_output_bytes = 3;
+  // The largest per-stream output cap; above it the run is refused, never clamped.
+  uint32 max_output_bytes = 4;
+  // The largest RunRequest.stdin, in bytes.
+  uint32 max_stdin_bytes = 5;
+  // The most runs in flight at once for this target kind.
+  uint32 max_concurrent = 6;
+  // The largest total size of RunRequest.argv, in bytes.
+  uint32 max_argv_bytes = 7;
+  // The largest total size of RunRequest.env names and values, in bytes.
+  uint32 max_env_bytes = 8;
+  // How long after the command's exit the SDK keeps reading output, in milliseconds; when it is reached the run's
+  // output completeness is UNKNOWN.
+  uint32 post_exit_drain_ms = 9;
+}
+
+// TargetInfo describes one kind of thing a command can run in.
+//
+// Set by: the plugin's author (exec.Target.Info), which carries the routing key. provider and type are the resource
+// address provider and type a TargetRef.reference must carry to reach this kind. display_name is presentation data
+// from the author ("Pod"), bounded to 128 bytes. default_argv is the command a Start with an empty argv runs; empty
+// means a Start must give an argv. capabilities: the kind's UPPER BOUND (see Capabilities). session and run: see the
+// limits messages; a section is either absent (not served) or present with effective, non-zero bounds. both absent
+// means a target that only offers Options.
+message TargetInfo {
+  string provider = 1;
+  string type = 2;
+  string display_name = 3;
+  repeated string default_argv = 4;
+  Capabilities capabilities = 5;
+  SessionLimits session = 6;
+  RunLimits run = 7;
+}
+
+message DescribeRequest {}
+
+// DescribeResponse is what a plugin can run commands in and which parts of the contract it serves.
+//
+// Set by: the SDK. contract_version is the version of this file's contract that the SDK build implements (1 for the
+// first release); features lists what this build serves; targets lists the registered kinds in registration order.
+// Absent: an empty features list means the build serves Describe and Options and nothing else.
+message DescribeResponse {
+  uint32 contract_version = 1;
+  repeated Feature features = 2;
+  repeated TargetInfo targets = 3;
+}
+
+// OptionsRequest asks what a user can choose for one resource. target.selection must be empty.
+message OptionsRequest {
+  TargetRef target = 1;
+}
+
+// ChoiceState is what a choice can do now.
+enum ChoiceState {
+  // The producer does not know (a container's state was not observed). Never read as ready or stopped.
+  CHOICE_STATE_UNSPECIFIED = 0;
+  // The choice can run a command now.
+  CHOICE_STATE_READY = 1;
+  // The choice is starting and will probably be ready soon.
+  CHOICE_STATE_STARTING = 2;
+  // The choice cannot run a command now.
+  CHOICE_STATE_STOPPED = 3;
+}
+
+// Choice is one thing a user can pick for an option (one container of a Pod).
+//
+// Set by: the plugin's author (exec.Choice). value is the string a TargetRef.selection carries (at most 256
+// bytes); display_name is presentation data (at most 256 bytes, no control characters); detail and kind are closed
+// codes matching ^[a-z0-9_.-]{1,40}$, never prose ("crash-loop", "init"); empty means none. is_default marks the
+// choice a Start runs in when the selection omits the option (at most one choice of an option).
+//
+// capabilities is the MODE of the choice: the complete set a session that selects it is served with, declared
+// before anything opens. It follows the narrowing rule of Capabilities (the author starts from the kind's upper
+// bound and only narrows, each field in the order written at the field). The SDK applies it at admission, so
+// Opened carries the kind's bound narrowed by every choice the selection names (the default choice of an option it
+// omits), and a host can show "attach: no exit status, survives a host restart" before it opens anything. Absent
+// means the choice does not narrow. A field wider than the kind's is a violation: the SDK clamps it to the bound
+// and names the field. Started may narrow further what is learned only at run time; it never carries the mode.
+message Choice {
+  string value = 1;
+  string display_name = 2;
+  ChoiceState state = 3;
+  string detail = 4;
+  bool is_default = 5;
+  string kind = 6;
+  Capabilities capabilities = 7;
+}
+
+// Option is one dimension a user chooses along ("container") and its choices.
+//
+// Set by: the plugin's author (exec.Option). name is the selection key, a closed code matching
+// ^[a-z0-9_.-]{1,40}$. required means a Start for this resource must carry the option in its selection or have a
+// default choice. An option with no choices is present and empty: the resource has nothing to choose now.
+message Option {
+  string name = 1;
+  repeated Choice choices = 2;
+  bool required = 3;
+}
+
+// OptionsResponse lists the options of one resource.
+//
+// Set by: the SDK, from the author's callback. Bounds: at most 8 options and 256 choices per option. observed_at is
+// the SDK's clock when the callback returned, in Unix milliseconds. An empty options list means the target has
+// nothing to choose.
+message OptionsResponse {
+  repeated Option options = 1;
+  int64 observed_at_unix_ms = 2;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// (A) the interactive session
+// ---------------------------------------------------------------------------------------------------------------
+
+// IntegrationRequest asks for shell integration in a target.
+//
+// Set by: the host. consent is the host's assertion that the user agreed to send bootstrap code to this target; any
+// mode but UNSPECIFIED or NONE without it is refused INVALID_REQUEST / CONSENT_REQUIRED. Absent, UNSPECIFIED and NONE
+// all mean no integration.
+message IntegrationRequest {
+  IntegrationMode mode = 1;
+  bool consent = 2;
+}
+
+// Start is the request to run a new command in a session.
+//
+// Set by: the host, in OpenRequest.start. Strict (see the file header). target: required. argv: empty means the
+// target's default_argv (never a shell string; each element at most 32 KiB, no NUL; at most 1,024 elements and
+// 64 KiB in all). tty: ask for a terminal; refused UNSUPPORTED / TTY_UNSUPPORTED when the target cannot. size:
+// the initial size (zero means the SDK picks 80 x 24 for a tty and sends NOTICE_KIND_SIZE_DEFAULTED); at most
+// SessionLimits.max_dimension. env: only if Capabilities.env; one NameValue per variable, each name once, matching
+// [A-Za-z_][A-Za-z0-9_]* (at most 256 bytes), at most 256 entries, values without NUL and at most 32 KiB each, at most
+// 64 KiB in all; its names, never its values, may appear in any audit. cwd: only if Capabilities.cwd, at most 4,096
+// bytes, no NUL. labels: opaque to the SDK and
+// never authority; at most 16 NameValue entries, names unique and at most 64 bytes, values at most 256 bytes, UTF-8
+// without control characters. detach_timeout_ms: the lease; zero means SessionLimits.detach_timeout_ms, at most
+// max_detach_timeout_ms. replay_bytes: the replay ring; zero means SessionLimits.replay_bytes, at most
+// max_replay_bytes. features: opt-in features, only FEATURE_MARKS and FEATURE_MODES, each only if
+// DescribeResponse.features lists it. integration: only if FEATURE_INTEGRATION is listed and the target lists the
+// mode; absent means none.
+message Start {
+  TargetRef target = 1;
+  repeated string argv = 2;
+  bool tty = 3;
+  Size size = 4;
+  repeated NameValue env = 5;
+  string cwd = 6;
+  repeated NameValue labels = 7;
+  uint32 detach_timeout_ms = 8;
+  uint32 replay_bytes = 9;
+  repeated Feature features = 10;
+  IntegrationRequest integration = 11;
+}
+
+// Attach takes over an existing session. The older stream of the session, if any, receives Detached with
+// DETACH_REASON_SUPERSEDED and ends: the session continues, attached to the new stream, and is not ended.
+//
+// Set by: the host, in OpenRequest.attach. from_offset is the first output offset the host does not have.
+// Replay.start is the first ground-state boundary (not inside an escape sequence or a UTF-8 sequence) at or after
+// from_offset that the ring still holds: a cursor already on a retained boundary resumes there exactly (start =
+// from_offset, nothing skipped, nothing repeated); a cursor inside a sequence, or before the oldest retained byte,
+// resumes at the next boundary, and [from_offset, start) is what is not replayed (bytes dropped from the ring, or the
+// tail of a sequence the host had begun: the host discards its incomplete sequence). A replay never starts before
+// from_offset, so no byte is repeated. When the ring holds no ground-state boundary at or after from_offset (the
+// output so far ends inside a sequence), nothing is replayed (start = end) and the live stream continues at end: its
+// first bytes may complete a sequence that began before start, and the host discards that fragment the same way.
+message Attach {
+  uint64 from_offset = 1;
+}
+
+// OpenRequest is the first frame of Open.
+//
+// Set by: the host, once. session_id is chosen by the host: 1 to 128 bytes of printable ASCII (0x21-0x7e); a live
+// id is CONFLICT / SESSION_EXISTS for a start, and an unknown id is NOT_FOUND / SESSION_UNKNOWN for an attach.
+// Reuse of an id after its session ended is allowed only once the tombstone is gone; a host never reuses an id for
+// a restart.
+message OpenRequest {
+  string session_id = 1;
+  oneof kind {
+    Start start = 2;
+    Attach attach = 3;
+  }
+}
+
+// ClientFrame is what the host sends on an Open stream. All frames of a session are ordered with each other (a
+// resize sent before a paste stays before it). An unknown frame kind is ignored and counted.
+message ClientFrame {
+  oneof frame {
+    // The first frame, once. A second open frame is a protocol violation and ends the stream.
+    OpenRequest open = 1;
+    // Bytes for the command's stdin, at most SessionLimits.max_input_frame. The SDK stops receiving when the
+    // command's stdin queue is full, which is the backpressure the host sees.
+    bytes input = 2;
+    Resize resize = 3;
+    // Deliver a signal; only one of Capabilities.signals, otherwise refused.
+    Signal signal = 4;
+    // stdin EOF.
+    CloseInput close_input = 5;
+    // Ask for a fact.
+    Query query = 6;
+    // Destroy the session.
+    Close close = 7;
+    // Leave the session running and end THIS stream. A stream that just breaks is an implicit Detach with the
+    // session's default lease.
+    Detach detach = 8;
+  }
+}
+
+// Resize is a new size for the terminal. seq is chosen by the host and echoed in Resized; the SDK keeps only the
+// newest pending size, so a storm of resizes costs one delivery. size must be a valid, non-zero Size.
+message Resize {
+  uint32 seq = 1;
+  Size size = 2;
+}
+
+// CloseInput is stdin EOF; it carries nothing.
+message CloseInput {}
+
+// CloseMode says how a session is ended.
+enum CloseMode {
+  // Not set. Read as GRACEFUL: nothing destructive is ever the reading of an unset value.
+  CLOSE_MODE_UNSPECIFIED = 0;
+  // Cancel the author's context and wait the declared grace.
+  CLOSE_MODE_GRACEFUL = 1;
+  // Cancel the author's context and do not wait.
+  CLOSE_MODE_KILL = 2;
+}
+
+// Close destroys the session. The stream then ends with Ended (closed, by request).
+message Close {
+  CloseMode mode = 1;
+}
+
+// Detach leaves the session running for a lease and ends this stream. lease_ms zero means
+// SessionLimits.detach_timeout_ms; above max_detach_timeout_ms it is clamped and Detached says what was applied.
+message Detach {
+  uint32 lease_ms = 1;
+}
+
+// FactKind is a fact the host can ask for or the target can push.
+enum FactKind {
+  // Unknown. Never valid in a Query.
+  FACT_KIND_UNSPECIFIED = 0;
+  // Whether a command is running in the foreground of the session (Capabilities.foreground_fact).
+  FACT_KIND_FOREGROUND = 1;
+  // The current directory of the session (Capabilities.cwd_fact).
+  FACT_KIND_CWD = 2;
+  // The integration tier observed so far (SessionFacts.integration).
+  FACT_KIND_INTEGRATION_TIER = 3;
+}
+
+// Query asks for one fact. id is chosen by the host, at least 1, and echoed in the answering Fact. An unsupported
+// kind is answered with a Fact whose value says unknown/unsupported, never with silence.
+message Query {
+  uint32 id = 1;
+  FactKind kind = 2;
+}
+
+// ServerFrame is what the plugin sends on an Open stream. A reader ignores, and counts, a frame kind it does not
+// know. Opened is always first. EVERY STREAM THAT CAN STILL RECEIVE FRAMES ENDS WITH EXACTLY ONE OF TWO: Ended, the end
+// of the SESSION, or Detached, the end of THIS STREAM while the session lives on. Nothing follows either of them on
+// the stream. A stream whose connection breaks after Opened receives neither (the break is an implicit detach, and if
+// the lease expires before another stream attaches the end is read from the tombstone), and an Open that is refused
+// before Opened is a status with no frame at all. A session has exactly one END and AT MOST ONE Ended frame, however
+// many streams it had: Ended goes to the stream attached when the session ends, never to a stream that was detached or
+// superseded before, and never twice. A session that ends while no stream is attached (a lease that expires, a
+// retirement, a shutdown) has no Ended frame at all: its end is the tombstone's (SessionInfo.ended_with).
+message ServerFrame {
+  oneof frame {
+    Opened opened = 1;
+    Output output = 2;
+    Resized resized = 3;
+    Mark mark = 4;
+    Fact fact = 5;
+    Dropped dropped = 6;
+    Notice notice = 7;
+    // The end of the SESSION: how it ended and its accounts. Sent at most once in the life of a session, to the
+    // stream attached at that moment (a session that ends while no stream is attached has none: its end is the
+    // tombstone's); nothing follows it and the stream then ends with status OK.
+    Ended ended = 8;
+    // The target says the command is running: the session facts, refined by what the producer knows now (see Started).
+    // At most one per session, always before the first Output.
+    Started started = 9;
+    // The transport's health changed (only if Capabilities.link_health).
+    Link link = 10;
+    // The end of THIS STREAM while the session lives on: the answer to Detach (reason REQUESTED, with the lease) or
+    // the notice to a stream that another attach took the session over from (reason SUPERSEDED). It is the last
+    // frame of the stream and never the end of the session.
+    Detached detached = 11;
+  }
+}
+
+// Opened is the first frame of an Open stream: the facts the SDK knows before the author runs and, for an attach,
+// the description of the replay that follows.
+//
+// Set by: the SDK. facts: the target, the capabilities, the requested program and size, the limits. For a new session
+// the capabilities are the kind's upper bound narrowed by the choices the selection names (Choice.capabilities: the
+// session's mode); a Started may narrow them further, only by what is learned at run time. For an attach they are the
+// session's latest effective set, as of its last Started, so a consumer that attaches later never offers what the
+// session already reported it cannot do. For an attach the replay describes exactly the Output frames that follow,
+// [start, end); the live stream continues at end with no byte lost or repeated (the SDK takes the ring snapshot and
+// registers the stream under one lock). A new session has start = end = 0.
+message Opened {
+  SessionFacts facts = 1;
+  Replay replay = 2;
+}
+
+// Started is the session facts, refined by what the target says now (the resolved program, a pid, the tty and size
+// really granted, and the capabilities of THIS session when it learned something narrower than Opened carried). It is
+// sent at most once per session and always BEFORE the first Output: the author's report (Proc.Started) or, when the
+// author wrote output before reporting, one the SDK makes from the facts it has (Opened's, so the capabilities are
+// the ones the selection already narrowed); a report after the first Output, or a second one, is ignored and logged.
+// A session that never writes output and never reports gets none. The mode of a session (exec or attach) is declared
+// on Choice.capabilities and is in Opened; Started does not carry it.
+message Started {
+  SessionFacts facts = 1;
+}
+
+// DetachReason says why a stream ended while its session lives on.
+enum DetachReason {
+  // Not said: the stream ended and the session lives on.
+  DETACH_REASON_UNSPECIFIED = 0;
+  // The host sent Detach: the session lives for the lease.
+  DETACH_REASON_REQUESTED = 1;
+  // Another stream attached and took the session over: the session continues, attached to it, with no lease. It is
+  // not an end: no Ended is sent for it.
+  DETACH_REASON_SUPERSEDED = 2;
+}
+
+// Detached is the last frame of a stream whose session lives on (see ServerFrame): the answer to Detach, or the
+// notice to the stream that another attach superseded. It is never the end of a session.
+//
+// reason: why the stream ended. lease_expires_unix_ms: when the SDK ends the session if nobody attaches, after
+// clamping the requested lease to the maximum; zero when no lease runs (SUPERSEDED: the session is attached).
+message Detached {
+  int64 lease_expires_unix_ms = 1;
+  DetachReason reason = 2;
+}
+
+// TargetFacts identify the thing a session or run is in.
+//
+// Set by: the SDK, from the validated request. id is the resource address id; selection echoes the request's.
+// display_name is the author's presentation name for the target kind ("Pod"), not the resource's.
+message TargetFacts {
+  string provider = 1;
+  string type = 2;
+  string id = 3;
+  string display_name = 4;
+  map<string, string> selection = 5;
+}
+
+// Program is what runs, as the producer knows it (the default shell resolved), not what was asked.
+//
+// Set by: the SDK from the request at Opened, refined by the author at Started. argv: the argv that was run
+// (the requested one, or the default). name: the program's base name ("bash"), empty when unknown. path: its full
+// path when the producer resolved one, empty when unknown.
+message Program {
+  repeated string argv = 1;
+  string name = 2;
+  string path = 3;
+}
+
+// IntegrationTier is how much shell integration the SDK has observed in the output. Observed, not promised.
+enum IntegrationTier {
+  // Not observed yet or not tracked (no FEATURE_MARKS).
+  INTEGRATION_TIER_UNSPECIFIED = 0;
+  // No marks seen.
+  INTEGRATION_TIER_NONE = 1;
+  // Prompt marks only.
+  INTEGRATION_TIER_BASIC = 2;
+  // Prompt, input, start and end marks carrying the session's nonce.
+  INTEGRATION_TIER_RICH = 3;
+}
+
+// IntegrationFacts say what integration a session got.
+//
+// Set by: the SDK. mode is what was applied, never more than asked: NONE means none was applied, UNSPECIFIED that it
+// is not known. nonce is the per-session value the integration script echoes inside its marks, for the host and the UI
+// to verify marks they parse from bytes. SECRET: never logged, audited, put in a span, put in an error or shown to a
+// model. (Generated String() of this message prints it: never log this message.) Empty means no nonce exists.
+message IntegrationFacts {
+  IntegrationMode mode = 1;
+  string nonce = 2;
+}
+
+// SessionFacts are the facts of one session.
+//
+// Set by: the SDK, at Opened and again, refined, at Started. A fact the producer does not know is absent (an optional
+// field or a message) or, where the field says so, zero or empty. session_id: the host's id. target, program: see
+// their messages. tty: whether the target gave the command a terminal; absent until the target says so (the host
+// knows what it asked for, and a session whose author never calls Started keeps it absent). size: the terminal size
+// the target applied; absent when none was applied or it is not known. capabilities: what THIS session can do,
+// effective (see Capabilities): at Opened of a new session the kind's upper bound narrowed by the choices the selection
+// names (of an attach, the latest effective set), at Started what the author reported or what the SDK made from
+// Opened's, never wider than Opened carried. limits: as declared. created_at_unix_ms: when the SDK accepted the Open
+// (zero: unknown). pid: the process id when the producer has one (a local process), else zero. transport: a closed
+// code for the channel to the target ("k8s-ws-v5", "local-pty") matching ^[a-z0-9_.-]{1,40}$; empty means unknown.
+// term: the TERM the target really applied (at most 64 bytes); empty means unknown.
+message SessionFacts {
+  string session_id = 1;
+  TargetFacts target = 2;
+  Program program = 3;
+  optional bool tty = 4;
+  Size size = 5;
+  Capabilities capabilities = 6;
+  SessionLimits limits = 7;
+  int64 created_at_unix_ms = 8;
+  uint32 pid = 9;
+  string transport = 10;
+  string term = 11;
+  IntegrationFacts integration = 12;
+}
+
+// MouseTracking is the one mouse-reporting mode in force: a mode, not a bit set.
+enum MouseTracking {
+  // Not known. A consumer never reads it as no reporting.
+  MOUSE_TRACKING_UNSPECIFIED = 0;
+  // No mouse reporting.
+  MOUSE_TRACKING_NONE = 1;
+  // X10 compatibility (?9): button presses only.
+  MOUSE_TRACKING_X10 = 2;
+  // Normal tracking (?1000): presses and releases.
+  MOUSE_TRACKING_NORMAL = 3;
+  // Button-event tracking (?1002): and motion while a button is held.
+  MOUSE_TRACKING_BUTTON = 4;
+  // Any-event tracking (?1003): and all motion.
+  MOUSE_TRACKING_ANY = 5;
+}
+
+// MouseEncoding is how mouse reports are encoded.
+enum MouseEncoding {
+  // Not known.
+  MOUSE_ENCODING_UNSPECIFIED = 0;
+  // The default X10 encoding.
+  MOUSE_ENCODING_X10 = 1;
+  // UTF-8 (?1005).
+  MOUSE_ENCODING_UTF8 = 2;
+  // SGR (?1006).
+  MOUSE_ENCODING_SGR = 3;
+  // urxvt (?1015).
+  MOUSE_ENCODING_URXVT = 4;
+}
+
+// TerminalModes are the input modes of the terminal at a point in the output, for a reload to restore.
+//
+// Set by: the SDK when FEATURE_MODES is tracked. A TerminalModes that is absent means the modes are not tracked
+// (FEATURE_MODES not requested or not served): unknown. A present one states every mode it carries: false is "off",
+// not "unknown", and an enum at UNSPECIFIED is not known. kitty_keyboard is the flag stack, bottom first, at most 16
+// entries; an empty stack is empty.
+message TerminalModes {
+  bool alt_screen = 1;
+  bool bracketed_paste = 2;
+  bool application_cursor = 3;
+  bool focus_events = 4;
+  bool cursor_hidden = 5;
+  MouseTracking mouse_tracking = 6;
+  MouseEncoding mouse_encoding = 7;
+  repeated uint32 kitty_keyboard = 8;
+}
+
+// Replay describes the Output frames that follow Opened.
+//
+// Set by: the SDK. start: the offset of the first replayed byte, a ground-state boundary (not inside an escape
+// sequence or a UTF-8 sequence); start greater than Attach.from_offset means the bytes in between are not replayed
+// (dropped from the ring, or the tail of a sequence the host had begun: see Attach). end:
+// where the live stream continues. bytes: end - start, always. start_size: the size the bytes at start were
+// produced for (the emulator replays at this size, then resizes); absent means unknown. start_modes: the modes in
+// force at start; absent means not tracked. size, modes: the size and modes now (absent: not known, not tracked).
+// Absent: a Replay on a new session is present with start = end = bytes = 0.
+message Replay {
+  uint64 start = 1;
+  uint64 end = 2;
+  uint64 bytes = 3;
+  Size start_size = 4;
+  TerminalModes start_modes = 5;
+  Size size = 6;
+  TerminalModes modes = 7;
+}
+
+// Output is bytes the command wrote.
+//
+// Set by: the SDK. offset is the position of data[0] in the session's single output sequence (all streams, in
+// arrival order); offsets are contiguous except across a Dropped range. The bytes are untouched: never decoded,
+// recoded or repaired, and a frame may end inside a UTF-8 sequence or an escape sequence.
+message Output {
+  Stream stream = 1;
+  uint64 offset = 2;
+  bytes data = 3;
+}
+
+// ResizeResult says what became of a Resize.
+enum ResizeResult {
+  // Not reported.
+  RESIZE_RESULT_UNSPECIFIED = 0;
+  // The author consumed the size.
+  RESIZE_RESULT_APPLIED = 1;
+  // The target has no resize capability, or a newer resize superseded this one before the author took it.
+  RESIZE_RESULT_IGNORED = 2;
+  // The target failed to apply it.
+  RESIZE_RESULT_FAILED = 3;
+}
+
+// Resized answers a Resize. seq echoes Resize.seq of the newest resize that was processed; size is that size.
+message Resized {
+  uint32 seq = 1;
+  Size size = 2;
+  ResizeResult result = 3;
+}
+
+// MarkKind is a kind of shell-integration mark.
+enum MarkKind {
+  // Unknown. Never produced by the SDK.
+  MARK_KIND_UNSPECIFIED = 0;
+  // OSC 133 A: the prompt starts.
+  MARK_KIND_PROMPT_START = 1;
+  // OSC 133 B: the user's input starts.
+  MARK_KIND_INPUT_START = 2;
+  // OSC 133 C: the command starts to run.
+  MARK_KIND_COMMAND_START = 3;
+  // OSC 133 D: the command ended; Mark.exit_code may carry its status.
+  MARK_KIND_COMMAND_END = 4;
+  // OSC 7 or OSC 633 P;Cwd: the current directory.
+  MARK_KIND_CWD = 5;
+}
+
+// MarkTrust says how far a mark can be trusted.
+enum MarkTrust {
+  // The producer did not say. Read as UNVERIFIED.
+  MARK_TRUST_UNSPECIFIED = 0;
+  // Parsed from the byte stream with no proof of origin: any program that prints can forge it. A consumer treats
+  // its command_line, cwd and exit_code as hints, never as authority.
+  MARK_TRUST_UNVERIFIED = 1;
+  // Carried the session's nonce: the nonce matched the one the host issued, and nothing more. A later mark that
+  // repeats the same nonce is indistinguishable from the first, so a match is not proof that the integration script
+  // produced the mark and does not authenticate where it came from. A consumer keeps command_line, cwd and exit_code
+  // as untrusted for any decision that needs authenticated provenance. A value that a reader does not know is read
+  // as UNVERIFIED, never as NONCE.
+  MARK_TRUST_NONCE = 2;
+}
+
+// Mark is a typed shell-integration event parsed out of the output (FEATURE_MARKS). The bytes it came from are also
+// delivered, untouched.
+//
+// Set by: the SDK's scanner. at_offset is the offset of the first byte of the sequence. exit_code is present only on
+// COMMAND_END and only when the shell reported one (absent means unknown, not 0). cwd is set on CWD marks.
+// command_id is assigned by the SDK, unique and monotonic in the session, and equal on the marks of one command.
+// command_line is the unescaped command, at most 4 KiB, present only with trust NONCE (a nonce match, not proof of
+// origin: see MarkTrust); it is content, and untrusted for any decision that needs authenticated provenance: never
+// logged, audited or put in a model prompt without a gate. duration_ms is present on COMMAND_END when the SDK saw
+// both the start and the end (absent means unknown), measured by the SDK's monotonic clock. redraw means the prompt
+// was redrawn (a resize), not a new prompt.
+message Mark {
+  MarkKind kind = 1;
+  uint64 at_offset = 2;
+  optional sint64 exit_code = 3;
+  string cwd = 4;
+  string command_id = 5;
+  string command_line = 6;
+  MarkTrust trust = 7;
+  optional uint64 duration_ms = 8;
+  bool redraw = 9;
+}
+
+// ForegroundState is whether a command is running in the foreground of a session.
+enum ForegroundState {
+  // Unknown (see Foreground.reason). A consumer that must decide (a close prompt) asks the user.
+  FOREGROUND_STATE_UNSPECIFIED = 0;
+  // Only the shell is in the foreground.
+  FOREGROUND_STATE_IDLE = 1;
+  // A command is running in the foreground.
+  FOREGROUND_STATE_BUSY = 2;
+}
+
+// UnknownReason says why a fact is unknown.
+enum UnknownReason {
+  // Not said.
+  UNKNOWN_REASON_UNSPECIFIED = 0;
+  // The target cannot provide the fact.
+  UNKNOWN_REASON_UNSUPPORTED = 1;
+  // The target tried and failed.
+  UNKNOWN_REASON_QUERY_FAILED = 2;
+  // The fact lives on the far side of a remote and is not observable.
+  UNKNOWN_REASON_REMOTE = 3;
+}
+
+// Foreground answers FACT_KIND_FOREGROUND. state UNSPECIFIED is unknown and reason says why. name is the foreground
+// process's name and pgid its process group, only when busy and known (zero means unknown).
+message Foreground {
+  ForegroundState state = 1;
+  string name = 2;
+  uint32 pgid = 3;
+  UnknownReason reason = 4;
+}
+
+// Directory answers FACT_KIND_CWD. An empty path is unknown and reason says why.
+message Directory {
+  string path = 1;
+  UnknownReason reason = 2;
+}
+
+// Fact is a fact about a running session. The arm that is set says which fact it is. query_id is the Query.id it
+// answers; zero means pushed by the target. An unset arm is a fact kind this reader does not know.
+message Fact {
+  uint32 query_id = 1;
+  oneof value {
+    Foreground foreground = 2;
+    Directory cwd = 3;
+    IntegrationTier tier = 4;
+  }
+}
+
+// DropReason says why output was dropped.
+enum DropReason {
+  // Not said.
+  DROP_REASON_UNSPECIFIED = 0;
+  // The replay ring was full and overwrote its oldest bytes.
+  DROP_REASON_REPLAY_FULL = 1;
+  // The session was detached and its output outgrew the ring.
+  DROP_REASON_DETACHED_OVERFLOW = 2;
+  // The target is drained eagerly (STALL_BEHAVIOR_LOSSY) and the host fell behind by more than the ring.
+  DROP_REASON_EAGER_DRAIN_OVERFLOW = 3;
+}
+
+// Dropped says a range of output was lost and will not be delivered.
+//
+// Set by: the SDK, before any later output. The range is [from_offset, from_offset + bytes). mode_reset is bytes for
+// the UI's emulator, never for the target: a dropped range may hold a mode change, and this restores the input modes
+// (see Ended.mode_reset); absent means not known, present and empty means none is needed.
+message Dropped {
+  Stream stream = 1;
+  uint64 from_offset = 2;
+  uint64 bytes = 3;
+  DropReason reason = 4;
+  optional bytes mode_reset = 5;
+}
+
+// NoticeKind is something the SDK did not do as asked.
+enum NoticeKind {
+  // Not said.
+  NOTICE_KIND_UNSPECIFIED = 0;
+  // Start.env was accepted by the target but not applied.
+  NOTICE_KIND_ENV_IGNORED = 1;
+  // Start.cwd was accepted by the target but not applied.
+  NOTICE_KIND_CWD_IGNORED = 2;
+  // A feature in Start.features was accepted but not applied.
+  NOTICE_KIND_FEATURE_IGNORED = 3;
+  // The size was zero (or not applicable) and the SDK picked 80 x 24 for a tty.
+  NOTICE_KIND_SIZE_DEFAULTED = 4;
+  // Start.integration was accepted but the target fell back to the plain program (no sh in the image).
+  NOTICE_KIND_INTEGRATION_IGNORED = 5;
+}
+
+// Notice tells the host that something it asked for was accepted and then not done; a refusal would have been a
+// status. Set by: the SDK or the author, at most once per kind per session, before the first output.
+message Notice {
+  NoticeKind kind = 1;
+}
+
+// ClosedBy says who ended a session that was not ended by the command. Every value ends the session. A consumer reads
+// a value it does not know as "closed", never as an error. (Another stream taking the session over does not end it:
+// see DETACH_REASON_SUPERSEDED.)
+enum ClosedBy {
+  // Not said.
+  CLOSED_BY_UNSPECIFIED = 0;
+  // The host asked (Close, EndSession).
+  CLOSED_BY_REQUEST = 1;
+  // The plugin is shutting down.
+  CLOSED_BY_PLUGIN_SHUTDOWN = 2;
+  // The lease of a detached session ran out.
+  CLOSED_BY_DETACH_TIMEOUT = 3;
+  // The session was idle for longer than its bound.
+  CLOSED_BY_IDLE_TIMEOUT = 4;
+  // The connection the session belongs to was retired.
+  CLOSED_BY_CONNECTION_RETIRED = 5;
+  // A bounded run reached its timeout.
+  CLOSED_BY_RUN_TIMEOUT = 6;
+  // A bounded run's call was cancelled.
+  CLOSED_BY_CANCELLED = 7;
+}
+
+// FailureStage says how far a command got before it failed, for a session (Failed in Ended) and for a run
+// (RunResult.failed).
+enum FailureStage {
+  // Not said.
+  FAILURE_STAGE_UNSPECIFIED = 0;
+  // The command's start was not observed: the failure came before the SDK saw it start. The command may still have
+  // started (see start_observed and remote_may_survive).
+  FAILURE_STAGE_START = 1;
+  // After the start was observed, while the command ran.
+  FAILURE_STAGE_RUN = 2;
+  // Between the plugin and the target, after the start was observed: the stream failed. (A stream that merely ended
+  // with no status is Lost, not this.)
+  FAILURE_STAGE_STREAM = 3;
+}
+
+// ExitSource says whose status an exit code or signal is.
+enum ExitSource {
+  // Not said. A consumer never reads it as PROCESS.
+  EXIT_SOURCE_UNSPECIFIED = 0;
+  // The target relayed the process's own status (a Kubernetes error-channel Status, an ssh exit-status, Docker
+  // ExecInspect, a local wait status).
+  EXIT_SOURCE_PROCESS = 1;
+  // A death by signal the target folded into 128+n: the code is 128+n and the SDK claims no signal.
+  EXIT_SOURCE_SIGNAL_FOLDED = 2;
+  // The transport said the stream ended (OK or failed) and the process's own status was not relayed (Kubernetes
+  // attach, or exec with an empty error channel). A code, if any, is not the command's.
+  EXIT_SOURCE_TRANSPORT = 3;
+  // A bounded run that the SDK ended (timeout, cancel). A code, if any, is the aftermath of that kill.
+  EXIT_SOURCE_HOST = 4;
+}
+
+// LostCause says why the SDK has no status for a command.
+enum LostCause {
+  // Not said.
+  LOST_CAUSE_UNSPECIFIED = 0;
+  // The stream to the target closed with nothing on its status channel.
+  LOST_CAUSE_NO_STATUS = 1;
+  // The transport's keepalive gave up.
+  LOST_CAUSE_LINK_DEAD = 2;
+}
+
+// OutputCompleteness says whether every byte the command wrote was delivered. The values are mutually exclusive:
+// TRUNCATED when any byte the SDK read was dropped (even if the drain also hit its bound), COMPLETE when nothing was
+// dropped and the post-exit drain finished, UNSPECIFIED otherwise.
+enum OutputCompleteness {
+  // The SDK cannot prove it: nothing was dropped, but the stream ended abnormally, the post-exit drain ended by its
+  // limit or the target cannot tell. Never read as complete.
+  OUTPUT_COMPLETENESS_UNSPECIFIED = 0;
+  // No byte was dropped, every byte the command wrote was read and delivered, and the post-exit drain finished.
+  OUTPUT_COMPLETENESS_COMPLETE = 1;
+  // The ring or the policy dropped at least one byte, and counted it. Takes precedence over UNSPECIFIED.
+  OUTPUT_COMPLETENESS_TRUNCATED = 2;
+}
+
+// Exited is an end with an exit code. exit_code is the status exactly as the target reported it; source says whose
+// it is.
+//
+// The code is a signed 64-bit integer so that it carries every platform's status exactly: the SDK never narrows,
+// folds or saturates it, and never converts between two readings of the same status. A POSIX status is 0 to 255. A
+// Windows process status is a DWORD, 0 to 4294967295 (0xC0000005 is 3221225477), and some reporters give the same
+// DWORD as a negative 32-bit integer (-1073741819, as kubelet's container statuses do). An ssh exit-status is a
+// uint32. Docker's ExecInspect and kubectl's error-channel Status relay an int. A signal is never a code: it is
+// Signaled, or an Exited with EXIT_SOURCE_SIGNAL_FOLDED when the target folded it into 128+n.
+//
+// The arm exists only with a status: a stream that ended with none is Lost, never Exited with code 0. exit_code is
+// not optional because the arm itself says it is known.
+message Exited {
+  sint64 exit_code = 1;
+  ExitSource source = 2;
+}
+
+// Signaled is an end by a signal the target reported. signal is its name ("SIGKILL"): valid UTF-8 without control
+// characters, at most 256 bytes, empty when not reported. signal_number is its number, 1 to 64, zero when not reported.
+// The SDK drops a name or a number that breaks these bounds and keeps the other; with neither usable the end is a failure
+// of the target. core_dumped is whether the target said a core was dumped (absent means not reported, never "no").
+message Signaled {
+  string signal = 1;
+  int32 signal_number = 2;
+  optional bool core_dumped = 3;
+  ExitSource source = 4;
+}
+
+// Closed is an end that was not the command's: someone ended the session (see ClosedBy). The session is over.
+message Closed {
+  ClosedBy by = 1;
+}
+
+// Failed is an end by a failure of the SDK, the plugin or the target, after the command was handed to the target
+// (before that it is a refusal, a status): a session's Ended, or a run's RunResult with OUTCOME_FAILED. stage says how
+// far it got (see FailureStage). public_message is optional, at most 512 bytes of UTF-8, reviewed classes only, and
+// never authority.
+message Failed {
+  ErrorClass class = 1;
+  ErrorReason reason = 2;
+  ErrorFacts facts = 3;
+  FailureStage stage = 4;
+  string public_message = 5;
+}
+
+// Lost is an end that is not a status: the connection to the target ended with no terminal status, so the process
+// may be running, may have exited with any code or may have been killed. Never exit 0, never a failure of the
+// command, never a reason to retry the command.
+message Lost {
+  LostCause cause = 1;
+}
+
+// End is how a session ended: exactly one arm is set. An unset arm is an end kind this reader does not know: read
+// it as "ended, how unknown", never as an exit.
+//
+// remote_may_survive: whether the process the session ran may still be running after this end. Absent means it is
+// not known, which a consumer reads as "may" for every decision about safety and never as "no". True: it may (always
+// for LOST). False: the producer knows it is gone: the target reported its status (EXITED or SIGNALED from the PROCESS
+// or SIGNAL_FOLDED source) or ending the session terminates the process (CLOSED when the session's effective kill
+// behavior, see Capabilities, is TERMINATES). An exit from the TRANSPORT source and a FAILED end leave it absent unless
+// the producer knows.
+message End {
+  oneof kind {
+    Exited exited = 1;
+    Signaled signaled = 2;
+    Closed closed = 3;
+    Failed failed = 4;
+    Lost lost = 5;
+  }
+  optional bool remote_may_survive = 6;
+}
+
+// Ended is the last frame of a SESSION that a stream sees: its end and its accounts. A session has exactly one END and
+// this frame carries it to the stream that is attached when the session ends: AT MOST ONE Ended per session, however
+// many streams it had; nothing follows it on the stream, and the stream then ends with status OK. A stream that left
+// earlier (Detached) never receives it, and a session that ends while no stream is attached (a lease that expires, a
+// retirement, a shutdown) has no Ended frame at all: its end is read from ListSessions (the tombstone:
+// SessionInfo.ended_with).
+//
+// Set by: the SDK, at most once per session. start_observed is true once the author called Started, the first output
+// arrived or the command exited with a status; false means the start was not observed, not that the command never ran
+// (a silent command can start and lose its link before the SDK sees Started, output or a status, which is a Lost end).
+// duration_ms runs from the accepted Open to the end. bytes_out is the number of bytes the command wrote that the SDK
+// read; bytes_in the number the host sent. dropped_bytes is the number of output bytes in Dropped ranges. output:
+// TRUNCATED when dropped_bytes is not zero (it takes precedence over UNSPECIFIED); COMPLETE when dropped_bytes is zero
+// and every byte the command wrote was read and delivered, with the post-exit drain finished; UNSPECIFIED when
+// nothing was dropped but the SDK cannot prove completeness (a lost end, a drain that hit its bound). last_offset is
+// one past the last output byte (equal to bytes_out).
+// mode_reset is bytes for the UI's emulator, never for the target: restores the input modes (alt screen, mouse,
+// bracketed paste, application cursor, kitty stack); exact with FEATURE_MODES, the fixed full reset otherwise. Absent
+// means not known (the host applies its own full reset); present and empty means none is needed (a session without a
+// terminal).
+message Ended {
+  End end = 1;
+  bool start_observed = 2;
+  uint64 duration_ms = 3;
+  uint64 bytes_out = 4;
+  uint64 bytes_in = 5;
+  uint64 dropped_bytes = 6;
+  OutputCompleteness output = 7;
+  uint64 last_offset = 8;
+  optional bytes mode_reset = 9;
+}
+
+// LinkState is the health of the transport between the plugin and the target.
+enum LinkState {
+  // Not said.
+  LINK_STATE_UNSPECIFIED = 0;
+  LINK_STATE_GOOD = 1;
+  // Slow or lossy, still moving.
+  LINK_STATE_DEGRADED = 2;
+  // Nothing has moved for longer than the author's threshold.
+  LINK_STATE_STALLED = 3;
+}
+
+// Link reports a change of the transport's health (only if Capabilities.link_health); never on a timer. silent_ms
+// is how long nothing has moved when the state is DEGRADED or STALLED, zero otherwise.
+message Link {
+  LinkState state = 1;
+  uint32 silent_ms = 2;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Sessions, replay
+// ---------------------------------------------------------------------------------------------------------------
+
+// SessionInfo is one session as ListSessions reports it, a live one or a tombstone.
+//
+// Set by: the SDK. facts: as of the last Started. attached: a stream is attached now. ended_with: present exactly
+// when the session ended (a tombstone), absent while it runs. next_offset: the offset the next output byte would
+// have (for an ended session, ended_with.last_offset). replay_start: the oldest offset the ring still holds.
+// last_activity_unix_ms: zero means no activity yet. link: the last reported link state (UNSPECIFIED when
+// Capabilities.link_health is false). lease_expires_unix_ms: when a detached session is ended, zero while attached.
+message SessionInfo {
+  SessionFacts facts = 1;
+  bool attached = 2;
+  Ended ended_with = 3;
+  uint64 next_offset = 4;
+  uint64 replay_start = 5;
+  int64 last_activity_unix_ms = 6;
+  LinkState link = 7;
+  int64 lease_expires_unix_ms = 8;
+}
+
+message ListSessionsRequest {}
+
+message ListSessionsResponse {
+  repeated SessionInfo sessions = 1;
+}
+
+// ReadOutputRequest reads the replay ring of one session from a cursor. max_bytes zero means the SDK's default
+// (64 KiB); it is clamped to the session's replay size.
+message ReadOutputRequest {
+  string session_id = 1;
+  uint64 from_offset = 2;
+  uint32 max_bytes = 3;
+}
+
+// ReadOutputResponse is a cursor read. chunks are contiguous from max(from_offset, replay_start); replay_start > from_offset means
+// bytes were dropped in between; next_offset is where the next read starts; ended is true when the session has
+// ended and next_offset is its last offset (nothing more will come).
+message ReadOutputResponse {
+  repeated Output chunks = 1;
+  uint64 replay_start = 2;
+  uint64 next_offset = 3;
+  bool ended = 4;
+}
+
+// EndSessionRequest destroys a session that has no attached stream. mode UNSPECIFIED is GRACEFUL.
+message EndSessionRequest {
+  string session_id = 1;
+  CloseMode mode = 2;
+}
+
+message EndSessionResponse {}
+
+// ---------------------------------------------------------------------------------------------------------------
+// (B) the bounded run
+// ---------------------------------------------------------------------------------------------------------------
+
+// TruncatePolicy says which part of a run's output is kept when it exceeds its cap.
+enum TruncatePolicy {
+  // Not set: the target's default, which is HEAD_TAIL.
+  TRUNCATE_POLICY_UNSPECIFIED = 0;
+  // Keep the beginning and the end (an error is usually at the end); the middle is counted, never stored.
+  TRUNCATE_POLICY_HEAD_TAIL = 1;
+  // Keep the beginning.
+  TRUNCATE_POLICY_HEAD = 2;
+  // Keep the end.
+  TRUNCATE_POLICY_TAIL = 3;
+}
+
+// OutputLimits are the caps of one run. Zero means the target's default; above the maximum is INVALID_REQUEST, never
+// silently clamped.
+message OutputLimits {
+  uint32 max_stdout_bytes = 1;
+  uint32 max_stderr_bytes = 2;
+  TruncatePolicy policy = 3;
+}
+
+// RunRequest is the request to run one bounded command. Strict.
+//
+// Set by: the host. request_id: correlation for the host's audit, echoed in the result; at most 128 bytes of
+// printable ASCII, may be empty. target: required. argv: REQUIRED, argv[0] non-empty, no NUL, there is no command
+// string (a shell is ["sh", "-c", script], visible as such to consent and audit). stdin: at most
+// RunLimits.max_stdin_bytes; empty means no stdin. env, cwd: as for Start; refused UNSUPPORTED when the target does
+// not support them, never ignored. timeout_ms: zero means RunLimits.default_timeout_ms; above max_timeout_ms is
+// INVALID_REQUEST. labels: as for Start.
+message RunRequest {
+  string request_id = 1;
+  TargetRef target = 2;
+  repeated string argv = 3;
+  bytes stdin = 4;
+  repeated NameValue env = 5;
+  string cwd = 6;
+  uint32 timeout_ms = 7;
+  OutputLimits output = 8;
+  repeated NameValue labels = 9;
+}
+
+// Outcome says how a run ended. Every outcome is a result: once the command was handed to the target, a failure is the
+// outcome FAILED and not a status. A refusal, before that, is a status and no outcome.
+enum Outcome {
+  // Not said. Never read as success.
+  OUTCOME_UNSPECIFIED = 0;
+  // The command ended with a status (exit_code, exit_source say whose).
+  OUTCOME_EXITED = 1;
+  // The command ended by a signal the target reported.
+  OUTCOME_SIGNALED = 2;
+  // The SDK ended the run at its timeout.
+  OUTCOME_TIMED_OUT = 3;
+  // The call was cancelled.
+  OUTCOME_CANCELLED = 4;
+  // The stream ended with no terminal status: the command may have run, whether or not its start was observed.
+  // Never success, never a failure, never retried by a host on its own.
+  OUTCOME_LOST = 5;
+  // The SDK, the plugin or the target failed after the command was handed to the target; RunResult.failed says how
+  // and how far. The command may have run and may still be running (remote_may_survive says what is known) and the
+  // output read so far is returned with its account. Never success, never exit 0, never retried by a host on its own.
+  OUTCOME_FAILED = 6;
+}
+
+// OutputAccount is the exact account of one stream of a run.
+//
+// Set by: the SDK. total_bytes: bytes the command wrote that arrived; kept_bytes: bytes returned; dropped_bytes: bytes
+// the cap elided, always total - kept; truncated: dropped_bytes is not zero; head_bytes and tail_bytes: how the kept
+// bytes split (under HEAD_TAIL, the head is the first head_bytes of the returned bytes and the tail the last
+// tail_bytes); valid_utf8: the returned bytes, as returned, are valid UTF-8 (the host's tool boundary decides text or
+// base64 from it). completeness is exactly one of: TRUNCATED when dropped_bytes is not zero (any byte the SDK read
+// was dropped), whatever else happened, so it takes precedence over UNSPECIFIED; COMPLETE when dropped_bytes is zero,
+// the stream was read to its end, the post-exit drain finished and nothing was lost in transit; UNSPECIFIED when
+// nothing was dropped but the stream ended abnormally, the post-exit drain ended by its bound or the target cannot
+// tell (total_bytes is then what arrived).
+message OutputAccount {
+  uint64 total_bytes = 1;
+  uint64 kept_bytes = 2;
+  uint64 dropped_bytes = 3;
+  bool truncated = 4;
+  uint32 head_bytes = 5;
+  uint32 tail_bytes = 6;
+  bool valid_utf8 = 7;
+  OutputCompleteness completeness = 8;
+}
+
+// RunResult is the answer to a run.
+//
+// Set by: the SDK. request_id echoes the request's. outcome: how it ended. exit_code: present when the command
+// ended with a status or the SDK's kill left one (absent means none, not 0); exit_source says whose it is, HOST for
+// TIMED_OUT and CANCELLED; the code is a signed 64-bit integer, exactly as reported (see Exited). signal and
+// signal_number: set for OUTCOME_SIGNALED (empty and zero otherwise). stdout and stderr: the kept bytes, raw and
+// untouched; under HEAD_TAIL the middle is elided and counted in the account; for TIMED_OUT, CANCELLED, LOST and
+// FAILED they are the output read before the end, which is partial, and the account's completeness says what can be
+// claimed. duration_ms: from accepted request to end. start_observed: the SDK observed the command start (the target
+// reported it, the first output arrived or a status came); false means the start was not observed, not that the
+// command never ran: a silent command can start and lose its link before the SDK sees anything, and a host never
+// retries on the strength of start_observed=false alone. remote_may_survive: whether the process may still be running
+// (see End.remote_may_survive: absent means not known and reads as "may"; always true for OUTCOME_LOST; true after a
+// timeout or cancel on a target that cannot promise it stopped). target, program: as for a session.
+//
+// failed: present exactly when outcome is OUTCOME_FAILED. It says how the run failed and how far it got: class and
+// reason as for a refusal, facts, and stage (FAILURE_STAGE_START: the start was not observed; RUN: after the start,
+// while the command ran; STREAM: the stream between the plugin and the target failed after the start). A RunResult
+// with OUTCOME_FAILED answers a run that was handed to the target: unlike a refusal it may have run, may still be
+// running and is never retried by a host on its own. A refusal, before the command was handed to the target, is a
+// gRPC status (see the file header).
+message RunResult {
+  string request_id = 1;
+  Outcome outcome = 2;
+  optional sint64 exit_code = 3;
+  string signal = 4;
+  int32 signal_number = 5;
+  bytes stdout = 6;
+  bytes stderr = 7;
+  OutputAccount stdout_account = 8;
+  OutputAccount stderr_account = 9;
+  uint64 duration_ms = 10;
+  bool start_observed = 11;
+  optional bool remote_may_survive = 12;
+  TargetFacts target = 13;
+  Program program = 14;
+  ExitSource exit_source = 15;
+  Failed failed = 16;
+}
+
+// RunEvent is what RunStream sends: RunStarted first when the SDK observed the command start, then output and
+// progress, then RunEnded, once. A run that failed or was lost before its start was observed (FAILURE_STAGE_START, or
+// LOST) sends RunEnded alone, with no RunStarted: a start is never fabricated. Nothing follows RunEnded.
+message RunEvent {
+  oneof event {
+    RunStarted started = 1;
+    Output output = 2;
+    RunProgress progress = 3;
+    RunEnded ended = 4;
+  }
+}
+
+// RunStarted is the first event of a RunStream: the command is running.
+message RunStarted {
+  TargetFacts target = 1;
+  Program program = 2;
+}
+
+// RunProgress reports, at the SDK's pace (not on a timer the host can rely on), how long the run has taken and how many
+// bytes it has written.
+message RunProgress {
+  uint64 elapsed_ms = 1;
+  uint64 bytes_out = 2;
+}
+
+// RunEnded is the last event of a RunStream: the result without the payloads (stdout and stderr are empty, they were
+// streamed); the outcome, the exit, the account, the failure and the flags only. Like RunResult it is what the SDK
+// sends for every end after the command was handed to the target, a failure included (OUTCOME_FAILED, with
+// RunResult.failed), whenever it can still deliver it. A refusal, when nothing ran, ends the stream with a status; a
+// cancelled call, an expired deadline or a broken connection can prevent RunEnded and end the stream with a status of
+// the transport's own, which says nothing about whether the command ran and never authorizes a retry.
+message RunEnded {
+  RunResult result = 1;
+}

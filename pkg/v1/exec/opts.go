@@ -11,7 +11,13 @@ import (
 
 // PluginOpts contains the options for the exec plugin.
 type PluginOpts struct {
+	// Handlers are the legacy exec handlers (the omniview.sdk.exec.v1 lane). They are deleted when the legacy lane
+	// is.
 	Handlers []Handler `json:"handlers"`
+	// Targets are the exec v2 targets: one kind of thing a command can run in per entry (the
+	// omniview.sdk.exec.v2 lane). A plugin that supplies Targets and no Handlers serves only the v2 lane; one that
+	// supplies both serves both.
+	Targets []Target `json:"-"`
 }
 
 // ActionTargetBuilder builds a dynamic list of targets for an action.

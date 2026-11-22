@@ -26,6 +26,7 @@ const nativeCommandPlanningTimeout = 30 * time.Second
 type PluginClient struct {
 	client execpb.ExecPluginClient
 	log    logging.Logger
+	v2     *clientV2
 }
 
 var _ Provider = (*PluginClient)(nil)
