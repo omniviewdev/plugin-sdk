@@ -6,6 +6,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -351,6 +352,10 @@ func TestNoLineIsLostBetweenReplayAndFollow(t *testing.T) {
 	}
 }
 
+type noClose struct{ io.Reader }
+
+func (noClose) Close() error { return nil }
+
 type blockedReader struct{ ctx context.Context }
 
 func (r *blockedReader) Read([]byte) (int, error) { <-r.ctx.Done(); return 0, io.EOF }
@@ -684,8 +689,12 @@ func TestPausedReplayLinesDoNotReuseNumbers(t *testing.T) {
 	}
 	in <- logs.StreamInput{SessionID: session.ID, Command: logs.StreamCommandPause}
 	waitFor(t, "the session to pause", statusIs(logs.LogSessionStatusPaused))
+	waitFor(t, "the follow to wait for lines", func() bool { return src.Waits() >= 1 })
+	waited := src.Waits()
 	src.Append("dropped")
-	time.Sleep(50 * time.Millisecond) // the follow reads and drops it
+	// The stream comes back to wait only after the reader consumed the line, so
+	// this is the acknowledgment that the paused session read and dropped it.
+	waitFor(t, "the paused session to read and drop the line", func() bool { return src.Waits() > waited })
 	in <- logs.StreamInput{SessionID: session.ID, Command: logs.StreamCommandResume}
 	waitFor(t, "the session to resume", statusIs(logs.LogSessionStatusActive))
 	src.Append("kept")
@@ -815,5 +824,184 @@ func TestReconnectWithoutTimestampsRedeliversTheTailAndMarksAgain(t *testing.T) 
 	}
 	if len(replays) != 2 || replays[1].Resume || replays[1].TailLines != 50 {
 		t.Fatalf("with nothing to resume from the second replay must repeat the caller's bounds: %+v", replays)
+	}
+}
+
+// A handler that sets only Replay serves a finite source: its sessions end with
+// the backlog, even when the caller asked to follow.
+func TestReplayWithoutAFollowHandlerEndsWithTheBacklog(t *testing.T) {
+	src := logtest.NewReplaySource("b1", "b2")
+	handler := src.Handler("pod")
+	handler.Handler = nil
+	rig := newReplayRig(t, map[string]logs.Handler{"test/pod": handler})
+	rig.open(asking(logs.LogSessionOptions{Follow: true}))
+
+	rig.marker("pod", 1)
+	if rig.out.WaitForEvent(logs.StreamEventStreamEnded, replayWait) == nil {
+		t.Fatal("a finite source must end its session after the backlog")
+	}
+	if got := contents(rig.out.Lines()); !slices.Equal(got, []string{"b1", "b2"}) {
+		t.Fatalf("lines = %v", got)
+	}
+	if reqs := src.Requests(); len(reqs) != 1 {
+		t.Fatalf("requests = %+v, want the replay alone", reqs)
+	}
+}
+
+// Lines that share a timestamp are neither lost nor repeated when a read fails
+// between them: the SDK resumes at the timestamp and drops only what it read.
+func TestResumeKeepsLinesThatShareATimestamp(t *testing.T) {
+	t.Run("replay fails midway", func(t *testing.T) {
+		src := logtest.NewReplaySource()
+		src.SameStamp(true)
+		src.Append("a", "b", "c")
+		src.SameStamp(false)
+		src.Append("d")
+		src.BreakReplayAfter(2, errors.New("stream reset"))
+		rig := newReplayRig(t, oneSource(src))
+		rig.open(asking(logs.LogSessionOptions{Follow: true, TailLines: 100}))
+
+		rig.marker("pod", 1)
+		lines := rig.out.WaitForLines(4, replayWait)
+		if got := contents(lines); !slices.Equal(got, []string{"a", "b", "c", "d"}) {
+			t.Fatalf("lines = %v, want each exactly once", got)
+		}
+		time.Sleep(20 * time.Millisecond)
+		if n := len(rig.out.Lines()); n != 4 {
+			t.Errorf("%d lines after the retry, want 4", n)
+		}
+	})
+	t.Run("follow fails between", func(t *testing.T) {
+		src := logtest.NewReplaySource("b1")
+		rig := newReplayRig(t, oneSource(src))
+		rig.open(asking(logs.LogSessionOptions{Follow: true}))
+		rig.marker("pod", 1)
+		src.Append("l1")
+		rig.out.WaitForLines(2, replayWait)
+
+		src.SameStamp(true) // l2 shares l1's timestamp
+		src.AppendAndBreak(errors.New("connection reset"), "l2")
+		rig.marker("pod", 2)
+		lines := rig.out.WaitForLines(3, replayWait)
+		if got := contents(lines); !slices.Equal(got, []string{"b1", "l1", "l2"}) {
+			t.Fatalf("lines = %v, want each exactly once", got)
+		}
+		time.Sleep(20 * time.Millisecond)
+		if n := len(rig.out.Lines()); n != 3 {
+			t.Errorf("%d lines after the resume, want 3", n)
+		}
+	})
+}
+
+// gatedSink holds the first line it is given until released, as a consumer that
+// is slow to take output does.
+type gatedSink struct {
+	*logtest.RecordingOutput
+	release chan struct{}
+	once    sync.Once
+}
+
+func (g *gatedSink) OnLine(line logs.LogLine) {
+	g.once.Do(func() { <-g.release })
+	g.RecordingOutput.OnLine(line)
+}
+
+// A consumer that is slow to take lines is not a replay that stalled: the idle
+// window counts only the time spent waiting for the source.
+func TestSlowConsumerDoesNotFailTheReplay(t *testing.T) {
+	src := logtest.NewReplaySource("b1", "b2", "b3")
+	out := &gatedSink{RecordingOutput: logtest.NewRecordingOutput(), release: make(chan struct{})}
+	mgr := logs.NewManager(logs.ManagerConfig{
+		Handlers: oneSource(src), Sink: out, Clock: timeutil.NewInstantFakeClock(),
+		ReplayIdleTimeout: 40 * time.Millisecond,
+	})
+	t.Cleanup(mgr.Close)
+	_, err := mgr.CreateResourceSession(types.NewPluginContext(context.Background(), "test", nil, nil, nil),
+		logs.CreateSessionOptions{
+			ResourceKey: "pod", ResourceID: "web-1", Options: asking(logs.LogSessionOptions{Follow: true}),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the replay to open", func() bool { return len(src.Requests()) > 0 })
+	time.Sleep(300 * time.Millisecond) // several idle windows of a consumer that takes nothing
+	close(out.release)
+
+	if out.WaitForEvent(logs.StreamEventSourceCaughtUp, replayWait) == nil {
+		t.Fatalf("a replay held up only by its consumer never caught up; events: %v", eventKinds(out.Events()))
+	}
+	for _, e := range out.Events() {
+		if e.Type == logs.StreamEventStreamError {
+			t.Fatalf("a slow consumer failed the replay: %+v", e)
+		}
+	}
+}
+
+// Options carried over from an accepted session must not make a plugin that
+// predates markers look as though it accepted: the request never carries the key.
+func TestRequestsNeverCarryTheAcceptanceKey(t *testing.T) {
+	params := map[string]string{logs.ParamReplayMarkersAccepted: logs.ReplayMarkersOn, "keep": "me"}
+	request, err := logs.CreateSessionOptions{
+		ResourceKey: "pod", ResourceID: "web-1", Options: logs.LogSessionOptions{Params: params},
+	}.ToProto()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, sent := request.GetOptions().GetParams()[logs.ParamReplayMarkersAccepted]; sent {
+		t.Error("the create request carries the acceptance key")
+	}
+	if request.GetOptions().GetParams()["keep"] != "me" {
+		t.Error("the other parameters must travel")
+	}
+	if params[logs.ParamReplayMarkersAccepted] != logs.ReplayMarkersOn {
+		t.Error("the caller's map was changed")
+	}
+}
+
+// With no timestamp on its lines a replay gives the follow nothing to continue
+// after, so the follow starts at the instant the replay was requested: it may
+// repeat a line the replay read, never miss one produced while it was reading.
+func TestFollowAfterAnUntimestampedReplayCoversTheSeam(t *testing.T) {
+	type produced struct {
+		at   time.Time
+		text string
+	}
+	var (
+		mu    sync.Mutex
+		lines []produced
+	)
+	produce := func(text string) {
+		mu.Lock()
+		defer mu.Unlock()
+		lines = append(lines, produced{at: time.Now(), text: text})
+	}
+	produce("plain") // before the session exists
+	handler := logs.Handler{
+		Plugin: "test", Resource: "pod",
+		SourceBuilder: logtest.SingleSourceBuilder("pod", nil),
+		Replay: func(_ *types.PluginContext, _ logs.LogStreamRequest) (io.ReadCloser, error) {
+			mu.Lock()
+			snapshot := lines[0].text + "\n"
+			mu.Unlock()
+			produce("seam") // after the snapshot, before the reader is consumed to its end
+			return io.NopCloser(strings.NewReader(snapshot)), nil
+		},
+		Handler: func(pctx *types.PluginContext, req logs.LogStreamRequest) (io.ReadCloser, error) {
+			var rest strings.Builder
+			mu.Lock()
+			for _, l := range lines {
+				if req.SinceTime == nil || !l.at.Before(*req.SinceTime) {
+					rest.WriteString(l.text + "\n")
+				}
+			}
+			mu.Unlock()
+			return noClose{io.MultiReader(strings.NewReader(rest.String()), &blockedReader{ctx: pctx.Context})}, nil
+		},
+	}
+	rig := newReplayRig(t, map[string]logs.Handler{"test/pod": handler})
+	rig.open(asking(logs.LogSessionOptions{Follow: true}))
+	got := contents(rig.out.WaitForLines(2, replayWait))
+	if !slices.Equal(got, []string{"plain", "seam"}) {
+		t.Fatalf("lines = %v, want the backlog then the line produced while it was read", got)
 	}
 }

@@ -41,8 +41,9 @@ sees the new event.
 A handler takes part by setting `logs.Handler.Replay`: a bounded read of the lines the
 source already holds, ending in `io.EOF`, honouring the caller's tail, since and limit
 bounds. `Handler.Handler` then becomes the live follow, which continues as
-`LogStreamRequest.Resume` says: strictly after `SinceTime`, or from the start of the
-caller's window when the replay read nothing. Setting `Replay` is the whole
+`LogStreamRequest.Resume` says: at or after `SinceTime` (the SDK drops what it already
+read, even lines sharing a timestamp), or from the start of the caller's window when
+the replay read nothing. Setting `Replay` is the whole
 declaration: the SDK flags the lines and sends the marker, and a `Replay` stream that
 neither returns a line nor ends for `ManagerConfig.ReplayIdleTimeout` fails its source
 with a `StreamError`, because a backlog that never ends would leave readers waiting for

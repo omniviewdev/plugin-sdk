@@ -23,8 +23,9 @@ type replayEntry struct {
 // ReplaySource is a programmable log source with a history, for exercising the
 // replay contract of [logs.Handler]. Like a real source it keeps timestamped
 // lines, serves a bounded read of them (its Replay function) and a follow that
-// starts after a timestamp (its Handler function), and it keeps producing while
-// no reader is attached.
+// starts at or after a timestamp (its Handler function, which may return lines
+// the SDK already read: the SDK drops them), and it keeps producing while no
+// reader is attached.
 type ReplaySource struct {
 	mu       sync.Mutex
 	entries  []replayEntry
@@ -33,7 +34,9 @@ type ReplaySource struct {
 	requests []logs.LogStreamRequest
 
 	ended         bool
-	epoch         int // follow readers opened under an older epoch fail with breakErr
+	sameStamp     bool // appended lines reuse the previous line's timestamp
+	waits         int  // times a follow stream blocked for more lines
+	epoch         int  // follow readers opened under an older epoch fail with breakErr
 	breakErr      error
 	hang          bool
 	breakAfter    int // when positive, the next replay fails after this many lines
@@ -58,6 +61,24 @@ func (s *ReplaySource) Append(bodies ...string) time.Time {
 	s.appendLocked(bodies)
 	s.wakeLocked()
 	return s.next
+}
+
+// SameStamp sets whether lines appended from now on reuse the timestamp of the
+// line before them, as a source with a coarse clock writes many lines to one
+// timestamp. The first line of an empty history takes the first timestamp.
+func (s *ReplaySource) SameStamp(same bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sameStamp = same
+}
+
+// Waits counts how many times a follow stream has come back to wait for a new
+// line. A stream does so only after the reader it feeds has consumed what it was
+// given, so a rise after an Append says the line was read and dealt with.
+func (s *ReplaySource) Waits() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.waits
 }
 
 // AppendAndBreak adds lines and, in the same instant, fails every follow stream
@@ -155,9 +176,9 @@ func (s *ReplaySource) ReplayFunc() logs.LogHandlerFunc {
 }
 
 // FollowFunc returns the source's [logs.Handler.Handler] function: a stream of
-// the lines after the request's SinceTime (all of them when a resumed request has
-// none, nothing old when the request is not a resume) that stays open until the
-// source ends, breaks or the reader is closed.
+// the lines at or after the request's SinceTime (all of them when a resumed
+// request has none, nothing old when the request is not a resume) that stays open
+// until the source ends, breaks or the reader is closed.
 func (s *ReplaySource) FollowFunc() logs.LogHandlerFunc {
 	return func(pctx *types.PluginContext, req logs.LogStreamRequest) (io.ReadCloser, error) {
 		s.mu.Lock()
@@ -169,7 +190,7 @@ func (s *ReplaySource) FollowFunc() logs.LogHandlerFunc {
 		cursor := len(s.entries)
 		switch {
 		case req.Resume && req.SinceTime != nil:
-			cursor = s.firstAfterLocked(*req.SinceTime)
+			cursor = s.firstAtOrAfterLocked(*req.SinceTime)
 		case req.Resume:
 			// Nothing was read: the whole window, which a source with no window
 			// bounds of its own serves from the start.
@@ -181,7 +202,9 @@ func (s *ReplaySource) FollowFunc() logs.LogHandlerFunc {
 
 func (s *ReplaySource) appendLocked(bodies []string) {
 	for _, body := range bodies {
-		s.next = s.next.Add(replayLineStep)
+		if !s.sameStamp || len(s.entries) == 0 {
+			s.next = s.next.Add(replayLineStep)
+		}
 		s.entries = append(s.entries, replayEntry{at: s.next, line: s.next.Format(time.RFC3339Nano) + " " + body})
 	}
 }
@@ -191,12 +214,10 @@ func (s *ReplaySource) wakeLocked() {
 	s.changed = make(chan struct{})
 }
 
-func (s *ReplaySource) firstAfterLocked(t time.Time) int {
+// firstAtOrAfterLocked is the index of the first line stamped at or after t.
+func (s *ReplaySource) firstAtOrAfterLocked(t time.Time) int {
 	i, _ := slices.BinarySearchFunc(s.entries, t, func(e replayEntry, t time.Time) int {
-		if e.at.After(t) {
-			return 1
-		}
-		return -1
+		return e.at.Compare(t)
 	})
 	return i
 }
@@ -204,13 +225,8 @@ func (s *ReplaySource) firstAfterLocked(t time.Time) int {
 // selectLocked applies a replay request's bounds to the history.
 func (s *ReplaySource) selectLocked(req logs.LogStreamRequest) []string {
 	from := 0
-	switch {
-	case req.Resume && req.SinceTime != nil:
-		from = s.firstAfterLocked(*req.SinceTime)
-	case req.SinceTime != nil:
-		from, _ = slices.BinarySearchFunc(s.entries, *req.SinceTime, func(e replayEntry, t time.Time) int {
-			return e.at.Compare(t)
-		})
+	if req.SinceTime != nil {
+		from = s.firstAtOrAfterLocked(*req.SinceTime)
 	}
 	picked := s.entries[from:]
 	if req.TailLines > 0 && int64(len(picked)) > req.TailLines {
@@ -300,6 +316,7 @@ func (r *followReader) Read(p []byte) (int, error) {
 			return 0, io.EOF
 		}
 		changed := r.src.changed
+		r.src.waits++
 		r.src.mu.Unlock()
 		select {
 		case <-changed:

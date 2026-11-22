@@ -438,12 +438,23 @@ type LogStreamRequest struct {
 	// Resume is true when the SDK continues a source after lines it already read:
 	// the follow that comes after a replay, and a replay or follow reopened after a
 	// failure. TailLines and LimitBytes are then zero and IncludePrevious is false.
-	// SinceTime, when set, is the timestamp of the last line read (the instant the
-	// replay ended, when the lines read carried no timestamp): continue strictly
-	// after it; SinceSeconds is then zero. When SinceTime is nil, or is only the
-	// caller's own, nothing was read: continue from the start of the caller's
-	// window (its SinceSeconds still applies; without one, from the start of the
-	// source). Lines read without timestamps cannot be resumed after a failure: the
-	// SDK sends the caller's first-open request again and the tail comes twice.
+	//
+	// SinceTime, when set, says where to continue (SinceSeconds is then zero): return
+	// the lines stamped at or after it. Returning more is fine, whether because the
+	// source's own time filter is coarser than its timestamps (Kubernetes: one
+	// second) or because it has none: the SDK drops the lines it already read, those
+	// stamped before SinceTime and the first few stamped exactly at it (sources stamp
+	// many lines alike), so a handler never has to tell its own lines apart. SinceTime
+	// is the latest timestamp read. When the lines read carried none, it is the
+	// instant the replay was requested: the follow can then repeat a line the replay
+	// read, which has no timestamp to tell it apart, but cannot miss one; a source
+	// that holds a position of its own (an offset, a sequence number) should hand
+	// that over itself.
+	//
+	// When SinceTime is nil, or is only the caller's own, nothing was read: continue
+	// from the start of the caller's window (its SinceSeconds still applies; without
+	// one, from the start of the source). Lines read without timestamps cannot be
+	// resumed after a failure: the SDK sends the caller's first-open request again
+	// and the tail comes twice.
 	Resume bool
 }

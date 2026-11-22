@@ -22,6 +22,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
 	resourceplugin "github.com/omniviewdev/plugin-sdk/pkg/resource/v2/plugin"
@@ -373,5 +374,62 @@ func TestCurrentPluginAcceptanceReachesTheReader(t *testing.T) {
 		if err := client.CloseSession(pc, session.ID); err != nil && !errors.Is(err, context.Canceled) {
 			t.Fatal(err)
 		}
+	}
+}
+
+// echoingOldPlugin answers as a v0.21.0 plugin does: the session it returns carries
+// the request's options as they came.
+type echoingOldPlugin struct {
+	logspb.UnimplementedLogPluginServer
+}
+
+func (echoingOldPlugin) CreateResourceSession(
+	_ context.Context, in *logspb.CreateLogSessionRequest,
+) (*logspb.ResourceLogSessionResponse, error) {
+	return &logspb.ResourceLogSessionResponse{
+		ResourceWireVersion: ResourceSessionWireVersion,
+		Session: &logspb.LogSession{
+			Id: in.GetSessionId(), ResourceKey: in.GetResourceKey(), ResourceId: in.GetResourceId(),
+			Options: in.GetOptions(), CreatedAt: timestamppb.Now(),
+		},
+	}, nil
+}
+
+func (echoingOldPlugin) UpdateSessionOptions(
+	_ context.Context, in *logspb.UpdateLogSessionOptionsRequest,
+) (*logspb.LogSessionByIdResponse, error) {
+	return &logspb.LogSessionByIdResponse{
+		Success: true,
+		Session: &logspb.LogSession{Id: in.GetSessionId(), Options: in.GetOptions(), CreatedAt: timestamppb.Now()},
+	}, nil
+}
+
+// A reader that reuses the options of an accepted session must not read a plugin
+// that merely echoes them as having accepted, or it would wait for a marker that
+// can never come.
+func TestReusedAcceptanceKeyIsNotMistakenForAcceptance(t *testing.T) {
+	connection := logsConnection(t, func(s *grpc.Server) { RegisterLogPluginServer(s, echoingOldPlugin{}) })
+	client := &PluginClient{client: logspb.NewLogPluginClient(connection), log: logging.NewNop()}
+	pc := types.NewPluginContext(t.Context(), "logs", nil, nil, nil)
+	reused := LogSessionOptions{
+		Follow: true,
+		Params: map[string]string{ParamReplayMarkers: ReplayMarkersOn, ParamReplayMarkersAccepted: ReplayMarkersOn},
+	}
+
+	session, err := client.CreateResourceSession(pc, CreateSessionOptions{
+		SessionID: compatSession, ResourceKey: "pod", ResourceID: "default/web-1", Options: reused,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.ReplayMarkers {
+		t.Error("create: an echoing plugin read as having accepted")
+	}
+	updated, err := client.UpdateSessionOptions(pc, session.ID, reused)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ReplayMarkers {
+		t.Error("update: an echoing plugin read as having accepted")
 	}
 }

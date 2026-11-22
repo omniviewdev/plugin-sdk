@@ -3,6 +3,8 @@ package logs
 import (
 	"maps"
 	"time"
+
+	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 
 const (
@@ -14,7 +16,8 @@ const (
 	// ParamReplayMarkersAccepted is how the create reply says the plugin accepted:
 	// the key is set to [ReplayMarkersOn] in the reply's Options.Params. A plugin
 	// that predates markers echoes the reader's own parameters, which never carry
-	// this key; the SDK removes it from a request, so a reader cannot forge it.
+	// this key; the SDK removes it from every request it encodes, so a reader cannot
+	// forge it, even by reusing the options of an accepted session.
 	// [LogSession.ReplayMarkers] is this key read back.
 	ParamReplayMarkersAccepted = "omniview.log.replay-markers.accepted"
 	// ReplayMarkersOn is the value of both parameters.
@@ -54,4 +57,16 @@ func stampReplayAcceptance(params map[string]string, accepted bool) map[string]s
 		delete(stamped, ParamReplayMarkersAccepted)
 	}
 	return stamped
+}
+
+// requestOptions encodes options for a request. The acceptance key is a plugin's
+// to set in a reply, never a reader's to send: options reused from an accepted
+// session must not make a plugin that merely echoes them look as though it
+// accepted. The caller's map is not changed.
+func requestOptions(o *LogSessionOptions) *logspb.LogSessionOptions {
+	p := o.ToProto()
+	if p != nil {
+		p.Params = stampReplayAcceptance(p.Params, false)
+	}
+	return p
 }

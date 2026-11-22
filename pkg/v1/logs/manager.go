@@ -935,16 +935,30 @@ var errReplayIdle = errors.New("replay stream idle")
 // it has read, so a reopened source continues where it stopped instead of starting
 // over. Only the source's own goroutine touches it.
 type sourceCursor struct {
-	last time.Time // latest timestamp of a line read; zero until one carried one
-	read uint64    // lines read, whether delivered or dropped while paused
+	last    time.Time // latest timestamp of a line read; zero until one carried one
+	atLast  uint64    // lines read stamped exactly last: sources stamp many lines alike
+	read    uint64    // lines read, whether delivered or dropped while paused
+	started time.Time // when the current attempt's replay was requested
+}
+
+// observe records a line read with the timestamp ts (zero when it had none).
+func (c *sourceCursor) observe(ts time.Time) {
+	c.read++
+	switch {
+	case ts.IsZero():
+	case ts.After(c.last):
+		c.last, c.atLast = ts, 1
+	case ts.Equal(c.last):
+		c.atLast++
+	}
 }
 
 // continuation derives a request that continues after the lines already read; see
 // [LogStreamRequest.Resume]. The tail, limit and previous-instance bounds always
-// go. With a timestamp to continue after, the time bounds are replaced by it
-// (replayEnded stands in for it when the lines read carried none); with nothing
-// read, the caller's own time bounds still apply.
-func (c *sourceCursor) continuation(first LogStreamRequest, follow bool, replayEnded time.Time) LogStreamRequest {
+// go. With a timestamp to continue at, the time bounds are replaced by it (the
+// instant the replay was requested stands in for it when the lines read carried
+// none); with nothing read, the caller's own time bounds still apply.
+func (c *sourceCursor) continuation(first LogStreamRequest, follow bool) LogStreamRequest {
 	first.Follow = follow
 	first.Resume = true
 	first.TailLines, first.LimitBytes, first.IncludePrevious = 0, 0, false
@@ -953,22 +967,60 @@ func (c *sourceCursor) continuation(first LogStreamRequest, follow bool, replayE
 		since := c.last
 		first.SinceTime, first.SinceSeconds = &since, 0
 	case c.read > 0:
-		since := replayEnded
+		since := c.started
 		first.SinceTime, first.SinceSeconds = &since, 0
 	}
 	return first
 }
 
 // replayRequest is the bounded read of an attempt: the caller's own bounds the
-// first time, and, once timestamped lines were read, only what came after them.
-// Lines read without a timestamp give nothing to continue after, so the read
+// first time, and, once timestamped lines were read, only what came at or after
+// them. Lines read without a timestamp give nothing to continue at, so the read
 // starts over with the caller's bounds and the tail is delivered again.
 func (c *sourceCursor) replayRequest(first LogStreamRequest) LogStreamRequest {
 	if c.last.IsZero() {
 		first.Follow = false
 		return first
 	}
-	return c.continuation(first, false, time.Time{})
+	return c.continuation(first, false)
+}
+
+// filter returns what a read resumed at the cursor must drop of the lines it is
+// given again, or nil when nothing was read with a timestamp.
+func (c *sourceCursor) filter() *resumeFilter {
+	if c.last.IsZero() {
+		return nil
+	}
+	return &resumeFilter{since: c.last, skip: c.atLast, active: true}
+}
+
+// resumeFilter drops the lines a resumed read returns that the SDK already read. A
+// source's time filter is at or after the resume point, and a coarse one
+// (Kubernetes': one second) returns more. Lines stamped before the point were read,
+// and so were the first skip stamped exactly at it: sources stamp many lines alike,
+// so the timestamp alone cannot say which of them were. The first line past that
+// ends the filtering, so a later line stamped out of order is delivered, and a line
+// with no timestamp passes without ending it.
+type resumeFilter struct {
+	since  time.Time
+	skip   uint64
+	active bool
+}
+
+// drop reports whether a line stamped ts was already read.
+func (f *resumeFilter) drop(ts time.Time) bool {
+	if f == nil || !f.active || ts.IsZero() {
+		return false
+	}
+	switch {
+	case ts.Before(f.since):
+		return true
+	case ts.Equal(f.since) && f.skip > 0:
+		f.skip--
+		return true
+	}
+	f.active = false
+	return false
 }
 
 // readState carries one reader's replay bookkeeping through [Manager.readStream].
@@ -976,8 +1028,22 @@ func (c *sourceCursor) replayRequest(first LogStreamRequest) LogStreamRequest {
 type readState struct {
 	replay   bool          // the reader is a Replay stream
 	cursor   *sourceCursor // shared by every reader of the source
-	progress atomic.Uint64 // lines scanned, watched by the replay idle watchdog
+	filter   *resumeFilter // what a resumed reader must drop as already read
+	progress atomic.Uint64 // lines scanned
+	waiting  atomic.Bool   // a Replay reader is blocked waiting for the source
 	lastSeq  uint64        // seq of the last replay line delivered
+}
+
+// scan advances the scanner and, for a Replay reader, notes while it waits for the
+// source, so the idle watchdog can tell a stalled replay from a slow consumer.
+func (s *readState) scan(scanner *bufio.Scanner) bool {
+	if s == nil || !s.replay {
+		return scanner.Scan()
+	}
+	s.waiting.Store(true)
+	more := scanner.Scan()
+	s.waiting.Store(false)
+	return more
 }
 
 // runSourceAttempt opens and drains the source once. opened is false when no reader
@@ -1002,12 +1068,13 @@ func (m *Manager) runSourceAttempt(
 		return true, m.consumeSourceReader(ctx, ss, source, reader, logger, nil)
 	}
 
+	cursor.started = m.clock.Now()
 	reader := m.openSourceReader(ctx, ss, handler.Replay, source, cursor.replayRequest(first), logger, attempt, true)
 	if reader == nil {
 		return false, nil
 	}
 	m.markSourceReady(ss, source.ID)
-	backlog := &readState{replay: true, cursor: cursor}
+	backlog := &readState{replay: true, cursor: cursor, filter: cursor.filter()}
 	if err = m.consumeSourceReader(ctx, ss, source, reader, logger, backlog); err != nil {
 		return true, err
 	}
@@ -1016,17 +1083,19 @@ func (m *Manager) runSourceAttempt(
 	if ctx.Err() != nil {
 		return true, ctx.Err()
 	}
-	replayEnded := m.clock.Now()
 	m.emitCaughtUp(ss, source, backlog.lastSeq)
-	if !first.Follow {
+	// A bounded session, or a handler with only a Replay (a finite source), ends
+	// with its backlog.
+	if !first.Follow || handler.Handler == nil {
 		return true, nil
 	}
 
-	reader = m.openSourceReader(ctx, ss, handler.Handler, source, cursor.continuation(first, true, replayEnded), logger, attempt, false)
+	resumed := &readState{cursor: cursor, filter: cursor.filter()}
+	reader = m.openSourceReader(ctx, ss, handler.Handler, source, cursor.continuation(first, true), logger, attempt, false)
 	if reader == nil {
 		return false, nil
 	}
-	return true, m.consumeSourceReader(ctx, ss, source, reader, logger, &readState{cursor: cursor})
+	return true, m.consumeSourceReader(ctx, ss, source, reader, logger, resumed)
 }
 
 // emitCaughtUp tells a reader that asked for it that the source's backlog ended.
@@ -1096,7 +1165,7 @@ func (m *Manager) consumeSourceReader(
 	var watchdog *replayWatchdog
 	if state != nil && state.replay {
 		reader = &onceCloser{ReadCloser: reader}
-		watchdog = watchReplay(reader, &state.progress, m.replayIdle)
+		watchdog = watchReplay(reader, state, m.replayIdle)
 	}
 	// Closing the source interrupts blocked reads on cancellation. Retain ownership
 	// until both the scanner and the cancellation callback have stopped.
@@ -1133,34 +1202,43 @@ func (c *onceCloser) Close() error {
 	return err
 }
 
-// replayWatchdog closes a Replay reader that neither produced a line nor ended for
-// a whole idle window, so a stuck backlog is reported instead of waited on.
+// replayWatchdog closes a Replay reader that has been blocked waiting for the
+// source, with no line and no end, for a whole idle window, so a stuck backlog is
+// reported instead of waited on. Time spent delivering a line to a slow consumer is
+// not waiting for the source and never counts.
 type replayWatchdog struct {
 	done     chan struct{}
 	finished chan struct{}
 	expired  atomic.Bool
 }
 
-func watchReplay(reader io.Closer, progress *atomic.Uint64, idle time.Duration) *replayWatchdog {
+// watchReplay checks the reader every idle window. It expires it only when two
+// consecutive checks find the reader blocked in the same wait: waiting at both,
+// with no line read in between (a line read always moves progress), so the stall
+// lasted at least a window and at most two.
+func watchReplay(reader io.Closer, state *readState, idle time.Duration) *replayWatchdog {
 	w := &replayWatchdog{done: make(chan struct{}), finished: make(chan struct{})}
 	go func() {
 		defer close(w.finished)
 		timer := time.NewTimer(idle)
 		defer timer.Stop()
-		seen := progress.Load()
+		var (
+			blocked bool
+			seen    uint64
+		)
 		for {
 			select {
 			case <-w.done:
 				return
 			case <-timer.C:
-				if now := progress.Load(); now != seen {
-					seen = now
-					timer.Reset(idle)
-					continue
+				waiting, now := state.waiting.Load(), state.progress.Load()
+				if waiting && blocked && now == seen {
+					w.expired.Store(true)
+					_ = reader.Close()
+					return
 				}
-				w.expired.Store(true)
-				_ = reader.Close()
-				return
+				blocked, seen = waiting, now
+				timer.Reset(idle)
 			}
 		}
 	}()
@@ -1188,13 +1266,12 @@ func (m *Manager) readStream(
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, scannerInitBuf), MaxScannerBuffer)
 
-	for scanner.Scan() {
+	for state.scan(scanner) {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		if state != nil {
 			state.progress.Add(1)
-			state.cursor.read++
 		}
 
 		// Skip output if paused (bug #12: documented behavior)
@@ -1205,10 +1282,14 @@ func (m *Manager) readStream(
 
 		line := scanner.Bytes()
 		ts, content := extractTimestamp(line)
-		// A resumed read continues after what was read, delivered or dropped while
-		// paused: a paused line stays dropped across a reconnect.
-		if state != nil && ts.After(state.cursor.last) {
-			state.cursor.last = ts
+		if state != nil {
+			// A resumed read is given lines the SDK already read again; they are not
+			// read twice. What is read, delivered or dropped while paused, moves the
+			// cursor: a paused line stays dropped across a reconnect.
+			if state.filter.drop(ts) {
+				continue
+			}
+			state.cursor.observe(ts)
 		}
 		if paused {
 			continue

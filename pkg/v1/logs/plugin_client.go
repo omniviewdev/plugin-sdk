@@ -175,7 +175,7 @@ func (c *PluginClient) UpdateSessionOptions(
 		logsClientContext(ctx),
 		&logspb.UpdateLogSessionOptionsRequest{
 			SessionId: sessionID,
-			Options:   opts.ToProto(),
+			Options:   requestOptions(&opts),
 		},
 	)
 	if err != nil {
