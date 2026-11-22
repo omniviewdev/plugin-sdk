@@ -9,18 +9,20 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"google.golang.org/protobuf/proto"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	logs "github.com/omniviewdev/plugin-sdk/pkg/v1/logs"
+	"github.com/omniviewdev/plugin-sdk/pkg/v1/logs/logtest"
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 
 // The counted lines are flagged, the marker follows the last of them, and what the
 // source writes afterwards is live.
-func TestBacklogLinesAreFlaggedAndTheEndIsMarked(t *testing.T) {
+func TestReplayLinesAreFlaggedAndCaughtUpFollows(t *testing.T) {
 	src := newTailLog("a", "b", "c", "d", "e")
 	r := newRig(t, src.handlers(true))
 	session := r.open(asking(logs.LogSessionOptions{Follow: true, TailLines: 100}))
@@ -39,7 +41,7 @@ func TestBacklogLinesAreFlaggedAndTheEndIsMarked(t *testing.T) {
 }
 
 // A tail-limited request counts the tail it asked for, not the whole log.
-func TestBacklogOfATailLimitedRequestIsTheTail(t *testing.T) {
+func TestReplayOfATailLimitedRequestIsTheTail(t *testing.T) {
 	src := newTailLog("l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9", "l10")
 	r := newRig(t, src.handlers(true))
 	r.open(asking(logs.LogSessionOptions{Follow: true, TailLines: 3}))
@@ -51,7 +53,7 @@ func TestBacklogOfATailLimitedRequestIsTheTail(t *testing.T) {
 }
 
 // A source with nothing yet is caught up at once, and what it writes is live.
-func TestAnEmptyBacklogIsMarkedAtOnce(t *testing.T) {
+func TestAnEmptyReplayIsCaughtUpAtOnce(t *testing.T) {
 	src := newTailLog()
 	r := newRig(t, src.handlers(true))
 	r.open(asking(logs.LogSessionOptions{Follow: true}))
@@ -92,8 +94,8 @@ func TestATailWindowThatMovesKeepsTheCountedNumber(t *testing.T) {
 }
 
 // A source that lost lines between the count and the open (a log rotation) opens
-// with fewer than counted: nothing is lost, the next lines are flagged as backlog
-// until the count is reached, and the marker follows the counted line.
+// with fewer than counted: nothing is lost, the next lines are flagged as replay
+// until the count is reached, and the caught-up event follows the counted line.
 func TestFewerLinesThanCountedFlagsLaterLinesUntilTheCountIsReached(t *testing.T) {
 	src := newTailLog("a", "b", "c", "d", "e")
 	src.afterCount = src.Rotate
@@ -114,7 +116,7 @@ func TestFewerLinesThanCountedFlagsLaterLinesUntilTheCountIsReached(t *testing.T
 
 func waitOpen(t *testing.T, src *tailLog, n int) {
 	t.Helper()
-	deadline := time.Now().Add(backlogWait)
+	deadline := time.Now().Add(replayWait)
 	for len(src.Opens()) < n {
 		if time.Now().After(deadline) {
 			t.Fatalf("the source was opened %d times, want %d", len(src.Opens()), n)
@@ -130,16 +132,16 @@ func (r *rig) linesUntilItems(n int) []timelineItem {
 
 // What a session delivers is what the handler's one stream delivers: a source that
 // rotates its log after the open loses nothing a plain handler's stream keeps. The
-// same script runs against a handler with Backlog and an asking reader, and
-// against the handler as it was before markers existed.
+// same script runs against a handler with ReplayCount and an asking reader, and
+// against the handler as it was before replay markers existed.
 func TestSessionsDeliverWhatTheHandlersStreamDelivers(t *testing.T) {
-	script := func(t *testing.T, withBacklog, ask bool) []string {
+	script := func(t *testing.T, withReplayCount, ask bool) []string {
 		var first []string
 		for i := 1; i <= 100; i++ {
 			first = append(first, fmt.Sprintf("n%03d", i))
 		}
 		src := newTailLog(first...)
-		r := newRig(t, src.handlers(withBacklog))
+		r := newRig(t, src.handlers(withReplayCount))
 		o := logs.LogSessionOptions{Follow: true, TailLines: 200}
 		if ask {
 			o = asking(o)
@@ -170,13 +172,13 @@ func TestSessionsDeliverWhatTheHandlersStreamDelivers(t *testing.T) {
 }
 
 // A reader that did not ask gets the handler called exactly as before: one request,
-// the original one, Backlog never called, and frames identical on the wire to a
-// handler that has no Backlog.
+// the original one, ReplayCount never called, and frames identical on the wire to a
+// handler that has no ReplayCount.
 func TestWithoutTheRequestTheHandlerIsCalledAsBefore(t *testing.T) {
-	run := func(withBacklog bool) (*tailLog, *timeline) {
+	run := func(withReplayCount bool) (*tailLog, *timeline) {
 		src := newTailLog("a", "b", "c")
 		src.End()
-		r := newRig(t, src.handlers(withBacklog))
+		r := newRig(t, src.handlers(withReplayCount))
 		session := r.open(logs.LogSessionOptions{Follow: true, TailLines: 100, IncludeSourceEvents: true})
 		if session.ReplayMarkers {
 			t.Fatal("a session that did not ask must not report markers")
@@ -192,7 +194,7 @@ func TestWithoutTheRequestTheHandlerIsCalledAsBefore(t *testing.T) {
 	_, without := run(false)
 
 	if n := len(srcWith.Counts()); n != 0 {
-		t.Fatalf("Backlog was called %d times for a reader that did not ask", n)
+		t.Fatalf("ReplayCount was called %d times for a reader that did not ask", n)
 	}
 	opens := srcWith.Opens()
 	if len(opens) != 1 {
@@ -251,9 +253,9 @@ func TestWithoutTheRequestTheHandlerIsCalledAsBefore(t *testing.T) {
 	}
 }
 
-// IncludePrevious, Target and every other bound reach Backlog and Handler
+// IncludePrevious, Target and every other bound reach ReplayCount and Handler
 // unchanged: the stream is still the one stream the request describes.
-func TestBacklogAndHandlerGetTheSameRequest(t *testing.T) {
+func TestReplayCountAndHandlerGetTheSameRequest(t *testing.T) {
 	src := newTailLog("a", "b")
 	r := newRig(t, src.handlers(true))
 	r.open(asking(logs.LogSessionOptions{
@@ -263,24 +265,24 @@ func TestBacklogAndHandlerGetTheSameRequest(t *testing.T) {
 	r.marker("pod", 1)
 	counts, opens := src.Counts(), src.Opens()
 	if len(counts) != 1 || len(opens) != 1 {
-		t.Fatalf("Backlog %d times, Handler %d times, want once each", len(counts), len(opens))
+		t.Fatalf("ReplayCount %d times, Handler %d times, want once each", len(counts), len(opens))
 	}
 	if !reflect.DeepEqual(counts[0], opens[0]) {
-		t.Fatalf("the requests differ:\nBacklog: %+v\nHandler: %+v", counts[0], opens[0])
+		t.Fatalf("the requests differ:\nReplayCount: %+v\nHandler: %+v", counts[0], opens[0])
 	}
 	if o := opens[0]; !o.IncludePrevious || o.TailLines != 50 || o.SinceSeconds != 30 || o.LimitBytes != 4096 || o.Target != "app" {
 		t.Fatalf("a bound was lost: %+v", o)
 	}
 }
 
-// A handler without Backlog cannot mark anything: the reply says so and the stream
+// A handler without ReplayCount cannot be caught up: the reply says so and the stream
 // is the one it always was.
-func TestAHandlerWithoutBacklogNeverGetsMarkers(t *testing.T) {
+func TestAHandlerWithoutReplayCountNeverGetsReplayMarkers(t *testing.T) {
 	src := newTailLog("a", "b")
 	r := newRig(t, src.handlers(false))
 	session := r.open(asking(logs.LogSessionOptions{Follow: true}))
 	if session.ReplayMarkers {
-		t.Fatal("a handler with no Backlog must not accept markers")
+		t.Fatal("a handler with no ReplayCount must not accept replay markers")
 	}
 	if _, forged := session.Options.Params[logs.ParamReplayMarkersAccepted]; forged {
 		t.Fatal("the reply must not carry the acceptance key")
@@ -291,7 +293,7 @@ func TestAHandlerWithoutBacklogNeverGetsMarkers(t *testing.T) {
 	}
 	time.Sleep(20 * time.Millisecond)
 	if n := countMarkers(r.tl.snapshot(), "pod"); n != 0 {
-		t.Fatal("a handler with no Backlog sent a marker")
+		t.Fatal("a handler with no ReplayCount sent a caught-up event")
 	}
 }
 
@@ -330,7 +332,7 @@ func TestAcceptanceIsFixedAtCreation(t *testing.T) {
 }
 
 // A request with Follow false describes a stream that ends, and its end is the
-// boundary: every line is backlog, the marker follows the last, Backlog is not asked.
+// boundary: every line is replay, the caught-up event follows the last, ReplayCount is not asked.
 func TestAFiniteSessionFlagsEveryLineAndMarksItsEnd(t *testing.T) {
 	src := newTailLog("a", "b", "c")
 	r := newRig(t, src.handlers(true))
@@ -344,7 +346,7 @@ func TestAFiniteSessionFlagsEveryLineAndMarksItsEnd(t *testing.T) {
 		t.Fatalf("timeline = %s, want %s", got, want)
 	}
 	if n := len(src.Counts()); n != 0 {
-		t.Fatalf("Backlog was called %d times for a request with Follow false", n)
+		t.Fatalf("ReplayCount was called %d times for a request with Follow false", n)
 	}
 	last := items[len(items)-1]
 	if last.event == nil || last.event.Type != logs.StreamEventStreamEnded {
@@ -367,7 +369,7 @@ func TestAReopenedSourceIsCountedAndMarkedAgain(t *testing.T) {
 		t.Fatalf("timeline = %s, want %s", got, want)
 	}
 	if n := len(src.Counts()); n != 2 {
-		t.Fatalf("Backlog was called %d times for two opens", n)
+		t.Fatalf("ReplayCount was called %d times for two opens", n)
 	}
 	kinds := ""
 	for _, e := range r.tl.events() {
@@ -380,7 +382,7 @@ func TestAReopenedSourceIsCountedAndMarkedAgain(t *testing.T) {
 
 // A count that cannot be given fails the attempt as a failed open does: no stream is
 // opened for it, the source is retried, and the retry marks.
-func TestABacklogErrorFailsTheAttemptLikeAFailedOpen(t *testing.T) {
+func TestAReplayCountErrorFailsTheAttemptLikeAFailedOpen(t *testing.T) {
 	src := newTailLog("a", "b")
 	src.countErr = []error{errBoom}
 	r := newRig(t, src.handlers(true))
@@ -390,7 +392,7 @@ func TestABacklogErrorFailsTheAttemptLikeAFailedOpen(t *testing.T) {
 		t.Fatalf("Handler was called %d times: the failed count must not open a stream", n)
 	}
 	if n := len(src.Counts()); n != 2 {
-		t.Fatalf("Backlog was called %d times, want the failed one and the retry", n)
+		t.Fatalf("ReplayCount was called %d times, want the failed one and the retry", n)
 	}
 	items := r.linesUntilItems(2)
 	if got, want := signature(items, "pod"), "R:a R:b MARK"; got != want {
@@ -406,7 +408,7 @@ func TestABacklogErrorFailsTheAttemptLikeAFailedOpen(t *testing.T) {
 }
 
 // A count that never works is reported like a source that never opens.
-func TestABacklogThatAlwaysFailsEndsInAStreamError(t *testing.T) {
+func TestAReplayCountThatAlwaysFailsEndsInAStreamError(t *testing.T) {
 	src := newTailLog("a")
 	for range logs.ReconnectMaxAttempts + 1 {
 		src.countErr = append(src.countErr, errBoom)
@@ -428,11 +430,11 @@ func TestABacklogThatAlwaysFailsEndsInAStreamError(t *testing.T) {
 }
 
 // A negative count is not a count.
-func TestANegativeBacklogIsAnError(t *testing.T) {
+func TestANegativeReplayCountIsAnError(t *testing.T) {
 	src := newTailLog("a", "b")
 	calls := 0
 	h := src.handlers(true)["test/pod"]
-	h.Backlog = func(pctx *types.PluginContext, req logs.LogStreamRequest) (int64, error) {
+	h.ReplayCount = func(pctx *types.PluginContext, req logs.LogStreamRequest) (int64, error) {
 		calls++
 		if calls == 1 {
 			return -1, nil
@@ -443,13 +445,13 @@ func TestANegativeBacklogIsAnError(t *testing.T) {
 	r.open(asking(logs.LogSessionOptions{Follow: true}))
 	r.marker("pod", 1)
 	if n := len(src.Opens()); n != 1 || calls != 2 {
-		t.Fatalf("opens=%d backlog calls=%d: a negative count must fail its attempt", n, calls)
+		t.Fatalf("opens=%d replay count calls=%d: a negative count must fail its attempt", n, calls)
 	}
 }
 
-// A paused session drops its lines, but the backlog's position still counts: the
-// marker is sent, and what comes after it is live.
-func TestAPausedSessionStillMarksTheEndOfTheBacklog(t *testing.T) {
+// A paused session drops its lines, but the replay's position still counts: the
+// caught-up event is sent, and what comes after it is live.
+func TestAPausedSessionIsStillCaughtUp(t *testing.T) {
 	src := newTailLog("a", "b", "c")
 	release := src.Hold()
 	r := newRig(t, src.handlers(true))
@@ -468,13 +470,13 @@ func TestAPausedSessionStillMarksTheEndOfTheBacklog(t *testing.T) {
 	src.Append("x")
 	items := r.linesUntilItems(1)
 	if got, want := signature(items, "pod"), "MARK L:x"; got != want {
-		t.Fatalf("timeline = %s, want %s (the paused backlog lines are dropped, as paused lines always were)", got, want)
+		t.Fatalf("timeline = %s, want %s (the paused replay lines are dropped, as paused lines always were)", got, want)
 	}
 }
 
 func waitStatus(t *testing.T, r *rig, id string, want logs.LogSessionStatus) {
 	t.Helper()
-	deadline := time.Now().Add(backlogWait)
+	deadline := time.Now().Add(replayWait)
 	for {
 		got, err := r.mgr.GetSession(r.ctx, id)
 		if err == nil && got.Status == want {
@@ -487,9 +489,9 @@ func waitStatus(t *testing.T, r *rig, id string, want logs.LogSessionStatus) {
 	}
 }
 
-// A source that is closed or disabled before its backlog was delivered never sends a
-// marker.
-func TestASourceEndedBeforeItsBacklogWasDeliveredSendsNoMarker(t *testing.T) {
+// A source that is closed or disabled before its replay was delivered is never caught
+// up: no caught-up event is sent.
+func TestASourceEndedBeforeItsReplayWasDeliveredIsNeverCaughtUp(t *testing.T) {
 	t.Run("session closed", func(t *testing.T) {
 		src := newTailLog("a", "b", "c")
 		release := src.Hold()
@@ -542,7 +544,7 @@ func TestASourceEndedBeforeItsBacklogWasDeliveredSendsNoMarker(t *testing.T) {
 		release()
 		time.Sleep(30 * time.Millisecond)
 		if n := countMarkers(r.tl.snapshot(), "pod"); n != 0 {
-			t.Fatal("a source disabled before its backlog was delivered sent a marker")
+			t.Fatal("a source disabled before its replay was delivered sent a caught-up event")
 		}
 	})
 }
@@ -560,7 +562,7 @@ func TestSourcesOfOneSessionEachGetTheirOwnMarker(t *testing.T) {
 		Handler: func(pctx *types.PluginContext, req logs.LogStreamRequest) (io.ReadCloser, error) {
 			return logsBySource[req.SourceID].open(pctx, req)
 		},
-		Backlog: func(pctx *types.PluginContext, req logs.LogStreamRequest) (int64, error) {
+		ReplayCount: func(pctx *types.PluginContext, req logs.LogStreamRequest) (int64, error) {
 			return logsBySource[req.SourceID].count(pctx, req)
 		},
 	}
@@ -573,7 +575,7 @@ func TestSourcesOfOneSessionEachGetTheirOwnMarker(t *testing.T) {
 	})
 	session := r.openKey("deployment", asking(logs.LogSessionOptions{Follow: true}))
 	if !session.ReplayMarkers {
-		t.Fatal("a session for a group resource must accept markers when the streaming handler declares Backlog")
+		t.Fatal("a session for a group resource must accept replay markers when the streaming handler declares ReplayCount")
 	}
 	for _, id := range []string{"a", "b", "c"} {
 		r.marker(id, 1)
@@ -610,7 +612,7 @@ func TestSourcesWaitingForASlotSendNothingUntilTheyStart(t *testing.T) {
 		Handler: func(pctx *types.PluginContext, req logs.LogStreamRequest) (io.ReadCloser, error) {
 			return all[req.SourceID].open(pctx, req)
 		},
-		Backlog: func(pctx *types.PluginContext, req logs.LogStreamRequest) (int64, error) {
+		ReplayCount: func(pctx *types.PluginContext, req logs.LogStreamRequest) (int64, error) {
 			return all[req.SourceID].count(pctx, req)
 		},
 	}
@@ -689,7 +691,7 @@ func TestTheReplayFlagTravelsOnlyWhenSet(t *testing.T) {
 	}
 	plain := logs.LogLine{SessionID: "s", SourceID: "pod", Content: "x"}
 	if proto.Size(plain.ToProto()) >= proto.Size(line.ToProto()) {
-		t.Fatal("a line that is not backlog must not pay for the flag")
+		t.Fatal("a line that is not replay must not pay for the flag")
 	}
 	b, err := json.Marshal(plain)
 	if err != nil || strings.Contains(string(b), "replay") {
@@ -732,7 +734,7 @@ func TestAReenabledSourceIsCountedAndMarkedAgain(t *testing.T) {
 		Handler: func(pctx *types.PluginContext, req logs.LogStreamRequest) (io.ReadCloser, error) {
 			return logsBySource[req.SourceID].open(pctx, req)
 		},
-		Backlog: func(pctx *types.PluginContext, req logs.LogStreamRequest) (int64, error) {
+		ReplayCount: func(pctx *types.PluginContext, req logs.LogStreamRequest) (int64, error) {
 			return logsBySource[req.SourceID].count(pctx, req)
 		},
 	}
@@ -785,7 +787,7 @@ func TestAFiniteSourceDisabledBeforeItsEndSendsNoMarker(t *testing.T) {
 		Handler: func(pctx *types.PluginContext, req logs.LogStreamRequest) (io.ReadCloser, error) {
 			return logsBySource[req.SourceID].open(pctx, req)
 		},
-		Backlog: func(pctx *types.PluginContext, req logs.LogStreamRequest) (int64, error) {
+		ReplayCount: func(pctx *types.PluginContext, req logs.LogStreamRequest) (int64, error) {
 			return logsBySource[req.SourceID].count(pctx, req)
 		},
 	}
@@ -818,5 +820,128 @@ func TestAFiniteSourceDisabledBeforeItsEndSendsNoMarker(t *testing.T) {
 	r.marker("a", 1)
 	if n := countMarkers(r.tl.snapshot(), "b"); n != 0 {
 		t.Fatalf("the source that stayed ended, and the disabled one was marked %d times", n)
+	}
+}
+
+// The host reads these JSON keys from the Go core, and a renamed key would silently turn
+// replay markers off for every plugin.
+func TestTheJSONKeysTheHostReads(t *testing.T) {
+	marshal := func(v any) string {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	for _, c := range []struct{ what, got, want string }{
+		{"a replay line", marshal(logs.LogLine{Replay: true}), `"replay":true`},
+		{"a session that accepted", marshal(logs.LogSession{ReplayMarkers: true}), `"replay_markers":true`},
+		{"the caught-up event", marshal(logs.LogStreamEvent{Type: logs.StreamEventSourceCaughtUp}), `"type":7`},
+	} {
+		if !strings.Contains(c.got, c.want) {
+			t.Errorf("%s: %s does not contain %s", c.what, c.got, c.want)
+		}
+	}
+	// Absent means false, as the host reads it.
+	if got := marshal(logs.LogLine{}); strings.Contains(got, `"replay"`) {
+		t.Errorf("a line that is not replay carries the key: %s", got)
+	}
+	if got := marshal(logs.LogSession{}); strings.Contains(got, `"replay_markers"`) {
+		t.Errorf("a session that did not accept carries the key: %s", got)
+	}
+}
+
+// Only the value "1" opts in: "0", "false" and the like must not turn replay markers on.
+func TestOnlyTheValueOneOptsIn(t *testing.T) {
+	for value, want := range map[string]bool{"1": true, "0": false, "false": false, "true": false, "yes": false, "": false} {
+		t.Run(fmt.Sprintf("%q", value), func(t *testing.T) {
+			r := newRig(t, newTailLog("a").handlers(true))
+			session := r.open(logs.LogSessionOptions{Follow: true, Params: map[string]string{logs.ParamReplayMarkers: value}})
+			if session.ReplayMarkers != want {
+				t.Errorf("ReplayMarkers = %v for %q, want %v", session.ReplayMarkers, value, want)
+			}
+			if _, has := session.Options.Params[logs.ParamReplayMarkersAccepted]; has != want {
+				t.Errorf("the accepted key is present = %v for %q, want %v", has, value, want)
+			}
+		})
+	}
+}
+
+// The context a ReplayCount call is given is the source's: removing the source cancels a
+// call that is blocked, so it cannot hold a slot or a goroutine for a source nobody wants.
+func TestReplayCountContextFollowsTheSource(t *testing.T) {
+	entered, cancelled := make(chan struct{}), make(chan struct{})
+	h := logs.Handler{
+		Plugin: "test", Resource: "pod",
+		SourceBuilder: logtest.SingleSourceBuilder("pod", nil),
+		Handler: func(*types.PluginContext, logs.LogStreamRequest) (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader("")), nil
+		},
+		ReplayCount: func(pctx *types.PluginContext, _ logs.LogStreamRequest) (int64, error) {
+			close(entered)
+			<-pctx.Context.Done()
+			close(cancelled)
+			return 0, pctx.Context.Err()
+		},
+	}
+	r := newRig(t, map[string]logs.Handler{"test/pod": h})
+	session := r.open(asking(logs.LogSessionOptions{Follow: true}))
+	select {
+	case <-entered:
+	case <-time.After(replayWait):
+		t.Fatal("ReplayCount was never called")
+	}
+	if _, err := r.mgr.UpdateSessionOptions(r.ctx, session.ID, asking(logs.LogSessionOptions{
+		Follow: true, Params: map[string]string{"enabled_sources": "other"},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(replayWait):
+		t.Fatal("a ReplayCount call kept running after its source was removed")
+	}
+}
+
+// failingReader fails every Read with its error.
+type failingReader struct{ err error }
+
+func (f failingReader) Read([]byte) (int, error) { return 0, f.err }
+
+// A finite source whose stream fails midway and is retried is caught up once, at its
+// real end: the lines of the failed attempt are replay too, and the event is not sent
+// for it.
+func TestAFiniteSourceThatFailsAndIsRetriedIsCaughtUpOnceAtItsEnd(t *testing.T) {
+	opens := 0
+	h := logs.Handler{
+		Plugin: "test", Resource: "pod",
+		SourceBuilder: logtest.SingleSourceBuilder("pod", nil),
+		Handler: func(*types.PluginContext, logs.LogStreamRequest) (io.ReadCloser, error) {
+			opens++
+			if opens == 1 {
+				return io.NopCloser(io.MultiReader(strings.NewReader("a\nb\n"), failingReader{errBoom})), nil
+			}
+			return io.NopCloser(strings.NewReader("a\nb\nc\n")), nil
+		},
+		ReplayCount: func(*types.PluginContext, logs.LogStreamRequest) (int64, error) { return 0, nil },
+	}
+	r := newRig(t, map[string]logs.Handler{"test/pod": h})
+	r.open(asking(logs.LogSessionOptions{Follow: false}))
+	items := r.tl.until(t, "the session to end", func(items []timelineItem) bool {
+		return slices.ContainsFunc(items, func(it timelineItem) bool {
+			return it.event != nil && it.event.Type == logs.StreamEventStreamEnded
+		})
+	})
+	if got, want := signature(items, "pod"), "R:a R:b R:a R:b R:c MARK"; got != want {
+		t.Fatalf("timeline = %s, want %s", got, want)
+	}
+}
+
+// A LogLine is allocated once per line, so its size class is a cost every session pays,
+// asking or not. The replay flag sits in padding the struct already had: it must stay in
+// the 96-byte class it had before the flag existed.
+func TestALogLineStaysInItsSizeClass(t *testing.T) {
+	if got := unsafe.Sizeof(logs.LogLine{}); got > 96 {
+		t.Fatalf("a LogLine is %d bytes; it was 96 before the replay flag and must not leave that size class", got)
 	}
 }

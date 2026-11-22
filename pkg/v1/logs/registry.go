@@ -105,17 +105,17 @@ func (r *handlerRegistry) AnyHandler() (Handler, bool) {
 	return r.handlers[keys[0]], true
 }
 
-// declaresBacklog reports whether the handler that will stream a session for the
-// resource key declares [Handler.Backlog]. It mirrors the orchestration's own
+// declaresReplayCount reports whether the handler that will stream a session for the
+// resource key declares [Handler.ReplayCount]. It mirrors the orchestration's own
 // choice: the key's own handler, or, for a key with a source resolver, the handler
 // that streams every resolved source.
-func (r *handlerRegistry) declaresBacklog(resourceKey string) bool {
+func (r *handlerRegistry) declaresReplayCount(resourceKey string) bool {
 	if h, ok := r.FindHandler(resourceKey); ok {
-		return h.Backlog != nil
+		return h.ReplayCount != nil
 	}
 	if _, ok := r.FindResolver(resourceKey); ok {
 		h, ok := r.AnyHandler()
-		return ok && h.Backlog != nil
+		return ok && h.ReplayCount != nil
 	}
 	return false
 }

@@ -26,53 +26,67 @@ until EOF before returning the reader.
 
 ### Replay markers
 
-A reader that wants to know where each source's backlog ends, instead of guessing from
-timing, sets `logs.ParamReplayMarkers` to `logs.ReplayMarkersOn` in the session's
+A source's stream starts with its **replay**: the lines the source already held when
+the stream opened. Everything after it is live. A reader that wants to know where the
+replay ends, instead of guessing from timing, asks for **replay markers**: each line of
+the replay is flagged (`LogLine.Replay`) and a **caught-up** event
+(`StreamEventSourceCaughtUp`) follows the last of them. Those three words each name one
+thing and are used for nothing else: *replay* is the lines (and the plugin's count of
+them), *caught up* is the event, *replay markers* is the opt-in and what it asks for.
+
+The reader sets `logs.ParamReplayMarkers` to `logs.ReplayMarkersOn` in the session's
 `Params` (names that start with `omniview.` are reserved to the SDK). The create reply
 says whether the plugin accepted: `LogSession.ReplayMarkers` is true when it did and
-false when no marker will ever come (the reader did not ask, the plugin's SDK predates
-markers, or its handler does not declare `Backlog`), so "never" is told from "not yet"
-without a timeout. It is decided when the session is created and does not change. A
-reader asks only when the `plugin-sdk` its own Go core is built on includes markers: a
-reader built before them that asks anyway decodes the marker as `SourceAdded`, an event
-for a source joining.
+false when no caught-up event will ever come (the reader did not ask, the plugin's SDK
+predates replay markers, or its handler does not declare `ReplayCount`), so "never" is
+told from "not yet" without a timeout. It is decided when the session is created and
+does not change. A reader asks only when the `plugin-sdk` its own Go core is built on
+includes replay markers: a reader built before them that asks anyway decodes the
+caught-up event as `SourceAdded`, an event for a source joining.
 
-A handler takes part by setting `logs.Handler.Backlog` beside `Handler`. `Handler` is
-unchanged: it opens one stream per source, its backlog and its live lines together,
-with the request it always got, and the SDK never splits or filters that stream.
-`Backlog(ctx, req)` returns how many lines at the head of that stream are lines the
-source already held. For a session that asked, the SDK calls it just before it opens a
-source's stream (and again before each reopening), so the open is later by that call;
-it flags that many lines `LogLine.Replay`, and sends `StreamEventSourceCaughtUp` for the
-source after the last of them, or as soon as the stream opens when the count is zero.
-With `Follow` false the stream ends: `Backlog` is not called, every line is flagged and
-the marker comes when the stream ends. A session that did not ask gets the stream it
-always got, and `Backlog` is never called.
+A handler takes part by setting `logs.Handler.ReplayCount` beside `Handler`. `Handler` is
+unchanged: it opens one stream per source, its replay and its live lines together, with
+the request it always got, and the SDK never splits or filters that stream.
+`ReplayCount(ctx, req)` returns how many lines at the head of that stream are replay.
+For a session that asked, the SDK calls it just before it opens a source's stream (and
+again before each reopening), so the open is later by that call; it flags that many
+lines `LogLine.Replay`, and sends the caught-up event for the source after the last of
+them, or as soon as the stream opens when the count is zero. With `Follow` false the
+stream ends: `ReplayCount` is not called, every line is flagged and the caught-up event
+comes when the stream ends. A session that did not ask gets the stream it always got, and
+`ReplayCount` is never called.
 
 What a reader may rely on, and what it may not:
 
 - Which lines are delivered, and in what order, is the handler's stream's, as before. The
-  flag and the marker say something about the lines; they never add, remove, reorder or
+  flag and the event say something about the lines; they never add, remove, reorder or
   deduplicate any. Within one opening of a source, flagged lines come first, then the
-  marker, then lines that are not flagged.
+  caught-up event, then lines that are not flagged.
+- A source that asked and has not been caught up is **unknown**: neither live nor replay as
+  far as the reader can tell, for as long as that lasts. Normally that is tens of
+  milliseconds. It can last, because the count is made before the stream opens (see the
+  next point) and the SDK adds no timer. A reader shows no rate for such a source rather
+  than guessing one; the flag stays authoritative for each line.
 - The count is a number of lines, not an identity: the SDK flags the first lines it
   reads. If the source changed between the count and the open, the flagged lines can
-  differ from the counted ones. A stream that opens with more lines than counted has
-  the extra ones unflagged. One that opens with fewer (a log rotation in between) has
-  its next live lines flagged until the count is reached, and the marker waits for the
-  last of them, so a quiet source holds it back.
-- A source that is reopened after a read error delivers its tail again, flagged, and
-  gets another marker, as the repeated tail was before; a source that is disabled and
-  enabled again does too. A source that is cancelled, removed or closed, or whose
-  stream ends before the counted lines, gets no marker for that opening.
-- A count that cannot be given (`Backlog` returns an error or a negative number) fails
+  differ from the counted ones. A stream that opens with more lines than counted has the
+  extra ones unflagged. One that opens with fewer (a log rotation in between) has its next
+  live lines flagged until the count is reached, and the caught-up event waits for the
+  last of them, so a quiet source stays unknown. On a real kubelet, with a rotation forced
+  between the count and the open, a silent pod got no caught-up event in 40 s and a pod
+  writing a line a second had 33 live lines flagged as replay. Neither loses or repeats a
+  line.
+- A source that is reopened after a read error delivers its tail again, flagged, and is
+  caught up again, as the repeated tail was before; a source that is disabled and enabled
+  again does too. A source that is cancelled, removed or closed, or whose stream ends
+  before the counted lines, is not caught up for that opening.
+- A count that cannot be given (`ReplayCount` returns an error or a negative number) fails
   the attempt as a failed open does: it is retried with the reconnect backoff and
   reported with `StreamError` when the attempts run out.
-- The SDK adds no timer. A `Handler` or `Backlog` call that never returns holds its
+- The SDK adds no timer. A `Handler` or `ReplayCount` call that never returns holds its
   source. A source queued behind `MaxConcurrentStreamsPerSession` sends no event and no
-  line until a slot frees. A source that stays quiet holds back a marker that is
-  waiting for lines. `LogSession.ReplayMarkers` says whether markers can come, not
-  when; a reader that needs a bound sets its own.
+  line until a slot frees. `LogSession.ReplayMarkers` says whether the caught-up event
+  can come, not when; a reader that needs a bound sets its own.
 
 ## Settings validation
 

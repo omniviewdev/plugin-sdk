@@ -103,13 +103,13 @@ func (c *capture) Unmarshal(data mem.BufferSlice, v any) error {
 	return c.codec.Unmarshal(data, v)
 }
 
-// backlogPlugin is a current plugin whose handler declares Backlog: two lines that
+// replayPlugin is a current plugin whose handler declares ReplayCount: two lines that
 // were already there, then the stream ends.
-func backlogPlugin(t *testing.T) *Manager {
+func replayPlugin(t *testing.T) *Manager {
 	t.Helper()
 	manager := NewManager(ManagerConfig{Handlers: map[string]Handler{"test/pod": {
 		Plugin: "test", Resource: "pod",
-		Backlog: func(*types.PluginContext, LogStreamRequest) (int64, error) { return 2, nil },
+		ReplayCount: func(*types.PluginContext, LogStreamRequest) (int64, error) { return 2, nil },
 		Handler: func(*types.PluginContext, LogStreamRequest) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(
 				"2026-01-02T03:04:05.000000001Z first\n2026-01-02T03:04:06.000000002Z second\n")), nil
@@ -145,7 +145,7 @@ func TestCurrentPluginToOldReader(t *testing.T) {
 	for _, asked := range []bool{false, true} {
 		name := map[bool]string{false: "reader did not ask", true: "reader asked"}[asked]
 		t.Run(name, func(t *testing.T) {
-			manager := backlogPlugin(t)
+			manager := replayPlugin(t)
 			connection := logsConnection(t, func(s *grpc.Server) { RegisterLogPluginServer(s, &PluginServer{Impl: manager, log: logging.NewNop()}) })
 			client := logspb.NewLogPluginClient(connection)
 
@@ -339,7 +339,7 @@ func TestOldPluginToCurrentReader(t *testing.T) {
 	}
 	for _, l := range lines {
 		if l.Replay {
-			t.Errorf("an old plugin's line reads as backlog: %+v", l)
+			t.Errorf("an old plugin's line reads as replay: %+v", l)
 		}
 	}
 	for _, kind := range kinds {
@@ -351,7 +351,7 @@ func TestOldPluginToCurrentReader(t *testing.T) {
 
 // A newer plugin's session reports acceptance through the same path.
 func TestCurrentPluginAcceptanceReachesTheReader(t *testing.T) {
-	manager := backlogPlugin(t)
+	manager := replayPlugin(t)
 	connection := logsConnection(t, func(s *grpc.Server) { RegisterLogPluginServer(s, &PluginServer{Impl: manager, log: logging.NewNop()}) })
 	client := &PluginClient{client: logspb.NewLogPluginClient(connection), log: logging.NewNop()}
 	pc := types.NewPluginContext(t.Context(), "logs", nil, nil, nil)

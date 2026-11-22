@@ -10,8 +10,10 @@ import (
 	logspb "github.com/omniviewdev/plugin-sdk/proto/v1/logs"
 )
 
-// LogLineOrigin indicates the origin of a log line.
-type LogLineOrigin int
+// LogLineOrigin indicates the origin of a log line. It is an int32 rather than an int
+// so that a [LogLine], which is allocated once per line, stays in the 96-byte size
+// class it had before [LogLine.Replay] existed.
+type LogLineOrigin int32
 
 const (
 	// LogLineOriginCurrent identifies output from the current source instance.
@@ -118,13 +120,14 @@ type LogLine struct {
 	Timestamp time.Time         `json:"timestamp"`
 	Content   string            `json:"content"`
 	Origin    LogLineOrigin     `json:"origin"`
-	Level     LogLevel          `json:"level"`
-	// Replay is true for a line of a source's backlog: one of the first lines of its
+	// Replay is true for a line of a source's replay: one of the first lines of its
 	// stream, the ones the source already held when the stream opened, up to the
 	// source's next [StreamEventSourceCaughtUp] event. It is set only on a session
 	// whose plugin accepted replay markers ([LogSession.ReplayMarkers]); on any other
-	// it is false for every line and says nothing about whether the line is backlog.
-	Replay bool `json:"replay,omitempty"`
+	// it is false for every line and says nothing about whether the line is replay. It
+	// sits beside Origin, in the word that field leaves free, so the struct does not grow.
+	Replay bool     `json:"replay,omitempty"`
+	Level  LogLevel `json:"level"`
 }
 
 // ToProto encodes the line content and timestamp, sharing its Labels map.
@@ -215,12 +218,12 @@ const (
 	StreamEventStreamEnded
 	// StreamEventSessionReady announces completion of session source setup.
 	StreamEventSessionReady
-	// StreamEventSourceCaughtUp announces that one source's backlog has been
-	// delivered: the lines it sends after this event, until it opens again, are live.
-	// It is sent only to a session that asked for it with [ParamReplayMarkers] and
-	// whose plugin accepted ([LogSession.ReplayMarkers]), at most once for each
-	// opening of the source's stream: a source that reopens delivers its tail again
-	// and is marked again.
+	// StreamEventSourceCaughtUp announces that one source's replay has been delivered:
+	// the lines it sends after this event, until its stream opens again, are live. It
+	// is sent only to a session that asked for replay markers with
+	// [ParamReplayMarkers] and whose plugin accepted ([LogSession.ReplayMarkers]), at
+	// most once for each opening of the source's stream: a source that reopens
+	// delivers its tail again and is caught up again.
 	StreamEventSourceCaughtUp
 )
 

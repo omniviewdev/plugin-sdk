@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	backlogWait    = 5 * time.Second
-	backlogSession = "6f1f9a3e-31c8-4f0e-9d44-0a7f5d1c2b10"
+	replayWait    = 5 * time.Second
+	replaySession = "6f1f9a3e-31c8-4f0e-9d44-0a7f5d1c2b10"
 )
 
 // tailLog is a source shaped like a kubelet's container log: lines in a file, a
@@ -36,9 +36,9 @@ type tailLog struct {
 	waits    int           // times a stream blocked for more lines
 	counts   []logs.LogStreamRequest
 	opens    []logs.LogStreamRequest
-	countErr []error // errors Backlog returns, first call first
+	countErr []error // errors ReplayCount returns, first call first
 
-	afterCount func() // runs inside Backlog after it counted, before it returns
+	afterCount func() // runs inside ReplayCount after it counted, before it returns
 	beforeOpen func() // runs inside Handler before it opens
 }
 
@@ -132,7 +132,7 @@ func (l *tailLog) tailLocked(n int64) []string {
 	return lines
 }
 
-// count is what a plugin's Backlog does for this source: a bounded read of the same
+// count is what a plugin's ReplayCount does for this source: a bounded read of the same
 // tail, counted.
 func (l *tailLog) count(_ *types.PluginContext, req logs.LogStreamRequest) (int64, error) {
 	l.mu.Lock()
@@ -181,15 +181,15 @@ func (l *tailLog) open(pctx *types.PluginContext, req logs.LogStreamRequest) (io
 	}, nil
 }
 
-// handlers registers the source as the handler of resource "pod"; withBacklog says
+// handlers registers the source as the handler of resource "pod"; withReplayCount says
 // whether the plugin takes part in replay markers.
-func (l *tailLog) handlers(withBacklog bool) map[string]logs.Handler {
+func (l *tailLog) handlers(withReplayCount bool) map[string]logs.Handler {
 	h := logs.Handler{
 		Plugin: "test", Resource: "pod", Handler: l.open,
 		SourceBuilder: logtest.SingleSourceBuilder("pod", map[string]string{"source": "pod"}),
 	}
-	if withBacklog {
-		h.Backlog = l.count
+	if withReplayCount {
+		h.ReplayCount = l.count
 	}
 	return map[string]logs.Handler{"test/pod": h}
 }
@@ -319,7 +319,7 @@ func (t *timeline) events() []logs.LogStreamEvent {
 // until waits for cond to hold of the timeline, failing the test when it does not.
 func (t *timeline) until(tb testing.TB, what string, cond func(items []timelineItem) bool) []timelineItem {
 	tb.Helper()
-	deadline := time.After(backlogWait)
+	deadline := time.After(replayWait)
 	for {
 		t.mu.Lock()
 		items, changed := slices.Clone(t.items), t.changed
@@ -379,8 +379,8 @@ func countMarkers(items []timelineItem, source string) int {
 	return n
 }
 
-// signature is the lines and markers of one source in the order they arrived: R:text
-// for a backlog line, L:text for a live one, MARK for the caught-up event.
+// signature is the lines and caught-up events of one source in the order they arrived: R:text
+// for a replay line, L:text for a live one, MARK for the caught-up event.
 func signature(items []timelineItem, source string) string {
 	var parts []string
 	for _, it := range items {
@@ -431,7 +431,7 @@ func (r *rig) open(o logs.LogSessionOptions) *logs.LogSession { return r.openKey
 func (r *rig) openKey(key string, o logs.LogSessionOptions) *logs.LogSession {
 	r.t.Helper()
 	session, err := r.mgr.CreateResourceSession(r.ctx, logs.CreateSessionOptions{
-		SessionID: backlogSession, ResourceKey: key, ResourceID: "web-1", Options: o,
+		SessionID: replaySession, ResourceKey: key, ResourceID: "web-1", Options: o,
 	})
 	if err != nil {
 		r.t.Fatalf("CreateResourceSession: %v", err)

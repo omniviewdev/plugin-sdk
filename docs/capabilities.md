@@ -191,9 +191,9 @@ channel retains bounded early output before the transport attaches. A slow or
 unattached consumer applies backpressure, and session cancellation unblocks
 output delivery rather than waiting for the transport to drain.
 
-A handler that sets `logs.Handler.Backlog` lets a reader that asks with
-`logs.ParamReplayMarkers` be told where each source's backlog ends
-(`LogLine.Replay`, `StreamEventSourceCaughtUp`) and whether markers will come at all
+A handler that sets `logs.Handler.ReplayCount` lets a reader that asks for replay
+markers with `logs.ParamReplayMarkers` be told where each source's replay ends
+(`LogLine.Replay`, `StreamEventSourceCaughtUp`) and whether they will come at all
 (`LogSession.ReplayMarkers`, known from the create reply). The handler's own stream is
 delivered unchanged. See the README's "Replay markers" section for the contract.
 

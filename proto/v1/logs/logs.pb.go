@@ -84,15 +84,15 @@ const (
 	LogStreamEventType_LOG_STREAM_EVENT_RECONNECTED    LogStreamEventType = 4
 	LogStreamEventType_LOG_STREAM_EVENT_STREAM_ENDED   LogStreamEventType = 5
 	LogStreamEventType_LOG_STREAM_EVENT_SESSION_READY  LogStreamEventType = 6
-	// One source's backlog, the lines it already held when its stream opened, has been
+	// One source's replay, the lines it already held when its stream opened, has been
 	// delivered: the lines it sends after this event, until its stream opens again, are
 	// live. source_id names the source. Sent at most once for each opening of the source's
-	// stream (a source that reopens delivers its tail again and is marked again), and only
-	// to a session that asked for it with params["omniview.log.replay-markers"] = "1" and
-	// whose plugin accepted (the create reply carries
-	// params["omniview.log.replay-markers.accepted"] = "1"). A reader built before this
-	// value existed decodes it as SOURCE_ADDED, so a reader must not ask unless its own
-	// SDK knows it.
+	// stream (a source that reopens delivers its tail again and is caught up again), and
+	// only to a session that asked for replay markers with
+	// params["omniview.log.replay-markers"] = "1" and whose plugin accepted (the create
+	// reply carries params["omniview.log.replay-markers.accepted"] = "1"). A reader built
+	// before this value existed decodes it as SOURCE_ADDED, so a reader must not ask
+	// unless its own SDK knows it.
 	LogStreamEventType_LOG_STREAM_EVENT_SOURCE_CAUGHT_UP LogStreamEventType = 7
 )
 
@@ -324,7 +324,7 @@ type LogLine struct {
 	Content   []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
 	Origin    LogLineOrigin          `protobuf:"varint,6,opt,name=origin,proto3,enum=omniview.sdk.logs.v1.LogLineOrigin" json:"origin,omitempty"`
 	Level     LogLevel               `protobuf:"varint,7,opt,name=level,proto3,enum=omniview.sdk.logs.v1.LogLevel" json:"level,omitempty"`
-	// True for a line of a source's backlog: one of the first lines of its stream, the
+	// True for a line of a source's replay: one of the first lines of its stream, the
 	// ones the source already held when the stream opened, up to the source's next
 	// SOURCE_CAUGHT_UP event. Set only on a session whose plugin accepted replay markers.
 	Replay        bool `protobuf:"varint,9,opt,name=replay,proto3" json:"replay,omitempty"`

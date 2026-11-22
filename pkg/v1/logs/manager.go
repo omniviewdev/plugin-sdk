@@ -76,7 +76,7 @@ type sessionState struct {
 	pluginCtx *types.PluginContext
 
 	// replayMarkers is decided once, at creation: the reader asked for replay markers
-	// and the session's handler declares Backlog. It never changes, so a reader that
+	// and the session's handler declares ReplayCount. It never changes, so a reader that
 	// read it from the create reply can rely on it for the session.
 	replayMarkers bool
 }
@@ -369,10 +369,10 @@ func (m *Manager) createSession(
 		sourceCtxs: make(map[string]context.CancelFunc),
 		opts:       opts,
 		pluginCtx:  &pctxCopy,
-		// Markers need both the reader's request and a handler that counts its backlog;
-		// the registry is fixed, so the answer given now is the one the session's
+		// Replay markers need both the reader's request and a handler that counts its
+		// replay; the registry is fixed, so the answer given now is the one the session's
 		// orchestration reaches later.
-		replayMarkers: replayRequested(opts.Options.Params) && m.registry.declaresBacklog(opts.ResourceKey),
+		replayMarkers: replayRequested(opts.Options.Params) && m.registry.declaresReplayCount(opts.ResourceKey),
 	}
 
 	m.mu.Lock()
@@ -854,7 +854,7 @@ func (m *Manager) streamWithReconnect(
 			delay = min(delay*reconnectBackoffMultiplier, ReconnectMaxDelay)
 		}
 
-		backlog, counted := m.countBacklog(ctx, ss, handler, req, logger)
+		count, counted := m.countReplay(ctx, ss, handler, req, logger)
 		if !counted {
 			if ctx.Err() != nil {
 				return
@@ -871,10 +871,10 @@ func (m *Manager) streamWithReconnect(
 		}
 
 		m.markSourceReady(ss, source.ID)
-		if backlog.empty() {
+		if count.empty() {
 			m.emitCaughtUp(ss, source)
 		}
-		err := m.consumeSourceReader(ctx, ss, source, reader, logger, backlog)
+		err := m.consumeSourceReader(ctx, ss, source, reader, logger, count)
 
 		if ctx.Err() != nil {
 			return
@@ -883,8 +883,8 @@ func (m *Manager) streamWithReconnect(
 		// Clean EOF completes a source even in follow mode. Reopening would replay
 		// the unchanged history request; only acquisition or read errors retry.
 		if err == nil || errors.Is(err, io.EOF) {
-			if backlog != nil && backlog.finite {
-				// A stream that ends has no backlog but itself: its end is the boundary.
+			if count != nil && count.finite {
+				// A stream that ends is all replay: its end is the boundary.
 				m.emitCaughtUp(ss, source)
 			}
 			return
@@ -909,42 +909,42 @@ func (m *Manager) streamWithReconnect(
 	})
 }
 
-// countBacklog asks the handler, for a session that asked for markers, how many of
-// the first lines of the stream it is about to open are backlog. A request with
+// countReplay asks the handler, for a session that asked for replay markers, how many
+// of the first lines of the stream it is about to open are replay. A request with
 // Follow false needs no count: that stream ends and its end is the boundary. A
 // count that cannot be given fails the attempt as a failed open does. The returned
-// *backlogCount is nil when the session takes no part in markers.
-func (m *Manager) countBacklog(
+// *replayCount is nil when the session takes no part in replay markers.
+func (m *Manager) countReplay(
 	ctx context.Context,
 	ss *sessionState,
 	handler Handler,
 	req LogStreamRequest,
 	logger logging.Logger,
-) (*backlogCount, bool) {
-	if !ss.replayMarkers || handler.Backlog == nil {
+) (*replayCount, bool) {
+	if !ss.replayMarkers || handler.ReplayCount == nil {
 		return nil, true
 	}
 	if !req.Follow {
-		return &backlogCount{finite: true}, true
+		return &replayCount{finite: true}, true
 	}
 	pctxCopy := *ss.pluginCtx
 	pctxCopy.Context = ctx
 	pctxCopy.Logger = logger
-	n, err := handler.Backlog(&pctxCopy, req)
+	n, err := handler.ReplayCount(&pctxCopy, req)
 	if err == nil && n < 0 {
-		err = fmt.Errorf("backlog count %d is negative", n)
+		err = fmt.Errorf("replay count %d is negative", n)
 	}
 	if err != nil {
 		if ctx.Err() == nil {
-			logger.Errorw(ctx, "failed to count log backlog", "error", err)
+			logger.Errorw(ctx, "failed to count log replay", "error", err)
 		}
 		return nil, false
 	}
-	return &backlogCount{remaining: n}, true
+	return &replayCount{remaining: n}, true
 }
 
-// emitCaughtUp tells a reader that asked for it that a source's backlog has been
-// delivered.
+// emitCaughtUp tells a reader that asked for replay markers that a source's replay
+// has been delivered.
 func (m *Manager) emitCaughtUp(ss *sessionState, source LogSource) {
 	m.emitEvent(ss.session.ID, LogStreamEvent{
 		Type:      StreamEventSourceCaughtUp,
@@ -998,7 +998,7 @@ func (m *Manager) consumeSourceReader(
 	source LogSource,
 	reader io.ReadCloser,
 	logger logging.Logger,
-	backlog *backlogCount,
+	count *replayCount,
 ) error {
 	// Closing the source interrupts blocked reads on cancellation. Retain ownership
 	// until both the scanner and the cancellation callback have stopped.
@@ -1009,7 +1009,7 @@ func (m *Manager) consumeSourceReader(
 		}
 		close(closed)
 	})
-	err := m.readStream(ctx, ss, source, reader, backlog)
+	err := m.readStream(ctx, ss, source, reader, count)
 	if !stop() {
 		<-closed
 		return err
@@ -1025,7 +1025,7 @@ func (m *Manager) readStream(
 	ss *sessionState,
 	source LogSource,
 	reader io.ReadCloser,
-	backlog *backlogCount,
+	count *replayCount,
 ) error {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, scannerInitBuf), MaxScannerBuffer)
@@ -1035,8 +1035,8 @@ func (m *Manager) readStream(
 			return ctx.Err()
 		}
 
-		// A line counts toward the backlog once it is read, delivered or not.
-		replay, last := backlog.take()
+		// A line counts toward the replay once it is read, delivered or not.
+		replay, last := count.take()
 
 		// Skip output if paused (bug #12: documented behavior)
 		if ss.status() == LogSessionStatusPaused {
