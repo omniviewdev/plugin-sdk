@@ -43,3 +43,18 @@ jobs:
           cache: true
       - name: Exercise SDK
         run: go test ./... -count=1
+  sdk-race:
+    name: SDK suite (race)
+    runs-on: ubuntu-latest
+    env:
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Exercise SDK under the race detector
+        run: go test -race ./... -count=1

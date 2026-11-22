@@ -31,9 +31,10 @@ type StubResourceForwarder struct {
 var _ networker.ResourceForwarder = (*StubResourceForwarder)(nil)
 
 // ForwardResource records the request and returns the configured failure or an
-// immediately ready tunnel whose error channel reports FailAfter, if set.
+// immediately ready tunnel that stays up until ctx ends, or whose error channel
+// reports FailAfter, if set.
 func (s *StubResourceForwarder) ForwardResource(
-	_ context.Context,
+	ctx context.Context,
 	_ *types.PluginContext,
 	opts networker.ResourcePortForwardHandlerOpts,
 ) (*networker.ForwarderResult, error) {
@@ -58,7 +59,13 @@ func (s *StubResourceForwarder) ForwardResource(
 			close(errCh)
 		}()
 	} else {
-		close(errCh) // clean exit
+		// A live tunnel: it stays up until the session is closed, then exits
+		// cleanly. Closing errCh at once would model a tunnel that dies before
+		// the caller can observe it ACTIVE.
+		go func() {
+			<-ctx.Done()
+			close(errCh)
+		}()
 	}
 
 	return &networker.ForwarderResult{
@@ -97,7 +104,7 @@ var _ networker.StaticForwarder = (*StubStaticForwarder)(nil)
 // ForwardStatic returns the configured failure or an immediately ready tunnel
 // whose error channel reports FailAfter, if set.
 func (s *StubStaticForwarder) ForwardStatic(
-	_ context.Context,
+	ctx context.Context,
 	_ *types.PluginContext,
 	_ networker.StaticPortForwardHandlerOpts,
 ) (*networker.ForwarderResult, error) {
@@ -119,7 +126,13 @@ func (s *StubStaticForwarder) ForwardStatic(
 			close(errCh)
 		}()
 	} else {
-		close(errCh) // clean exit
+		// A live tunnel: it stays up until the session is closed, then exits
+		// cleanly. Closing errCh at once would model a tunnel that dies before
+		// the caller can observe it ACTIVE.
+		go func() {
+			<-ctx.Done()
+			close(errCh)
+		}()
 	}
 
 	return &networker.ForwarderResult{

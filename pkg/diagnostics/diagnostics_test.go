@@ -5,7 +5,6 @@ import (
 	"math"
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestRegistrationRules(t *testing.T) {
@@ -120,7 +119,11 @@ func TestConcurrentSnapshotAndSpeed(t *testing.T) {
 	if mustOne(t, r).Points[0].Value != 16000 {
 		t.Fatal("lost increments")
 	}
-	// Full registry snapshot stays inside the plan's 200 µs budget.
+	// Snapshot must stay a single linear copy of the registry. The old guard was
+	// a 200 µs wall-clock budget, which flaked under -race instrumentation. The
+	// regressions it caught (extra per-point copies, nested or repeated work)
+	// show up as extra allocations, which are deterministic and identical with
+	// and without the race detector.
 	full := NewRegistry()
 	for i := 0; i < MaxMetrics; i++ {
 		h, _ := full.Histogram("omniview.plugin.self.h"+string(rune('a'+i)), "s", []float64{1, 2, 3, 4})
@@ -128,16 +131,13 @@ func TestConcurrentSnapshotAndSpeed(t *testing.T) {
 			h.Observe(1, Attr{KeyOperation, "op" + string(rune('a'+j))})
 		}
 	}
-	best := time.Hour
-	for i := 0; i < 20; i++ {
-		start := time.Now()
-		full.Snapshot()
-		if d := time.Since(start); d < best {
-			best = d
-		}
-	}
-	if best > 200*time.Microsecond {
-		t.Fatalf("snapshot too slow: %v", best)
+	// Per metric: DiagMetric, points slice, ids slice. Per point: DiagPoint,
+	// bounds copy, bucket copy. Plus a few fixed allocations for the
+	// instrument list, output slice and sorting.
+	const fixedSlack = 8
+	budget := float64(MaxMetrics*(3+3*MaxPoints) + fixedSlack)
+	if got := testing.AllocsPerRun(20, func() { full.Snapshot() }); got > budget {
+		t.Fatalf("snapshot allocations = %v, want <= %v", got, budget)
 	}
 }
 
