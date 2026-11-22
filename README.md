@@ -24,6 +24,32 @@ reconnection. Cancellation closes readers and ends their session normally.
 Handlers must return a streaming reader promptly; do not buffer follow responses
 until EOF before returning the reader.
 
+### Replay markers
+
+A reader that wants to know where a source's backlog ends, instead of guessing from
+timing, sets `logs.ParamReplayMarkers` to `logs.ReplayMarkersOn` in the session's
+`Params`. The plugin answers in the create reply: `LogSession.ReplayMarkers` is true
+when it accepted, and false when no marker will ever come (the reader did not ask, an
+SDK that predates markers, or a handler without `Replay`), so "never" is told from
+"not yet" without a timeout. On an accepted session the SDK numbers every line and
+event (`LogLine.Seq`, `LogStreamEvent.Seq`), flags the lines of each source's backlog
+(`LogLine.Replay`) and sends `StreamEventSourceCaughtUp` when a source's backlog ends;
+its `AfterSeq` is the `Seq` of the source's last backlog line, zero for an empty one.
+A session that did not ask gets the stream it always got, and an older reader never
+sees the new event.
+
+A handler takes part by setting `logs.Handler.Replay`: a bounded read of the lines the
+source already holds, ending in `io.EOF`, honouring the caller's tail, since and limit
+bounds. `Handler.Handler` then becomes the live follow, which continues as
+`LogStreamRequest.Resume` says: strictly after `SinceTime`, or from the start of the
+caller's window when the replay read nothing. Setting `Replay` is the whole
+declaration: the SDK flags the lines and sends the marker, and a `Replay` stream that
+neither returns a line nor ends for `ManagerConfig.ReplayIdleTimeout` fails its source
+with a `StreamError`, because a backlog that never ends would leave readers waiting for
+a marker that cannot come. After a read error the source reopens with a bounded read of
+the lines since the last timestamp read (the gap), flagged and marked again, then
+follows. `logtest.ReplaySource` is a source with a history for testing a handler.
+
 ## Settings validation
 
 Register `settings.Setting.Validator` with a

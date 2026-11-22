@@ -67,8 +67,37 @@ type Handler struct {
 	Plugin        string              `json:"plugin"`
 	Resource      string              `json:"resource"`
 	TargetBuilder ActionTargetBuilder `json:"target_builder"`
-	Handler       LogHandlerFunc      `json:"-"`
-	SourceBuilder SourceBuilderFunc   `json:"-"`
+	// Handler opens the stream of a single source. Without Replay it is the whole
+	// stream; with Replay it is the live follow that comes after the backlog.
+	Handler LogHandlerFunc `json:"-"`
+	// Replay, when set, splits every source's stream into a finite backlog and a
+	// live follow, so the SDK can tell readers exactly where the backlog ends
+	// instead of leaving them to guess from timing (see [ParamReplayMarkers]).
+	//
+	// Replay opens the backlog: the lines the source already holds, oldest first,
+	// bounded by the request's TailLines, SinceSeconds, SinceTime and LimitBytes
+	// (or, when Resume is set, only the lines after SinceTime). The request always
+	// has Follow false and Replay must honour that: return io.EOF right after the
+	// last line the source holds and never wait for new ones. The SDK sends the
+	// [StreamEventSourceCaughtUp] event when the stream ends, then calls Handler
+	// with Follow and Resume true to follow what comes next. A session without
+	// Follow runs Replay alone.
+	//
+	// Setting Replay is the whole declaration: the SDK numbers and flags the lines
+	// and sends the marker itself, so there is nothing to forget. A Replay stream
+	// that neither returns a line nor ends for the manager's ReplayIdleTimeout
+	// fails its source, because a backlog that never ends would leave every reader
+	// waiting for a marker that cannot come. The timeout covers the stream, not the
+	// call that opens it: bound that call with the context it is given.
+	//
+	// Handler, as the follow, continues as [LogStreamRequest.Resume] says: strictly
+	// after SinceTime, or from the start of the caller's window when nothing was
+	// read. It never replays the backlog. Lines of the boundary second can come
+	// twice from a source whose time filter is coarser than its line timestamps
+	// (Kubernetes: one second); dropping the lines at or before SinceTime is the
+	// handler's job.
+	Replay        LogHandlerFunc    `json:"-"`
+	SourceBuilder SourceBuilderFunc `json:"-"`
 }
 
 // ToProto encodes handler metadata without its executable callbacks.

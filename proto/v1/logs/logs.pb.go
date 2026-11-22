@@ -84,6 +84,15 @@ const (
 	LogStreamEventType_LOG_STREAM_EVENT_RECONNECTED    LogStreamEventType = 4
 	LogStreamEventType_LOG_STREAM_EVENT_STREAM_ENDED   LogStreamEventType = 5
 	LogStreamEventType_LOG_STREAM_EVENT_SESSION_READY  LogStreamEventType = 6
+	// One source delivered its replay (the backlog it held when it opened) and
+	// everything it sends next is live. source_id names the source; after_seq is
+	// the seq of its last replay line (0 when the replay held no line). Sent only
+	// to a session that asked for it with params["omniview.log.replay-markers"] = "1"
+	// and whose plugin accepted (the create reply carries
+	// params["omniview.log.replay-markers.accepted"] = "1"). A reader that does not
+	// know this value decodes it as SOURCE_ADDED, so it must never be sent to a
+	// reader that did not ask.
+	LogStreamEventType_LOG_STREAM_EVENT_SOURCE_CAUGHT_UP LogStreamEventType = 7
 )
 
 // Enum value maps for LogStreamEventType.
@@ -96,15 +105,17 @@ var (
 		4: "LOG_STREAM_EVENT_RECONNECTED",
 		5: "LOG_STREAM_EVENT_STREAM_ENDED",
 		6: "LOG_STREAM_EVENT_SESSION_READY",
+		7: "LOG_STREAM_EVENT_SOURCE_CAUGHT_UP",
 	}
 	LogStreamEventType_value = map[string]int32{
-		"LOG_STREAM_EVENT_SOURCE_ADDED":   0,
-		"LOG_STREAM_EVENT_SOURCE_REMOVED": 1,
-		"LOG_STREAM_EVENT_STREAM_ERROR":   2,
-		"LOG_STREAM_EVENT_RECONNECTING":   3,
-		"LOG_STREAM_EVENT_RECONNECTED":    4,
-		"LOG_STREAM_EVENT_STREAM_ENDED":   5,
-		"LOG_STREAM_EVENT_SESSION_READY":  6,
+		"LOG_STREAM_EVENT_SOURCE_ADDED":     0,
+		"LOG_STREAM_EVENT_SOURCE_REMOVED":   1,
+		"LOG_STREAM_EVENT_STREAM_ERROR":     2,
+		"LOG_STREAM_EVENT_RECONNECTING":     3,
+		"LOG_STREAM_EVENT_RECONNECTED":      4,
+		"LOG_STREAM_EVENT_STREAM_ENDED":     5,
+		"LOG_STREAM_EVENT_SESSION_READY":    6,
+		"LOG_STREAM_EVENT_SOURCE_CAUGHT_UP": 7,
 	}
 )
 
@@ -304,14 +315,23 @@ func (LogLevel) EnumDescriptor() ([]byte, []int) {
 }
 
 type LogLine struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	SourceId      string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
-	Labels        map[string]string      `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	Content       []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
-	Origin        LogLineOrigin          `protobuf:"varint,6,opt,name=origin,proto3,enum=omniview.sdk.logs.v1.LogLineOrigin" json:"origin,omitempty"`
-	Level         LogLevel               `protobuf:"varint,7,opt,name=level,proto3,enum=omniview.sdk.logs.v1.LogLevel" json:"level,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	SourceId  string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	Labels    map[string]string      `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Timestamp *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Content   []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
+	Origin    LogLineOrigin          `protobuf:"varint,6,opt,name=origin,proto3,enum=omniview.sdk.logs.v1.LogLineOrigin" json:"origin,omitempty"`
+	Level     LogLevel               `protobuf:"varint,7,opt,name=level,proto3,enum=omniview.sdk.logs.v1.LogLevel" json:"level,omitempty"`
+	// Position in the session's sequence (1-based); 0 means not numbered. Set only
+	// on a session whose plugin accepted replay markers. Lines and events of a
+	// session draw from one counter: a number is used once, and the output of one
+	// source is in increasing order (sources interleave).
+	Seq uint64 `protobuf:"varint,8,opt,name=seq,proto3" json:"seq,omitempty"`
+	// True for a line of a source's replay: the backlog the source held when it
+	// (re)opened, up to the source's next SOURCE_CAUGHT_UP event. Set only on a
+	// session whose plugin accepted replay markers.
+	Replay        bool `protobuf:"varint,9,opt,name=replay,proto3" json:"replay,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -395,6 +415,20 @@ func (x *LogLine) GetLevel() LogLevel {
 	return LogLevel_LOG_LEVEL_UNSPECIFIED
 }
 
+func (x *LogLine) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *LogLine) GetReplay() bool {
+	if x != nil {
+		return x.Replay
+	}
+	return false
+}
+
 type LogSource struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -448,11 +482,16 @@ func (x *LogSource) GetLabels() map[string]string {
 }
 
 type LogStreamEvent struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          LogStreamEventType     `protobuf:"varint,1,opt,name=type,proto3,enum=omniview.sdk.logs.v1.LogStreamEventType" json:"type,omitempty"`
-	SourceId      string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
-	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
-	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Type      LogStreamEventType     `protobuf:"varint,1,opt,name=type,proto3,enum=omniview.sdk.logs.v1.LogStreamEventType" json:"type,omitempty"`
+	SourceId  string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	Message   string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	Timestamp *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	// Position in the session's sequence; see LogLine.seq.
+	Seq uint64 `protobuf:"varint,5,opt,name=seq,proto3" json:"seq,omitempty"`
+	// SOURCE_CAUGHT_UP only: the seq of the source's last replay line before this
+	// event, 0 when its replay held no line.
+	AfterSeq      uint64 `protobuf:"varint,6,opt,name=after_seq,json=afterSeq,proto3" json:"after_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -513,6 +552,20 @@ func (x *LogStreamEvent) GetTimestamp() *timestamppb.Timestamp {
 		return x.Timestamp
 	}
 	return nil
+}
+
+func (x *LogStreamEvent) GetSeq() uint64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *LogStreamEvent) GetAfterSeq() uint64 {
+	if x != nil {
+		return x.AfterSeq
+	}
+	return 0
 }
 
 type LogSessionOptions struct {
@@ -1470,7 +1523,7 @@ var File_proto_v1_logs_logs_proto protoreflect.FileDescriptor
 
 const file_proto_v1_logs_logs_proto_rawDesc = "" +
 	"\n" +
-	"\x18proto/v1/logs/logs.proto\x12\x14omniview.sdk.logs.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1eproto/resource/v2/domain.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cproto/v1/common/common.proto\"\x8a\x03\n" +
+	"\x18proto/v1/logs/logs.proto\x12\x14omniview.sdk.logs.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1eproto/resource/v2/domain.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cproto/v1/common/common.proto\"\xb4\x03\n" +
 	"\aLogLine\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
@@ -1479,7 +1532,9 @@ const file_proto_v1_logs_logs_proto_rawDesc = "" +
 	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x18\n" +
 	"\acontent\x18\x05 \x01(\fR\acontent\x12;\n" +
 	"\x06origin\x18\x06 \x01(\x0e2#.omniview.sdk.logs.v1.LogLineOriginR\x06origin\x124\n" +
-	"\x05level\x18\a \x01(\x0e2\x1e.omniview.sdk.logs.v1.LogLevelR\x05level\x1a9\n" +
+	"\x05level\x18\a \x01(\x0e2\x1e.omniview.sdk.logs.v1.LogLevelR\x05level\x12\x10\n" +
+	"\x03seq\x18\b \x01(\x04R\x03seq\x12\x16\n" +
+	"\x06replay\x18\t \x01(\bR\x06replay\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9b\x01\n" +
@@ -1488,12 +1543,14 @@ const file_proto_v1_logs_logs_proto_rawDesc = "" +
 	"\x06labels\x18\x02 \x03(\v2+.omniview.sdk.logs.v1.LogSource.LabelsEntryR\x06labels\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbf\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xee\x01\n" +
 	"\x0eLogStreamEvent\x12<\n" +
 	"\x04type\x18\x01 \x01(\x0e2(.omniview.sdk.logs.v1.LogStreamEventTypeR\x04type\x12\x1b\n" +
 	"\tsource_id\x18\x02 \x01(\tR\bsourceId\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x128\n" +
-	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\xf9\x03\n" +
+	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x10\n" +
+	"\x03seq\x18\x05 \x01(\x04R\x03seq\x12\x1b\n" +
+	"\tafter_seq\x18\x06 \x01(\x04R\bafterSeq\"\xf9\x03\n" +
 	"\x11LogSessionOptions\x12\x16\n" +
 	"\x06target\x18\x01 \x01(\tR\x06target\x12\x16\n" +
 	"\x06follow\x18\x02 \x01(\bR\x06follow\x12)\n" +
@@ -1581,7 +1638,7 @@ const file_proto_v1_logs_logs_proto_rawDesc = "" +
 	"\rLogLineOrigin\x12\x1b\n" +
 	"\x17LOG_LINE_ORIGIN_CURRENT\x10\x00\x12\x1c\n" +
 	"\x18LOG_LINE_ORIGIN_PREVIOUS\x10\x01\x12\x1a\n" +
-	"\x16LOG_LINE_ORIGIN_SYSTEM\x10\x02*\x8b\x02\n" +
+	"\x16LOG_LINE_ORIGIN_SYSTEM\x10\x02*\xb2\x02\n" +
 	"\x12LogStreamEventType\x12!\n" +
 	"\x1dLOG_STREAM_EVENT_SOURCE_ADDED\x10\x00\x12#\n" +
 	"\x1fLOG_STREAM_EVENT_SOURCE_REMOVED\x10\x01\x12!\n" +
@@ -1589,7 +1646,8 @@ const file_proto_v1_logs_logs_proto_rawDesc = "" +
 	"\x1dLOG_STREAM_EVENT_RECONNECTING\x10\x03\x12 \n" +
 	"\x1cLOG_STREAM_EVENT_RECONNECTED\x10\x04\x12!\n" +
 	"\x1dLOG_STREAM_EVENT_STREAM_ENDED\x10\x05\x12\"\n" +
-	"\x1eLOG_STREAM_EVENT_SESSION_READY\x10\x06*m\n" +
+	"\x1eLOG_STREAM_EVENT_SESSION_READY\x10\x06\x12%\n" +
+	"!LOG_STREAM_EVENT_SOURCE_CAUGHT_UP\x10\a*m\n" +
 	"\x10LogStreamCommand\x12\x1c\n" +
 	"\x18LOG_STREAM_COMMAND_PAUSE\x10\x00\x12\x1d\n" +
 	"\x19LOG_STREAM_COMMAND_RESUME\x10\x01\x12\x1c\n" +

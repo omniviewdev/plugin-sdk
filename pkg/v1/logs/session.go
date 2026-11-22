@@ -76,6 +76,16 @@ type LogSession struct {
 	Status        LogSessionStatus  `json:"status"`
 	ActiveSources []LogSource       `json:"active_sources"`
 	CreatedAt     time.Time         `json:"created_at"`
+	// ReplayMarkers is true when the plugin accepted the session's request for
+	// replay markers ([ParamReplayMarkers]): it numbers lines and events
+	// ([LogLine.Seq]), flags replay lines ([LogLine.Replay]) and sends
+	// [StreamEventSourceCaughtUp] for every source. False means no marker will ever
+	// come: the reader did not ask, the plugin predates markers, or its handler has
+	// no [Handler.Replay]. It is known from the create reply and fixed for the
+	// session, so a reader tells "never" from "not yet" without a timeout. The wire
+	// carries it as [ParamReplayMarkersAccepted] in Options.Params, the one place a
+	// create reply can say it without a wire change; LogSessionFromProto reads it.
+	ReplayMarkers bool `json:"replay_markers,omitempty"`
 }
 
 // ToProto encodes the session snapshot and its active sources.
@@ -103,16 +113,18 @@ func LogSessionFromProto(p *logspb.LogSession) *LogSession {
 	for _, src := range p.GetActiveSources() {
 		sources = append(sources, LogSourceFromProto(src))
 	}
+	options := LogSessionOptionsFromProto(p.GetOptions())
 	return &LogSession{
 		ID:            p.GetId(),
 		PluginID:      p.GetPluginId(),
 		ConnectionID:  p.GetConnectionId(),
 		ResourceKey:   p.GetResourceKey(),
 		ResourceID:    p.GetResourceId(),
-		Options:       LogSessionOptionsFromProto(p.GetOptions()),
+		Options:       options,
 		Status:        LogSessionStatusFromProto(p.GetStatus()),
 		ActiveSources: sources,
 		CreatedAt:     p.GetCreatedAt().AsTime(),
+		ReplayMarkers: replayAccepted(options.Params),
 	}
 }
 

@@ -106,7 +106,7 @@ func TestSourceCancellationClosesBlockedReader(t *testing.T) {
 	reader := &cancelReader{closed: make(chan struct{})}
 	done := make(chan struct{})
 	go func() {
-		_ = manager.consumeSourceReader(ctx, ss, LogSource{ID: "source"}, reader, manager.log)
+		_ = manager.consumeSourceReader(ctx, ss, LogSource{ID: "source"}, reader, manager.log, nil)
 		close(done)
 	}()
 	cancel()

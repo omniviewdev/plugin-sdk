@@ -191,6 +191,12 @@ channel retains bounded early output before the transport attaches. A slow or
 unattached consumer applies backpressure, and session cancellation unblocks
 output delivery rather than waiting for the transport to drain.
 
+A handler that sets `logs.Handler.Replay` splits each source into a bounded backlog and a
+live follow. A reader that asks with `logs.ParamReplayMarkers` is told where each backlog
+ends (`StreamEventSourceCaughtUp`) and whether markers will come at all
+(`LogSession.ReplayMarkers`, known from the create reply). See the README's "Replay
+markers" section for the handler contract.
+
 ## Next
 
 - [Expose a resource type and implement Get](resources.md).

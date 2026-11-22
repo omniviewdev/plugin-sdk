@@ -119,6 +119,13 @@ type LogLine struct {
 	Content   string            `json:"content"`
 	Origin    LogLineOrigin     `json:"origin"`
 	Level     LogLevel          `json:"level"`
+	// Seq is the line's position in the session sequence, 1-based; zero means the
+	// session does not number its output. See [ParamReplayMarkers].
+	Seq uint64 `json:"seq,omitempty"`
+	// Replay marks a line of the source's replayed backlog: everything read before
+	// the source's [StreamEventSourceCaughtUp] event. Set only on sessions where
+	// [LogSession.ReplayMarkers] is true.
+	Replay bool `json:"replay,omitempty"`
 }
 
 // ToProto encodes the line content and timestamp, sharing its Labels map.
@@ -131,6 +138,8 @@ func (l *LogLine) ToProto() *logspb.LogLine {
 		Content:   []byte(l.Content),
 		Origin:    l.Origin.ToProto(),
 		Level:     l.Level.ToProto(),
+		Seq:       l.Seq,
+		Replay:    l.Replay,
 	}
 }
 
@@ -148,6 +157,8 @@ func LogLineFromProto(p *logspb.LogLine) LogLine {
 		Content:   string(p.GetContent()),
 		Origin:    LogLineOriginFromProto(p.GetOrigin()),
 		Level:     LogLevelFromProto(p.GetLevel()),
+		Seq:       p.GetSeq(),
+		Replay:    p.GetReplay(),
 	}
 }
 
@@ -207,7 +218,17 @@ const (
 	StreamEventStreamEnded
 	// StreamEventSessionReady announces completion of session source setup.
 	StreamEventSessionReady
+	// StreamEventSourceCaughtUp announces that one source delivered its replay and
+	// everything it sends next is live; see [Handler.Replay]. It is sent only to a
+	// session that asked for it with [ParamReplayMarkers] and whose plugin accepted
+	// ([LogSession.ReplayMarkers]).
+	StreamEventSourceCaughtUp
 )
+
+// StreamEventUnknown is what a reader decodes an event kind it does not know to.
+// It has no wire value and is never sent: a newer plugin's event must neither
+// vanish nor pass for a source joining the session.
+const StreamEventUnknown LogStreamEventType = -1
 
 // String returns the event name or a numeric description for unknown values.
 func (t LogStreamEventType) String() string {
@@ -226,12 +247,16 @@ func (t LogStreamEventType) String() string {
 		return "StreamEnded"
 	case StreamEventSessionReady:
 		return "SessionReady"
+	case StreamEventSourceCaughtUp:
+		return "SourceCaughtUp"
+	case StreamEventUnknown:
+		return "Unknown"
 	default:
 		return fmt.Sprintf("LogStreamEventType(%d)", int(t))
 	}
 }
 
-// ToProto encodes the event kind, defaulting unknown values to source-added.
+// ToProto encodes the event kind, defaulting values with no wire counterpart to source-added.
 func (t LogStreamEventType) ToProto() logspb.LogStreamEventType {
 	switch t {
 	case StreamEventSourceAdded:
@@ -248,11 +273,16 @@ func (t LogStreamEventType) ToProto() logspb.LogStreamEventType {
 		return logspb.LogStreamEventType_LOG_STREAM_EVENT_STREAM_ENDED
 	case StreamEventSessionReady:
 		return logspb.LogStreamEventType_LOG_STREAM_EVENT_SESSION_READY
+	case StreamEventSourceCaughtUp:
+		return logspb.LogStreamEventType_LOG_STREAM_EVENT_SOURCE_CAUGHT_UP
+	case StreamEventUnknown:
+		// Nothing on the wire stands for an event kind the reader did not know.
 	}
 	return logspb.LogStreamEventType_LOG_STREAM_EVENT_SOURCE_ADDED
 }
 
-// LogStreamEventTypeFromProto decodes the event kind, defaulting unknown values to source-added.
+// LogStreamEventTypeFromProto decodes the event kind. A kind this SDK does not know
+// (a newer plugin's) decodes to [StreamEventUnknown], never to a source joining.
 func LogStreamEventTypeFromProto(p logspb.LogStreamEventType) LogStreamEventType {
 	switch p {
 	case logspb.LogStreamEventType_LOG_STREAM_EVENT_SOURCE_ADDED:
@@ -269,8 +299,10 @@ func LogStreamEventTypeFromProto(p logspb.LogStreamEventType) LogStreamEventType
 		return StreamEventStreamEnded
 	case logspb.LogStreamEventType_LOG_STREAM_EVENT_SESSION_READY:
 		return StreamEventSessionReady
+	case logspb.LogStreamEventType_LOG_STREAM_EVENT_SOURCE_CAUGHT_UP:
+		return StreamEventSourceCaughtUp
 	}
-	return StreamEventSourceAdded
+	return StreamEventUnknown
 }
 
 // LogStreamEvent represents a lifecycle event during streaming.
@@ -279,6 +311,12 @@ type LogStreamEvent struct {
 	SourceID  string             `json:"source_id"`
 	Message   string             `json:"message"`
 	Timestamp time.Time          `json:"timestamp"`
+	// Seq is the event's position in the session sequence; see [LogLine.Seq].
+	Seq uint64 `json:"seq,omitempty"`
+	// AfterSeq, on a [StreamEventSourceCaughtUp] event, is the Seq of the source's
+	// last replay line before the event; zero when the replay held no line. A
+	// missing JSON member reads as zero.
+	AfterSeq uint64 `json:"after_seq,omitempty"`
 }
 
 // ToProto encodes the event details and timestamp.
@@ -288,6 +326,8 @@ func (e *LogStreamEvent) ToProto() *logspb.LogStreamEvent {
 		SourceId:  e.SourceID,
 		Message:   e.Message,
 		Timestamp: timestamppb.New(e.Timestamp),
+		Seq:       e.Seq,
+		AfterSeq:  e.AfterSeq,
 	}
 }
 
@@ -302,6 +342,8 @@ func LogStreamEventFromProto(p *logspb.LogStreamEvent) LogStreamEvent {
 		SourceID:  p.GetSourceId(),
 		Message:   p.GetMessage(),
 		Timestamp: ts,
+		Seq:       p.GetSeq(),
+		AfterSeq:  p.GetAfterSeq(),
 	}
 }
 
@@ -373,6 +415,11 @@ type StreamOutput struct {
 }
 
 // LogStreamRequest is the generic request to open a log stream for one source.
+//
+// A handler that declares [Handler.Replay] gets two kinds of request per source:
+// Replay is asked for the backlog (Follow false) and Handler, once the backlog
+// ended, for what comes after it (Follow true). Resume tells them apart from the
+// caller's own first request.
 type LogStreamRequest struct {
 	SourceID          string
 	Labels            map[string]string
@@ -388,4 +435,15 @@ type LogStreamRequest struct {
 	SinceTime         *time.Time
 	LimitBytes        int64
 	Params            map[string]string
+	// Resume is true when the SDK continues a source after lines it already read:
+	// the follow that comes after a replay, and a replay or follow reopened after a
+	// failure. TailLines and LimitBytes are then zero and IncludePrevious is false.
+	// SinceTime, when set, is the timestamp of the last line read (the instant the
+	// replay ended, when the lines read carried no timestamp): continue strictly
+	// after it; SinceSeconds is then zero. When SinceTime is nil, or is only the
+	// caller's own, nothing was read: continue from the start of the caller's
+	// window (its SinceSeconds still applies; without one, from the start of the
+	// source). Lines read without timestamps cannot be resumed after a failure: the
+	// SDK sends the caller's first-open request again and the tail comes twice.
+	Resume bool
 }

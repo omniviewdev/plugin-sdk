@@ -104,3 +104,18 @@ func (r *handlerRegistry) AnyHandler() (Handler, bool) {
 	}
 	return r.handlers[keys[0]], true
 }
+
+// declaresReplay reports whether the handler that will stream a session for the
+// resource key declares [Handler.Replay]. It mirrors the orchestration's own
+// choice: the key's own handler, or, for a key with a source resolver, the handler
+// that streams every resolved source.
+func (r *handlerRegistry) declaresReplay(resourceKey string) bool {
+	if h, ok := r.FindHandler(resourceKey); ok {
+		return h.Replay != nil
+	}
+	if _, ok := r.FindResolver(resourceKey); ok {
+		h, ok := r.AnyHandler()
+		return ok && h.Replay != nil
+	}
+	return false
+}
