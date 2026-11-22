@@ -84,14 +84,15 @@ const (
 	LogStreamEventType_LOG_STREAM_EVENT_RECONNECTED    LogStreamEventType = 4
 	LogStreamEventType_LOG_STREAM_EVENT_STREAM_ENDED   LogStreamEventType = 5
 	LogStreamEventType_LOG_STREAM_EVENT_SESSION_READY  LogStreamEventType = 6
-	// One source delivered its replay (the backlog it held when it opened) and
-	// everything it sends next is live. source_id names the source; after_seq is
-	// the seq of its last replay line (0 when the replay held no line). Sent only
-	// to a session that asked for it with params["omniview.log.replay-markers"] = "1"
-	// and whose plugin accepted (the create reply carries
-	// params["omniview.log.replay-markers.accepted"] = "1"). A reader that does not
-	// know this value decodes it as SOURCE_ADDED, so it must never be sent to a
-	// reader that did not ask.
+	// One source's backlog, the lines it already held when its stream opened, has been
+	// delivered: the lines it sends after this event, until its stream opens again, are
+	// live. source_id names the source. Sent at most once for each opening of the source's
+	// stream (a source that reopens delivers its tail again and is marked again), and only
+	// to a session that asked for it with params["omniview.log.replay-markers"] = "1" and
+	// whose plugin accepted (the create reply carries
+	// params["omniview.log.replay-markers.accepted"] = "1"). A reader built before this
+	// value existed decodes it as SOURCE_ADDED, so a reader must not ask unless its own
+	// SDK knows it.
 	LogStreamEventType_LOG_STREAM_EVENT_SOURCE_CAUGHT_UP LogStreamEventType = 7
 )
 
@@ -323,14 +324,9 @@ type LogLine struct {
 	Content   []byte                 `protobuf:"bytes,5,opt,name=content,proto3" json:"content,omitempty"`
 	Origin    LogLineOrigin          `protobuf:"varint,6,opt,name=origin,proto3,enum=omniview.sdk.logs.v1.LogLineOrigin" json:"origin,omitempty"`
 	Level     LogLevel               `protobuf:"varint,7,opt,name=level,proto3,enum=omniview.sdk.logs.v1.LogLevel" json:"level,omitempty"`
-	// Position in the session's sequence (1-based); 0 means not numbered. Set only
-	// on a session whose plugin accepted replay markers. Lines and events of a
-	// session draw from one counter: a number is used once, and the output of one
-	// source is in increasing order (sources interleave).
-	Seq uint64 `protobuf:"varint,8,opt,name=seq,proto3" json:"seq,omitempty"`
-	// True for a line of a source's replay: the backlog the source held when it
-	// (re)opened, up to the source's next SOURCE_CAUGHT_UP event. Set only on a
-	// session whose plugin accepted replay markers.
+	// True for a line of a source's backlog: one of the first lines of its stream, the
+	// ones the source already held when the stream opened, up to the source's next
+	// SOURCE_CAUGHT_UP event. Set only on a session whose plugin accepted replay markers.
 	Replay        bool `protobuf:"varint,9,opt,name=replay,proto3" json:"replay,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -415,13 +411,6 @@ func (x *LogLine) GetLevel() LogLevel {
 	return LogLevel_LOG_LEVEL_UNSPECIFIED
 }
 
-func (x *LogLine) GetSeq() uint64 {
-	if x != nil {
-		return x.Seq
-	}
-	return 0
-}
-
 func (x *LogLine) GetReplay() bool {
 	if x != nil {
 		return x.Replay
@@ -482,16 +471,11 @@ func (x *LogSource) GetLabels() map[string]string {
 }
 
 type LogStreamEvent struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Type      LogStreamEventType     `protobuf:"varint,1,opt,name=type,proto3,enum=omniview.sdk.logs.v1.LogStreamEventType" json:"type,omitempty"`
-	SourceId  string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
-	Message   string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
-	Timestamp *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	// Position in the session's sequence; see LogLine.seq.
-	Seq uint64 `protobuf:"varint,5,opt,name=seq,proto3" json:"seq,omitempty"`
-	// SOURCE_CAUGHT_UP only: the seq of the source's last replay line before this
-	// event, 0 when its replay held no line.
-	AfterSeq      uint64 `protobuf:"varint,6,opt,name=after_seq,json=afterSeq,proto3" json:"after_seq,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          LogStreamEventType     `protobuf:"varint,1,opt,name=type,proto3,enum=omniview.sdk.logs.v1.LogStreamEventType" json:"type,omitempty"`
+	SourceId      string                 `protobuf:"bytes,2,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -552,20 +536,6 @@ func (x *LogStreamEvent) GetTimestamp() *timestamppb.Timestamp {
 		return x.Timestamp
 	}
 	return nil
-}
-
-func (x *LogStreamEvent) GetSeq() uint64 {
-	if x != nil {
-		return x.Seq
-	}
-	return 0
-}
-
-func (x *LogStreamEvent) GetAfterSeq() uint64 {
-	if x != nil {
-		return x.AfterSeq
-	}
-	return 0
 }
 
 type LogSessionOptions struct {
@@ -1523,7 +1493,7 @@ var File_proto_v1_logs_logs_proto protoreflect.FileDescriptor
 
 const file_proto_v1_logs_logs_proto_rawDesc = "" +
 	"\n" +
-	"\x18proto/v1/logs/logs.proto\x12\x14omniview.sdk.logs.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1eproto/resource/v2/domain.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cproto/v1/common/common.proto\"\xb4\x03\n" +
+	"\x18proto/v1/logs/logs.proto\x12\x14omniview.sdk.logs.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1eproto/resource/v2/domain.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1cproto/v1/common/common.proto\"\xa8\x03\n" +
 	"\aLogLine\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1b\n" +
@@ -1532,25 +1502,22 @@ const file_proto_v1_logs_logs_proto_rawDesc = "" +
 	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x18\n" +
 	"\acontent\x18\x05 \x01(\fR\acontent\x12;\n" +
 	"\x06origin\x18\x06 \x01(\x0e2#.omniview.sdk.logs.v1.LogLineOriginR\x06origin\x124\n" +
-	"\x05level\x18\a \x01(\x0e2\x1e.omniview.sdk.logs.v1.LogLevelR\x05level\x12\x10\n" +
-	"\x03seq\x18\b \x01(\x04R\x03seq\x12\x16\n" +
+	"\x05level\x18\a \x01(\x0e2\x1e.omniview.sdk.logs.v1.LogLevelR\x05level\x12\x16\n" +
 	"\x06replay\x18\t \x01(\bR\x06replay\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9b\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\b\x10\t\"\x9b\x01\n" +
 	"\tLogSource\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12C\n" +
 	"\x06labels\x18\x02 \x03(\v2+.omniview.sdk.logs.v1.LogSource.LabelsEntryR\x06labels\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xee\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbf\x01\n" +
 	"\x0eLogStreamEvent\x12<\n" +
 	"\x04type\x18\x01 \x01(\x0e2(.omniview.sdk.logs.v1.LogStreamEventTypeR\x04type\x12\x1b\n" +
 	"\tsource_id\x18\x02 \x01(\tR\bsourceId\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x128\n" +
-	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x10\n" +
-	"\x03seq\x18\x05 \x01(\x04R\x03seq\x12\x1b\n" +
-	"\tafter_seq\x18\x06 \x01(\x04R\bafterSeq\"\xf9\x03\n" +
+	"\ttimestamp\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\xf9\x03\n" +
 	"\x11LogSessionOptions\x12\x16\n" +
 	"\x06target\x18\x01 \x01(\tR\x06target\x12\x16\n" +
 	"\x06follow\x18\x02 \x01(\bR\x06follow\x12)\n" +

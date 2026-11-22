@@ -75,19 +75,14 @@ type sessionState struct {
 	opts      CreateSessionOptions
 	pluginCtx *types.PluginContext
 
-	// replayMarkers is decided once, at creation: the reader asked for replay
-	// markers and the session's handler declares Replay. It never changes, so a
-	// reader that read it from the create reply can rely on it for the session.
+	// replayMarkers is decided once, at creation: the reader asked for replay markers
+	// and the session's handler declares Backlog. It never changes, so a reader that
+	// read it from the create reply can rely on it for the session.
 	replayMarkers bool
-	// seq numbers the session's lines and events when replayMarkers is set.
-	seq atomic.Uint64
 }
 
-// nextSeq returns the next position in the session's sequence.
-func (s *sessionState) nextSeq() uint64 { return s.seq.Add(1) }
-
-// snapshot returns a copy of the session for safe reads, stamped with the
-// session's replay decision so every reply reports it the same way.
+// snapshot returns a copy of the session for safe reads, stamped with the session's
+// replay decision so every reply reports it the same way.
 func (s *sessionState) snapshot() LogSession {
 	s.mu.RLock()
 	cp := s.session
@@ -157,11 +152,6 @@ type ManagerConfig struct {
 	Resolvers map[string]SourceResolver
 	Sink      OutputSink     // optional: nil → bounded shared output channel
 	Clock     timeutil.Clock // optional: nil → timeutil.RealClock
-	// ReplayIdleTimeout bounds how long a [Handler.Replay] stream may return
-	// neither a line nor io.EOF; optional: zero → [DefaultReplayIdleTimeout]. A
-	// stalled stream is failed after between one and two of these windows. It runs
-	// on real time, not on Clock.
-	ReplayIdleTimeout time.Duration
 }
 
 // ---------------------------------------------------------------------------
@@ -176,7 +166,6 @@ type Manager struct {
 	sink               OutputSink
 	clock              timeutil.Clock
 	connectionProvider resourcev2.ConnectionContextProvider
-	replayIdle         time.Duration
 
 	mu       sync.RWMutex
 	sessions map[string]*sessionState
@@ -204,20 +193,14 @@ func NewManager(cfg ManagerConfig) *Manager {
 		out = make(chan StreamOutput, streamOutputBuffer)
 	}
 
-	replayIdle := cfg.ReplayIdleTimeout
-	if replayIdle <= 0 {
-		replayIdle = DefaultReplayIdleTimeout
-	}
-
 	return &Manager{
-		log:        logger.Named("logs.manager"),
-		settings:   cfg.Settings,
-		registry:   newHandlerRegistry(logger, cfg.Handlers, cfg.Resolvers),
-		sink:       cfg.Sink,
-		clock:      clk,
-		replayIdle: replayIdle,
-		sessions:   make(map[string]*sessionState),
-		out:        out,
+		log:      logger.Named("logs.manager"),
+		settings: cfg.Settings,
+		registry: newHandlerRegistry(logger, cfg.Handlers, cfg.Resolvers),
+		sink:     cfg.Sink,
+		clock:    clk,
+		sessions: make(map[string]*sessionState),
+		out:      out,
 	}
 }
 
@@ -386,10 +369,10 @@ func (m *Manager) createSession(
 		sourceCtxs: make(map[string]context.CancelFunc),
 		opts:       opts,
 		pluginCtx:  &pctxCopy,
-		// Markers need both the reader's request and a handler that splits its
-		// stream; the registry is fixed, so the answer given now is the one the
-		// session's orchestration reaches later.
-		replayMarkers: replayRequested(opts.Options.Params) && m.registry.declaresReplay(opts.ResourceKey),
+		// Markers need both the reader's request and a handler that counts its backlog;
+		// the registry is fixed, so the answer given now is the one the session's
+		// orchestration reaches later.
+		replayMarkers: replayRequested(opts.Options.Params) && m.registry.declaresBacklog(opts.ResourceKey),
 	}
 
 	m.mu.Lock()
@@ -850,7 +833,6 @@ func (m *Manager) streamWithReconnect(
 	logger logging.Logger,
 ) {
 	delay := ReconnectInitialDelay
-	var cursor sourceCursor
 
 	for attempt := 0; attempt <= ReconnectMaxAttempts; attempt++ {
 		if ctx.Err() != nil {
@@ -872,13 +854,27 @@ func (m *Manager) streamWithReconnect(
 			delay = min(delay*reconnectBackoffMultiplier, ReconnectMaxDelay)
 		}
 
-		opened, err := m.runSourceAttempt(ctx, ss, handler, source, req, logger, attempt, &cursor)
-		if !opened {
+		backlog, counted := m.countBacklog(ctx, ss, handler, req, logger)
+		if !counted {
 			if ctx.Err() != nil {
 				return
 			}
 			continue
 		}
+
+		reader := m.openSourceReader(ctx, ss, handler, source, req, logger, attempt)
+		if reader == nil {
+			if ctx.Err() != nil {
+				return
+			}
+			continue
+		}
+
+		m.markSourceReady(ss, source.ID)
+		if backlog.empty() {
+			m.emitCaughtUp(ss, source)
+		}
+		err := m.consumeSourceReader(ctx, ss, source, reader, logger, backlog)
 
 		if ctx.Err() != nil {
 			return
@@ -887,14 +883,9 @@ func (m *Manager) streamWithReconnect(
 		// Clean EOF completes a source even in follow mode. Reopening would replay
 		// the unchanged history request; only acquisition or read errors retry.
 		if err == nil || errors.Is(err, io.EOF) {
-			return
-		}
-
-		// A backlog that never ends is the handler's fault, not the connection's:
-		// another attempt would stall the same way, so report it and stop.
-		if errors.Is(err, errReplayIdle) {
-			if m.failSource(ctx, ss, source, "Log replay did not finish: the source sent no line and did not end its backlog.") {
-				logger.Warnw(ctx, "log replay did not finish", "source", source.ID, "idle", m.replayIdle.String())
+			if backlog != nil && backlog.finite {
+				// A stream that ends has no backlog but itself: its end is the boundary.
+				m.emitCaughtUp(ss, source)
 			}
 			return
 		}
@@ -902,233 +893,82 @@ func (m *Manager) streamWithReconnect(
 		logger.Warnw(ctx, "log stream interrupted", "error", err, "source", source.ID)
 	}
 
-	message := fmt.Sprintf("Failed to reconnect after %d attempts", ReconnectMaxAttempts)
-	if m.failSource(ctx, ss, source, message) {
-		logger.Warnw(ctx, "log stream reconnect attempts exhausted", "source", source.ID, "attempts", ReconnectMaxAttempts)
-	}
-}
-
-// failSource marks the session failed and reports the source's failure, unless the
-// source was canceled first. It reports whether it did.
-func (m *Manager) failSource(ctx context.Context, ss *sessionState, source LogSource, message string) bool {
 	ss.mu.Lock()
 	if ctx.Err() != nil {
 		ss.mu.Unlock()
-		return false
+		return
 	}
 	ss.session.Status = LogSessionStatusError
 	ss.mu.Unlock()
+	logger.Warnw(ctx, "log stream reconnect attempts exhausted", "source", source.ID, "attempts", ReconnectMaxAttempts)
 	m.emitEvent(ss.session.ID, LogStreamEvent{
 		Type:      StreamEventStreamError,
 		SourceID:  source.ID,
-		Message:   message,
+		Message:   fmt.Sprintf("Failed to reconnect after %d attempts", ReconnectMaxAttempts),
 		Timestamp: m.clock.Now(),
 	})
-	return true
 }
 
-// errReplayIdle reports a Replay stream that neither produced a line nor ended
-// within the manager's idle window.
-var errReplayIdle = errors.New("replay stream idle")
-
-// sourceCursor is what a source's reader loop remembers between readers: how far
-// it has read, so a reopened source continues where it stopped instead of starting
-// over. Only the source's own goroutine touches it.
-type sourceCursor struct {
-	last    time.Time // latest timestamp of a line read; zero until one carried one
-	atLast  uint64    // lines read stamped exactly last: sources stamp many lines alike
-	read    uint64    // lines read, whether delivered or dropped while paused
-	started time.Time // when the current attempt's replay was requested
-}
-
-// observe records a line read with the timestamp ts (zero when it had none).
-func (c *sourceCursor) observe(ts time.Time) {
-	c.read++
-	switch {
-	case ts.IsZero():
-	case ts.After(c.last):
-		c.last, c.atLast = ts, 1
-	case ts.Equal(c.last):
-		c.atLast++
-	}
-}
-
-// continuation derives a request that continues after the lines already read; see
-// [LogStreamRequest.Resume]. The tail, limit and previous-instance bounds always
-// go. With a timestamp to continue at, the time bounds are replaced by it (the
-// instant the replay was requested stands in for it when the lines read carried
-// none); with nothing read, the caller's own time bounds still apply.
-func (c *sourceCursor) continuation(first LogStreamRequest, follow bool) LogStreamRequest {
-	first.Follow = follow
-	first.Resume = true
-	first.TailLines, first.LimitBytes, first.IncludePrevious = 0, 0, false
-	switch {
-	case !c.last.IsZero():
-		since := c.last
-		first.SinceTime, first.SinceSeconds = &since, 0
-	case c.read > 0:
-		since := c.started
-		first.SinceTime, first.SinceSeconds = &since, 0
-	}
-	return first
-}
-
-// replayRequest is the bounded read of an attempt: the caller's own bounds the
-// first time, and, once timestamped lines were read, only what came at or after
-// them. Lines read without a timestamp give nothing to continue at, so the read
-// starts over with the caller's bounds and the tail is delivered again.
-func (c *sourceCursor) replayRequest(first LogStreamRequest) LogStreamRequest {
-	if c.last.IsZero() {
-		first.Follow = false
-		return first
-	}
-	return c.continuation(first, false)
-}
-
-// filter returns what a read resumed at the cursor must drop of the lines it is
-// given again, or nil when nothing was read with a timestamp.
-func (c *sourceCursor) filter() *resumeFilter {
-	if c.last.IsZero() {
-		return nil
-	}
-	return &resumeFilter{since: c.last, skip: c.atLast, active: true}
-}
-
-// resumeFilter drops the lines a resumed read returns that the SDK already read. A
-// source's time filter is at or after the resume point, and a coarse one
-// (Kubernetes': one second) returns more. Lines stamped before the point were read,
-// and so were the first skip stamped exactly at it: sources stamp many lines alike,
-// so the timestamp alone cannot say which of them were. The first line past that
-// ends the filtering, so a later line stamped out of order is delivered, and a line
-// with no timestamp passes without ending it.
-type resumeFilter struct {
-	since  time.Time
-	skip   uint64
-	active bool
-}
-
-// drop reports whether a line stamped ts was already read.
-func (f *resumeFilter) drop(ts time.Time) bool {
-	if f == nil || !f.active || ts.IsZero() {
-		return false
-	}
-	switch {
-	case ts.Before(f.since):
-		return true
-	case ts.Equal(f.since) && f.skip > 0:
-		f.skip--
-		return true
-	}
-	f.active = false
-	return false
-}
-
-// readState carries one reader's replay bookkeeping through [Manager.readStream].
-// A nil *readState is the unchanged single-phase read.
-type readState struct {
-	replay   bool          // the reader is a Replay stream
-	cursor   *sourceCursor // shared by every reader of the source
-	filter   *resumeFilter // what a resumed reader must drop as already read
-	progress atomic.Uint64 // lines scanned
-	waiting  atomic.Bool   // a Replay reader is blocked waiting for the source
-	lastSeq  uint64        // seq of the last replay line delivered
-}
-
-// scan advances the scanner and, for a Replay reader, notes while it waits for the
-// source, so the idle watchdog can tell a stalled replay from a slow consumer.
-func (s *readState) scan(scanner *bufio.Scanner) bool {
-	if s == nil || !s.replay {
-		return scanner.Scan()
-	}
-	s.waiting.Store(true)
-	more := scanner.Scan()
-	s.waiting.Store(false)
-	return more
-}
-
-// runSourceAttempt opens and drains the source once. opened is false when no reader
-// could be acquired. A handler without Replay streams in one piece. With Replay
-// every attempt is a bounded replay, the caught-up marker, and the live follow.
-func (m *Manager) runSourceAttempt(
+// countBacklog asks the handler, for a session that asked for markers, how many of
+// the first lines of the stream it is about to open are backlog. A request with
+// Follow false needs no count: that stream ends and its end is the boundary. A
+// count that cannot be given fails the attempt as a failed open does. The returned
+// *backlogCount is nil when the session takes no part in markers.
+func (m *Manager) countBacklog(
 	ctx context.Context,
 	ss *sessionState,
 	handler Handler,
-	source LogSource,
-	first LogStreamRequest,
+	req LogStreamRequest,
 	logger logging.Logger,
-	attempt int,
-	cursor *sourceCursor,
-) (opened bool, err error) {
-	if handler.Replay == nil {
-		reader := m.openSourceReader(ctx, ss, handler.Handler, source, first, logger, attempt, true)
-		if reader == nil {
-			return false, nil
+) (*backlogCount, bool) {
+	if !ss.replayMarkers || handler.Backlog == nil {
+		return nil, true
+	}
+	if !req.Follow {
+		return &backlogCount{finite: true}, true
+	}
+	pctxCopy := *ss.pluginCtx
+	pctxCopy.Context = ctx
+	pctxCopy.Logger = logger
+	n, err := handler.Backlog(&pctxCopy, req)
+	if err == nil && n < 0 {
+		err = fmt.Errorf("backlog count %d is negative", n)
+	}
+	if err != nil {
+		if ctx.Err() == nil {
+			logger.Errorw(ctx, "failed to count log backlog", "error", err)
 		}
-		m.markSourceReady(ss, source.ID)
-		return true, m.consumeSourceReader(ctx, ss, source, reader, logger, nil)
+		return nil, false
 	}
-
-	cursor.started = m.clock.Now()
-	reader := m.openSourceReader(ctx, ss, handler.Replay, source, cursor.replayRequest(first), logger, attempt, true)
-	if reader == nil {
-		return false, nil
-	}
-	m.markSourceReady(ss, source.ID)
-	backlog := &readState{replay: true, cursor: cursor, filter: cursor.filter()}
-	if err = m.consumeSourceReader(ctx, ss, source, reader, logger, backlog); err != nil {
-		return true, err
-	}
-	// A source canceled mid-replay closes its reader, which can read as a clean end:
-	// only a replay that really finished is caught up.
-	if ctx.Err() != nil {
-		return true, ctx.Err()
-	}
-	m.emitCaughtUp(ss, source, backlog.lastSeq)
-	// A bounded session, or a handler with only a Replay (a finite source), ends
-	// with its backlog.
-	if !first.Follow || handler.Handler == nil {
-		return true, nil
-	}
-
-	resumed := &readState{cursor: cursor, filter: cursor.filter()}
-	reader = m.openSourceReader(ctx, ss, handler.Handler, source, cursor.continuation(first, true), logger, attempt, false)
-	if reader == nil {
-		return false, nil
-	}
-	return true, m.consumeSourceReader(ctx, ss, source, reader, logger, resumed)
+	return &backlogCount{remaining: n}, true
 }
 
-// emitCaughtUp tells a reader that asked for it that the source's backlog ended.
-func (m *Manager) emitCaughtUp(ss *sessionState, source LogSource, afterSeq uint64) {
-	if !ss.replayMarkers {
-		return
-	}
+// emitCaughtUp tells a reader that asked for it that a source's backlog has been
+// delivered.
+func (m *Manager) emitCaughtUp(ss *sessionState, source LogSource) {
 	m.emitEvent(ss.session.ID, LogStreamEvent{
 		Type:      StreamEventSourceCaughtUp,
 		SourceID:  source.ID,
 		Message:   "Caught up",
 		Timestamp: m.clock.Now(),
-		AfterSeq:  afterSeq,
 	})
 }
 
-// openSourceReader acquires a reader using the source cancellation context and,
-// when announce is set, announces a successful reconnection. Failed acquisitions
-// are logged and return nil.
+// openSourceReader acquires a reader using the source cancellation context and
+// announces successful reconnections. Failed acquisitions are logged and return nil.
 func (m *Manager) openSourceReader(
 	ctx context.Context,
 	ss *sessionState,
-	open LogHandlerFunc,
+	handler Handler,
 	source LogSource,
 	req LogStreamRequest,
 	logger logging.Logger,
 	attempt int,
-	announce bool,
 ) io.ReadCloser {
 	pctxCopy := *ss.pluginCtx
 	pctxCopy.Context = ctx
 	pctxCopy.Logger = logger
-	reader, err := open(&pctxCopy, req)
+	reader, err := handler.Handler(&pctxCopy, req)
 	if err != nil {
 		if ctx.Err() == nil {
 			logger.Errorw(ctx, "failed to open log stream", "error", err, "attempt", attempt)
@@ -1139,7 +979,7 @@ func (m *Manager) openSourceReader(
 		logger.Errorw(ctx, "handler returned nil reader without error", "source", source.ID, "attempt", attempt)
 		return nil
 	}
-	if announce && attempt > 0 {
+	if attempt > 0 {
 		m.emitEvent(ss.session.ID, LogStreamEvent{
 			Type:      StreamEventReconnected,
 			SourceID:  source.ID,
@@ -1151,22 +991,15 @@ func (m *Manager) openSourceReader(
 }
 
 // consumeSourceReader owns the acquired reader until scanning and closure finish.
-// Closure failures are diagnostic; only scanning errors affect retry decisions. A
-// Replay reader (state.replay) is also closed when it stalls for the idle window,
-// and the read then fails with errReplayIdle however it ended.
+// Closure failures are diagnostic; only scanning errors affect retry decisions.
 func (m *Manager) consumeSourceReader(
 	ctx context.Context,
 	ss *sessionState,
 	source LogSource,
 	reader io.ReadCloser,
 	logger logging.Logger,
-	state *readState,
+	backlog *backlogCount,
 ) error {
-	var watchdog *replayWatchdog
-	if state != nil && state.replay {
-		reader = &onceCloser{ReadCloser: reader}
-		watchdog = watchReplay(reader, state, m.replayIdle)
-	}
 	// Closing the source interrupts blocked reads on cancellation. Retain ownership
 	// until both the scanner and the cancellation callback have stopped.
 	closed := make(chan struct{})
@@ -1176,10 +1009,7 @@ func (m *Manager) consumeSourceReader(
 		}
 		close(closed)
 	})
-	err := m.readStream(ctx, ss, source, reader, state)
-	if watchdog.stop() {
-		err = errReplayIdle
-	}
+	err := m.readStream(ctx, ss, source, reader, backlog)
 	if !stop() {
 		<-closed
 		return err
@@ -1190,110 +1020,34 @@ func (m *Manager) consumeSourceReader(
 	return err
 }
 
-// onceCloser makes Close safe to call from both the manager and the watchdog.
-type onceCloser struct {
-	io.ReadCloser
-	once sync.Once
-}
-
-func (c *onceCloser) Close() error {
-	var err error
-	c.once.Do(func() { err = c.ReadCloser.Close() })
-	return err
-}
-
-// replayWatchdog closes a Replay reader that has been blocked waiting for the
-// source, with no line and no end, for a whole idle window, so a stuck backlog is
-// reported instead of waited on. Time spent delivering a line to a slow consumer is
-// not waiting for the source and never counts.
-type replayWatchdog struct {
-	done     chan struct{}
-	finished chan struct{}
-	expired  atomic.Bool
-}
-
-// watchReplay checks the reader every idle window. It expires it only when two
-// consecutive checks find the reader blocked in the same wait: waiting at both,
-// with no line read in between (a line read always moves progress), so the stall
-// lasted at least a window and at most two.
-func watchReplay(reader io.Closer, state *readState, idle time.Duration) *replayWatchdog {
-	w := &replayWatchdog{done: make(chan struct{}), finished: make(chan struct{})}
-	go func() {
-		defer close(w.finished)
-		timer := time.NewTimer(idle)
-		defer timer.Stop()
-		var (
-			blocked bool
-			seen    uint64
-		)
-		for {
-			select {
-			case <-w.done:
-				return
-			case <-timer.C:
-				waiting, now := state.waiting.Load(), state.progress.Load()
-				if waiting && blocked && now == seen {
-					w.expired.Store(true)
-					_ = reader.Close()
-					return
-				}
-				blocked, seen = waiting, now
-				timer.Reset(idle)
-			}
-		}
-	}()
-	return w
-}
-
-// stop ends the watchdog, once, and reports whether it had declared the reader
-// idle. A nil watchdog never has.
-func (w *replayWatchdog) stop() bool {
-	if w == nil {
-		return false
-	}
-	close(w.done)
-	<-w.finished
-	return w.expired.Load()
-}
-
 func (m *Manager) readStream(
 	ctx context.Context,
 	ss *sessionState,
 	source LogSource,
 	reader io.ReadCloser,
-	state *readState,
+	backlog *backlogCount,
 ) error {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, scannerInitBuf), MaxScannerBuffer)
 
-	for state.scan(scanner) {
+	for scanner.Scan() {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if state != nil {
-			state.progress.Add(1)
-		}
+
+		// A line counts toward the backlog once it is read, delivered or not.
+		replay, last := backlog.take()
 
 		// Skip output if paused (bug #12: documented behavior)
-		paused := ss.status() == LogSessionStatusPaused
-		if paused && state == nil {
+		if ss.status() == LogSessionStatusPaused {
+			if last {
+				m.emitCaughtUp(ss, source)
+			}
 			continue
 		}
 
 		line := scanner.Bytes()
 		ts, content := extractTimestamp(line)
-		if state != nil {
-			// A resumed read is given lines the SDK already read again; they are not
-			// read twice. What is read, delivered or dropped while paused, moves the
-			// cursor: a paused line stays dropped across a reconnect.
-			if state.filter.drop(ts) {
-				continue
-			}
-			state.cursor.observe(ts)
-		}
-		if paused {
-			continue
-		}
 
 		sink := m.sink
 		entry := LogLine{
@@ -1303,12 +1057,7 @@ func (m *Manager) readStream(
 			Timestamp: ts,
 			Content:   content,
 			Origin:    LogLineOriginCurrent,
-		}
-		if ss.replayMarkers {
-			entry.Seq = ss.nextSeq()
-			if entry.Replay = state != nil && state.replay; entry.Replay {
-				state.lastSeq = entry.Seq
-			}
+			Replay:    replay,
 		}
 		if sink != nil {
 			sink.OnLine(entry)
@@ -1318,6 +1067,9 @@ func (m *Manager) readStream(
 			case <-ctx.Done():
 				return ctx.Err()
 			}
+		}
+		if last {
+			m.emitCaughtUp(ss, source)
 		}
 	}
 
@@ -1479,9 +1231,6 @@ func (m *Manager) emitEvent(sessionID string, event LogStreamEvent) {
 				"session_id", sessionID, "event_type", fmt.Sprint(event.Type))
 		}
 		return
-	}
-	if ss.replayMarkers {
-		event.Seq = ss.nextSeq()
 	}
 	if sink != nil {
 		sink.OnEvent(sessionID, event)

@@ -103,17 +103,16 @@ func (c *capture) Unmarshal(data mem.BufferSlice, v any) error {
 	return c.codec.Unmarshal(data, v)
 }
 
-// replayingPlugin is a current plugin whose handler declares Replay.
-func replayingPlugin(t *testing.T) *Manager {
+// backlogPlugin is a current plugin whose handler declares Backlog: two lines that
+// were already there, then the stream ends.
+func backlogPlugin(t *testing.T) *Manager {
 	t.Helper()
 	manager := NewManager(ManagerConfig{Handlers: map[string]Handler{"test/pod": {
 		Plugin: "test", Resource: "pod",
-		Replay: func(*types.PluginContext, LogStreamRequest) (io.ReadCloser, error) {
+		Backlog: func(*types.PluginContext, LogStreamRequest) (int64, error) { return 2, nil },
+		Handler: func(*types.PluginContext, LogStreamRequest) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader(
 				"2026-01-02T03:04:05.000000001Z first\n2026-01-02T03:04:06.000000002Z second\n")), nil
-		},
-		Handler: func(*types.PluginContext, LogStreamRequest) (io.ReadCloser, error) {
-			return io.NopCloser(strings.NewReader("")), nil
 		},
 	}}})
 	t.Cleanup(manager.Close)
@@ -146,7 +145,7 @@ func TestCurrentPluginToOldReader(t *testing.T) {
 	for _, asked := range []bool{false, true} {
 		name := map[bool]string{false: "reader did not ask", true: "reader asked"}[asked]
 		t.Run(name, func(t *testing.T) {
-			manager := replayingPlugin(t)
+			manager := backlogPlugin(t)
 			connection := logsConnection(t, func(s *grpc.Server) { RegisterLogPluginServer(s, &PluginServer{Impl: manager, log: logging.NewNop()}) })
 			client := logspb.NewLogPluginClient(connection)
 
@@ -199,7 +198,7 @@ func TestCurrentPluginToOldReader(t *testing.T) {
 						t.Errorf("a reader that did not ask received new fields on a line: %x", line.GetUnknown())
 					}
 					if asked && len(line.GetUnknown()) == 0 {
-						t.Error("the asked-for numbering did not reach the stream")
+						t.Error("the replay flag did not reach the stream")
 					}
 				case field.Name() == "event":
 					sawEvents++
@@ -339,8 +338,8 @@ func TestOldPluginToCurrentReader(t *testing.T) {
 		t.Fatalf("lines = %+v", lines)
 	}
 	for _, l := range lines {
-		if l.Seq != 0 || l.Replay {
-			t.Errorf("an old plugin's line reads as numbered: %+v", l)
+		if l.Replay {
+			t.Errorf("an old plugin's line reads as backlog: %+v", l)
 		}
 	}
 	for _, kind := range kinds {
@@ -352,7 +351,7 @@ func TestOldPluginToCurrentReader(t *testing.T) {
 
 // A newer plugin's session reports acceptance through the same path.
 func TestCurrentPluginAcceptanceReachesTheReader(t *testing.T) {
-	manager := replayingPlugin(t)
+	manager := backlogPlugin(t)
 	connection := logsConnection(t, func(s *grpc.Server) { RegisterLogPluginServer(s, &PluginServer{Impl: manager, log: logging.NewNop()}) })
 	client := &PluginClient{client: logspb.NewLogPluginClient(connection), log: logging.NewNop()}
 	pc := types.NewPluginContext(t.Context(), "logs", nil, nil, nil)

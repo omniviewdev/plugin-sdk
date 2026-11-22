@@ -24,14 +24,15 @@ enum LogStreamEventType {
     LOG_STREAM_EVENT_RECONNECTED = 4;
     LOG_STREAM_EVENT_STREAM_ENDED = 5;
     LOG_STREAM_EVENT_SESSION_READY = 6;
-    // One source delivered its replay (the backlog it held when it opened) and
-    // everything it sends next is live. source_id names the source; after_seq is
-    // the seq of its last replay line (0 when the replay held no line). Sent only
-    // to a session that asked for it with params["omniview.log.replay-markers"] = "1"
-    // and whose plugin accepted (the create reply carries
-    // params["omniview.log.replay-markers.accepted"] = "1"). A reader that does not
-    // know this value decodes it as SOURCE_ADDED, so it must never be sent to a
-    // reader that did not ask.
+    // One source's backlog, the lines it already held when its stream opened, has been
+    // delivered: the lines it sends after this event, until its stream opens again, are
+    // live. source_id names the source. Sent at most once for each opening of the source's
+    // stream (a source that reopens delivers its tail again and is marked again), and only
+    // to a session that asked for it with params["omniview.log.replay-markers"] = "1" and
+    // whose plugin accepted (the create reply carries
+    // params["omniview.log.replay-markers.accepted"] = "1"). A reader built before this
+    // value existed decodes it as SOURCE_ADDED, so a reader must not ask unless its own
+    // SDK knows it.
     LOG_STREAM_EVENT_SOURCE_CAUGHT_UP = 7;
 }
 
@@ -70,14 +71,12 @@ message LogLine {
     bytes content = 5;
     LogLineOrigin origin = 6;
     LogLevel level = 7;
-    // Position in the session's sequence (1-based); 0 means not numbered. Set only
-    // on a session whose plugin accepted replay markers. Lines and events of a
-    // session draw from one counter: a number is used once, and the output of one
-    // source is in increasing order (sources interleave).
-    uint64 seq = 8;
-    // True for a line of a source's replay: the backlog the source held when it
-    // (re)opened, up to the source's next SOURCE_CAUGHT_UP event. Set only on a
-    // session whose plugin accepted replay markers.
+    // Field 8 is unused: an unreleased first draft of replay markers carried a session
+    // sequence there, and nothing may mean anything else by that number.
+    reserved 8;
+    // True for a line of a source's backlog: one of the first lines of its stream, the
+    // ones the source already held when the stream opened, up to the source's next
+    // SOURCE_CAUGHT_UP event. Set only on a session whose plugin accepted replay markers.
     bool replay = 9;
 }
 
@@ -91,11 +90,6 @@ message LogStreamEvent {
     string source_id = 2;
     string message = 3;
     google.protobuf.Timestamp timestamp = 4;
-    // Position in the session's sequence; see LogLine.seq.
-    uint64 seq = 5;
-    // SOURCE_CAUGHT_UP only: the seq of the source's last replay line before this
-    // event, 0 when its replay held no line.
-    uint64 after_seq = 6;
 }
 
 message LogSessionOptions {

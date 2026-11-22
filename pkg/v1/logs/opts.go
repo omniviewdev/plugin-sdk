@@ -67,36 +67,50 @@ type Handler struct {
 	Plugin        string              `json:"plugin"`
 	Resource      string              `json:"resource"`
 	TargetBuilder ActionTargetBuilder `json:"target_builder"`
-	// Handler opens the stream of a single source. Without Replay it is the whole
-	// stream; with Replay it is the live follow that comes after the backlog.
+	// Handler opens the one stream of a source, its backlog and its live lines together.
 	Handler LogHandlerFunc `json:"-"`
-	// Replay, when set, splits every source's stream into a finite backlog and a
-	// live follow, so the SDK can tell readers exactly where the backlog ends
-	// instead of leaving them to guess from timing (see [ParamReplayMarkers]).
+	// Backlog, when set, lets a reader that asks for replay markers (see
+	// [ParamReplayMarkers]) know exactly where the source's backlog ends instead of
+	// guessing from timing. It is optional: a handler without it works as it always
+	// did, and its sessions never get markers.
 	//
-	// Replay opens the backlog: the lines the source already holds, oldest first,
-	// bounded by the request's TailLines, SinceSeconds, SinceTime and LimitBytes
-	// (or, when Resume is set, only the lines at or after SinceTime). The request always
-	// has Follow false and Replay must honour that: return io.EOF right after the
-	// last line the source holds and never wait for new ones. The SDK sends the
-	// [StreamEventSourceCaughtUp] event when the stream ends, then calls Handler
-	// with Follow and Resume true to follow what comes next. A session without
-	// Follow runs Replay alone, and so does a handler that sets no Handler: a
-	// finite source, whose sessions end with the backlog.
+	// Handler is unchanged. It opens the same single stream, with the same request,
+	// whether or not Backlog is set and whether or not the reader asked: the SDK
+	// never splits it or filters it. (For a session that asked it opens the stream
+	// after Backlog returns, so the open is later by that call.) Backlog only says how
+	// many of the first lines of that stream are the lines the source already held
+	// when the stream opened. The SDK flags those lines ([LogLine.Replay]) and sends
+	// [StreamEventSourceCaughtUp] after the last one. It changes what the SDK says
+	// about the lines, never which lines it delivers.
 	//
-	// Setting Replay is the whole declaration: the SDK numbers and flags the lines
-	// and sends the marker itself, so there is nothing to forget. A Replay stream
-	// that neither returns a line nor ends for the manager's ReplayIdleTimeout
-	// fails its source, because a backlog that never ends would leave every reader
-	// waiting for a marker that cannot come. The timeout covers the stream, not the
-	// call that opens it: bound that call with the context it is given.
+	// The SDK calls Backlog only for a session whose reader asked for markers, before
+	// each attempt to open a source and with the request Handler is about to get. A
+	// reopened source is an attempt too: its tail is delivered again and counted
+	// again. A request with Follow false is not asked: that stream ends, and its end is
+	// the boundary. Return how many lines, each ended by a newline, at the head of the
+	// stream Handler will open for that request were already in the source; zero for
+	// none. A source that can measure with a bounded read does so (Kubernetes: a
+	// follow=false read with the same tail, since and limit bounds, counting its
+	// complete lines, and nothing else: it needs none of the lines); a source that
+	// knows its boundary natively returns it.
 	//
-	// Handler, as the follow, continues as [LogStreamRequest.Resume] says: at or
-	// after SinceTime, or from the start of the caller's window when nothing was
-	// read. It never replays the backlog, and it need not drop what the SDK already
-	// read: lines it returns again, such as the boundary second of a source whose
-	// time filter is coarser than its timestamps, are dropped by the SDK.
-	Replay        LogHandlerFunc    `json:"-"`
+	// A count says how many lines come first, and the SDK flags that many, whichever
+	// lines they turn out to be. If the source changed between the count and the open,
+	// they can differ from the lines counted (the window of a tail-limited stream moves
+	// forward with the newest lines), but their number is the number counted. A stream
+	// that opens with more lines than counted (lines arrived in between and nothing
+	// limits the tail) has the extra ones live. One that opens with fewer (the source
+	// lost some in between, as a log rotation does) and then waits has its next live
+	// lines flagged as backlog until the count is reached, and the marker follows the
+	// counted line: a source that stays quiet holds it back. None of this changes which
+	// lines are delivered. A count that cannot be given is an error: the attempt fails as a
+	// failed open does (retried, then reported) and no marker is sent for it. Like
+	// Handler, Backlog is not bounded by the SDK: honour the context it is given.
+	//
+	// A session for a group resource (a key with a [SourceResolver]) streams its
+	// resolved sources through the registered handler with the smallest key, so that
+	// handler's Backlog decides whether those sessions get markers.
+	Backlog       BacklogFunc       `json:"-"`
 	SourceBuilder SourceBuilderFunc `json:"-"`
 }
 
@@ -125,6 +139,10 @@ func (h Handler) ID() string {
 
 // LogHandlerFunc opens a log stream for a single source, returning an [io.ReadCloser].
 type LogHandlerFunc func(ctx *types.PluginContext, req LogStreamRequest) (io.ReadCloser, error)
+
+// BacklogFunc reports how many of the first lines of the stream a handler opens for
+// req are lines the source already held; see [Handler.Backlog].
+type BacklogFunc func(ctx *types.PluginContext, req LogStreamRequest) (int64, error)
 
 // SourceResolver resolves a "group" resource into individual log sources.
 type SourceResolver func(

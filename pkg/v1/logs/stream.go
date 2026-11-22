@@ -119,12 +119,11 @@ type LogLine struct {
 	Content   string            `json:"content"`
 	Origin    LogLineOrigin     `json:"origin"`
 	Level     LogLevel          `json:"level"`
-	// Seq is the line's position in the session sequence, 1-based; zero means the
-	// session does not number its output. See [ParamReplayMarkers].
-	Seq uint64 `json:"seq,omitempty"`
-	// Replay marks a line of the source's replayed backlog: everything read before
-	// the source's [StreamEventSourceCaughtUp] event. Set only on sessions where
-	// [LogSession.ReplayMarkers] is true.
+	// Replay is true for a line of a source's backlog: one of the first lines of its
+	// stream, the ones the source already held when the stream opened, up to the
+	// source's next [StreamEventSourceCaughtUp] event. It is set only on a session
+	// whose plugin accepted replay markers ([LogSession.ReplayMarkers]); on any other
+	// it is false for every line and says nothing about whether the line is backlog.
 	Replay bool `json:"replay,omitempty"`
 }
 
@@ -138,7 +137,6 @@ func (l *LogLine) ToProto() *logspb.LogLine {
 		Content:   []byte(l.Content),
 		Origin:    l.Origin.ToProto(),
 		Level:     l.Level.ToProto(),
-		Seq:       l.Seq,
 		Replay:    l.Replay,
 	}
 }
@@ -157,7 +155,6 @@ func LogLineFromProto(p *logspb.LogLine) LogLine {
 		Content:   string(p.GetContent()),
 		Origin:    LogLineOriginFromProto(p.GetOrigin()),
 		Level:     LogLevelFromProto(p.GetLevel()),
-		Seq:       p.GetSeq(),
 		Replay:    p.GetReplay(),
 	}
 }
@@ -218,10 +215,12 @@ const (
 	StreamEventStreamEnded
 	// StreamEventSessionReady announces completion of session source setup.
 	StreamEventSessionReady
-	// StreamEventSourceCaughtUp announces that one source delivered its replay and
-	// everything it sends next is live; see [Handler.Replay]. It is sent only to a
-	// session that asked for it with [ParamReplayMarkers] and whose plugin accepted
-	// ([LogSession.ReplayMarkers]).
+	// StreamEventSourceCaughtUp announces that one source's backlog has been
+	// delivered: the lines it sends after this event, until it opens again, are live.
+	// It is sent only to a session that asked for it with [ParamReplayMarkers] and
+	// whose plugin accepted ([LogSession.ReplayMarkers]), at most once for each
+	// opening of the source's stream: a source that reopens delivers its tail again
+	// and is marked again.
 	StreamEventSourceCaughtUp
 )
 
@@ -256,7 +255,7 @@ func (t LogStreamEventType) String() string {
 	}
 }
 
-// ToProto encodes the event kind, defaulting values with no wire counterpart to source-added.
+// ToProto encodes the event kind; a value with no wire counterpart encodes as source-added.
 func (t LogStreamEventType) ToProto() logspb.LogStreamEventType {
 	switch t {
 	case StreamEventSourceAdded:
@@ -311,12 +310,6 @@ type LogStreamEvent struct {
 	SourceID  string             `json:"source_id"`
 	Message   string             `json:"message"`
 	Timestamp time.Time          `json:"timestamp"`
-	// Seq is the event's position in the session sequence; see [LogLine.Seq].
-	Seq uint64 `json:"seq,omitempty"`
-	// AfterSeq, on a [StreamEventSourceCaughtUp] event, is the Seq of the source's
-	// last replay line before the event; zero when the replay held no line. A
-	// missing JSON member reads as zero.
-	AfterSeq uint64 `json:"after_seq,omitempty"`
 }
 
 // ToProto encodes the event details and timestamp.
@@ -326,8 +319,6 @@ func (e *LogStreamEvent) ToProto() *logspb.LogStreamEvent {
 		SourceId:  e.SourceID,
 		Message:   e.Message,
 		Timestamp: timestamppb.New(e.Timestamp),
-		Seq:       e.Seq,
-		AfterSeq:  e.AfterSeq,
 	}
 }
 
@@ -342,8 +333,6 @@ func LogStreamEventFromProto(p *logspb.LogStreamEvent) LogStreamEvent {
 		SourceID:  p.GetSourceId(),
 		Message:   p.GetMessage(),
 		Timestamp: ts,
-		Seq:       p.GetSeq(),
-		AfterSeq:  p.GetAfterSeq(),
 	}
 }
 
@@ -415,11 +404,6 @@ type StreamOutput struct {
 }
 
 // LogStreamRequest is the generic request to open a log stream for one source.
-//
-// A handler that declares [Handler.Replay] gets two kinds of request per source:
-// Replay is asked for the backlog (Follow false) and Handler, once the backlog
-// ended, for what comes after it (Follow true). Resume tells them apart from the
-// caller's own first request.
 type LogStreamRequest struct {
 	SourceID          string
 	Labels            map[string]string
@@ -435,30 +419,4 @@ type LogStreamRequest struct {
 	SinceTime         *time.Time
 	LimitBytes        int64
 	Params            map[string]string
-	// Resume is true when the SDK continues a source after lines it already read:
-	// the follow that comes after a replay, and a replay or follow reopened after a
-	// failure. TailLines and LimitBytes are then zero and IncludePrevious is false.
-	//
-	// SinceTime, when set, says where to continue (SinceSeconds is then zero): return
-	// the lines stamped at or after it. Returning more is fine, whether because the
-	// source's own time filter is coarser than its timestamps (Kubernetes: one
-	// second) or because it has none: the SDK drops the lines it already read, those
-	// stamped before SinceTime and the first few stamped exactly at it (sources stamp
-	// many lines alike), so a handler never has to tell its own lines apart. SinceTime
-	// is the latest timestamp read, in the source's own time domain. When the lines
-	// read carried none, it is the instant the replay was requested, read from the
-	// SDK's clock: the follow can then repeat a line the replay read, which has no
-	// timestamp to tell it apart, and it misses none provided the source's clock is
-	// not behind the SDK's (a source's time filter judges a line by its own clock, so
-	// a line produced just after the replay can carry a timestamp before the
-	// instant). A handler for a remote source can subtract the skew it tolerates from
-	// SinceTime, and a source that holds a position of its own (an offset, a sequence
-	// number) should hand that over itself.
-	//
-	// When SinceTime is nil, or is only the caller's own, nothing was read: continue
-	// from the start of the caller's window (its SinceSeconds still applies; without
-	// one, from the start of the source). Lines read without timestamps cannot be
-	// resumed after a failure: the SDK sends the caller's first-open request again
-	// and the tail comes twice.
-	Resume bool
 }

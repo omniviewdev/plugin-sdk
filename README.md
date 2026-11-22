@@ -26,30 +26,53 @@ until EOF before returning the reader.
 
 ### Replay markers
 
-A reader that wants to know where a source's backlog ends, instead of guessing from
+A reader that wants to know where each source's backlog ends, instead of guessing from
 timing, sets `logs.ParamReplayMarkers` to `logs.ReplayMarkersOn` in the session's
-`Params`. The plugin answers in the create reply: `LogSession.ReplayMarkers` is true
-when it accepted, and false when no marker will ever come (the reader did not ask, an
-SDK that predates markers, or a handler without `Replay`), so "never" is told from
-"not yet" without a timeout. On an accepted session the SDK numbers every line and
-event (`LogLine.Seq`, `LogStreamEvent.Seq`), flags the lines of each source's backlog
-(`LogLine.Replay`) and sends `StreamEventSourceCaughtUp` when a source's backlog ends;
-its `AfterSeq` is the `Seq` of the source's last backlog line, zero for an empty one.
-A session that did not ask gets the stream it always got, and an older reader never
-sees the new event.
+`Params` (names that start with `omniview.` are reserved to the SDK). The create reply
+says whether the plugin accepted: `LogSession.ReplayMarkers` is true when it did and
+false when no marker will ever come (the reader did not ask, the plugin's SDK predates
+markers, or its handler does not declare `Backlog`), so "never" is told from "not yet"
+without a timeout. It is decided when the session is created and does not change. A
+reader asks only when the `plugin-sdk` its own Go core is built on includes markers: a
+reader built before them that asks anyway decodes the marker as `SourceAdded`, an event
+for a source joining.
 
-A handler takes part by setting `logs.Handler.Replay`: a bounded read of the lines the
-source already holds, ending in `io.EOF`, honouring the caller's tail, since and limit
-bounds. `Handler.Handler` then becomes the live follow, which continues as
-`LogStreamRequest.Resume` says: at or after `SinceTime` (the SDK drops what it already
-read, even lines sharing a timestamp), or from the start of the caller's window when
-the replay read nothing. Setting `Replay` is the whole
-declaration: the SDK flags the lines and sends the marker, and a `Replay` stream that
-neither returns a line nor ends for `ManagerConfig.ReplayIdleTimeout` fails its source
-with a `StreamError`, because a backlog that never ends would leave readers waiting for
-a marker that cannot come. After a read error the source reopens with a bounded read of
-the lines since the last timestamp read (the gap), flagged and marked again, then
-follows. `logtest.ReplaySource` is a source with a history for testing a handler.
+A handler takes part by setting `logs.Handler.Backlog` beside `Handler`. `Handler` is
+unchanged: it opens one stream per source, its backlog and its live lines together,
+with the request it always got, and the SDK never splits or filters that stream.
+`Backlog(ctx, req)` returns how many lines at the head of that stream are lines the
+source already held. For a session that asked, the SDK calls it just before it opens a
+source's stream (and again before each reopening), so the open is later by that call;
+it flags that many lines `LogLine.Replay`, and sends `StreamEventSourceCaughtUp` for the
+source after the last of them, or as soon as the stream opens when the count is zero.
+With `Follow` false the stream ends: `Backlog` is not called, every line is flagged and
+the marker comes when the stream ends. A session that did not ask gets the stream it
+always got, and `Backlog` is never called.
+
+What a reader may rely on, and what it may not:
+
+- Which lines are delivered, and in what order, is the handler's stream's, as before. The
+  flag and the marker say something about the lines; they never add, remove, reorder or
+  deduplicate any. Within one opening of a source, flagged lines come first, then the
+  marker, then lines that are not flagged.
+- The count is a number of lines, not an identity: the SDK flags the first lines it
+  reads. If the source changed between the count and the open, the flagged lines can
+  differ from the counted ones. A stream that opens with more lines than counted has
+  the extra ones unflagged. One that opens with fewer (a log rotation in between) has
+  its next live lines flagged until the count is reached, and the marker waits for the
+  last of them, so a quiet source holds it back.
+- A source that is reopened after a read error delivers its tail again, flagged, and
+  gets another marker, as the repeated tail was before; a source that is disabled and
+  enabled again does too. A source that is cancelled, removed or closed, or whose
+  stream ends before the counted lines, gets no marker for that opening.
+- A count that cannot be given (`Backlog` returns an error or a negative number) fails
+  the attempt as a failed open does: it is retried with the reconnect backoff and
+  reported with `StreamError` when the attempts run out.
+- The SDK adds no timer. A `Handler` or `Backlog` call that never returns holds its
+  source. A source queued behind `MaxConcurrentStreamsPerSession` sends no event and no
+  line until a slot frees. A source that stays quiet holds back a marker that is
+  waiting for lines. `LogSession.ReplayMarkers` says whether markers can come, not
+  when; a reader that needs a bound sets its own.
 
 ## Settings validation
 
