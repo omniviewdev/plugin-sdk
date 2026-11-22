@@ -27,14 +27,20 @@ func SetClock(m *Manager, c timeutil.Clock) {
 	m.clock = c
 }
 
-// WaitDone blocks until all session goroutines have completed.
-func WaitDone(m *Manager) { m.wg.Wait() }
-
 // Sessions returns a defensive copy of the internal sessions map for test inspection.
 func Sessions(m *Manager) map[string]*sessionState {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return maps.Clone(m.sessions)
+}
+
+// ManagerClosed reports whether the Manager has begun to close: it admits no more sessions. It
+// is read under the lock Close sets it under, so a test that sees true also sees every
+// session Close cancelled with it.
+func ManagerClosed(m *Manager) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.closed
 }
 
 // SessionDone returns the done channel for a session state.

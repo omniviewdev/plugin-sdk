@@ -61,6 +61,18 @@ func grpcCodeForError(err error) codes.Code {
 	return codes.Internal
 }
 
+// createSessionError is the status of a failed CreateSession. A failure the provider
+// classified (a manager that has been closed refuses a start with CONNECTION_ERROR) keeps its
+// classification across the transport, as every failure of CreateResourceSession does; any
+// other failure is reported as it always was.
+func createSessionError(err error) error {
+	var classified *resourcev2.ResourceOperationError
+	if errors.As(err, &classified) {
+		return resourceplugin.ResourceRPCError(err)
+	}
+	return status.Errorf(grpcCodeForError(err), "%v", err)
+}
+
 // GetSupportedResources encodes supported handler metadata without callbacks.
 func (s *PluginServer) GetSupportedResources(
 	ctx context.Context,
@@ -141,7 +153,7 @@ func (s *PluginServer) CreateSession(
 		*opts,
 	)
 	if err != nil {
-		return nil, status.Errorf(grpcCodeForError(err), "%v", err)
+		return nil, createSessionError(err)
 	}
 
 	return &execpb.CreateSessionResponse{

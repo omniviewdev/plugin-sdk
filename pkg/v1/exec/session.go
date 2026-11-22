@@ -82,6 +82,13 @@ type sessionState struct {
 
 	ttyResize bool // if true, manager calls terminal.Resize(); else sends to resize chan
 	nextSeq   uint64
+
+	// emitMu orders the session's output: data and signals are handed to the sink under it,
+	// and ended is set under it once the Close signal is out. The Close signal is the last
+	// thing a session sends: data still on its way when the session ends is delivered first,
+	// and data that comes after the signal is dropped (it stays in the buffer).
+	emitMu sync.Mutex
+	ended  bool
 }
 
 // snapshot returns a deep copy of the session for safe external reads.
@@ -126,6 +133,13 @@ func (ss *sessionState) waitDone() <-chan struct{} {
 //
 // Validation and normalization do not acquire a connection or copy mutable
 // containers. Callers must not mutate options concurrently with SDK use.
+//
+// ID must be unique for every session, a restart included (use a UUID). The manager refuses
+// the ID of a live session with [ErrSessionExists], but it frees an ID when its session ends,
+// which is before that session's Close signal is sent: a session started with the ID in
+// between is admitted, and the old session's Close signal then arrives for an ID that is live
+// again. Whoever keys state on the ID (a host that forgets a session on its Close signal)
+// would forget the new one.
 //
 //nolint:recvcheck // Preserve value-method intent queries; JSON decoding mutates through a pointer receiver.
 type SessionOptions struct {

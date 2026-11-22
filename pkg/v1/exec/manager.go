@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/omniviewdev/plugin-sdk/internal/producers"
 	logging "github.com/omniviewdev/plugin-sdk/log"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -64,9 +65,16 @@ type Manager struct {
 
 	mu       sync.RWMutex
 	sessions map[string]*sessionState
+	closed   bool              // set by Close: no session is admitted from then on
 	out      chan StreamOutput // nil when Sink provided via config
 	resize   chan StreamResize
-	wg       sync.WaitGroup // tracks per-session closer goroutines
+
+	// admitted counts the sessions that were admitted and have not finished: one producer
+	// per session, started by registerSession under mu with the check of closed, and done
+	// when the session's goroutines have all returned. Close sets closed and cancels the
+	// sessions under mu before it waits, so it cannot miss a session, and none can join once
+	// it has begun.
+	admitted producers.Group
 }
 
 var _ Provider = (*Manager)(nil)
@@ -108,14 +116,26 @@ func (m *Manager) BindConnectionContextProvider(provider resourcev2.ConnectionCo
 	m.connectionProvider = provider
 }
 
-// Close cancels all active sessions and waits for their goroutines to finish.
+// Close refuses every later session start, cancels the active sessions and waits for their
+// goroutines to finish. A start that loses the race with Close, and one that comes after
+// it, is refused with a CONNECTION_ERROR (see [resourcev2.ErrorCode]): never admitted, and
+// never left running. Close may be called more than once, and concurrently; each call
+// returns once the sessions are gone.
 func (m *Manager) Close() {
 	m.mu.Lock()
+	m.closed = true
 	for _, ss := range m.sessions {
 		ss.cancel()
 	}
 	m.mu.Unlock()
-	m.wg.Wait()
+	m.admitted.Wait()
+}
+
+// managerClosedError is what a start gets from a manager that has been closed. The
+// classification crosses the plugin boundary; the sentence does not, as for every other
+// error the plugin servers carry (see ResourceRPCError): the host composes its own.
+func managerClosedError() error {
+	return resourcev2.NewError("CONNECTION_ERROR", "Exec manager is closed.")
 }
 
 // GetSupportedResources returns registered terminal handlers.
@@ -250,7 +270,8 @@ func (c *resourceAdmissionContext) Err() error {
 	return c.Context.Err()
 }
 
-// CreateSession creates a new terminal session with a given command.
+// CreateSession creates a new terminal session with a given command. Once Close has begun
+// it is refused with a CONNECTION_ERROR (see [resourcev2.ErrorCode]).
 func (m *Manager) CreateSession(
 	pluginctx *types.PluginContext,
 	opts SessionOptions,
@@ -265,7 +286,8 @@ func (m *Manager) CreateSession(
 }
 
 // CreateResourceSession admits resource inputs before invoking the shared
-// terminal engine. The body is utility input, never an authorization grant.
+// terminal engine. The body is utility input, never an authorization grant. Once Close has
+// begun it is refused with a CONNECTION_ERROR (see [resourcev2.ErrorCode]).
 func (m *Manager) CreateResourceSession(pluginctx *types.PluginContext, opts SessionOptions) (*Session, error) {
 	normalized, err := NormalizeResourceSessionOptions(opts)
 	if err != nil {
@@ -390,24 +412,31 @@ func (m *Manager) createSession(
 	ss.wg.Add(sessionWorkerCount)
 	go m.handleStream(ss)
 	go m.handleSignals(ss)
-	m.wg.Go(func() {
+	go func() {
+		defer m.admitted.Done()
 		ss.wg.Wait()
 		close(ss.done)
-	})
+	}()
 
 	snap := ss.snapshot()
 	return &snap, nil
 }
 
 func (m *Manager) sessionHandler(opts SessionOptions) (Handler, error) {
+	// Refused here, before any terminal or handler work, once the manager is closed;
+	// registerSession decides for good.
+	m.mu.RLock()
+	closed := m.closed
+	_, exists := m.sessions[opts.ID]
+	m.mu.RUnlock()
+	if closed {
+		return Handler{}, managerClosedError()
+	}
 	handlerKey := opts.ResourcePlugin + "/" + opts.ResourceKey
 	handler, ok := m.handlers[handlerKey]
 	if !ok || handler.TTYHandler == nil {
 		return Handler{}, NewHandlerNotFoundError(handlerKey, slices.Collect(maps.Keys(m.handlers)))
 	}
-	m.mu.RLock()
-	_, exists := m.sessions[opts.ID]
-	m.mu.RUnlock()
 	if exists {
 		return Handler{}, NewSessionExistsError(opts.ID)
 	}
@@ -448,6 +477,9 @@ func (m *Manager) sessionContext(
 	return pctx, cancel, admission, stopAdmission, nil
 }
 
+// registerSession admits the session: under mu it checks that the manager is open and the ID
+// free, and counts the session, so that Close, which closes the manager and cancels the
+// sessions under mu, waits for this one or refuses it, and never misses it.
 func (m *Manager) registerSession(
 	baseCtx context.Context,
 	ss *sessionState,
@@ -457,6 +489,9 @@ func (m *Manager) registerSession(
 ) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		return managerClosedError()
+	}
 	if _, exists := m.sessions[ss.session.ID]; exists {
 		return NewSessionExistsError(ss.session.ID)
 	}
@@ -468,6 +503,11 @@ func (m *Manager) registerSession(
 			return context.Canceled
 		}
 		admission.accepted.Store(true)
+	}
+	if !m.admitted.Start(1) {
+		// Not reachable: the group ends only after Close has set closed, which is checked
+		// above, under the lock that admits.
+		return managerClosedError()
 	}
 	m.sessions[ss.session.ID] = ss
 	return nil
@@ -528,7 +568,7 @@ func (m *Manager) handleStream(ss *sessionState) {
 			ss.nextSeq++
 			ss.mu.Unlock()
 			if attached {
-				m.emitOutput(StreamOutput{
+				m.emitData(ss, StreamOutput{
 					SessionID: ss.session.ID,
 					Target:    StreamTargetStdOut,
 					Data:      data,
@@ -555,7 +595,11 @@ func (m *Manager) cleanupSession(ss *sessionState, handlerErr error) {
 	// Cancel the context to unblock handleStream if it hasn't returned yet.
 	ss.cancel()
 
-	// Emit structured error if the handler sent one.
+	// Say goodbye under the lock that orders the session's output: data that is still being
+	// delivered finishes first, data that comes after is dropped. The structured error, if the
+	// handler sent one, comes before the Close signal, which is the last thing the session sends.
+	ss.emitMu.Lock()
+	defer ss.emitMu.Unlock()
 	if handlerErr != nil {
 		var streamErr *StreamError
 		var execErr *ExecError
@@ -591,6 +635,19 @@ func (m *Manager) cleanupSession(ss *sessionState, handlerErr error) {
 		Data:      []byte("\nSession closed\n"),
 		Signal:    StreamSignalClose,
 	})
+	ss.ended = true
+}
+
+// emitData delivers a chunk of the session's output unless the session has said goodbye: the
+// Close signal is the last thing a session sends, so a chunk still on its way when the session
+// ends is delivered before it, and one that comes after it is dropped.
+func (m *Manager) emitData(ss *sessionState, output StreamOutput) {
+	ss.emitMu.Lock()
+	defer ss.emitMu.Unlock()
+	if ss.ended {
+		return
+	}
+	m.emitOutput(output)
 }
 
 func (m *Manager) writeToSession(ss *sessionState, data []byte) error {

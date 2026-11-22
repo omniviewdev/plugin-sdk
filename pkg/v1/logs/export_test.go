@@ -16,9 +16,12 @@ func SetClock(m *Manager, c timeutil.Clock) {
 	m.clock = c
 }
 
-// WaitDone blocks until all session goroutines have completed.
-func WaitDone(m *Manager) {
-	m.wg.Wait()
+// ManagerClosed reports whether the Manager has stopped taking sessions: Close or Wait has
+// begun. It is read under the lock they set it under.
+func ManagerClosed(m *Manager) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.closed
 }
 
 // ExtractTimestampForBench exposes extractTimestamp for benchmarking.
