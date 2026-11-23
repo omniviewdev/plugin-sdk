@@ -114,6 +114,7 @@ var reasonClasses = map[ErrorReason][]ErrorClass{
 	ErrorReasonSessionUnknown:    {ErrorClassNotFound},
 	ErrorReasonConsentRequired:   {ErrorClassInvalidRequest},
 	ErrorReasonInputBacklog:      {ErrorClassLimit},
+	ErrorReasonTargetWedged:      {ErrorClassUnavailable},
 }
 
 // validPair reports whether class and reason may be sent together.

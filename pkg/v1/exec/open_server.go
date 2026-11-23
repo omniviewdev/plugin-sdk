@@ -56,7 +56,8 @@ const (
 	ignoredDetach     = "detach"
 )
 
-// Open serves one interactive session on one stream.
+// Open serves one interactive session on one stream. The handler is in flight, for Plugin.Shutdown, from before it starts
+// the session until it returns: its last act is to send Ended.
 func (s *serverV2) Open(stream execv2.Exec_OpenServer) error {
 	ctx := stream.Context()
 	first, err := s.receiveFirst(ctx, stream)
@@ -78,6 +79,7 @@ func (s *serverV2) Open(stream execv2.Exec_OpenServer) error {
 	if err != nil {
 		return resourceplugin.ResourceRPCError(err)
 	}
+	defer s.inflight.begin()()
 	cmd, err := s.startSession(ctx, open, target)
 	if err != nil {
 		return s.startRefusal(ctx, "Open", err)

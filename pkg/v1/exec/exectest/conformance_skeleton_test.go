@@ -56,7 +56,6 @@ func TestEngineCasesAreNumberedFromOneWithoutGaps(t *testing.T) {
 // feature that step makes the build list, and says what the review found missing, so that it cannot be reworded into
 // something that checks less.
 func TestTheEngineCasesTheReviewAddedAreListedWithTheirSteps(t *testing.T) {
-	run := execv2.Feature_FEATURE_RUN
 	for _, want := range []struct {
 		number   int
 		step     string
@@ -69,7 +68,7 @@ func TestTheEngineCasesTheReviewAddedAreListedWithTheirSteps(t *testing.T) {
 		{26, "X3a (the wire body)", execv2.Feature_FEATURE_UNSPECIFIED, []string{
 			"different ExitReport and HostRestart in Opened", "Choice.capabilities", "not in Started", "widening is clamped",
 		}},
-		{27, "X2b", run, []string{
+		{27, "", execv2.Feature_FEATURE_UNSPECIFIED, []string{
 			"OUTCOME_FAILED", "partial output", "completeness", "start_observed", "remote_may_survive",
 			"refusal before the hand-off is a status", "never retries a failed or lost end",
 		}},
@@ -231,5 +230,95 @@ func TestListingTheEngineCasesAsksTheBuildOncePerCase(t *testing.T) {
 		if c.number > 0 && !strings.Contains(asked[i], fmt.Sprintf("/case_%02d:", c.number)) {
 			t.Errorf("the subtest of case %d is %q, want it named by its number", c.number, asked[i])
 		}
+	}
+}
+
+// The rows of the bounded run are written. Cases 15 and 27 and the pairs P1 and P3 have nothing left, so they have no step and no
+// feature that a build must not list before they are written; the Run part of cases 13 and 16 is written, and the step they keep is
+// the one that writes their Open part. Each has a wire body, and it runs only where the build lists what it drives: FEATURE_RUN, and
+// FEATURE_SESSION as well for the pair that runs a command both ways.
+func TestTheRowsOfTheBoundedRunAreWrittenAndDriveTheFeaturesTheyNeed(t *testing.T) {
+	session, run := execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN
+	byName := func(name string) engineCase {
+		for _, c := range engineCases() {
+			if c.name == name {
+				return c
+			}
+		}
+		t.Fatalf("the skeleton has no case %q", name)
+		return engineCase{}
+	}
+	for _, want := range []struct {
+		c     engineCase
+		step  string
+		needs []execv2.Feature
+	}{
+		{caseNumbered(t, 13), "X3a (the Open wire body)", []execv2.Feature{run}},
+		{caseNumbered(t, 15), "", []execv2.Feature{run}},
+		{caseNumbered(t, 16), "X3a (the Open wire body)", []execv2.Feature{run}},
+		{caseNumbered(t, 27), "", []execv2.Feature{run}},
+		{byName(pairRunOpenName), "", []execv2.Feature{session, run}},
+		{byName(pairEngineWireName), "", []execv2.Feature{run}},
+	} {
+		c := want.c
+		if c.wire == nil {
+			t.Errorf("case %d (%q) has no wire body", c.number, c.name)
+		}
+		if c.step != want.step || c.requires != execv2.Feature_FEATURE_UNSPECIFIED {
+			t.Errorf("case %d (%q) is filled by step %q and makes the build list %s, want step %q and no feature", c.number, c.name, c.step, c.requires, want.step)
+		}
+		if got := c.wireFeatures(); !slices.Equal(got, want.needs) {
+			t.Errorf("case %d (%q) needs %v for its wire body, want %v", c.number, c.name, got, want.needs)
+		}
+	}
+	// The cases of Open still need only FEATURE_SESSION.
+	for _, number := range []int{1, 2, 3, 4, 5, 18} {
+		if got := caseNumbered(t, number).wireFeatures(); !slices.Equal(got, []execv2.Feature{session}) {
+			t.Errorf("case %d needs %v for its wire body, want %v", number, got, []execv2.Feature{session})
+		}
+	}
+}
+
+// The wire body of a case runs when the build lists every feature that the case drives, and is skipped, with the feature it names, when
+// the build lists less: a build that serves Open and not Run runs the cases of Open and skips the cases of Run, and the other way round.
+func TestAWireBodyRunsOnlyWhenTheBuildListsEveryFeatureItDrives(t *testing.T) {
+	session, run := execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN
+	for _, tc := range []struct {
+		listed []execv2.Feature
+		ran    []string
+	}{
+		{nil, nil},
+		{[]execv2.Feature{session}, []string{"case 01", "case 02", "case 03", "case 04", "case 05", "case 18"}},
+		{[]execv2.Feature{run}, []string{"case 13", "case 15", "case 16", "case 27", pairEngineWireName}},
+		{[]execv2.Feature{session, run}, []string{
+			"case 01", "case 02", "case 03", "case 04", "case 05", "case 13", "case 15", "case 16", "case 18", "case 27", pairRunOpenName, pairEngineWireName,
+		}},
+	} {
+		t.Run(fmt.Sprint(tc.listed), func(t *testing.T) {
+			var ran []string
+			cases := engineCases()
+			for i := range cases {
+				cases[i].inProcess = nil
+				if cases[i].wire == nil {
+					continue
+				}
+				name := cases[i].name
+				if cases[i].number > 0 {
+					name = fmt.Sprintf("case %02d", cases[i].number)
+				}
+				cases[i].wire = func(checkT, exec.Target, *wireEnv) { ran = append(ran, name) }
+			}
+			t.Run("engine", func(t *testing.T) {
+				listCases(t, cases, exec.Target{}, &inProcessEnv{}, &wireEnv{}, func(testing.TB) *execv2.DescribeResponse {
+					return &execv2.DescribeResponse{Features: tc.listed}
+				})
+			})
+			slices.Sort(ran)
+			want := slices.Clone(tc.ran)
+			slices.Sort(want)
+			if !slices.Equal(ran, want) {
+				t.Errorf("a build that lists %v ran the wire bodies of %q, want %q", tc.listed, ran, want)
+			}
+		})
 	}
 }

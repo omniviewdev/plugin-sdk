@@ -121,8 +121,12 @@ func TestDescribeOverTheWire(t *testing.T) {
 	if got.GetContractVersion() != exec.ContractVersion {
 		t.Errorf("contract version = %d", got.GetContractVersion())
 	}
-	if want := []execv2.Feature{execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD}; !slices.Equal(got.GetFeatures(), want) {
-		t.Errorf("this build serves Describe, Options and Open; it lists %v, want %v", got.GetFeatures(), want)
+	wantFeatures := []execv2.Feature{
+		execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN, execv2.Feature_FEATURE_RUN_STREAM,
+		execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD,
+	}
+	if !slices.Equal(got.GetFeatures(), wantFeatures) {
+		t.Errorf("this build serves Describe, Options, Open, Run and RunStream; it lists %v, want %v", got.GetFeatures(), wantFeatures)
 	}
 	if len(got.GetTargets()) != 1 {
 		t.Fatalf("targets = %v", got.GetTargets())
@@ -947,8 +951,10 @@ func TestACallerThatCancelsDuringTheFinalCatalogCheckIsNotToldTheConnectionWasRe
 	}
 }
 
+// The most Options callbacks of one target that the SDK lets run at once is 32 (options_bound_test.go holds the rest of the cap):
+// a call over it is refused, so the calls that have to be concurrent here are no more than that.
 func TestConcurrentCallsAreIndependentAndLeaveNoLeaseBehind(t *testing.T) {
-	const callers = 64
+	const callers = 32
 	var running, peak atomic.Int32
 	entered := make(chan struct{}, callers)
 	gate := exectest.NewGate()
@@ -1006,22 +1012,13 @@ func TestConcurrentCallsAreIndependentAndLeaveNoLeaseBehind(t *testing.T) {
 	}
 }
 
-// Run, RunStream, ListSessions, ReadOutput and EndSession exist in the service and answer Unimplemented with a typed refusal
-// (UNSUPPORTED) in this build; Describe lists no feature for them. (Open is served: open_wire_test.go.)
+// ListSessions, ReadOutput and EndSession exist in the service and answer Unimplemented with a typed refusal (UNSUPPORTED) in
+// this build; Describe lists no feature for them. (Open is served: open_wire_test.go; Run and RunStream: run_server_test.go.)
 func TestTheMethodsThisBuildDoesNotServeAnswerATypedUnimplemented(t *testing.T) {
 	f := newFixture(t)
 	raw := f.server.Raw()
 	ctx := f.ctx(t)
 	calls := map[string]func() error{
-		"Run": func() error { _, err := raw.Run(ctx, &execv2.RunRequest{}); return err },
-		"RunStream": func() error {
-			stream, err := raw.RunStream(ctx, &execv2.RunRequest{})
-			if err != nil {
-				return err
-			}
-			_, err = stream.Recv()
-			return err
-		},
 		"ListSessions": func() error { _, err := raw.ListSessions(ctx, &execv2.ListSessionsRequest{}); return err },
 		"ReadOutput":   func() error { _, err := raw.ReadOutput(ctx, &execv2.ReadOutputRequest{}); return err },
 		"EndSession":   func() error { _, err := raw.EndSession(ctx, &execv2.EndSessionRequest{}); return err },

@@ -769,6 +769,11 @@ const (
 	// LIMIT: the command's input queue is full and the stream's window is closed; the host sends again when the
 	// window opens. Raised by the plugin, and by a host's client that applies the same bound locally.
 	ErrorReason_ERROR_REASON_INPUT_BACKLOG ErrorReason = 14
+	// UNAVAILABLE: every place the target has for this call is held by author code that the plugin gave up on and that has
+	// not returned (a function that ignores its cancelled context, an Options callback that never returns). Such code may
+	// never return: restart the plugin, retrying does not help. It is not a shutdown (UNAVAILABLE with no reason) and not a
+	// target that is full of live work (LIMIT).
+	ErrorReason_ERROR_REASON_TARGET_WEDGED ErrorReason = 15
 )
 
 // Enum value maps for ErrorReason.
@@ -789,6 +794,7 @@ var (
 		12: "ERROR_REASON_SESSION_UNKNOWN",
 		13: "ERROR_REASON_CONSENT_REQUIRED",
 		14: "ERROR_REASON_INPUT_BACKLOG",
+		15: "ERROR_REASON_TARGET_WEDGED",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":        0,
@@ -806,6 +812,7 @@ var (
 		"ERROR_REASON_SESSION_UNKNOWN":    12,
 		"ERROR_REASON_CONSENT_REQUIRED":   13,
 		"ERROR_REASON_INPUT_BACKLOG":      14,
+		"ERROR_REASON_TARGET_WEDGED":      15,
 	}
 )
 
@@ -8048,7 +8055,7 @@ const file_proto_exec_v2_exec_proto_rawDesc = "" +
 	"\x11ERROR_CLASS_LIMIT\x10\n" +
 	"\x12\x19\n" +
 	"\x15ERROR_CLASS_CANCELLED\x10\v\x12\x18\n" +
-	"\x14ERROR_CLASS_INTERNAL\x10\f*\x81\x04\n" +
+	"\x14ERROR_CLASS_INTERNAL\x10\f*\xa1\x04\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aERROR_REASON_TARGET_DENIED\x10\x01\x12\x1c\n" +
@@ -8065,7 +8072,8 @@ const file_proto_exec_v2_exec_proto_rawDesc = "" +
 	"\x1bERROR_REASON_SESSION_EXISTS\x10\v\x12 \n" +
 	"\x1cERROR_REASON_SESSION_UNKNOWN\x10\f\x12!\n" +
 	"\x1dERROR_REASON_CONSENT_REQUIRED\x10\r\x12\x1e\n" +
-	"\x1aERROR_REASON_INPUT_BACKLOG\x10\x0e*x\n" +
+	"\x1aERROR_REASON_INPUT_BACKLOG\x10\x0e\x12\x1e\n" +
+	"\x1aERROR_REASON_TARGET_WEDGED\x10\x0f*x\n" +
 	"\vChoiceState\x12\x1c\n" +
 	"\x18CHOICE_STATE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12CHOICE_STATE_READY\x10\x01\x12\x19\n" +

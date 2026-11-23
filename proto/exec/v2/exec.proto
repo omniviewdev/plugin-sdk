@@ -347,6 +347,11 @@ enum ErrorReason {
   // LIMIT: the command's input queue is full and the stream's window is closed; the host sends again when the
   // window opens. Raised by the plugin, and by a host's client that applies the same bound locally.
   ERROR_REASON_INPUT_BACKLOG = 14;
+  // UNAVAILABLE: every place the target has for this call is held by author code that the plugin gave up on and that has
+  // not returned (a function that ignores its cancelled context, an Options callback that never returns). Such code may
+  // never return: restart the plugin, retrying does not help. It is not a shutdown (UNAVAILABLE with no reason) and not a
+  // target that is full of live work (LIMIT).
+  ERROR_REASON_TARGET_WEDGED = 15;
 }
 
 // ErrorFacts are the bounded facts a refusal carries so that the host can word it without free text.

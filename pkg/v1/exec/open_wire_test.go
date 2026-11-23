@@ -19,13 +19,16 @@ func echoFunction(ctx context.Context, p *exec.Proc) (exec.Exit, error) {
 	return exec.ExitCode(0), nil
 }
 
-func TestDescribeListsTheFeaturesOfTheSessionsItServes(t *testing.T) {
+func TestDescribeListsTheFeaturesOfTheSessionsAndRunsItServes(t *testing.T) {
 	rig := newWireRig(t, engTarget(echoFunction))
 	description, err := rig.client.Describe(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []execv2.Feature{execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD}
+	want := []execv2.Feature{
+		execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN, execv2.Feature_FEATURE_RUN_STREAM,
+		execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD,
+	}
 	got := description.GetFeatures()
 	if len(got) != len(want) {
 		t.Fatalf("Describe lists %v, want %v", got, want)

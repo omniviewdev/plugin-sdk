@@ -160,18 +160,17 @@ func TestAKillRacingTheFunctionsReturnLeavesNoPlaceHeld(t *testing.T) {
 	}
 	eventually(t, "every function to be accounted for", func() bool { return rig.eng.Abandoned() == 0 })
 	// Every place is free: the target admits all of them at once.
-	var open []string
 	for i := range limit {
 		id := fmt.Sprintf("full%d", i)
 		if _, err := rig.open(id, withoutTTY); err != nil {
 			t.Fatalf("session %d of %d after the race: %v: a place was left held", i+1, limit, err)
 		}
-		open = append(open, id)
 	}
 }
 
 // The refusal says what is true: a target whose places are all held by live sessions is LIMIT, and one whose places are held
-// by functions that were abandoned is UNAVAILABLE; a host that shows "too many sessions" must not say it for the second.
+// by functions that were abandoned is UNAVAILABLE with the reason TARGET_WEDGED; a host that shows "too many sessions" must not
+// say it for the second (engine_wedged_test.go says the rest of it).
 func TestALimitIsALimitAndAnAbandonedPlaceIsUnavailable(t *testing.T) {
 	gate := exectest.NewGate()
 	t.Cleanup(gate.Open)
@@ -184,8 +183,8 @@ func TestALimitIsALimitAndAnAbandonedPlaceIsUnavailable(t *testing.T) {
 	stuck := newEngineRig(t, engineRigConfig{grace: time.Millisecond}, stuckTarget(gate, 1))
 	openAndAbandon(t, stuck, "a")
 	_, err = stuck.open("b", withoutTTY)
-	if refusal := refusalOf(t, err); refusal.Class != exec.ErrorClassUnavailable || refusal.Reason != exec.ErrorReasonUnspecified {
-		t.Errorf("a target whose place is held by an abandoned function: %v/%v, want UNAVAILABLE with no reason of its own", refusal.Class, refusal.Reason)
+	if refusal := refusalOf(t, err); refusal.Class != exec.ErrorClassUnavailable || refusal.Reason != exec.ErrorReasonTargetWedged {
+		t.Errorf("a target whose place is held by an abandoned function: %v/%v, want UNAVAILABLE/TARGET_WEDGED", refusal.Class, refusal.Reason)
 	}
 	if logged(stuck, "exec start refused: the target's places are held by functions that were abandoned") == nil {
 		t.Error("the plugin's log does not say why the start was refused")

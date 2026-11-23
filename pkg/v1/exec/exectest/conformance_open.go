@@ -39,9 +39,6 @@ const (
 	scriptLabel = "exectest-script"
 	// maxOutputFrame is the largest Output frame the contract allows.
 	maxOutputFrame = 64 << 10
-	// wireCanary is a text no frame and no status may carry: the cases put it where the author's local cause and a panic value
-	// live.
-	wireCanary = "CANARY-exectest-6f1d3a9c-7be2"
 	// fixedWindow is the flow-control window of the connection that a case dials when its host is to stop reading. A window that
 	// is not below the default turns off gRPC's dynamic window, so what a host that does not read can leave in transit is this
 	// window and no more.
@@ -95,24 +92,10 @@ func (w *wireServer) dial(t checkT, extra ...grpc.DialOption) (exec.Client, exec
 	return client.(*exec.PluginClient).V2(), execv2.NewExecClient(conn)
 }
 
-// rigOption changes what a wire rig serves.
-type rigOption func(*rigSetup)
-
-type rigSetup struct {
-	info    func(*exec.TargetInfo)
-	options exec.OptionsFunc
-}
-
-// withInfo changes the copy of the declared description that the rig serves.
-func withInfo(f func(*exec.TargetInfo)) rigOption { return func(s *rigSetup) { s.info = f } }
-
-// withOptions gives the fake the options callback of a case: the author's own is never called.
-func withOptions(fn exec.OptionsFunc) rigOption { return func(s *rigSetup) { s.options = fn } }
-
 // wireRig is one plugin served over a transport whose target carries the author's declared description.
 type wireRig struct {
 	t        checkT
-	info     exec.TargetInfo // what the fake serves: the declaration, as a case may have lowered a limit
+	info     exec.TargetInfo // what the fake serves: a copy of the declaration
 	resource string
 	conns    *exectestkit.Connections
 	server   *wireServer
@@ -124,7 +107,6 @@ type wireRig struct {
 
 	mu      sync.Mutex
 	scripts map[string]exec.ExecFunc
-	gates   []*Gate
 	next    int
 
 	started  atomic.Int64 // functions that were called
@@ -132,22 +114,14 @@ type wireRig struct {
 }
 
 // newWireRig serves a fake of the declared target.
-func newWireRig(t checkT, env *wireEnv, target exec.Target, opts ...rigOption) *wireRig {
+func newWireRig(t checkT, env *wireEnv, target exec.Target) *wireRig {
 	t.Helper()
-	var setup rigSetup
-	for _, opt := range opts {
-		opt(&setup)
-	}
 	info := target.Info
 	info.Capabilities = cloneCapabilities(info.Capabilities)
 	info.DefaultArgv = slices.Clone(info.DefaultArgv)
-	if setup.info != nil {
-		setup.info(&info)
-	}
 	r := &wireRig{t: t, info: info, resource: env.resource, scripts: map[string]exec.ExecFunc{}}
 	fake := NewFakeTarget(FakeInfo(info))
 	fake.Exec = r.exec
-	fake.Options = setup.options
 	r.conns = exectestkit.NewConnections(info.Provider)
 	serve := env.serve
 	if serve == nil {
@@ -159,14 +133,8 @@ func newWireRig(t checkT, env *wireEnv, target exec.Target, opts ...rigOption) *
 	return r
 }
 
-// teardown lets every script go, ends the sessions the plugin holds and retires the connection, so that no function outlives the case.
+// teardown ends the sessions the plugin holds and retires the connection, so that no function outlives the case.
 func (r *wireRig) teardown() {
-	r.mu.Lock()
-	gates := slices.Clone(r.gates)
-	r.mu.Unlock()
-	for _, g := range gates {
-		g.Open()
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), caseBound)
 	defer cancel()
 	_ = r.server.plugin.Shutdown(ctx)
@@ -197,15 +165,6 @@ func (r *wireRig) scriptFunc(name string, fn exec.ExecFunc) {
 	r.mu.Lock()
 	r.scripts[name] = fn
 	r.mu.Unlock()
-}
-
-// gate returns a gate that the teardown opens.
-func (r *wireRig) gate() *Gate {
-	g := NewGate()
-	r.mu.Lock()
-	r.gates = append(r.gates, g)
-	r.mu.Unlock()
-	return g
 }
 
 // newID returns an id for a session of the case.
@@ -326,11 +285,9 @@ type wireSession struct {
 	conn    exec.Conn
 	req     *execv2.OpenRequest
 	grammar streamGrammar
-	out     *wireOutput   // fed by every frame when it is set
-	wire    *bytes.Buffer // the bytes of every frame, when a case scans them
+	out     *wireOutput // fed by every frame when it is set
 	ended   *execv2.Ended
 	started *execv2.Started // the first Started the stream carried
-	closed  bool            // the host ended its side
 }
 
 // tty says that the session was asked for with a terminal.
@@ -340,15 +297,6 @@ func (s *wireSession) tty() bool { return s.req.GetStart().GetTty() }
 func (s *wireSession) audit(byteAt func(uint64) byte) *wireOutput {
 	s.out = &wireOutput{tty: s.tty(), byteAt: byteAt}
 	return s.out
-}
-
-// scan keeps the bytes of every frame from now on (Opened included), to look for what must appear on no frame.
-func (s *wireSession) scan() *bytes.Buffer {
-	s.wire = &bytes.Buffer{}
-	if raw, err := proto.Marshal(s.conn.Opened()); err == nil {
-		s.wire.Write(raw)
-	}
-	return s.wire
 }
 
 // recv reads the next frame of the stream, within the bound of a case: a stream that does not answer fails the case and does not
@@ -373,11 +321,6 @@ func (s *wireSession) recv() (*execv2.ServerFrame, error) {
 	if s.out != nil {
 		s.out.take(frame)
 	}
-	if s.wire != nil {
-		if raw, err := proto.Marshal(frame); err == nil {
-			s.wire.Write(raw)
-		}
-	}
 	return frame, nil
 }
 
@@ -390,21 +333,6 @@ func (s *wireSession) next(what string) *execv2.ServerFrame {
 		t.Fatalf("session %q: waiting for %s: %v", s.id, what, err)
 	}
 	return frame
-}
-
-// until reads frames until one satisfies pred, and returns it.
-func (s *wireSession) until(what string, pred func(*execv2.ServerFrame) bool) *execv2.ServerFrame {
-	t := s.r.t
-	t.Helper()
-	for {
-		frame := s.next(what)
-		if pred(frame) {
-			return frame
-		}
-		if frame.GetEnded() != nil {
-			t.Fatalf("session %q: the session ended before %s", s.id, what)
-		}
-	}
 }
 
 // send sends a frame, within the bound of a case: a host that cannot send because the plugin does not take its frames waits, and a
@@ -429,11 +357,6 @@ func (s *wireSession) mustSend(frame *execv2.ClientFrame) {
 	if err := s.send(frame); err != nil {
 		t.Fatalf("session %q: send: %v", s.id, err)
 	}
-}
-
-// input sends bytes as one input frame.
-func (s *wireSession) input(data []byte) error {
-	return s.send(&execv2.ClientFrame{Frame: &execv2.ClientFrame_Input{Input: data}})
 }
 
 // mustInput sends bytes as one input frame that the plugin has to take.
@@ -482,23 +405,6 @@ func (s *wireSession) finish() *execv2.Ended {
 			}
 		}
 		return ended
-	}
-}
-
-// failure reads the stream until it ends with a status, which has to be an error, and returns it.
-func (s *wireSession) failure() error {
-	t := s.r.t
-	t.Helper()
-	for {
-		frame, err := s.recv()
-		switch {
-		case errors.Is(err, io.EOF):
-			t.Fatalf("session %q: the stream ended with status OK, want a status that is an error", s.id)
-		case err != nil:
-			return err
-		case frame.GetEnded() != nil:
-			t.Fatalf("session %q: the stream delivered Ended, want a status that is an error", s.id)
-		}
 	}
 }
 
@@ -797,24 +703,6 @@ func unitBytes(offset uint64, n int) []byte {
 		data[i] = unitByte(offset + uint64(i))
 	}
 	return data
-}
-
-// writeUnits is a step that writes n bytes of the unit from an offset to a writer in writes of at most chunk bytes, and goes on.
-func writeUnits(stderr bool, offset uint64, n, chunk int) Step {
-	return stepFunc(func(_ context.Context, p *exec.Proc) (bool, exec.Exit, error) {
-		w := p.Stdout
-		if stderr && p.Stderr != nil {
-			w = p.Stderr
-		}
-		for done := 0; done < n; {
-			m := min(chunk, n-done)
-			if _, err := w.Write(unitBytes(offset+uint64(done), m)); err != nil {
-				return true, exec.Exit{}, err
-			}
-			done += m
-		}
-		return false, exec.Exit{}, nil
-	})
 }
 
 // floodPattern is a step that writes total bytes of the stress's pattern to the command's output in writes of 32 KiB and counts

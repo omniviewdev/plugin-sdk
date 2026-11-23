@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/omniviewdev/plugin-sdk/internal/exechook"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/exec"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/exec/exectest"
 	execv2 "github.com/omniviewdev/plugin-sdk/proto/exec/v2"
@@ -74,6 +75,12 @@ func settled(t *testing.T, what string, read func() uint64) uint64 {
 // isolationCase runs one session that disturbs the echo of another: start brings it to the state, and the check it returns is
 // called after the echo was measured, to assert that the session was in the state all along, and to take it down.
 func isolationCase(t *testing.T, name string, start func(t *testing.T, rig *proofRig, a *isolationAuthor) (check func())) {
+	t.Helper()
+	isolationCaseWith(t, name, nil, start)
+}
+
+// isolationCaseWith is isolationCase for a plugin whose engine the test configures before its first call.
+func isolationCaseWith(t *testing.T, name string, configure func(*exec.Plugin), start func(t *testing.T, rig *proofRig, a *isolationAuthor) (check func())) {
 	t.Run(name, func(t *testing.T) {
 		a := &isolationAuthor{gate: exectest.NewGate()}
 		rig := newProofRig(t,
@@ -84,6 +91,9 @@ func isolationCase(t *testing.T, name string, start func(t *testing.T, rig *proo
 			proofTarget("stuck", func(context.Context, *exec.Proc) (exec.Exit, error) { <-a.gate.Opened(); return exec.ExitCode(0), nil },
 				func(i *exec.TargetInfo) { i.Session = exec.DefaultSessionLimits(); i.Session.MaxSessions = 256 }),
 		)
+		if configure != nil {
+			configure(rig.server.Plugin)
+		}
 		t.Cleanup(a.gate.Open) // registered after the rig, so it runs before the rig waits for the functions
 		echo := newProofEchoer(rig.mustOpenKind("echo", "echo-b", proofTTY))
 		samples := proofScaled(3000, 600)
@@ -227,9 +237,14 @@ func TestOpenIsolationEchoWhileAnotherSessionFloodsAndItsHostNeverReceives(t *te
 }
 
 func TestOpenIsolationEchoWhileSessionsWhoseAuthorIgnoresItsContextAreClosed(t *testing.T) {
-	isolationCase(t, "ignores its context and is killed, again and again", func(t *testing.T, rig *proofRig, a *isolationAuthor) func() {
+	// The kill wait is shortened to 1 ms: a kill waits for the function that honors its context, so with the default 50 ms a kill
+	// takes longer than the echo measurement and none would be abandoned while it runs; this is the churn of abandonments that the
+	// test is about, as often as the loop can make it.
+	isolationCaseWith(t, "ignores its context and is killed, again and again", func(p *exec.Plugin) {
+		exec.ConfigurePluginEngine(p, exechook.EngineConfig{KillWait: time.Millisecond})
+	}, func(t *testing.T, rig *proofRig, a *isolationAuthor) func() {
 		// One session is closed gracefully and left in its grace (5 s) for the whole measurement; the others are killed, which
-		// abandons the function at once, as often as the loop can.
+		// abandons the function after the kill wait, as often as the loop can.
 		lingering := rig.mustOpenKind("stuck", "a-grace")
 		sendClose(t, lingering, execv2.CloseMode_CLOSE_MODE_GRACEFUL)
 		stop := make(chan struct{})

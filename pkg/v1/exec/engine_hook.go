@@ -34,8 +34,8 @@ func init() {
 // errNoTargets is why an in-process engine cannot be built for no targets.
 var errNoTargets = errors.New("an exec engine needs at least one target")
 
-// inProcessFeatures are the features the in-process engine admits requests for: a session, a run and what they honor.
-// What Describe lists is another matter (servedFeatures lists nothing until a step serves the RPC).
+// inProcessFeatures are the features the in-process engine admits requests for: a session, a run and what they honor. What
+// Describe lists is servedFeatures, which is the wire's.
 func inProcessFeatures() featureSet {
 	return newFeatureSet([]execv2.Feature{
 		execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN,
@@ -66,28 +66,11 @@ func (h *hookEngine) Run(ctx context.Context, wire *execv2.RunRequest) (exechook
 	if refusal != nil {
 		return nil, refusal
 	}
-	id := run.RequestID
-	if id == "" {
-		id = "run-" + newRunID()
-	}
-	cmd, err := h.server.engine.start(ctx, startParams{
-		ID:      id,
-		Kind:    kindRun,
-		Target:  target,
-		Route:   run.Target.Route,
-		Request: run.request(target),
-		Stdin:   len(run.Stdin) > 0,
-		Owner:   ctx,
-	})
+	// The run is started as the served RPC starts it (startRun): the same id rule, the same owner and the same stdin feed. The
+	// served RPC adds the timeout and the capture of the output; a test of the engine takes those on itself.
+	cmd, err := h.server.startRun(ctx, run, target)
 	if err != nil {
 		return nil, err
-	}
-	if len(run.Stdin) > 0 {
-		// A run's stdin is given with the request: it is sent and closed, so that the command reads it and then EOF.
-		go func() {
-			_, _ = cmd.WriteInput(context.Background(), run.Stdin)
-			cmd.CloseInput()
-		}()
 	}
 	return hookCommand{cmd}, nil
 }
