@@ -52,8 +52,16 @@ type stressCommand struct {
 	mode   readMode
 	buf    int // the size of the reader's buffer
 
-	// first is the result the reader saw once the command had ended: what every later look at the result is held to. It is set
-	// once, when the reader is done.
+	// startLease is the lease the session was started asking for, zero for the target's own.
+	startLease time.Duration
+	// sess is what a session has beyond a command: the windows that read it and the calls made on it. A run has none: it has one reader.
+	sess *sessionState
+	// endRequests and cancels count the calls of a run that can end it, before they are made, so that a cause that needs one is
+	// explained by one that was made. A session's are its sess's.
+	endRequests, cancels atomic.Int32
+
+	// first is the result seen once the command had ended: what every later look at the result is held to. It is set once: by the reader of a
+	// run when it is done, and by the watcher of a session when the session has ended.
 	first atomic.Pointer[exechook.Result]
 
 	// the worker's
@@ -158,8 +166,9 @@ func (r *stressRound) lateAdmit(id string) {
 	}
 }
 
-// admit takes a command the engine admitted: the recorder is told, and a reader of its own reads it to its end.
-func (r *stressRound) admit(c *stressCommand) {
+// admit takes a command the engine admitted: the recorder is told, and a reader of its own reads it to its end: the one reader of a run, the
+// windows of a session (admitSession). admitAt is the clock before the start that admitted it.
+func (r *stressRound) admit(c *stressCommand, admitAt int64) {
 	if c.b.name == "stuck" {
 		r.mayHold.Store(true) // its function ignores its context: the engine gives up on it and holds its place
 	}
@@ -171,6 +180,10 @@ func (r *stressRound) admit(c *stressCommand) {
 	}
 	r.tally.add("admitted/" + kind)
 	r.tally.add("behaviour/" + c.b.name)
+	if !c.run {
+		r.admitSession(c, admitAt)
+		return
+	}
 	if !r.readers.Start(1) {
 		r.found.add("%s: the readers of the round had ended when a command was admitted", c.id)
 		return
@@ -222,7 +235,7 @@ func (r *stressRound) read(c *stressCommand) {
 	res := c.cmd.Result()
 	c.first.Store(&res)
 	r.rec.Ended(c.key)
-	r.checkEnded(c, res, audit)
+	r.checkEndedRun(c, res, audit)
 
 	chunk, err := c.cmd.Read(r.readCtx, buf)
 	if !errors.Is(err, io.EOF) && r.readCtx.Err() != nil {
@@ -234,21 +247,30 @@ func (r *stressRound) read(c *stressCommand) {
 	}
 }
 
-// checkEnded holds the end of a command whose reader is done to what must be true of every command, and to what its behaviour
-// says of it, and counts it.
-func (r *stressRound) checkEnded(c *stressCommand, res exechook.Result, audit outputAudit) {
+// checkEndedRun holds the end of a run whose reader is done to what must be true of every command, to what its behaviour says of it and to the calls
+// that can explain its cause, and counts it. A session's end is held to the same when its streams have all returned (finishSession).
+func (r *stressRound) checkEndedRun(c *stressCommand, res exechook.Result, audit outputAudit) {
 	for _, v := range checkResult(res, audit) {
 		r.found.add("%s: %s", c.id, v)
 	}
-	for _, v := range c.b.check(res, audit, c.run, c.mode) {
+	for _, v := range c.b.check(res, audit, c.run, c.mode, false) {
 		r.found.add("%s: %s", c.id, v)
 	}
+	facts := causeFacts{endRequests: c.endRequests.Load(), cancels: c.cancels.Load(), closing: r.closing.Load(), run: true}
+	if v := checkCause(res.Cause, facts); v != "" {
+		r.found.add("%s: %s", c.id, v)
+	}
+	r.tallyEnd(res)
+	r.tally.addN("bytes read", int(audit.read))
+	r.tally.addN("bytes dropped", int(audit.dropped))
+}
+
+// tallyEnd counts the end of a command: by arm, by cause, by completeness, and what the engine says its function broke.
+func (r *stressRound) tallyEnd(res exechook.Result) {
 	arm, _ := endArm(res.End)
 	r.tally.add("ended/" + arm)
 	r.tally.add("cause/" + res.Cause)
 	r.tally.add("output/" + strings.ToLower(strings.TrimPrefix(res.Output.String(), "OUTPUT_COMPLETENESS_")))
-	r.tally.addN("bytes read", int(audit.read))
-	r.tally.addN("bytes dropped", int(audit.dropped))
 	if res.Abandoned {
 		r.tally.add("abandoned")
 	}
@@ -294,10 +316,21 @@ type stressWorker struct {
 	rng  *rand.Rand
 	seq  int
 	pool []*stressCommand
+	// history is the last sessions the worker let go of: their ids are the ones a start asks for again, long after their command is gone.
+	history []retiredSession
+	// calm says that the next start is the canary's: no short lease, no small ring, no slow reader, so that what it expects of its session
+	// cannot be a race with a lease that runs out.
+	calm bool
+}
+
+// retiredSession is a session that a worker is done with: what is needed to ask for its id again.
+type retiredSession struct {
+	rec *sessionRec
+	b   *stressBehaviour
 }
 
 // work is one worker: it starts a command of each behaviour as a session and as a run, so that every one is met whatever the dice
-// say, and then picks at random until stop is closed.
+// say, plays the canary, and then picks at random until stop is closed.
 func (r *stressRound) work(id int, stop <-chan struct{}) {
 	w := &stressWorker{r: r, id: id, rng: rand.New(rand.NewPCG(r.seed, uint64(id)+1))}
 	defer w.handOver()
@@ -306,6 +339,7 @@ func (r *stressRound) work(id int, stop <-chan struct{}) {
 			w.start(stressBehaviours[(i+id)%len(stressBehaviours)], run, "", false)
 		}
 	}
+	w.canary()
 	for {
 		select {
 		case <-stop:
@@ -325,30 +359,101 @@ func (w *stressWorker) handOver() {
 
 // step does one thing, picked at random.
 func (w *stressWorker) step() {
+	r := w.r
 	always := func(*stressCommand) bool { return true }
+	session := func(c *stressCommand) bool { return !c.run && c.sess != nil }
 	switch p := w.rng.IntN(100); {
-	case p < 30:
+	case p < 20:
 		w.startRandom()
-	case p < 52:
+	case p < 30:
 		w.with(func(c *stressCommand) bool { return !c.run && (c.b.input || w.rng.IntN(6) == 0) }, w.write)
-	case p < 57:
+	case p < 32:
 		w.with(func(c *stressCommand) bool { return !c.run }, w.closeInput)
-	case p < 66:
+	case p < 37:
 		w.with(always, w.resize)
-	case p < 73:
+	case p < 41:
+		w.with(session, func(c *stressCommand) { r.signalOp(c, w.rng) })
+	case p < 44:
 		w.with(always, func(c *stressCommand) { w.end(c, false) })
-	case p < 79:
+	case p < 46:
 		w.with(always, func(c *stressCommand) { w.end(c, true) })
-	case p < 83:
+	case p < 49:
 		w.with(func(c *stressCommand) bool { return c.run }, w.cancelRun)
-	case p < 86:
+	case p < 51:
 		w.with(always, w.walkAway)
+	case p < 54:
+		w.duplicateAny()
+	case p < 62:
+		w.with(session, func(c *stressCommand) {
+			w.either(c, func(rng *rand.Rand) { r.attachOp(c, rng, false, rng.IntN(12) == 0) })
+		})
+	case p < 66:
+		w.with(session, func(c *stressCommand) { w.either(c, func(rng *rand.Rand) { r.attachOp(c, rng, true, false) }) })
+	case p < 73:
+		w.with(session, func(c *stressCommand) { w.either(c, func(rng *rand.Rand) { r.detachOp(c, rng, 0, false) }) })
+	case p < 77:
+		w.with(session, func(c *stressCommand) { w.either(c, func(rng *rand.Rand) { r.leaveOp(c, rng) }) })
+	case p < 80:
+		w.with(session, func(c *stressCommand) {
+			kill := w.rng.IntN(3) == 0
+			w.either(c, func(rng *rand.Rand) { r.closeStreamOp(c, rng, kill) })
+		})
+	case p < 84:
+		w.with(session, func(c *stressCommand) {
+			kill := w.rng.IntN(3) == 0
+			w.either(c, func(*rand.Rand) { r.endSessionOp(c, kill, endSessionPatience) })
+		})
 	case p < 88:
-		w.with(always, w.duplicate)
+		w.with(session, func(c *stressCommand) { r.staleOp(c, w.rng) }) // not on a goroutine of its own: it sends input, which only the worker does
+	case p < 89:
+		r.listOp()
+	case p < 91:
+		w.asyncAny(func(rng *rand.Rand) { r.readOutputOp(rng) })
+	case p < 93 && r.regime.ticks:
+		r.tickOp(w.rng)
 	default:
 		w.sweep()
 		runtime.Gosched()
 	}
+}
+
+// either makes the op now, in the worker, or, one time in three, on a goroutine of its own, so that the worker goes on to make another meanwhile
+// and an op meets itself: two attaches, a detach and a close, an EndSession and an attach, at the same moment, on one session. Until the op has
+// returned the id of the command is not asked for again (see duplicate): the call is addressed to the id, and is meant for the session that holds it.
+func (w *stressWorker) either(c *stressCommand, op func(rng *rand.Rand)) {
+	if w.rng.IntN(3) != 0 {
+		op(w.rng)
+		return
+	}
+	r := w.r
+	if !r.ops.Start(1) {
+		return
+	}
+	flight := r.ledger.flightOf(c.id)
+	flight.Add(1)
+	rng := rand.New(rand.NewPCG(w.rng.Uint64(), w.rng.Uint64()))
+	go func() {
+		defer r.ops.Done()
+		defer flight.Add(-1)
+		op(rng)
+	}()
+}
+
+// asyncAny is either for an op that is not about one command.
+func (w *stressWorker) asyncAny(op func(rng *rand.Rand)) {
+	if w.rng.IntN(3) != 0 {
+		op(w.rng)
+		return
+	}
+	r := w.r
+	if !r.ops.Start(1) {
+		return
+	}
+	rng := rand.New(rand.NewPCG(w.rng.Uint64(), w.rng.Uint64()))
+	go func() {
+		defer r.ops.Done()
+		op(rng)
+	}()
 }
 
 // with does op to a random command of the pool that the worker has not walked away from and that pred picks, if there is one.
@@ -370,18 +475,29 @@ func (w *stressWorker) with(pred func(*stressCommand) bool, op func(*stressComma
 	op(chosen)
 }
 
-// sweep disposes of the commands whose reader has seen them end.
+// sweep disposes of the commands whose reader has seen them end, and remembers the sessions among them, whose ids may be asked for again.
 func (w *stressWorker) sweep() {
 	kept := w.pool[:0]
 	for _, c := range w.pool {
 		if c.first.Load() != nil {
 			w.r.dispose(c)
+			if c.sess != nil {
+				w.retire(c)
+			}
 			continue
 		}
 		kept = append(kept, c)
 	}
 	clear(w.pool[len(kept):])
 	w.pool = kept
+}
+
+// retire remembers a session the worker is done with, the last 64 of them.
+func (w *stressWorker) retire(c *stressCommand) {
+	if len(w.history) >= 64 {
+		w.history = append(w.history[:0], w.history[1:]...)
+	}
+	w.history = append(w.history, retiredSession{rec: c.sess.rec, b: c.b})
 }
 
 // startRandom starts a command of a behaviour picked by weight, or makes room for it when the pool is full: the commands that
@@ -407,11 +523,15 @@ func (w *stressWorker) startRandom() {
 }
 
 // start asks the engine for a command of the behaviour: a session, or a run. An empty id is a new one. With again set, id is one the
-// worker used before: the engine refuses it while the command that holds it is live, and admits it once that command is gone.
+// worker used before: the engine refuses it while the command that holds it is live, and, for a session, while its tombstone holds it, and
+// admits it once the command, or the tombstone, is gone.
 func (w *stressWorker) start(b *stressBehaviour, run bool, id string, again bool) {
 	r := w.r
 	if left, capped := r.budgets[b.name]; capped && left.Load() <= 0 {
 		return
+	}
+	if !run && r.regime.sessions > 0 && r.ledger.total() >= r.regime.sessions {
+		return // a round that keeps every tombstone starts no more sessions than its store holds
 	}
 	if id == "" {
 		w.seq++
@@ -428,29 +548,62 @@ func (w *stressWorker) start(b *stressBehaviour, run bool, id string, again bool
 	}
 	attempt := stressAttempt{run: run, duplicate: again}
 	afterClose := r.closed.Load()
+	// What is known of the session that held the id, before the call: the readings that say when its tombstone was made.
+	var prev *sessionRec
+	var prevFacts reuseFacts
+	if again && !run {
+		if prev = w.latestSession(id); prev != nil {
+			prev.look(r.clock)
+			prevFacts = prev.reuseFacts()
+		}
+	}
 	var (
 		cmd    exechook.Command
 		cancel context.CancelFunc
 		tty    bool
+		lease  time.Duration
 	)
+	if !run {
+		// Until the answer is in the ledger the engine may have admitted the session, and a call addressed to the id that is made meanwhile, by any
+		// worker, may meet it: the ledger knows the start is under way.
+		r.ledger.beginStart(id)
+		defer r.ledger.endStart(id)
+	}
+	asked := r.clock.Now()
 	if run {
 		var runCtx context.Context
 		runCtx, cancel = context.WithCancel(context.Background())
 		cmd, err = r.eng.Run(r.conns.Context(runCtx), &execv2.RunRequest{RequestId: id, Target: target, Argv: []string{"stress"}, Stdin: w.stdin(b)})
 	} else {
-		tty = w.rng.IntN(2) == 0
+		tty = w.rng.IntN(2) == 0 || w.calm
 		ctx := context.Background()
-		if w.rng.IntN(50) == 0 { // a call whose context has ended: refused as cancelled, or admitted, as the engine finds it
+		if w.rng.IntN(50) == 0 && !w.calm { // a call whose context has ended: refused as cancelled, or admitted, as the engine finds it
 			var stop context.CancelFunc
 			ctx, stop = context.WithCancel(ctx)
 			stop()
 			attempt.ctxEnded = true
 		}
 		start := &execv2.Start{Target: target, Tty: tty}
-		if tty && w.rng.IntN(3) == 0 {
+		if tty && w.rng.IntN(3) == 0 && !w.calm {
 			start.Size = &execv2.Size{Cols: uint32(20 + w.rng.IntN(200)), Rows: uint32(5 + w.rng.IntN(60))}
 		}
+		if !w.calm {
+			// The ring a host asks for, and the lease a stream that leaves gets, shorter than the target's: small rings make a detached session
+			// lose its output, and short leases end it while the host is away.
+			if b.session.ReplayBytes == 0 {
+				start.ReplayBytes = startRings[w.rng.IntN(len(startRings))]
+			}
+			start.DetachTimeoutMs = startLeases[w.rng.IntN(len(startLeases))]
+			lease = time.Duration(start.DetachTimeoutMs) * time.Millisecond
+		}
 		cmd, err = r.eng.Open(r.conns.Context(ctx), &execv2.OpenRequest{SessionId: id, Kind: &execv2.OpenRequest_Start{Start: start}})
+	}
+	answered := r.clock.Now()
+	if prev != nil {
+		held := err != nil && refusalName(err) == "CONFLICT/SESSION_EXISTS"
+		if v := checkReuse(err == nil, held, asked, answered, prevFacts, r.regime.ttl, r.ledger.total() > r.regime.count); v != "" {
+			r.found.add("%s: %s", id, v)
+		}
 	}
 	if err != nil {
 		if cancel != nil {
@@ -469,6 +622,7 @@ func (w *stressWorker) start(b *stressBehaviour, run bool, id string, again bool
 	mode, size := w.reader(b)
 	c := &stressCommand{
 		id: id, key: fmt.Sprintf("%s#%d", id, r.seq.Add(1)), b: b, run: run, tty: tty, cmd: cmd, cancel: cancel, mode: mode, buf: size,
+		startLease: lease,
 	}
 	if again {
 		// The engine admits an id again only once the command that held it is gone, and a command is gone after it has ended.
@@ -480,7 +634,7 @@ func (w *stressWorker) start(b *stressBehaviour, run bool, id string, again bool
 			}
 		}
 	}
-	r.admit(c)
+	r.admit(c, asked.UnixNano())
 	w.pool = append(w.pool, c)
 }
 
@@ -498,6 +652,9 @@ func (w *stressWorker) stdin(b *stressBehaviour) []byte {
 // reader picks how a command is read: mostly as fast as it comes, sometimes a few bytes at a time, and, for a command that ends by
 // itself whatever its reader does, sometimes not until it has ended.
 func (w *stressWorker) reader(b *stressBehaviour) (readMode, int) {
+	if w.calm {
+		return readEager, 4096
+	}
 	switch p := w.rng.IntN(100); {
 	case p < 25:
 		return readSlow, 8 << w.rng.IntN(5)
@@ -509,7 +666,8 @@ func (w *stressWorker) reader(b *stressBehaviour) (readMode, int) {
 
 // write sends input to a session: mostly a little, sometimes more than the queue holds. A function that does not read its input
 // holds the write at the bound of the queue, and the write gives up at its own bound; what the engine took is exact, and the
-// pattern goes on from there.
+// pattern goes on from there. A session's input is sent by its consumer or on one of its streams, which the engine refuses once the
+// stream has left.
 func (w *stressWorker) write(c *stressCommand) {
 	size := 1 + w.rng.IntN(2048)
 	if w.rng.IntN(25) == 0 {
@@ -517,7 +675,14 @@ func (w *stressWorker) write(c *stressCommand) {
 	}
 	data := patternBytes(c.sent, size)
 	ctx, cancel := context.WithTimeout(context.Background(), writeBound)
-	n, err := c.cmd.Write(ctx, data)
+	send := c.cmd.Write
+	var via *stressStream
+	if c.sess != nil && w.rng.IntN(2) == 0 {
+		if via = c.sess.liveStream(w.rng); via != nil {
+			send = via.s.Write
+		}
+	}
+	n, err := send(ctx, data)
 	cancel()
 	if n > 0 && n <= len(data) {
 		c.sent += uint64(n)
@@ -526,6 +691,12 @@ func (w *stressWorker) write(c *stressCommand) {
 	switch {
 	case n < 0 || n > len(data):
 		r.found.add("%s: Write of %d bytes returned %d", c.id, len(data), n)
+	case via != nil && errors.Is(err, exechook.ErrStreamLeft):
+		via.refusedLeft.Store(true)
+		r.tally.add("op/write refused (stream left)")
+		if n != 0 {
+			r.found.add("%s: an input frame of a stream that left took %d bytes and was refused", c.id, n)
+		}
 	case err == nil && n != len(data):
 		r.found.add("%s: Write of %d bytes took %d and returned no error: it takes all of its bytes or fails", c.id, len(data), n)
 	case err == nil:
@@ -542,22 +713,51 @@ func (w *stressWorker) write(c *stressCommand) {
 	}
 }
 
-// closeInput is the host's stdin EOF.
+// closeInput is the host's stdin EOF, from the session's consumer or on one of its streams.
 func (w *stressWorker) closeInput(c *stressCommand) {
+	if c.sess != nil {
+		c.sess.inputEnds.Add(1)
+		if w.rng.IntN(2) == 0 {
+			if via := c.sess.liveStream(w.rng); via != nil {
+				if err := via.s.CloseInput(); errors.Is(err, exechook.ErrStreamLeft) {
+					via.refusedLeft.Store(true)
+					w.r.tally.add("op/close input refused (stream left)")
+					return
+				}
+				c.inputDone = true
+				w.r.tally.add("op/close input")
+				return
+			}
+		}
+	}
 	c.cmd.CloseInput()
 	c.inputDone = true
 	w.r.tally.add("op/close input")
 }
 
-// resize sends a size, valid or, now and then, with a zero dimension.
+// resize sends a size, valid or, now and then, with a zero dimension, from the session's consumer or on one of its streams.
 func (w *stressWorker) resize(c *stressCommand) {
 	c.resizes++
 	cols, rows := uint16(1+w.rng.IntN(300)), uint16(1+w.rng.IntN(100))
 	if w.rng.IntN(10) == 0 {
 		cols = 0
 	}
+	disposition := func() exechook.ResizeDisposition { return c.cmd.Resize(c.resizes, cols, rows) }
+	var via *stressStream
+	if c.sess != nil && w.rng.IntN(2) == 0 {
+		if via = c.sess.liveStream(w.rng); via != nil {
+			disposition = func() exechook.ResizeDisposition {
+				d, err := via.s.Resize(c.resizes, cols, rows)
+				if errors.Is(err, exechook.ErrStreamLeft) {
+					via.refusedLeft.Store(true)
+					return -1
+				}
+				return d
+			}
+		}
+	}
 	name := "closed"
-	switch c.cmd.Resize(c.resizes, cols, rows) {
+	switch disposition() {
 	case exechook.ResizeAccepted:
 		name = "accepted"
 	case exechook.ResizeIgnored:
@@ -565,6 +765,8 @@ func (w *stressWorker) resize(c *stressCommand) {
 	case exechook.ResizeInvalid:
 		name = "invalid"
 	case exechook.ResizeClosed:
+	default:
+		name = "refused (stream left)"
 	}
 	w.r.tally.add("op/resize " + name)
 }
@@ -573,6 +775,11 @@ func (w *stressWorker) resize(c *stressCommand) {
 func (w *stressWorker) end(c *stressCommand, kill bool) {
 	if kill {
 		w.r.mayHold.Store(true) // a function given up on holds its place until it returns
+	}
+	if c.sess != nil {
+		c.sess.endRequests.Add(1)
+	} else {
+		c.endRequests.Add(1)
 	}
 	c.cmd.Close(kill)
 	if kill {
@@ -584,6 +791,7 @@ func (w *stressWorker) end(c *stressCommand, kill bool) {
 
 // cancelRun ends the context of a run.
 func (w *stressWorker) cancelRun(c *stressCommand) {
+	c.cancels.Add(1)
 	c.cancel()
 	w.r.tally.add("op/cancel run")
 }
@@ -595,10 +803,43 @@ func (w *stressWorker) walkAway(c *stressCommand) {
 }
 
 // duplicate asks for a command with the id of one the worker holds: refused while that command is live, a new command once it is
-// gone.
+// gone, and, for a session, once its tombstone is. An id that a call on a goroutine of its own is addressed to is left alone, whichever of the id's
+// sessions the call was made for, so that the id is not taken while the call is meant for the session that held it.
 func (w *stressWorker) duplicate(c *stressCommand) {
+	if c.sess != nil && w.r.ledger.flightOf(c.id).Load() > 0 {
+		return
+	}
 	w.r.tally.add("op/duplicate id")
 	w.start(c.b, c.run, c.id, true)
+}
+
+// duplicateAny asks for the id of a command in the pool, or of a session that was let go of long ago, whose tombstone may be gone.
+func (w *stressWorker) duplicateAny() {
+	if len(w.history) > 0 && w.rng.IntN(2) == 0 {
+		h := w.history[w.rng.IntN(len(w.history))]
+		if w.r.ledger.flightOf(h.rec.id).Load() == 0 {
+			w.r.tally.add("op/duplicate id")
+			w.start(h.b, false, h.rec.id, true)
+		}
+		return
+	}
+	w.with(func(*stressCommand) bool { return true }, w.duplicate)
+}
+
+// latestSession returns the session with the id that the worker started last: the one in its pool, or, once that was let go of, in its history.
+func (w *stressWorker) latestSession(id string) *sessionRec {
+	if c := w.latest(id); c != nil {
+		if c.sess != nil {
+			return c.sess.rec
+		}
+		return nil
+	}
+	for i := len(w.history) - 1; i >= 0; i-- {
+		if w.history[i].rec.id == id {
+			return w.history[i].rec
+		}
+	}
+	return nil
 }
 
 // latest returns the command with the id that the worker started last, or nil.

@@ -41,12 +41,14 @@ func StreamingMethodFilter() otelgrpc.Filter {
 	}
 }
 
-// RegisterServerOpts returns a list of gRPC server options with the necessary interceptors
-// for the plugin SDK.
+// RegisterServerOpts returns a list of gRPC server options with the necessary interceptors for the plugin SDK, and the keepalive of
+// a plugin's server (ServerKeepaliveOptions). The keepalive comes before opts, so that the same option in opts replaces it.
 func RegisterServerOpts(opts []grpc.ServerOption, log logging.Logger) []grpc.ServerOption {
 	unaryinterceptors, streaminterceptors := NewServerInterceptors(log)
 
-	opts = append(opts,
+	// The keepalive is first, so that an option of the caller that sets it again replaces it: grpc keeps the last.
+	all := append(ServerKeepaliveOptions(), opts...)
+	all = append(all,
 		grpc.StatsHandler(otelgrpc.NewServerHandler(
 			otelgrpc.WithFilter(StreamingMethodFilter()),
 		)),
@@ -54,7 +56,7 @@ func RegisterServerOpts(opts []grpc.ServerOption, log logging.Logger) []grpc.Ser
 		grpc.ChainStreamInterceptor(streaminterceptors...),
 	)
 
-	return opts
+	return all
 }
 
 // NewServerInterceptors returns the default unary and stream interceptor chains

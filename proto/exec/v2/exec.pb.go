@@ -1805,8 +1805,10 @@ const (
 	ExitSource_EXIT_SOURCE_PROCESS ExitSource = 1
 	// A death by signal the target folded into 128+n: the code is 128+n and the SDK claims no signal.
 	ExitSource_EXIT_SOURCE_SIGNAL_FOLDED ExitSource = 2
-	// The transport said the stream ended (OK or failed) and the process's own status was not relayed (Kubernetes
-	// attach, or exec with an empty error channel). A code, if any, is not the command's.
+	// The transport said the stream ended and the process's own status was not relayed. Kubernetes: the API server's Success status (the
+	// exec stream ended normally) means "ended normally" and nothing more, because the API server sends the same Success for a command
+	// that did not exit 0 (after a kubelet or containerd restart): a code from this source, 0 included, is never the command's, and a
+	// consumer shows "ended normally", never "exit 0". remote_may_survive stays absent.
 	ExitSource_EXIT_SOURCE_TRANSPORT ExitSource = 3
 	// A bounded run that the SDK ended (timeout, cancel). A code, if any, is the aftermath of that kill.
 	ExitSource_EXIT_SOURCE_HOST ExitSource = 4
@@ -3202,6 +3204,11 @@ func (x *OptionsRequest) GetTarget() *TargetRef {
 // omits), and a host can show "attach: no exit status, survives a host restart" before it opens anything. Absent
 // means the choice does not narrow. A field wider than the kind's is a violation: the SDK clamps it to the bound
 // and names the field. Started may narrow further what is learned only at run time; it never carries the mode.
+//
+// no_program says that a session which selects this choice runs no program: it joins one that already runs (a Kubernetes attach joins
+// the container's own process). Opened and Started then carry no program (absent, never the target's default argv), a request that
+// names an argv of its own is refused (UNSUPPORTED) and so is a Run, which is a program to run. False, the common case, is a choice
+// whose session runs the program the request names. A host reads it with the options, before it opens anything.
 type Choice struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
@@ -3211,6 +3218,7 @@ type Choice struct {
 	IsDefault     bool                   `protobuf:"varint,5,opt,name=is_default,json=isDefault,proto3" json:"is_default,omitempty"`
 	Kind          string                 `protobuf:"bytes,6,opt,name=kind,proto3" json:"kind,omitempty"`
 	Capabilities  *Capabilities          `protobuf:"bytes,7,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
+	NoProgram     bool                   `protobuf:"varint,8,opt,name=no_program,json=noProgram,proto3" json:"no_program,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3292,6 +3300,13 @@ func (x *Choice) GetCapabilities() *Capabilities {
 		return x.Capabilities
 	}
 	return nil
+}
+
+func (x *Choice) GetNoProgram() bool {
+	if x != nil {
+		return x.NoProgram
+	}
+	return false
 }
 
 // Option is one dimension a user chooses along ("container") and its choices.
@@ -5772,8 +5787,10 @@ func (x *Notice) GetKind() NoticeKind {
 // uint32. Docker's ExecInspect and kubectl's error-channel Status relay an int. A signal is never a code: it is
 // Signaled, or an Exited with EXIT_SOURCE_SIGNAL_FOLDED when the target folded it into 128+n.
 //
-// The arm exists only with a status: a stream that ended with none is Lost, never Exited with code 0. exit_code is
-// not optional because the arm itself says it is known.
+// The arm exists only with a status that a target or a transport relayed. From the process (PROCESS, SIGNAL_FOLDED) the code is the
+// command's own; from the transport (TRANSPORT) it is "the stream ended normally" (Kubernetes' Success status, code 0) and says nothing
+// about what the command did. A stream that ended with nothing relayed (an empty status channel, a break) is Lost, never Exited with
+// code 0. exit_code is not optional because the arm itself says it is known.
 type Exited struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ExitCode      int64                  `protobuf:"zigzag64,1,opt,name=exit_code,json=exitCode,proto3" json:"exit_code,omitempty"`
@@ -7643,7 +7660,7 @@ const file_proto_exec_v2_exec_proto_rawDesc = "" +
 	"\bfeatures\x18\x02 \x03(\x0e2\x1d.omniview.sdk.exec.v2.FeatureR\bfeatures\x12:\n" +
 	"\atargets\x18\x03 \x03(\v2 .omniview.sdk.exec.v2.TargetInfoR\atargets\"I\n" +
 	"\x0eOptionsRequest\x127\n" +
-	"\x06target\x18\x01 \x01(\v2\x1f.omniview.sdk.exec.v2.TargetRefR\x06target\"\x8d\x02\n" +
+	"\x06target\x18\x01 \x01(\v2\x1f.omniview.sdk.exec.v2.TargetRefR\x06target\"\xac\x02\n" +
 	"\x06Choice\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x127\n" +
@@ -7652,7 +7669,9 @@ const file_proto_exec_v2_exec_proto_rawDesc = "" +
 	"\n" +
 	"is_default\x18\x05 \x01(\bR\tisDefault\x12\x12\n" +
 	"\x04kind\x18\x06 \x01(\tR\x04kind\x12F\n" +
-	"\fcapabilities\x18\a \x01(\v2\".omniview.sdk.exec.v2.CapabilitiesR\fcapabilities\"p\n" +
+	"\fcapabilities\x18\a \x01(\v2\".omniview.sdk.exec.v2.CapabilitiesR\fcapabilities\x12\x1d\n" +
+	"\n" +
+	"no_program\x18\b \x01(\bR\tnoProgram\"p\n" +
 	"\x06Option\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x126\n" +
 	"\achoices\x18\x02 \x03(\v2\x1c.omniview.sdk.exec.v2.ChoiceR\achoices\x12\x1a\n" +

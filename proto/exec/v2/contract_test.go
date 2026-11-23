@@ -504,6 +504,7 @@ var audit = map[string]auditEntry{
 
 	"Choice.is_default": declared("the author states which choice is the default; false is \"not the default\", never unknown"),
 	"Option.required":   declared("the author states whether the option is required; false is \"optional\", never unknown"),
+	"Choice.no_program": declared("the author states whether a session that selects the choice runs no program; false is \"it runs the program the request names\", never unknown"),
 
 	"IntegrationRequest.consent":    intent("the host's assertion of consent; false is no consent"),
 	"Start.tty":                     intent("a request for a terminal; false asks for none"),
@@ -549,7 +550,7 @@ var audit = map[string]auditEntry{
 	"Dropped.bytes":       counter("the number of bytes dropped; a count"),
 
 	"Signaled.signal_number": unit("a signal number; zero is not a signal and means not reported"),
-	"Exited.exit_code":       arm("the Exited arm exists only with a status: a stream with none is Lost, never exit 0"),
+	"Exited.exit_code":       arm("the Exited arm exists only with a status that a target or a transport relayed (from the transport, code 0 is \"ended normally\"): a stream with none is Lost, never exit 0"),
 
 	"Ended.start_observed": observed("the SDK always knows whether it observed the start"),
 	"Ended.duration_ms":    counter("measured by the SDK from the accepted Open to the end"),

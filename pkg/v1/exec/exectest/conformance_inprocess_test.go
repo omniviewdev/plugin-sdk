@@ -52,14 +52,18 @@ func TestTheCasesThatRunInProcessAreTheOnesTheEngineSatisfiesAndNoOther(t *testi
 	for _, c := range filledCases(t) {
 		got = append(got, c.name)
 	}
-	want := []string{"case 09", "case 14", "case 28", "pair P5", "stress"}
+	want := []string{"case 09", "case 14", "case 17", "case 28", "pair P5", "stress"}
 	if !slices.Equal(got, want) {
 		t.Errorf("the cases with a body are %q, want %q", got, want)
 	}
-	// What is left of each (the wire part, or the stress's detach and attach) has a step that writes it.
+	// What is left of each has a step that writes it, unless the case has a body over the wire and that was all that was left (the
+	// tombstone of case 9 was, and is the wire's), or the in-process body is all of it: the stress is complete in process, with no step.
 	for _, c := range engineCases() {
-		if c.inProcess != nil && c.step == "" {
-			t.Errorf("case %d (%q) runs in process and has no step for what is left of it", c.number, c.name)
+		if c.inProcess != nil && c.step == "" && c.wire == nil && c.name != stressName {
+			t.Errorf("case %d (%q) runs in process and has no step for what is left of it, and no body over the wire", c.number, c.name)
+		}
+		if c.name == stressName && (c.step != "" || c.inProcess == nil) {
+			t.Errorf("the stress row has step %q and a body %v, want no step and a body that runs in process: it is written", c.step, c.inProcess != nil)
 		}
 	}
 }
@@ -213,6 +217,8 @@ func TestEveryInProcessCaseFailsWhenTheEngineIsWrong(t *testing.T) {
 		{"case 14", faultCauseRequested, `want "retired"`},
 		{"case 28", faultNoSurvival, "remote_may_survive is absent"},
 		{"case 28", faultEndIsLost, "the end is lost"},
+		{"case 17", faultNoViolations, "exit violations"},
+		{"case 17", faultInventedViolation, "want none"},
 		{"pair P5", faultSecondEnd, "ended after its exit, the result changed"},
 		{"pair P5", faultEndIsLost, "ended once"},
 		{"stress", faultCompleteWithDrops, "COMPLETE"},
@@ -249,6 +255,7 @@ func faultName(f engineFault) string {
 		faultHole: "a hole in the output", faultWrongByte: "a wrong byte", faultNoArm: "an end with no arm", faultBytesOut: "a byte counted that was not written",
 		faultLive: "a command live after Close", faultAbandoned: "functions abandoned for ever", faultSlowClose: "a Close that does not return",
 		faultLeak: "a goroutine left behind", faultRefuseWrongClass: "a start refused as INTERNAL", faultNeverDone: "Done never closed",
+		faultNoViolations: "violations hidden", faultInventedViolation: "a violation that was not made",
 	}
 	return names[f]
 }

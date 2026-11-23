@@ -6,7 +6,7 @@ import (
 )
 
 // The real engine under the stress: every invariant at rest, for as long as the stress runs by default (one second under -short,
-// five otherwise, or what OMNIVIEW_LIFECYCLE_HAMMER says). It is the control of the tests below, which give the same stress an
+// two otherwise, or what OMNIVIEW_LIFECYCLE_HAMMER says). It is the control of the tests below, which give the same stress an
 // engine with one fault and see it fail.
 //
 // The stress must also exercise what it claims to. Each of these is certain in a round whatever the scheduler does: the workers

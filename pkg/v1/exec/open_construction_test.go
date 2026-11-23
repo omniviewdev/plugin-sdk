@@ -156,24 +156,17 @@ func TestOpenConstructionTwoConnectionsRunSessionsIndependentlyAndIdsArePerPlugi
 	rig := newProofRig(t, proofTarget("echo", proofEchoFunction))
 	second, secondConn := secondConnection(t, rig)
 	// Both connections are up before the baseline: a connection is dialed by its first call, and its goroutines are not a leak.
-	for _, client := range []exec.Client{rig.client, second} {
-		warm, err := rig.openOn(context.Background(), client, "echo", "warm", proofTTY)
+	for i, client := range []exec.Client{rig.client, second} {
+		id := fmt.Sprintf("warm-%d", i) // the id of a session that ended is held by its tombstone: one for each connection
+		warm, err := rig.openOn(context.Background(), client, "echo", id, proofTTY)
 		if err != nil {
 			t.Fatalf("warm-up: %v", err)
 		}
 		if _, err := newProofEchoer(warm).measure(2); err != nil {
 			t.Fatalf("warm-up: %v", err)
 		}
-		_ = warm.Close()
-		if !proofPoll(engineWait, func() bool {
-			conn, err := rig.openOn(context.Background(), client, "echo", "warm")
-			if err == nil {
-				_ = conn.Close()
-			}
-			return err == nil
-		}) {
-			t.Fatalf("the id of the warm-up session is still held")
-		}
+		_ = warm.Close() // a host that closes its stream detaches: the session is ended here, and its function returns
+		proofEndDetached(t, client, id)
 	}
 	baseline := lifecycletest.TakeBaseline()
 
@@ -220,7 +213,8 @@ func TestOpenConstructionTwoConnectionsRunSessionsIndependentlyAndIdsArePerPlugi
 		}
 	}
 
-	// The second connection breaks: its sessions end, their ids are free, and the first connection's sessions go on.
+	// The second connection breaks: a host that leaves detaches, so its sessions live on with no stream attached (they are ended
+	// here, from the first connection, so that nothing is left behind), and the first connection's sessions go on.
 	if err := secondConn.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -230,16 +224,7 @@ func TestOpenConstructionTwoConnectionsRunSessionsIndependentlyAndIdsArePerPlugi
 		}
 	}
 	for i := range perConnection {
-		id := fmt.Sprintf("two-%d", i)
-		if !proofPoll(engineWait, func() bool {
-			conn, err := rig.openKind(context.Background(), "echo", id)
-			if err == nil {
-				_ = conn.Close()
-			}
-			return err == nil
-		}) {
-			t.Errorf("the id %q of a session on the broken connection is still held", id)
-		}
+		proofEndDetached(t, rig.client, fmt.Sprintf("two-%d", i))
 	}
 	for i, e := range onFirst {
 		if _, err := e.echo.measure(3); err != nil {
@@ -250,6 +235,10 @@ func TestOpenConstructionTwoConnectionsRunSessionsIndependentlyAndIdsArePerPlugi
 		_ = e.conn.Close()
 	}
 	_ = first1.Close()
+	for i := range perConnection {
+		proofEndDetached(t, rig.client, fmt.Sprintf("one-%d", i))
+	}
+	proofEndDetached(t, rig.client, "shared")
 	if err := baseline.Check(10 * time.Second); err != nil {
 		t.Errorf("goroutines after two connections: %v", err)
 	}
@@ -268,10 +257,45 @@ func (w *watcher) run(ctx context.Context, p *exec.Proc) (exec.Exit, error) {
 	return exec.Exit{}, ctx.Err()
 }
 
-// STREAM END: the stream is the session's life. A host that cancels, closes its stream, closes its sending side or loses its
-// connection ends the session: the function sees its context end, the id is free again, and nothing of it is left. A host that
-// loses its connection in the middle of a flood does not leave the function held in a write.
-func TestOpenConstructionAHostThatLeavesEndsItsSessionItsFunctionAndLeavesNoGoroutine(t *testing.T) {
+// proofListed is the entry of a session in ListSessions, or nil.
+func proofListed(client exec.Client, id string) *execv2.SessionInfo {
+	list, err := client.ListSessions(context.Background())
+	if err != nil {
+		return nil
+	}
+	for _, info := range list.GetSessions() {
+		if info.GetFacts().GetSessionId() == id {
+			return info
+		}
+	}
+	return nil
+}
+
+// proofDetached waits for the session to be live with no stream attached.
+func proofDetached(client exec.Client, id string) bool {
+	return proofPoll(engineWait, func() bool {
+		info := proofListed(client, id)
+		return info != nil && info.GetEndedWith() == nil && !info.GetAttached()
+	})
+}
+
+// proofEndDetached ends a session whose host left, with a kill: what a test does so that no function or goroutine outlives it.
+func proofEndDetached(t *testing.T, client exec.Client, id string) {
+	t.Helper()
+	if !proofDetached(client, id) {
+		t.Errorf("the session %q is not live with no stream attached after its host left", id)
+		return
+	}
+	if err := client.EndSession(context.Background(), &execv2.EndSessionRequest{SessionId: id, Mode: execv2.CloseMode_CLOSE_MODE_KILL}); err != nil {
+		t.Errorf("EndSession(%q): %v", id, err)
+	}
+}
+
+// STREAM END: a host that leaves detaches, it does not end its session. A host that cancels, closes its stream, closes its sending
+// side or loses its connection leaves the session running for its lease: its function is not told, ListSessions shows it with no
+// stream attached, and EndSession is what cancels the function, frees its place and leaves nothing behind. A host that loses its
+// connection in the middle of a flood does not leave the function held in a write: a session with no stream drops what no one reads.
+func TestOpenConstructionAHostThatLeavesDetachesItsSessionAndEndSessionLeavesNoGoroutine(t *testing.T) {
 	w := &watcher{cancelled: make(chan string, 8)}
 	returned := make(chan struct{}, 4)
 	rig := newProofRig(t,
@@ -294,31 +318,29 @@ func TestOpenConstructionAHostThatLeavesEndsItsSessionItsFunctionAndLeavesNoGoro
 		t.Fatal(err)
 	}
 	_ = warm.Close()
+	proofEndDetached(t, rig.client, "warm")
 	<-w.cancelled
 	baseline := lifecycletest.TakeBaseline()
 
-	freed := func(id string) {
+	// ended checks what a host that left did to its session: it is detached and its function was not told, and EndSession ends it.
+	ended := func(id string) {
 		t.Helper()
-		if !proofPoll(engineWait, func() bool {
-			conn, err := rig.openKind(context.Background(), "watch", id, proofLabels("sid", id+"-again"))
-			if err == nil {
-				_ = conn.Close()
-				<-w.cancelled
-			}
-			return err == nil
-		}) {
-			t.Errorf("the id %q is still held after its host left", id)
+		if !proofDetached(rig.client, id) {
+			t.Fatalf("the session %q is not live with no stream attached after its host left", id)
 		}
-	}
-	waitCancelled := func(id string) {
-		t.Helper()
+		select {
+		case got := <-w.cancelled:
+			t.Fatalf("the function of %q saw its context end when its host left: a host that leaves detaches", got)
+		default:
+		}
+		proofEndDetached(t, rig.client, id)
 		select {
 		case got := <-w.cancelled:
 			if got != id {
 				t.Errorf("the function of %q saw its context end, want %q", got, id)
 			}
 		case <-time.After(engineWait):
-			t.Fatalf("the function of %q never saw its context end after its host left", id)
+			t.Fatalf("the function of %q never saw its context end after EndSession", id)
 		}
 	}
 
@@ -372,8 +394,7 @@ func TestOpenConstructionAHostThatLeavesEndsItsSessionItsFunctionAndLeavesNoGoro
 		t.Run(name, func(t *testing.T) {
 			id := "left-" + strconv.Itoa(len(name))
 			how(t, id)
-			waitCancelled(id)
-			freed(id)
+			ended(id)
 		})
 	}
 
@@ -386,8 +407,7 @@ func TestOpenConstructionAHostThatLeavesEndsItsSessionItsFunctionAndLeavesNoGoro
 			t.Fatal(err)
 		}
 		_ = secondConn.Close()
-		waitCancelled("broken")
-		freed("broken")
+		ended("broken")
 	})
 
 	t.Run("the host's connection breaks in the middle of a flood", func(t *testing.T) {
@@ -402,21 +422,20 @@ func TestOpenConstructionAHostThatLeavesEndsItsSessionItsFunctionAndLeavesNoGoro
 			}
 		}
 		_ = thirdConn.Close()
+		if !proofDetached(rig.client, "flooded") {
+			t.Fatal("the session of the flood is not live with no stream attached after its host's connection broke")
+		}
+		// Nothing reads the output and nothing holds the function in a write: the output of the session goes on growing.
+		from := proofListed(rig.client, "flooded").GetNextOffset()
+		if !proofPoll(engineWait, func() bool { return proofListed(rig.client, "flooded").GetNextOffset() > from+4<<20 }) {
+			t.Fatal("the function of the flood is held in a write after its host's connection broke")
+		}
+		proofEndDetached(t, rig.client, "flooded")
 		awaitChannel(t, func() <-chan struct{} {
 			c := make(chan struct{})
 			go func() { <-returned; close(c) }()
 			return c
-		}(), "the function of the flood to return after its host's connection broke")
-		if !proofPoll(engineWait, func() bool {
-			c, err := rig.openKind(context.Background(), "watch", "flooded", proofLabels("sid", "flooded-again"))
-			if err == nil {
-				_ = c.Close()
-				<-w.cancelled
-			}
-			return err == nil
-		}) {
-			t.Errorf("the id of the flood is still held after its host's connection broke")
-		}
+		}(), "the function of the flood to return after EndSession")
 	})
 
 	if err := baseline.Check(10 * time.Second); err != nil {

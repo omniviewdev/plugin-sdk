@@ -406,6 +406,12 @@ func (f *fakeTarget) exec(ctx context.Context, p *exec.Proc) (exec.Exit, error) 
 // receive. A session may only narrow what it was opened with: a field that a report puts above the opened value is
 // clamped to it. For each of these violations the rig tells the test with Errorf, at the author's call, where the SDK
 // logs the author's bug. Effective returns the resulting capabilities.
+//
+// The signals, the queries and the facts of the function are the rig's too: Signal delivers a signal to Proc.Signals, which is never
+// nil, Ask puts a query on Proc.Queries, which is nil unless the capabilities the session was opened with declare a fact, and
+// returns the channel that its answer arrives on, and Facts returns what the function pushed with Proc.Fact. The rig holds them to
+// what the SDK does with the frames of a host: a signal that the session's effective capabilities do not list, a query for a fact
+// the target does not provide and a push for a kind that is not PUSH are told to the test with Errorf and never reach the function.
 type ProcRig struct {
 	t    testing.TB
 	proc *exec.Proc
@@ -424,6 +430,9 @@ type ProcRig struct {
 	links     []exec.LinkState
 	resize    chan exec.Size
 	closed    bool // Proc.Resize is closed: the command has ended
+	signals   chan exec.Signal
+	queries   chan exec.Query // nil unless the opened capabilities declare a fact
+	facts     []exec.Fact     // what the function pushed
 }
 
 // ProcRigOption configures NewProcRig.
@@ -448,6 +457,11 @@ func RigCapabilities(declared exec.Capabilities) ProcRigOption {
 // Capabilities. A value that names no choice, an option the options do not have and a choice with no Capabilities
 // narrow nothing. The result is what Opened returns and what Proc.Capabilities starts as.
 //
+// The command's Request is what the SDK hands the function: its Selection holds the choice of every option, the default choice of
+// an option the request omitted included (an option with neither is absent), and a request whose chosen choice runs no program
+// (Choice.NoProgram) has no Argv. The rig does not refuse the request that the SDK would refuse for an argv of its own, which needs
+// the target's DefaultArgv.
+//
 // A choice that declares a field above the kind's (see RigCapabilities) is the author's bug in Options: the SDK serves
 // the kind's value for it and logs it, and the rig opens the command with the kind's value and tells the test with
 // Errorf, once for each field, when the rig is built. Without RigOptions the session is opened with the kind's
@@ -468,12 +482,19 @@ func NewProcRig(t testing.TB, req exec.Request, opts ...ProcRigOption) *ProcRig 
 		opt(&cfg)
 	}
 	tellWidenedChoices(t, cfg.declared, cfg.options)
+	// The command's request is what the SDK hands the function: the selection holds the choice of every option, the default
+	// choice of an option the request omitted included, and a choice that runs no program leaves no argv.
+	resolved, noProgram := exechook.ResolvedMode(cfg.options, req.Selection)
+	req.Selection = resolved
+	if noProgram {
+		req.Argv = nil
+	}
 	opened := exechook.OpenedCapabilities(cfg.declared, cfg.options, req.Selection)
 	stdinReader, stdinWriter := io.Pipe()
 	t.Cleanup(func() { _ = stdinWriter.Close(); _ = stdinReader.Close() })
 	r := &ProcRig{
 		t: t, opened: opened, gate: exechook.NewStartGate[exec.Request, exec.SessionFacts](req, opened),
-		stdin: stdinWriter, resize: make(chan exec.Size, 1),
+		stdin: stdinWriter, resize: make(chan exec.Size, 1), signals: make(chan exec.Signal, 8),
 	}
 	r.cond = sync.NewCond(&r.mu)
 	r.proc = &exec.Proc{
@@ -483,6 +504,8 @@ func NewProcRig(t testing.TB, req exec.Request, opts ...ProcRigOption) *ProcRig 
 		Stdin:        stdinReader,
 		Stdout:       rigWriter{r: r, buffer: &r.stdout},
 		Resize:       r.resize,
+		Signals:      r.signals,
+		Fact:         r.pushFact,
 		Started:      r.report,
 		Link: func(state exec.LinkState) {
 			r.mu.Lock()
@@ -496,6 +519,10 @@ func NewProcRig(t testing.TB, req exec.Request, opts ...ProcRigOption) *ProcRig 
 	}
 	if !req.Size.IsZero() {
 		r.resize <- req.Size
+	}
+	if opened.CwdFact != exec.FactModeNone || opened.ForegroundFact != exec.FactModeNone {
+		r.queries = make(chan exec.Query, 8)
+		r.proc.Queries = r.queries
 	}
 	return r
 }
@@ -622,6 +649,90 @@ func (r *ProcRig) Resize(size exec.Size) {
 	r.resize <- size
 }
 
+// Signal delivers a signal to Proc.Signals, as the SDK does for a frame of the host: only a signal that the session's effective
+// capabilities list is delivered (any other is told to the test, because the SDK would end the stream of a host that sent it), the
+// queue holds eight and drops the oldest signal for a new one, and the call never blocks. After the command has ended it does
+// nothing.
+func (r *ProcRig) Signal(sig exec.Signal) {
+	r.t.Helper()
+	if !slices.Contains(r.Effective().Signals, sig) {
+		r.t.Errorf("Signal(%v): the session does not declare it, and the SDK ends the stream of a host that sends a signal it does not declare", sig)
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return
+	}
+	for {
+		select {
+		case r.signals <- sig:
+			return
+		default:
+		}
+		select {
+		case <-r.signals:
+		default:
+		}
+	}
+}
+
+// Ask puts a query for a fact on Proc.Queries and returns the channel its answer arrives on, as a Fact (a fact the function says
+// is unknown has an empty Cwd, or an unspecified Foreground state, and the Reason it gave). A query for a fact that the session's
+// effective capabilities do not provide is told to the test: the SDK answers it itself, unknown and unsupported, and the function
+// never sees it. After the command has ended the answer never arrives.
+func (r *ProcRig) Ask(kind exec.FactKind) <-chan exec.Fact {
+	r.t.Helper()
+	answer := make(chan exec.Fact, 1)
+	caps := r.Effective()
+	mode := caps.CwdFact
+	if kind == exec.FactKindForeground {
+		mode = caps.ForegroundFact
+	}
+	if (kind != exec.FactKindCwd && kind != exec.FactKindForeground) || mode == exec.FactModeNone || r.queries == nil {
+		r.t.Errorf("Ask(%v): the session does not provide that fact, and the SDK answers such a query itself, unknown and unsupported, without asking the function", kind)
+		return answer
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return answer
+	}
+	var once sync.Once
+	select {
+	case r.queries <- exec.Query{Kind: kind, Answer: func(f exec.Fact) { once.Do(func() { answer <- f }) }}:
+	default:
+		r.t.Errorf("Ask(%v): eight queries wait for the function: the SDK answers one more unknown and QUERY_FAILED at once", kind)
+	}
+	return answer
+}
+
+// Facts returns the facts the function pushed with Proc.Fact, in order, each as it pushed it: the SDK sends the newest value of a
+// kind at most ten times a second and never one the host already has, and the rig leaves that to the SDK's own tests.
+func (r *ProcRig) Facts() []exec.Fact {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.facts)
+}
+
+// pushFact is Proc.Fact: the function pushed a fact. A kind that is not a kind of fact, and one whose mode is not PUSH, is the
+// author's bug, which the SDK logs: here it is told to the test, at the author's call.
+func (r *ProcRig) pushFact(f exec.Fact) {
+	r.t.Helper()
+	caps := r.Effective()
+	mode := caps.CwdFact
+	if f.Kind == exec.FactKindForeground {
+		mode = caps.ForegroundFact
+	}
+	if (f.Kind != exec.FactKindCwd && f.Kind != exec.FactKindForeground) || mode != exec.FactModePush {
+		r.t.Errorf("Proc.Fact(%+v): the session does not push that fact (its capability is not FactModePush): the SDK ignores it", f)
+		return
+	}
+	r.mu.Lock()
+	r.facts = append(r.facts, f)
+	r.mu.Unlock()
+}
+
 // Stdout returns a copy of what the command wrote to its standard output (or terminal) so far.
 func (r *ProcRig) Stdout() []byte {
 	r.mu.Lock()
@@ -687,6 +798,10 @@ func (r *ProcRig) Run(ctx context.Context, fn exec.ExecFunc) (exit exec.Exit, er
 		r.mu.Lock()
 		r.closed = true
 		close(r.resize)
+		close(r.signals)
+		if r.queries != nil {
+			close(r.queries)
+		}
 		r.mu.Unlock()
 		_ = r.stdin.Close()
 		if recovered := recover(); recovered != nil {

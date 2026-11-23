@@ -201,6 +201,10 @@ func endKey(end *execv2.End) string {
 	return "unknown"
 }
 
+// stressSeq numbers the ids of the sessions the workers open: the id of a session that ended is held by its tombstone, so an id is
+// used once (the ids that the workers share are the ones that are refused when they are live or held).
+var stressSeq atomic.Int64
+
 // iterate is one session: open, act, end, read, and check. It never blocks for longer than engineWait.
 func (s *stressWorker) iterate() {
 	kind := s.pick()
@@ -211,7 +215,7 @@ func (s *stressWorker) iterate() {
 	case bad:
 		id = "bad id\n"
 	case own:
-		id = fmt.Sprintf("w%d-%d", s.n, s.rng.IntN(stressOwnIDs))
+		id = fmt.Sprintf("w%d-%d", s.n, stressSeq.Add(1))
 	default:
 		id = fmt.Sprintf("shared-%d", s.rng.IntN(stressShared))
 	}
@@ -231,6 +235,10 @@ func (s *stressWorker) iterate() {
 		return
 	}
 	s.opened[kind.name]++
+	defer func() { // a host that leaves detaches and its session lives for its lease: end what is left of this one
+		cancel()
+		s.world.reap(id)
+	}()
 	if got := conn.Opened().GetFacts().GetSessionId(); got != id {
 		s.problem("%s: Opened names the session %q", id, got)
 	}
@@ -249,7 +257,7 @@ func (s *stressWorker) iterate() {
 	var sent uint64
 	for range s.rng.IntN(4) {
 		if tty && s.rng.IntN(3) == 0 {
-			size := &execv2.Size{Cols: uint32(s.rng.IntN(300)), Rows: uint32(s.rng.IntN(100))}
+			size := &execv2.Size{Cols: uint32(s.rng.IntN(299) + 1), Rows: uint32(s.rng.IntN(99) + 1)} // a malformed size ends the stream
 			_ = conn.Send(&execv2.ClientFrame{Frame: &execv2.ClientFrame_Resize{Resize: &execv2.Resize{Seq: uint32(sent), Size: size}}})
 			continue
 		}
@@ -302,16 +310,17 @@ func (s *stressWorker) iterate() {
 		s.known[id] = result != nil && audit.ended != nil && errors.Is(streamErr, io.EOF)
 	}
 	if own && !bad && s.known[id] {
-		// When Ended is delivered the id is already free: a start of the same id right after is not refused.
+		// When Ended is delivered the session's place is free and its id is held by its tombstone: a start of the same id right
+		// after is refused as SESSION_EXISTS (or for a full kind), and never admitted.
 		again, err := s.world.rig.openKind(context.Background(), kind.name, id, proofLabels("hold", "1"))
 		switch {
 		case err == nil:
 			s.opened[kind.name]++
 			_ = again.Close()
-			s.known[id] = false // the session just opened is ending, and its end is not read
-		case proofRefusal(err) == "LIMIT/TOO_MANY_SESSIONS" || proofRefusal(err) == "UNAVAILABLE/TARGET_WEDGED" && kind.name == "stuck":
+			s.problem("%s (%s): the id was admitted after its Ended was read, while its tombstone holds it", id, kind.name)
+		case proofRefusal(err) == "CONFLICT/SESSION_EXISTS" || proofRefusal(err) == "LIMIT/TOO_MANY_SESSIONS" || proofRefusal(err) == "UNAVAILABLE/TARGET_WEDGED" && kind.name == "stuck":
 		default:
-			s.problem("%s (%s): the id was refused right after its Ended was read: %s", id, kind.name, proofRefusal(err))
+			s.problem("%s (%s): the id was refused with %s right after its Ended was read, want SESSION_EXISTS", id, kind.name, proofRefusal(err))
 		}
 	}
 	if result == nil {
@@ -385,52 +394,55 @@ func newStressWorld(t *testing.T) (*stressWorld, lifecycletest.GoroutineBaseline
 	world := &stressWorld{gate: exectest.NewGate(), calls: map[string]*atomic.Int64{}}
 	world.rig = newProofRig(t, world.targets()...)
 	t.Cleanup(world.gate.Open) // registered after the rig, so it runs before the rig waits for the functions that ignore their context
-	// The connection and its goroutines exist before the baseline: one session, echoed, ended, and its id free again.
+	// The connection and its goroutines exist before the baseline: one session, echoed, its host left, and the session ended.
 	warm := world.rig.mustOpenKind("echo", "warm", proofTTY)
 	if _, err := newProofEchoer(warm).measure(3); err != nil {
 		t.Fatalf("warm-up: %v", err)
 	}
 	_ = warm.Close()
-	if !proofPoll(engineWait, func() bool {
-		conn, err := world.rig.openKind(context.Background(), "echo", "warm", proofLabels("hold", "1"))
-		if err == nil {
-			_ = conn.Close()
-		}
-		return err == nil
-	}) {
-		t.Fatalf("the id of the warm-up session is still held")
-	}
+	proofEndDetached(t, world.rig.client, "warm")
 	return world, lifecycletest.TakeBaseline()
+}
+
+// reap ends the session of an iteration whose host has left, when it is still alive: a stream that is over is an implicit detach
+// and a session lives for its lease, so a stress that ended with its hosts leaving would end with sessions running.
+func (w *stressWorld) reap(id string) {
+	var info *execv2.SessionInfo
+	if !proofPoll(engineWait, func() bool {
+		info = proofListed(w.rig.client, id)
+		return info == nil || info.GetEndedWith() != nil || !info.GetAttached()
+	}) || info == nil || info.GetEndedWith() != nil {
+		return
+	}
+	_ = w.rig.client.EndSession(context.Background(), &execv2.EndSessionRequest{SessionId: id, Mode: execv2.CloseMode_CLOSE_MODE_KILL})
 }
 
 // endState is the invariant at rest, once the workers have stopped and every host has left.
 func endState(t *testing.T, world *stressWorld, baseline lifecycletest.GoroutineBaseline, opened map[string]int) {
 	t.Helper()
 	rig := world.rig
-	world.gate.Open()   // the functions that ignored their context return
-	opened["echo"] += 2 // the warm-up session and the probe of its id, which newStressWorld made
-	probe := func(kind, id string) bool {
-		conn, err := rig.openKind(context.Background(), kind, id, proofLabels("hold", "1"))
-		if err == nil {
-			opened[kind]++
-			_ = conn.Close()
+	world.gate.Open() // the functions that ignored their context return
+	opened["echo"]++  // the warm-up session, which newStressWorld made
+	// Every session whose host left is detached and lives for its lease: end what is left, and none is live. Every id that was used
+	// is held by its tombstone and is not reusable until it expires.
+	if !proofPoll(engineWait, func() bool {
+		list, err := rig.client.ListSessions(context.Background())
+		if err != nil {
+			return false
 		}
-		return err == nil
-	}
-	// Every id that was used is free: a new open of it is accepted, once the sessions that were ending have gone.
-	var ids []string
-	for w := range stressWorkers {
-		for i := range stressOwnIDs {
-			ids = append(ids, fmt.Sprintf("w%d-%d", w, i))
+		live := 0
+		for _, info := range list.GetSessions() {
+			if info.GetEndedWith() != nil {
+				continue
+			}
+			live++
+			if !info.GetAttached() {
+				_ = rig.client.EndSession(context.Background(), &execv2.EndSessionRequest{SessionId: info.GetFacts().GetSessionId(), Mode: execv2.CloseMode_CLOSE_MODE_KILL})
+			}
 		}
-	}
-	for i := range stressShared {
-		ids = append(ids, fmt.Sprintf("shared-%d", i))
-	}
-	for _, id := range ids {
-		if !proofPoll(engineWait, func() bool { return probe("echo", id) }) {
-			t.Errorf("the id %q is still held at rest", id)
-		}
+		return live == 0
+	}) {
+		t.Errorf("sessions are still live at rest: a session was not ended")
 	}
 	// Every kind holds no session: its whole limit is free, and the next one over it is refused.
 	for _, k := range stressKinds {

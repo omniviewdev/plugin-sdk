@@ -54,19 +54,16 @@ func TestAnInputFrameOfExactlyTheMaximumIsTakenAndOneByteMoreIsRefused(t *testin
 	}
 }
 
-// A host whose stream ends has not asked for the end of its session, so the session is closed, not killed: the function's context
-// is cancelled and the function has the grace to return, and the session's id is not free for another session until it has
-// (M18: a stream that ended killed its session, and the id was handed to a new one while the old function was still winding down).
-func TestAHostThatLeavesClosesItsSessionAndItsIdIsNotFreeWhileTheFunctionWindsDown(t *testing.T) {
+// The end of a session closes it, it does not kill it: the function's context is cancelled and the function has the grace to
+// return, and the session's id is not free for another session until it has (M18: a session that ended killed its function, and
+// the id was handed to a new one while the old function was still winding down). A host that leaves does not end its session, it
+// detaches, and what ends the session is its lease: so the test ends this one with the lease. Once the function has returned the
+// id is still held, by the session's tombstone.
+func TestASessionThatEndsWithItsLeaseClosesItsFunctionAndItsIdIsNotFreeWhileTheFunctionWindsDown(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		entered, told, release := make(chan struct{}), make(chan struct{}), exectest.NewGate()
 		var returned atomic.Bool
-		var calls atomic.Int32
 		rig := newMemoryRig(t, engTarget(func(ctx context.Context, _ *exec.Proc) (exec.Exit, error) {
-			if calls.Add(1) > 1 { // the session that takes the id over: it only waits to be stopped
-				<-ctx.Done()
-				return exec.Exit{}, ctx.Err()
-			}
 			close(entered)
 			<-ctx.Done()
 			close(told)
@@ -80,9 +77,19 @@ func TestAHostThatLeavesClosesItsSessionAndItsIdIsNotFreeWhileTheFunctionWindsDo
 		<-entered
 
 		host.hostLeaves()
-		<-told // the session is ending: its function was told
+		// The host left and the session lives: its function is not told while the lease runs (the clock is the bubble's, so a
+		// minute passes at once and the lease, five minutes, has not).
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		select {
+		case <-told:
+			t.Fatal("the function was told to stop when its host left: a host that leaves detaches, and the lease had not run out")
+		default:
+		}
+		time.Sleep(5 * time.Minute) // the lease runs out
+		<-told                      // the session is ending: its function was told
 
-		// Everything the server does about a host that left, while the function has not returned, it does within the clock's next
+		// Everything the server does about a session that ended, while the function has not returned, it does within the clock's next
 		// second (a kill gives up on the function within 50 ms; a close waits for the grace, which is 5 s): the id is still held.
 		time.Sleep(time.Second)
 		synctest.Wait()
@@ -94,27 +101,26 @@ func TestAHostThatLeavesClosesItsSessionAndItsIdIsNotFreeWhileTheFunctionWindsDo
 				t.Errorf("a second open of the id while the old function winds down: %v, want a conflict (the id is taken)", err)
 			}
 		default:
-			t.Error("the id of a session whose host left was handed to a new session while the old function was still winding down: a host that leaves ends its session with a kill, which does not wait for the function")
+			t.Error("the id of a session that ended was handed to a new session while the old function was still winding down")
 		}
 		if returned.Load() {
 			t.Fatal("the function returned before the test let it")
 		}
 		again.cancel()
 
-		// The function returns: the session is over, and its id is free.
+		// The function returns: the session is over and its place is free, and its tombstone holds its id.
 		release.Open()
 		synctest.Wait()
 		next := rig.stream("m18", nil)
 		synctest.Wait()
 		select {
 		case err := <-next.returned:
-			t.Errorf("a second open of the id after the old function returned: %v, want it admitted", err)
-		case frame := <-next.out:
-			if frame.GetOpened() == nil {
-				t.Errorf("the first frame of the session that took the id over is %v, want Opened", frame)
+			if st, ok := status.FromError(err); !ok || st.Code() != codes.Aborted {
+				t.Errorf("a second open of the id after the old function returned: %v, want a conflict (the tombstone holds the id)", err)
 			}
+		case frame := <-next.out:
+			t.Errorf("the id of a session that ended was admitted while its tombstone holds it: the first frame is %v", frame)
 		}
 		next.hostLeaves()
-		host.hostLeaves()
 	})
 }

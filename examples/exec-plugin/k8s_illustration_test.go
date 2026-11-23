@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"reflect"
 	"strings"
 	"sync"
@@ -31,12 +32,6 @@ type streamOptions struct {
 	Stdout, Stderr    io.Writer
 	Tty               bool
 	TerminalSizeQueue sizeSource
-}
-
-type codeExitError struct{ Code int }
-
-func (e codeExitError) Error() string {
-	return fmt.Sprintf("command terminated with exit code %d", e.Code)
 }
 
 type executor interface {
@@ -74,31 +69,36 @@ func podTarget() exec.Target {
 func podExec(ctx context.Context, p *exec.Proc) (exec.Exit, error) {
 	// p.Capabilities is what the host read in Opened: the kind's upper bound narrowed by the mode this request chose
 	// (the Capabilities of the choice, see podOptions). The mode is known before this function runs, so it is not
-	// reported here, and nothing else is learned at run time, so Started is not called. client-go has no callback for
-	// "the command is running"; the start this adapter observes is the first byte the command writes, and the SDK sends
-	// the session's Started before it, made from the facts of Opened. A command that stays silent has none.
+	// reported here. client-go has no callback for "the command is running"; what it does offer is its first Read of the
+	// stdin it was handed, which comes once its streams exist, so that is the start this adapter reports, and a command
+	// that stays silent still has its Started. A refusal of the API (a 403, a container that is not running) comes
+	// before it, as a failure at START.
 	attach := p.Request.Selection["mode"] == "attach" // the "mode" option of the target's Options
 	run, err := executorFor(p, attach)
 	if err != nil {
 		return exec.Exit{}, err // Target.Classify maps "container not running", RBAC 403, "no such file"
 	}
-	opts := streamOptions{Stdin: p.Stdin, Stdout: p.Stdout, Stderr: p.Stderr, Tty: p.Request.TTY,
+	stdin := exec.OnFirstRead(p.Stdin, func() { p.Started(exec.SessionFacts{Transport: "k8s-ws-v5"}) })
+	opts := streamOptions{Stdin: stdin, Stdout: p.Stdout, Stderr: p.Stderr, Tty: p.Request.TTY,
 		TerminalSizeQueue: sizeQueue{p.Resize}} // a terminal has no Stderr: it is nil, which client-go reads as none
 	err = run.StreamWithContext(ctx, opts)
-	var code codeExitError
-	switch {
-	case !attach && errors.As(err, &code):
-		// The API reports a code and nothing about where it came from: 137 can be a SIGKILL or a plain exit 137, so
-		// no signal is inferred from the range. ExitFolded is only for a target that says a code is a folded signal.
-		return exec.ExitCode(code.Code), nil
-	case err == nil:
-		// client-go returns nil both for a Success status and for a status channel that closed empty, so nil says
-		// nothing about the exit: the stream ended and the command's status is not known. It is never exit 0.
-		// (A plugin that reads the status channel itself can return ExitCode(0) for a Success status.)
-		return exec.ExitLost(exec.LostNoStatus), nil
-	default:
-		return exec.Exit{}, err
+	if exit, ok := exec.ExitOfStreamError(err); ok {
+		// nil: the stream ended normally, which is all the API says. It sends the same Success for a command that did not
+		// exit 0 (after a kubelet or containerd restart), so this is Exited{0, TRANSPORT}, never the process's exit 0. A
+		// CodeExitError is the code the API relayed, from the process; 137 can be a SIGKILL or a plain exit 137, so no
+		// signal is inferred from the range.
+		return exit, nil
 	}
+	if broke(err) {
+		return exec.ExitLost(exec.LostNoStatus), nil // the stream broke: no status, and the process may still run
+	}
+	return exec.Exit{}, err // Target.Classify types what is left
+}
+
+// broke says that the stream to the API server ended while it was read, which is not a failure to open it.
+func broke(err error) bool {
+	var op *net.OpError
+	return errors.As(err, &op) || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 // sizeQueue hands Proc.Resize to client-go: Next waits for the next size and returns nil when the command has ended.
@@ -180,7 +180,7 @@ func runPod(t testing.TB, mode string, streamErr error) podRun {
 // A real exit code is reported as it is, from the process, and no signal is inferred from its range.
 func TestPodExecReportsTheCodeTheAPIGave(t *testing.T) {
 	for _, code := range []int{1, 3, 137} {
-		run := runPod(t, "exec", codeExitError{Code: code})
+		run := runPod(t, "exec", exectest.CodeExitError{Code: code})
 		if run.err != nil || run.exit.Code == nil || *run.exit.Code != int64(code) || run.exit.Source != exec.SourceProcess {
 			t.Errorf("code %d: exit = %+v, err = %v; want ExitCode(%d)", code, run.exit, run.err, code)
 		}
@@ -190,13 +190,38 @@ func TestPodExecReportsTheCodeTheAPIGave(t *testing.T) {
 	}
 }
 
-// A stream that ends with no status is Lost: never ExitTransport(0), never ExitCode(0).
-func TestPodExecNeverTurnsASilentEndIntoAnExit(t *testing.T) {
+// A stream that ended normally is the transport's word, never the process's exit 0 and never Lost; one that broke is Lost.
+func TestPodExecEndedNormallyIsTheTransportsWordAndABrokenStreamIsLost(t *testing.T) {
 	for _, mode := range []string{"exec", "attach"} {
 		run := runPod(t, mode, nil)
-		if run.err != nil || run.exit.Code != nil || run.exit.Lost != exec.LostNoStatus || run.exit.Signal != "" {
-			t.Errorf("%s: exit = %+v, err = %v; want ExitLost(LostNoStatus) and nothing else", mode, run.exit, run.err)
+		if run.err != nil || run.exit.Code == nil || *run.exit.Code != 0 || run.exit.Source != exec.SourceTransport || run.exit.Lost != exec.LostUnspecified {
+			t.Errorf("%s: exit = %+v, err = %v; want ExitTransport(0): the stream ended normally", mode, run.exit, run.err)
 		}
+		for _, broken := range []error{&net.OpError{Op: "read", Err: errors.New("connection reset by peer")}, io.ErrUnexpectedEOF} {
+			run = runPod(t, mode, broken)
+			if run.err != nil || run.exit.Code != nil || run.exit.Lost != exec.LostNoStatus || run.exit.Signal != "" {
+				t.Errorf("%s: a broken stream %v: exit = %+v, err = %v; want ExitLost(LostNoStatus) and nothing else", mode, broken, run.exit, run.err)
+			}
+		}
+	}
+}
+
+// The start is reported at the first read of the stdin the executor was handed: a command that stays quiet has its Started, and a
+// refusal that comes before the stream exists (the executor never reads) has none and is a failure at START.
+func TestAQuietPodReportsItsStartAtTheFirstReadOfItsStdin(t *testing.T) {
+	run := runStream(t, "exec", func(_ context.Context, opts streamOptions) error {
+		_, _ = opts.Stdin.Read(make([]byte, 1)) // client-go reads its stdin once its streams exist
+		return nil
+	})
+	if len(run.facts) != 1 || run.facts[0].Transport != "k8s-ws-v5" {
+		t.Errorf("a quiet command that read its stdin reported %+v, want one Started with the transport", run.facts)
+	}
+	if run.err != nil || run.exit.Source != exec.SourceTransport {
+		t.Errorf("exit = %+v, err = %v; want ExitTransport", run.exit, run.err)
+	}
+	refused := runStream(t, "exec", func(context.Context, streamOptions) error { return errors.New("the API refused the upgrade") })
+	if len(refused.facts) != 0 || refused.err == nil {
+		t.Errorf("a refusal before the stream existed reported %+v with err %v, want no Started and the error", refused.facts, refused.err)
 	}
 }
 
@@ -320,8 +345,12 @@ func TestAPodThatWritesIsGivenExactlyOneStartedBeforeItsFirstByte(t *testing.T) 
 				if got[0].Capabilities == nil || !reflect.DeepEqual(*got[0].Capabilities, rig.Opened()) {
 					t.Errorf("the Started carries %+v, want the opened capabilities %+v", got[0].Capabilities, rig.Opened())
 				}
-				if !reflect.DeepEqual(got[0].Program.Argv, []string{"/bin/sh"}) || got[0].PID != 0 || got[0].TTY != nil || got[0].Transport != "" {
-					t.Errorf("the Started claims more than the facts of Opened: %+v", got[0])
+				wantArgv := []string{"/bin/sh"} // the program that was asked, which an exec runs
+				if mode == "attach" {
+					wantArgv = nil // an attach joins the container's own process: the choice runs no program, so there is none to report
+				}
+				if !reflect.DeepEqual(got[0].Program.Argv, wantArgv) || got[0].PID != 0 || got[0].TTY != nil || got[0].Transport != "" {
+					t.Errorf("the Started claims more than the facts of Opened: %+v, want the argv %v", got[0], wantArgv)
 				}
 
 				proceed.Open()

@@ -328,20 +328,22 @@ func TestALossyTargetIsNeverHeldByAReaderThatDoesNotReadAndCountsWhatItLost(t *t
 	}
 }
 
-// A session that is ending never waits for a reader: a function blocked in Write on a full queue is released by the end,
-// returns by itself within the grace, and what the queue cannot hold is counted, not silently lost.
+// A session that is ending never waits for a reader: a function blocked in Write because its reader has left the most it may
+// leave unread (256 KiB) is released by the end, returns by itself within the grace, and what the ring cannot hold is counted, not
+// silently lost. (The ring holds the bytes a reader has read as well as the ones it has not, 1 MiB by default, so the write that
+// is released here is larger than the ring.)
 func TestAnEndingSessionNeverWaitsForAReaderAndCountsWhatItDropped(t *testing.T) {
 	filled, more := exectest.NewGate(), exectest.NewGate()
 	rig := newEngineRig(t, engineRigConfig{}, engTarget(func(_ context.Context, p *exec.Proc) (exec.Exit, error) {
 		chunk := make([]byte, 64<<10)
-		for range 4 { // the queue holds 256 KiB: this fills it
+		for range 4 { // a reader may leave 256 KiB unread: this reaches it
 			if _, err := p.Stdout.Write(chunk); err != nil {
 				return exec.Exit{}, err
 			}
 		}
 		filled.Open()
 		<-more.Opened()
-		_, err := p.Stdout.Write(chunk) // blocks: nobody reads, and the queue is full
+		_, err := p.Stdout.Write(make([]byte, 2<<20)) // blocks: nobody reads, and the reader has left all it may
 		return exec.Exit{}, err
 	}, func(i *exec.TargetInfo) { i.Capabilities.Stall = exec.StallPropagates }))
 	cmd := rig.mustOpen("s1")

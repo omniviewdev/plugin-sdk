@@ -912,7 +912,7 @@ func TestAResizerDeliversTheInitialSizeFirstAndCountsItNoHostResize(t *testing.T
 	if got := <-r.channel(); got != (Size{Cols: 80, Rows: 24}) {
 		t.Fatalf("the first size is %v, want the initial 80 x 24", got)
 	}
-	r.submit(7, Size{Cols: 100, Rows: 30})
+	r.submit(7, Size{Cols: 100, Rows: 30}, nil)
 	if got := <-r.channel(); got != (Size{Cols: 100, Rows: 30}) {
 		t.Fatalf("the next size is %v", got)
 	}
@@ -935,7 +935,7 @@ func TestAResizerWithNoInitialSizeDeliversNothingUntilAHostResizes(t *testing.T)
 		t.Fatalf("a size %v arrived before any was sent", got)
 	default:
 	}
-	r.submit(1, Size{Cols: 90, Rows: 20})
+	r.submit(1, Size{Cols: 90, Rows: 20}, nil)
 	if got := <-r.channel(); got != (Size{Cols: 90, Rows: 20}) {
 		t.Fatalf("size %v", got)
 	}
@@ -949,7 +949,7 @@ func TestAResizerDeliversAtMostTwoSizesOfAStormAndTheLastIsTheNewest(t *testing.
 		r := newResizer(Size{}, func(seq uint32, _ Size) { appliedLast.Store(seq) }, 0, nil)
 		stop := startResizer(r)
 		for seq := uint32(1); seq <= storm; seq++ {
-			if !r.submit(seq, Size{Cols: uint16(seq), Rows: 24}) {
+			if !r.submit(seq, Size{Cols: uint16(seq), Rows: 24}, nil) {
 				t.Fatal("a resizer that is running refused a size")
 			}
 		}
@@ -984,7 +984,7 @@ func TestAResizerNeverBlocksTheSubmitterWhateverTheFunctionDoes(t *testing.T) {
 	stop := startResizer(r)
 	done := started(func() {
 		for seq := uint32(1); seq <= 100000; seq++ {
-			r.submit(seq, Size{Cols: 120, Rows: 40})
+			r.submit(seq, Size{Cols: 120, Rows: 40}, nil)
 		}
 	})
 	awaitClosed(t, done, "100,000 submits with nobody reading")
@@ -999,7 +999,7 @@ func TestAResizerClosesTheChannelWhenItStopsAndRefusesLaterSizes(t *testing.T) {
 	for range r.channel() {
 		// a size that was delivered before the stop may still be there to read; the loop must end because the channel closed
 	}
-	if r.submit(1, Size{Cols: 1, Rows: 1}) {
+	if r.submit(1, Size{Cols: 1, Rows: 1}, nil) {
 		t.Fatal("a stopped resizer took a size")
 	}
 }
@@ -1015,9 +1015,9 @@ func TestAResizerReportsAFunctionThatDoesNotReadItsChannelOnce(t *testing.T) {
 			}
 		})
 		stop := startResizer(r)
-		r.submit(1, Size{Cols: 90, Rows: 20})
+		r.submit(1, Size{Cols: 90, Rows: 20}, nil)
 		awaitClosed(t, fired, "the report")
-		r.submit(2, Size{Cols: 91, Rows: 20})
+		r.submit(2, Size{Cols: 91, Rows: 20}, nil)
 		stop()
 		if got := told.Load(); got != 1 {
 			t.Fatalf("the function was told %d times about the size it never read, want once", got)
@@ -1028,7 +1028,7 @@ func TestAResizerReportsAFunctionThatDoesNotReadItsChannelOnce(t *testing.T) {
 		r := newResizer(Size{Cols: 80, Rows: 24}, nil, time.Hour, func() { told.Add(1) })
 		stop := startResizer(r)
 		<-r.channel()
-		r.submit(1, Size{Cols: 90, Rows: 20})
+		r.submit(1, Size{Cols: 90, Rows: 20}, nil)
 		<-r.channel()
 		stop()
 		if told.Load() != 0 {
@@ -1043,7 +1043,7 @@ func TestAResizeBeforeTheFirstReadDoesNotReplaceTheInitialSize(t *testing.T) {
 	r := newResizer(Size{Cols: 80, Rows: 24}, nil, 0, nil)
 	stop := startResizer(r)
 	defer stop()
-	r.submit(1, Size{Cols: 100, Rows: 30})
+	r.submit(1, Size{Cols: 100, Rows: 30}, nil)
 	first, second := <-r.channel(), <-r.channel()
 	if first != (Size{Cols: 80, Rows: 24}) || second != (Size{Cols: 100, Rows: 30}) {
 		t.Fatalf("the function read %v then %v, want the initial 80 x 24 and then the host's 100 x 30", first, second)

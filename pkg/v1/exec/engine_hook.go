@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"time"
 
 	"github.com/omniviewdev/plugin-sdk/internal/exechook"
 	"github.com/omniviewdev/plugin-sdk/internal/session"
@@ -27,6 +28,11 @@ func init() {
 		plugin.BindConnectionContextProvider(cfg.Connections)
 		server := plugin.v2.server
 		server.engine.configure(cfg)
+		if cfg.Now != nil {
+			// The clock the tombstones, the leases' ends and the activity times read; the timers stay real. Set before the first start, as
+			// EngineSeams.Now is.
+			server.engine.now = cfg.Now
+		}
 		return &hookEngine{server: server}, nil
 	})
 }
@@ -34,11 +40,11 @@ func init() {
 // errNoTargets is why an in-process engine cannot be built for no targets.
 var errNoTargets = errors.New("an exec engine needs at least one target")
 
-// inProcessFeatures are the features the in-process engine admits requests for: a session, a run and what they honor. What
-// Describe lists is servedFeatures, which is the wire's.
+// inProcessFeatures are the features the in-process engine admits requests for: a session, a run and what they honor (the lease and
+// the replay ring of a session included, which a start asks for). What Describe lists is servedFeatures, which is the wire's.
 func inProcessFeatures() featureSet {
 	return newFeatureSet([]execv2.Feature{
-		execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN,
+		execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_SESSION_MANAGEMENT, execv2.Feature_FEATURE_RUN,
 		execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD, execv2.Feature_FEATURE_STDIN_EOF,
 	})
 }
@@ -52,7 +58,7 @@ func (h *hookEngine) Open(ctx context.Context, wire *execv2.OpenRequest) (execho
 		return nil, refusal
 	}
 	if open.Start == nil {
-		return nil, unsupportedRequest("an attach is not served by this build")
+		return nil, unsupportedRequest("an attach has a stream and not a command: Attach takes it")
 	}
 	cmd, err := h.server.startSession(ctx, open, target)
 	if err != nil {
@@ -91,10 +97,18 @@ func (h hookCommand) Opened() *execv2.Capabilities { return capabilitiesToProto(
 func (h hookCommand) Effective() *execv2.Capabilities { return capabilitiesToProto(h.c.Effective()) }
 
 func (h hookCommand) Read(ctx context.Context, buf []byte) (exechook.Chunk, error) {
-	chunk, err := h.c.Read(ctx, buf)
+	return hookRead(h.c.Read(ctx, buf))
+}
+
+// hookRead is a read of an attachment or of a run's pipe as exechook says it: the range lost and the bytes, and the one error of the
+// engine's that the hook names, the stream that left.
+func hookRead(chunk outputChunk, err error) (exechook.Chunk, error) {
 	out := exechook.Chunk{Stream: chunk.Stream, Offset: chunk.Offset, N: chunk.N}
 	for _, d := range chunk.Dropped {
 		out.Dropped = append(out.Dropped, exechook.Drop{Stream: d.Stream, From: d.From, Bytes: d.Bytes})
+	}
+	if errors.Is(err, errStreamLeft) {
+		err = exechook.ErrStreamLeft
 	}
 	return out, err
 }
@@ -104,7 +118,11 @@ func (h hookCommand) Write(ctx context.Context, p []byte) (int, error) { return 
 func (h hookCommand) CloseInput() { h.c.CloseInput() }
 
 func (h hookCommand) Resize(seq uint32, cols, rows uint16) exechook.ResizeDisposition {
-	switch h.c.Resize(seq, Size{Cols: cols, Rows: rows}) {
+	return hookResize(h.c.Resize(seq, Size{Cols: cols, Rows: rows}, nil))
+}
+
+func hookResize(d resizeDisposition) exechook.ResizeDisposition {
+	switch d {
 	case resizeAccepted:
 		return exechook.ResizeAccepted
 	case resizeIgnored:
@@ -166,3 +184,134 @@ func (h hookCommand) AppliedResize() (seq uint32, cols, rows uint16, ok bool) {
 }
 
 func (h hookCommand) ResizeApplied() <-chan struct{} { return h.c.ResizeApplied() }
+
+func (h hookCommand) Signal(sig execv2.Signal) exechook.SignalDisposition {
+	return hookSignal(h.c.Signal(enumFromProto(signalPairs, sig)))
+}
+
+func hookSignal(d signalDisposition) exechook.SignalDisposition {
+	switch d {
+	case signalQueued:
+		return exechook.SignalQueued
+	case signalUndeclared:
+		return exechook.SignalUndeclared
+	case signalClosed:
+	}
+	return exechook.SignalClosed
+}
+
+// Stream is the stream that started the session: the creator's attachment, which is what Read reads, with the Opened of a new session.
+func (h hookCommand) Stream() exechook.Stream {
+	if h.c.creator == nil {
+		return nil // a run has a pipe and no stream
+	}
+	return &hookStream{c: h.c, att: h.c.creator, opened: &execv2.Opened{Facts: h.c.openedFacts(), Replay: &execv2.Replay{}}}
+}
+
+// Attach attaches a stream to a session that lives: the request is admitted as the served Open admits it, and the attach is the engine's
+// (engine.attach), the one the served Open makes.
+func (h *hookEngine) Attach(_ context.Context, wire *execv2.OpenRequest) (exechook.Stream, error) {
+	open, _, refusal := admitOpenRequest(wire, h.server.reg, inProcessFeatures())
+	if refusal != nil {
+		return nil, refusal
+	}
+	if open.Attach == nil {
+		return nil, invalidRequest("an attach request attaches: this one starts a session")
+	}
+	cmd, att, opened, refusal := h.server.engine.attach(open.SessionID, open.Attach.FromOffset)
+	if refusal != nil {
+		return nil, refusal
+	}
+	return &hookStream{c: cmd, att: att, opened: opened}, nil
+}
+
+// The calls that manage sessions are the served handlers, called without a transport, and what they refuse is decoded from the status as
+// the host's client decodes it.
+
+func (h *hookEngine) ListSessions(ctx context.Context) ([]*execv2.SessionInfo, error) {
+	resp, err := h.server.ListSessions(ctx, &execv2.ListSessionsRequest{})
+	if err != nil {
+		return nil, errorFromStatus(ctx, err)
+	}
+	return resp.GetSessions(), nil
+}
+
+func (h *hookEngine) ReadOutput(ctx context.Context, req *execv2.ReadOutputRequest) (*execv2.ReadOutputResponse, error) {
+	resp, err := h.server.ReadOutput(ctx, req)
+	if err != nil {
+		return nil, errorFromStatus(ctx, err)
+	}
+	return resp, nil
+}
+
+func (h *hookEngine) EndSession(ctx context.Context, req *execv2.EndSessionRequest) error {
+	if _, err := h.server.EndSession(ctx, req); err != nil {
+		return errorFromStatus(ctx, err)
+	}
+	return nil
+}
+
+// hookStream is a stream of a session, as exechook.Stream: an attachment of the session, and the frames of a host's stream, which take
+// effect only while the attachment is the session's (attachment.whileCurrent), as the served stream applies them.
+type hookStream struct {
+	c      *command
+	att    *attachment
+	opened *execv2.Opened
+}
+
+func (s *hookStream) Opened() *execv2.Opened { return s.opened }
+
+func (s *hookStream) Replay() exechook.Replay {
+	r := s.opened.GetReplay()
+	return exechook.Replay{Start: r.GetStart(), End: r.GetEnd(), Bytes: r.GetBytes()}
+}
+
+func (s *hookStream) Read(ctx context.Context, buf []byte) (exechook.Chunk, error) {
+	return hookRead(s.att.Read(ctx, buf))
+}
+
+// Final is what the served stream is sent last: lastFrameOf decides it from what became of the attachment.
+func (s *hookStream) Final() exechook.Final {
+	fin := lastFrameOf(s.att.outcome())
+	return exechook.Final{Detached: fin.detached, Reason: fin.reason, Lease: fin.lease}
+}
+
+// Write is an input frame. It is not applied inside whileCurrent, because it waits for room in the function's queue and the session
+// must be able to change hands meanwhile (see whileCurrent): a stream that has left is refused before it begins.
+func (s *hookStream) Write(ctx context.Context, p []byte) (int, error) {
+	if s.att.over.Load() {
+		return 0, exechook.ErrStreamLeft
+	}
+	return s.c.WriteInput(ctx, p)
+}
+
+func (s *hookStream) CloseInput() error {
+	if !s.att.whileCurrent(s.c.CloseInput) {
+		return exechook.ErrStreamLeft
+	}
+	return nil
+}
+
+func (s *hookStream) Resize(seq uint32, cols, rows uint16) (exechook.ResizeDisposition, error) {
+	var d resizeDisposition
+	if !s.att.whileCurrent(func() { d = s.c.Resize(seq, Size{Cols: cols, Rows: rows}, nil) }) {
+		return exechook.ResizeClosed, exechook.ErrStreamLeft
+	}
+	return hookResize(d), nil
+}
+
+func (s *hookStream) Signal(sig execv2.Signal) (exechook.SignalDisposition, error) {
+	var d signalDisposition
+	if !s.att.whileCurrent(func() { d = s.c.Signal(enumFromProto(signalPairs, sig)) }) {
+		return exechook.SignalClosed, exechook.ErrStreamLeft
+	}
+	return hookSignal(d), nil
+}
+
+func (s *hookStream) Detach(lease time.Duration) (time.Time, bool) { return s.c.detach(s.att, lease) }
+
+func (s *hookStream) Close(kill bool) { s.c.ring.closeFrom(s.att, kill) }
+
+func (s *hookStream) Release() { s.c.release(s.att) }
+
+func (s *hookStream) Leave() { s.c.leave(s.att) }

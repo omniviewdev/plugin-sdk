@@ -162,6 +162,12 @@ func streamRule(tty bool) string {
 // COMPLETE output has no dropped byte and was read in full; and what the reader read plus what it was told was lost is
 // exactly what the command wrote. a is the audit of the reader that read the output to its end.
 func checkResult(res exechook.Result, a outputAudit) []string {
+	return append(checkResultShape(res), checkResultAccounts(res, a)...)
+}
+
+// checkResultShape is the part of checkResult that the result alone decides: the arm, the cause and the arm that agrees with it, the
+// completeness, and a COMPLETE output with no dropped byte.
+func checkResultShape(res exechook.Result) []string {
 	var found []string
 	arm, armOK := endArm(res.End)
 	if !armOK {
@@ -183,13 +189,19 @@ func checkResult(res exechook.Result, a outputAudit) []string {
 	if _, known := execv2.OutputCompleteness_name[int32(res.Output)]; !known {
 		found = append(found, fmt.Sprintf("the output completeness %d is not a value of the contract", int32(res.Output)))
 	}
-	if res.Output == execv2.OutputCompleteness_OUTPUT_COMPLETENESS_COMPLETE {
-		if res.DroppedBytes != 0 {
-			found = append(found, fmt.Sprintf("the output is COMPLETE and %d bytes were dropped", res.DroppedBytes))
-		}
-		if a.read != res.BytesOut {
-			found = append(found, fmt.Sprintf("the output is COMPLETE and the reader read %d of %d bytes", a.read, res.BytesOut))
-		}
+	if res.Output == execv2.OutputCompleteness_OUTPUT_COMPLETENESS_COMPLETE && res.DroppedBytes != 0 {
+		found = append(found, fmt.Sprintf("the output is COMPLETE and %d bytes were dropped", res.DroppedBytes))
+	}
+	return found
+}
+
+// checkResultAccounts is the part of checkResult that holds what one reader read to the result: a COMPLETE output was read in full, and what the
+// reader read plus what it was told was lost is exactly what the command wrote, which is what the result says was lost. It holds for a session
+// that one stream read from the first byte to the end, and for a run: a session that was taken from its stream is held to its windows instead.
+func checkResultAccounts(res exechook.Result, a outputAudit) []string {
+	var found []string
+	if res.Output == execv2.OutputCompleteness_OUTPUT_COMPLETENESS_COMPLETE && a.read != res.BytesOut {
+		found = append(found, fmt.Sprintf("the output is COMPLETE and the reader read %d of %d bytes", a.read, res.BytesOut))
 	}
 	if a.read+a.dropped != res.BytesOut {
 		found = append(found, fmt.Sprintf("the reader read %d and dropped %d, the command wrote %d: read plus dropped must be what was written, no byte twice and none missing", a.read, a.dropped, res.BytesOut))

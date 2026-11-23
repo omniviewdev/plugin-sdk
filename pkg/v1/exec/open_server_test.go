@@ -70,9 +70,9 @@ func TestARefusedOpenIsAStatusWithNoFrameAndNothingRan(t *testing.T) {
 		"the first frame is not an open frame":          {&execv2.ClientFrame{Frame: &execv2.ClientFrame_Input{Input: []byte("x")}}, codes.InvalidArgument, "INVALID_REQUEST"},
 		"an empty frame":                                {&execv2.ClientFrame{}, codes.InvalidArgument, "INVALID_REQUEST"},
 		"a frame with a field this build does not know": {unknownField, codes.Unimplemented, "UNSUPPORTED"},
-		"an attach, which no session outlives its stream for": {
+		"an attach of an id that is not a session": {
 			&execv2.ClientFrame{Frame: &execv2.ClientFrame_Open{Open: &execv2.OpenRequest{SessionId: "s1", Kind: &execv2.OpenRequest_Attach{Attach: &execv2.Attach{}}}}},
-			codes.Unimplemented, "UNSUPPORTED",
+			codes.NotFound, "NOT_FOUND",
 		},
 		"an id that is not printable ASCII": {
 			&execv2.ClientFrame{Frame: &execv2.ClientFrame_Open{Open: rig.openRequest("has a space")}}, codes.InvalidArgument, "INVALID_REQUEST",
@@ -163,7 +163,9 @@ func TestAnInputFrameLargerThanTheTargetsMaximumEndsTheStreamTyped(t *testing.T)
 	}
 }
 
-// Frames this build does not serve are ignored, counted by kind, and do not disturb the session.
+// Frames of a kind this build does not know (a newer peer's) are ignored, counted by kind, and do not disturb the session. The frames
+// it serves (input, resize, signal, close_input, query, close and detach) are not among them: the tests of the control frames
+// (open_control_*_test.go) and of the detach (detach_memory_test.go) hold those, and that none is counted as ignored.
 func TestFramesThisBuildDoesNotServeAreIgnoredAndCounted(t *testing.T) {
 	rig := newWireRig(t, engTarget(echoFunction))
 	count := func(kind string) float64 {
@@ -183,16 +185,13 @@ func TestFramesThisBuildDoesNotServeAreIgnoredAndCounted(t *testing.T) {
 		return 0
 	}
 	before := map[string]float64{}
-	kinds := []string{"close_input", "signal", "query", "detach"}
+	kinds := []string{"unknown"}
 	for _, k := range kinds {
 		before[k] = count(k)
 	}
 	conn := rig.mustOpen("s1", withoutTTY)
 	for _, frame := range []*execv2.ClientFrame{
-		{Frame: &execv2.ClientFrame_CloseInput{CloseInput: &execv2.CloseInput{}}},
-		{Frame: &execv2.ClientFrame_Signal{Signal: execv2.Signal_SIGNAL_INT}},
-		{Frame: &execv2.ClientFrame_Query{Query: &execv2.Query{Id: 1, Kind: execv2.FactKind_FACT_KIND_CWD}}},
-		{Frame: &execv2.ClientFrame_Detach{Detach: &execv2.Detach{}}},
+		{}, // a frame with no kind: one of a newer peer's, which this build does not know
 	} {
 		if err := conn.Send(frame); err != nil {
 			t.Fatalf("send: %v", err)
@@ -337,50 +336,32 @@ func TestOutputFramesAreAtMost64KiBOfOneStreamWithOneSequenceOfOffsets(t *testin
 	}
 }
 
-// When Ended arrives the id is free: a host that reads it and opens the same id again is never refused for the session that
-// has just ended (the engine's Done comes a moment before its id is released; the server waits for Gone).
-func TestTheIdOfASessionIsFreeWhenItsEndedArrives(t *testing.T) {
+// When Ended arrives the session's place is free and its id is held by its tombstone: a host that reads Ended and opens another
+// id is never refused for the session that has just ended (the engine's Done comes a moment before its place is released; the
+// server waits for Gone), and the same id is refused as SESSION_EXISTS (gRPC Aborted) until the tombstone expires.
+func TestThePlaceOfASessionIsFreeAndItsIdHeldWhenItsEndedArrives(t *testing.T) {
 	rig := newWireRig(t, engTarget(func(context.Context, *exec.Proc) (exec.Exit, error) { return exec.ExitCode(0), nil }))
-	for i := range 300 {
-		conn, err := rig.open(context.Background(), "same-id", withoutTTY)
+	for i := range 100 {
+		id := fmt.Sprintf("id-%d", i)
+		conn, err := rig.open(context.Background(), id, withoutTTY)
 		if err != nil {
-			t.Fatalf("round %d: the id was refused after the previous session's Ended: %v", i, err)
+			t.Fatalf("round %d: a new id was refused after the previous session's Ended: %v", i, err)
 		}
 		readUntilEnded(t, conn)
 		_ = conn.Close()
+		again, err := rig.open(context.Background(), id, withoutTTY)
+		if err == nil {
+			_ = again.Close()
+			t.Fatalf("round %d: the id of a session that ended was admitted while its tombstone holds it", i)
+		}
+		if proofRefusal(err) != "CONFLICT/SESSION_EXISTS" {
+			t.Fatalf("round %d: the id of a session that ended is refused with %v, want CONFLICT/SESSION_EXISTS", i, err)
+		}
 	}
 }
 
-// A host whose stream ends before its session did ends the session: the function's context is cancelled, and the id is free
-// again, whichever way the stream ended.
-func TestASessionEndsWithItsStreamWhicheverWayTheHostLeaves(t *testing.T) {
-	for name, leave := range map[string]func(conn exec.Conn){
-		"the host closes the stream": func(conn exec.Conn) { _ = conn.Close() },
-	} {
-		t.Run(name, func(t *testing.T) {
-			ended := exectest.NewGate()
-			rig := newWireRig(t, engTarget(func(ctx context.Context, _ *exec.Proc) (exec.Exit, error) {
-				<-ctx.Done()
-				ended.Open()
-				return exec.Exit{}, ctx.Err()
-			}))
-			conn := rig.mustOpen("s1", withoutTTY)
-			leave(conn)
-			awaitChannel(t, ended.Opened(), "the session to end with its stream")
-			eventually(t, "the id to be free again", func() bool {
-				next, err := rig.open(context.Background(), "s1", withoutTTY)
-				if err != nil {
-					return false
-				}
-				_ = next.Close()
-				return true
-			})
-		})
-	}
-}
-
-// Ended is the end of the session and the id is free when it arrives. The engine's Done comes before its id is released, so the
-// server waits for the id: this test holds the engine between the two and requires that Ended is not sent in that window.
+// Ended is the end of the session and its place is free when it arrives. The engine's Done comes before its place is released, so
+// the server waits for Gone: this test holds the engine between the two and requires that Ended is not sent in that window.
 // (The wait is a negative one, so it can only miss a fault on a slow machine, never invent one.)
 func TestEndedIsNotSentWhileTheSessionsIdIsStillHeld(t *testing.T) {
 	rig := newWireRig(t, engTarget(func(context.Context, *exec.Proc) (exec.Exit, error) { return exec.ExitCode(0), nil }))

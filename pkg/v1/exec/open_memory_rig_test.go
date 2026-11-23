@@ -29,9 +29,20 @@ type memoryStream struct {
 	cancel context.CancelFunc
 	in     chan *execv2.ClientFrame
 	out    chan *execv2.ServerFrame
-	// endedGate, when set, is what the stream's Send of an Ended waits for.
-	endedGate chan struct{}
-	leaveOnce sync.Once
+	// endedGate, when set, is what the stream's Send of an Ended waits for. outputGate, when set, is what its Send of an Output
+	// frame waits for: a host that takes no output, as one whose window is full. startedGate is the same for a Started frame: the
+	// goroutine that sends the session's events is held in it, and the frames that follow wait behind it. openedGate is the same for
+	// the Opened frame, which is the first send of the stream: the handler is held in it before the stream's other goroutines exist.
+	//
+	// A send that is held holds the lock that all the sends of the stream share, and a goroutine that waits for a lock is not
+	// durably blocked: synctest.Wait does not return while one does. So a test holds a send only when no other goroutine of the stream
+	// has anything to send behind it (the events go out before the first output is held, see the tests that use outputGate), or while
+	// no other goroutine of the stream exists (openedGate).
+	endedGate   chan struct{}
+	outputGate  chan struct{}
+	startedGate chan struct{}
+	openedGate  chan struct{}
+	leaveOnce   sync.Once
 	// returned receives what the handler of Open returned.
 	returned chan error
 }
@@ -51,9 +62,30 @@ func (s *memoryStream) Recv() (*execv2.ClientFrame, error) {
 }
 
 func (s *memoryStream) Send(frame *execv2.ServerFrame) error {
+	if frame.GetOpened() != nil && s.openedGate != nil {
+		select {
+		case <-s.openedGate:
+		case <-s.ctx.Done():
+			return s.ctx.Err()
+		}
+	}
 	if frame.GetEnded() != nil && s.endedGate != nil {
 		select {
 		case <-s.endedGate:
+		case <-s.ctx.Done():
+			return s.ctx.Err()
+		}
+	}
+	if frame.GetOutput() != nil && s.outputGate != nil {
+		select {
+		case <-s.outputGate:
+		case <-s.ctx.Done():
+			return s.ctx.Err()
+		}
+	}
+	if frame.GetStarted() != nil && s.startedGate != nil {
+		select {
+		case <-s.startedGate:
 		case <-s.ctx.Done():
 			return s.ctx.Err()
 		}

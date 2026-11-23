@@ -197,8 +197,8 @@ func resizeSizes(maxDimension uint32) (small, medium, large exec.Size) {
 
 // caseWireInput: the input frames of a host reach the author in the order they were sent, byte for byte however they are split (many
 // small frames and one of the largest size the target takes), and the resize frames are forwarded: the author sees the size the
-// session was asked for first and then the newest valid one, never an invalid one. There is no acknowledgement of a resize in this
-// build, so the case does not order a resize against the input.
+// session was asked for first and then the newest. A resize that is not valid ends the stream, which case 6 holds, with the
+// acknowledgements, so this case sends valid sizes only, and does not order a resize against the input.
 func caseWireInput(t checkT, target exec.Target, env *wireEnv) {
 	t.Helper()
 	info := target.Info
@@ -229,8 +229,6 @@ func caseWireInput(t checkT, target exec.Target, env *wireEnv) {
 		if info.Capabilities.Resize {
 			frames := []struct{ cols, rows uint32 }{
 				{uint32(medium.Cols), uint32(medium.Rows)},
-				{0, 5},                // a zero dimension: refused, and changes nothing
-				{maxDimension + 1, 5}, // above the target's limit: the same
 				{uint32(large.Cols), uint32(large.Rows)},
 			}
 			for i, f := range frames {
@@ -608,7 +606,8 @@ func caseWireCompleteness(t checkT, target exec.Target, env *wireEnv) {
 // ---------------------------------------------------------------------------------------------------------------
 
 // caseWireIsolation: a session whose host does not read (its command floods, and is held in its Write or runs on dropping) does not move
-// another session's echo: it answers every time within a generous bound, and ending the stuck session releases its function.
+// another session's echo: it answers every time within a generous bound, and closing the stuck session releases its function while its host
+// still reads nothing.
 func caseWireIsolation(t checkT, target exec.Target, env *wireEnv) {
 	t.Helper()
 	info := target.Info
@@ -638,9 +637,16 @@ func caseWireIsolation(t checkT, target exec.Target, env *wireEnv) {
 	_ = echo.closeSession(execv2.CloseMode_CLOSE_MODE_GRACEFUL)
 	ended := echo.finish()
 	echo.checkEnded("the echo", ended, wantEnded{end: endClosed(execv2.ClosedBy_CLOSED_BY_REQUEST, info.Capabilities.Kill), started: true, bytesIn: 20 * 7, bytesOut: 20 * 7})
-	// The host that stopped reading goes away: its session ends and its function returns, however far the flood had got.
-	_ = stuck.conn.Close()
-	rig.await("the function of the session whose host went away to return", func() bool { return rig.returned.Load() == 2 })
+	// The host that stopped reading ends its session with a Close frame, and goes on reading nothing: the function that the flood holds in
+	// its Write returns, however far the flood had got, at once and not when the grace of a close runs out (5 s; killBound is between that
+	// and the kill wait). A host that merely went away (its stream closed) would not do: that is an implicit detach, the session lives on
+	// for its lease and its writes go to the ring, so its function would return because the flood ran out and not because the session ended.
+	_ = stuck.closeSession(execv2.CloseMode_CLOSE_MODE_GRACEFUL)
+	if !poll(killBound, func() bool { return rig.returned.Load() == 2 }) {
+		t.Errorf("the function of the session that its host closed had not returned %v later, though the host reads nothing: ending a session releases the function its reader holds in a Write at once, and not at the grace of a close", killBound)
+	}
+	rig.await("the function of the session that its host closed to return", func() bool { return rig.returned.Load() == 2 })
+	_ = stuck.finish() // the host reads again, and is told how its session ended
 }
 
 var _ = math.MaxInt

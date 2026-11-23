@@ -146,8 +146,36 @@ func (r *runRig) checkRefusals() {
 	}
 }
 
+// stdinBound is how long the scenarios that send a command its stdin give a run: the command echoes the stdin and returns once the input
+// has ended, which takes milliseconds, so the bound is the wait for something that has to happen, and it is short so that a plugin that
+// never ends the input of a run fails the case in seconds, and does not hold it until the target's own timeout or the bound of the call.
+const stdinBound = 3 * time.Second
+
+// stdinScenario is scenario for a script that echoes its stdin. Its request carries a timeout of its own (stdinBound, or the bound the
+// environment gives, within the target's maximum), and a run that ends at that timeout is the one fault that the scenario is made to find, a
+// command that was sent its stdin and was never told that the input had ended: it ends the body there, with that said, so that neither the
+// stream's run nor the cases that follow are held as long. The mods change the request.
+func (r *runRig) stdinScenario(label string, s runScript, end *execv2.End, mods ...func(*execv2.RunRequest)) {
+	r.t.Helper()
+	name := r.newID("script")
+	s = r.register(name, s)
+	given := stdinBound
+	if r.stdinBound > 0 {
+		given = r.stdinBound
+	}
+	bound := uint32(min(given.Milliseconds(), int64(r.limits.GetMaxTimeoutMs()))) //nolint:gosec // at most the target's maximum
+	req := r.runRequest("", name, append([]func(*execv2.RunRequest){func(req *execv2.RunRequest) { req.TimeoutMs = bound }}, mods...)...)
+	r.bothAfter(label, req, s, r.wantFor(req, s, end), func(call *runCall) {
+		if call.res.GetOutcome() == execv2.Outcome_OUTCOME_TIMED_OUT {
+			r.t.Fatalf("%s: the run ended at its timeout of %d ms: the command was sent its stdin and was never told that the input had ended", label, bound)
+		}
+	})
+}
+
 // checkBoundsAreAccepted: a request that is exactly at the bounds of the target is taken as it is: the largest timeout, the
-// largest caps and the largest stdin, which arrives whole (every byte value) and ends with EOF; and a run without a stdin has none.
+// largest caps and the largest stdin, which arrives whole (every byte value) and ends with EOF; and a run without a stdin has none. The
+// stdin comes first, with a timeout of a few seconds (see stdinScenario): the scenario of the largest timeout then runs only when the
+// input is known to end, which it would otherwise hold the case for.
 func (r *runRig) checkBoundsAreAccepted() {
 	caps := r.info.Capabilities
 	exit0, end0 := processExit(caps, 0)
@@ -157,13 +185,17 @@ func (r *runRig) checkBoundsAreAccepted() {
 		stdin[i] = byte(i*7 + i>>8)
 	}
 	maxOut := limits.GetMaxOutputBytes()
+	r.stdinScenario("the largest stdin of the target", runScript{echo: true, stdin: stdin, exit: exit0}, end0, func(req *execv2.RunRequest) {
+		req.Stdin = stdin
+		req.Output = &execv2.OutputLimits{MaxStdoutBytes: maxOut, MaxStderrBytes: maxOut}
+	})
+	r.stdinScenario("one byte of stdin", runScript{echo: true, stdin: []byte{0}, exit: exit0}, end0, func(req *execv2.RunRequest) { req.Stdin = []byte{0} })
 	r.scenario("the largest timeout, caps and stdin of the target", runScript{echo: true, stdin: stdin, exit: exit0}, end0, func(req *execv2.RunRequest) {
 		req.TimeoutMs = limits.GetMaxTimeoutMs()
 		req.Stdin = stdin
 		req.Output = &execv2.OutputLimits{MaxStdoutBytes: maxOut, MaxStderrBytes: maxOut}
 	})
 	r.scenario("a run with no stdin has none: Proc.Stdin is nil", runScript{echo: true, exit: exit0}, end0)
-	r.scenario("one byte of stdin", runScript{echo: true, stdin: []byte{0}, exit: exit0}, end0, func(req *execv2.RunRequest) { req.Stdin = []byte{0} })
 }
 
 // checkTimeout: a run that does not end by itself ends at its timeout, whatever its function does: the call returns a result of the

@@ -103,7 +103,8 @@ func assertCompatDescription(t *testing.T, d *execv2.DescribeResponse) {
 	}
 	if want := []execv2.Feature{
 		execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN, execv2.Feature_FEATURE_RUN_STREAM,
-		execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD,
+		execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD, execv2.Feature_FEATURE_STDIN_EOF,
+		execv2.Feature_FEATURE_SESSION_MANAGEMENT,
 	}; !slices.Equal(d.GetFeatures(), want) {
 		t.Errorf("features = %v, want %v", d.GetFeatures(), want)
 	}

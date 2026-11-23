@@ -197,7 +197,7 @@ func (a *proofAudit) take(frame *execv2.ServerFrame) bool {
 			a.problem("Started after the first Output: it comes before it")
 		}
 		a.started = true
-	case *execv2.ServerFrame_Notice, *execv2.ServerFrame_Link:
+	case *execv2.ServerFrame_Notice, *execv2.ServerFrame_Link, *execv2.ServerFrame_Resized, *execv2.ServerFrame_Fact:
 	case *execv2.ServerFrame_Output:
 		a.output(f.Output)
 	case *execv2.ServerFrame_Dropped:

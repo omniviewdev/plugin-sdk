@@ -151,6 +151,12 @@ func (r mixRest) check(t *testing.T, w *mixWorld) {
 	t.Logf("at rest: goroutines back to the baseline, %d descriptors (%d before, counted: %v), the gauge of live commands %v (%v before)", n, r.fds, r.fdsOK, proofLiveGauge(), r.gauge)
 }
 
+// stdinRunBound is the timeout of a run that sends its command a stdin, in milliseconds. The command echoes its stdin and returns once the
+// input has ended, which takes a few milliseconds; the bound is the wait for something that has to happen, and it is short so that a plugin
+// that never ends the input of a run fails the proof with the outcome TIMED_OUT in seconds, and does not hold it until the target's default
+// timeout (30 s for each run of the thousand, and for each worker of the stress).
+const stdinRunBound = 2_000
+
 // mixRequest is a request for a run of a kind: what its function needs (the bytes to write and the caps of a flood, the stdin of an
 // echo, the timeout of a command that does not end by itself). i and rng make it vary.
 func mixRequest(w *mixWorld, kind, id string, i int, rng *rand.Rand) *execv2.RunRequest {
@@ -162,7 +168,7 @@ func mixRequest(w *mixWorld, kind, id string, i int, rng *rand.Rand) *execv2.Run
 		mods = append(mods, runLabels("bytes", strconv.Itoa(40_000+rng.IntN(400_000))), runCaps(capBytes, capBytes, policy))
 	case "stdin":
 		stdin := proofBytes(uint64(i), 1+rng.IntN(2000))
-		mods = append(mods, func(r *execv2.RunRequest) { r.Stdin = stdin })
+		mods = append(mods, func(r *execv2.RunRequest) { r.Stdin, r.TimeoutMs = stdin, stdinRunBound })
 	}
 	if !endsByItself(kind) {
 		timeout := uint32(10 + rng.IntN(40)) //nolint:gosec // small
@@ -202,7 +208,9 @@ func mixCheck(kind string, req *execv2.RunRequest, res *execv2.RunResult) []stri
 			add("lost: %s and survival %v: not a lost run that may still run", outcome, res.RemoteMaySurvive)
 		}
 	case "stdin":
-		if outcome != execv2.Outcome_OUTCOME_EXITED || string(res.GetStdout()) != string(req.GetStdin()) {
+		if outcome == execv2.Outcome_OUTCOME_TIMED_OUT {
+			add("stdin: the run ended at its timeout of %d ms with %d bytes echoed of %d sent: the command was sent its stdin and was never told that the input had ended", req.GetTimeoutMs(), len(res.GetStdout()), len(req.GetStdin()))
+		} else if outcome != execv2.Outcome_OUTCOME_EXITED || string(res.GetStdout()) != string(req.GetStdin()) {
 			add("stdin: %s and %d bytes echoed of %d sent", outcome, len(res.GetStdout()), len(req.GetStdin()))
 		}
 	default:

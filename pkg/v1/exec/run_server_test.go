@@ -572,21 +572,31 @@ func TestServedRunGivesTheCommandItsStdinAndThenEndOfInput(t *testing.T) {
 		return exec.ExitCode(0), nil
 	}, runSrvLimits(exec.RunLimits{MaxStdinBytes: 512 << 10, MaxOutputBytes: 1 << 20})))
 
+	// Each run is given two seconds, not the 20 the others of this file get: the command echoes its stdin and returns once the input
+	// has ended, which takes milliseconds, so a timeout here is a plugin that never ended the input, and it should fail the test at once
+	// (a run that is held to its default timeout holds the test for as long).
+	const stdinBound = 2_000
 	t.Run("a small stdin is echoed and the input ends", func(t *testing.T) {
-		res := rig.mustRun(rig.request(runSrvStdin("hello\nworld\n"), runSrvTimeout(20_000)))
+		res := rig.mustRun(rig.request(runSrvStdin("hello\nworld\n"), runSrvTimeout(stdinBound)))
+		if res.GetOutcome() == execv2.Outcome_OUTCOME_TIMED_OUT {
+			t.Fatalf("the run ended at its timeout of %d ms with %d bytes echoed: the command was sent its stdin and was never told that the input had ended", stdinBound, len(res.GetStdout()))
+		}
 		if res.GetOutcome() != execv2.Outcome_OUTCOME_EXITED || string(res.GetStdout()) != "hello\nworld\n" || string(res.GetStderr()) != "12" {
 			t.Errorf("result %v: want the stdin echoed and its end seen (12 bytes)", res)
 		}
 	})
 	t.Run("a stdin larger than the input queue arrives whole", func(t *testing.T) {
 		stdin := string(runSrvText(300 << 10))
-		res := rig.mustRun(rig.request(runSrvStdin(stdin), runSrvTimeout(20_000), runSrvCaps(400<<10, 0, execv2.TruncatePolicy_TRUNCATE_POLICY_HEAD)))
+		res := rig.mustRun(rig.request(runSrvStdin(stdin), runSrvTimeout(stdinBound), runSrvCaps(400<<10, 0, execv2.TruncatePolicy_TRUNCATE_POLICY_HEAD)))
+		if res.GetOutcome() == execv2.Outcome_OUTCOME_TIMED_OUT {
+			t.Fatalf("the run ended at its timeout of %d ms with %d of %d bytes echoed: the command was sent its stdin and was never told that the input had ended", stdinBound, len(res.GetStdout()), len(stdin))
+		}
 		if res.GetOutcome() != execv2.Outcome_OUTCOME_EXITED || string(res.GetStdout()) != stdin || string(res.GetStderr()) != strconv.Itoa(len(stdin)) {
 			t.Errorf("outcome %v, %d bytes echoed, stderr %q: want all %d bytes and then the end of input", res.GetOutcome(), len(res.GetStdout()), res.GetStderr(), len(stdin))
 		}
 	})
 	t.Run("an empty stdin is no stdin", func(t *testing.T) {
-		res := rig.mustRun(rig.request(runSrvTimeout(20_000)))
+		res := rig.mustRun(rig.request(runSrvTimeout(stdinBound)))
 		if res.GetOutcome() != execv2.Outcome_OUTCOME_FAILED || res.GetFailed().GetClass() != execv2.ErrorClass_ERROR_CLASS_INTERNAL {
 			t.Errorf("result %v: the function reports an error for a run with no stdin, which is a failure of the target", res)
 		}

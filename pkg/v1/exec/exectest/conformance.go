@@ -58,20 +58,38 @@ func ConformanceResource(id string) ConformanceOption {
 // Open without a terminal collected to the end) and P3 (the engine over gRPC equals the engine in process). They skip for a target
 // that declares no runs.
 //
+// Also over the wire: case 9 (every kind of end is typed, and a session has one end and at most one Ended: the last frame of the stream
+// that is attached when it ends, which its tombstone says alike, and, when no stream is attached, the tombstone's alone, which ListSessions
+// and ReadOutput read, a lease that ran out included, with the survival that the Kill you declared gives it; it, and case 25, call
+// ListSessions, ReadOutput, EndSession, Detach and an attach, so they run only when the build lists FEATURE_SESSION_MANAGEMENT as well),
+// case 12 (limits: a session over the limit, an input frame over the maximum, an environment, a working
+// directory or a terminal the target does not honor, a size over the largest dimension, a bad id and the id of a live session are
+// typed refusals with no frame, and the function never runs), the Open part of case 13 (class, reason and facts of an error
+// round-trip, and a canary in the local cause of an error or in a panic appears in no frame, status, header or trailer) and of case 16
+// (a stream that ended with no status ends Lost, never exit 0; both cases run when the build lists FEATURE_SESSION and FEATURE_RUN,
+// each part for a target that declares what it drives), case 14 (a retired connection ends its sessions, at every stage of their
+// start), case 17 (an exit reaches the host as its source says, Exited{0, TRANSPORT} being a legitimate end, a break being Lost),
+// case 23 (a Link frame for each change of the link and for nothing else, and a stalled link that gives up ends Lost), case 25 (every
+// stream ends with exactly one of Ended or Detached: each of many ends with its own session's Ended, one that detaches with Detached and the
+// lease that was applied, one that another stream superseded with Detached and no lease, and a session has at most one Ended, never on a
+// stream that left), case 26 (the capabilities of a session are its kind's narrowed by
+// its mode and by what it reports in Started, a widening clamped), case 28 (remote_may_survive per kind of end and per Kill that the
+// kind allows, CLOSES_STREAM_ONLY present and true) and the pair test P5 (ending twice, after the exit and during the start give the
+// same end).
+//
 // In this process (a subtest "in process"): case 9 (every kind of end is typed, a command has one, nothing follows it), case
-// 14 (a retired connection ends its commands), case 28 (remote_may_survive per kind of end), the pair test P5 (ending twice,
-// after the exit and during the start give the same end) and the stress harness (Stress), against the real engine.
+// 14 (a retired connection ends its commands), case 17 (an Exit the kind cannot give is a violation of the function), case 28
+// (remote_may_survive per kind of end), the pair test P5 (ending twice, after the exit and during the start give the same end) and
+// the stress harness (Stress), against the real engine.
 //
 // Your Exec is never called by any of them, so what you declared decides what they expect: a signal is expected only when
 // ExitReport is CODE_AND_SIGNAL, and a Closed end says the process is gone only when Kill is TERMINATES. The stress harness
-// runs the SDK's own scripted targets: it checks the end state of the engine, not your declaration, for 5 seconds (1 under
+// runs the SDK's own scripted targets: it checks the end state of the engine, not your declaration, for 2 seconds (1 under
 // -short, or as long as OMNIVIEW_LIFECYCLE_HAMMER says). A target that declares neither sessions nor runs has nothing to run,
 // so they skip.
 //
-// Skipped with their step: the wire part of cases 9, 12, 14, 17, 23, 25, 26, 28 and of P5, the Open part of cases 13 and 16 (the
-// in-process parts of 9, 14, 28 and P5 and the Run parts of 13 and 16 run), every case of the steps that are not served yet (6 to
-// 8, 10, 11, 19 to 22, 24 and the other pair tests). A build that lists a feature in Describe whose cases are not written fails
-// instead of skipping, so a feature cannot be served without being checked.
+// Skipped with their step: every case of the steps that are not served yet (19, 20 and 24, and the pair tests P4 and P6). A build that
+// lists a feature in Describe whose cases are not written fails instead of skipping, so a feature cannot be served without being checked.
 func Conformance(t *testing.T, target exec.Target, opts ...ConformanceOption) {
 	t.Helper()
 	cfg := conformanceConfig{id: "conformance-target"}
@@ -358,8 +376,8 @@ const (
 
 // engineCases is the skeleton of the suite: the plan's numbered cases 1 to 24 and the cases 25 to 28 that the review of
 // the contract added, the pair tests P1 to P6 and the stress harness, each with the step that writes it and the feature
-// that step makes the build list. Cases 9, 14, 28, P5 and the stress run in process now, and cases 1 to 5, 13 (the Run part), 15,
-// 16 (the Run part), 18, 27 and the pairs P1 and P3 over the wire: the step of each case that has one names what is left of it.
+// that step makes the build list. Cases 9, 14, 17, 28, P5 and the stress run in process now, and cases 1 to 18, 21 to 23, 25
+// to 28 and the pairs P1, P2, P3 and P5 over the wire: the step of each case that has one names what is left of it.
 func engineCases() []engineCase {
 	management := execv2.Feature_FEATURE_SESSION_MANAGEMENT
 	// A row whose step is "" is complete: its bodies are all of it. A row whose feature is FEATURE_UNSPECIFIED is one whose step
@@ -372,36 +390,36 @@ func engineCases() []engineCase {
 		{3, "output offsets are contiguous and the bytes untouched", "", none},
 		{4, "a slow consumer bounds memory; PROPAGATES blocks Write and drops nothing", "", none},
 		{5, "a stuck, slow or flooding session does not move another session's echo", "", none},
-		{6, "resize: a storm delivers at most two sizes, the last seq is acknowledged, the initial size is first", "X3b", execv2.Feature_FEATURE_STDIN_EOF},
-		{7, "signals only as declared, Close graceful and kill, remote_may_survive agrees with the capability", "X3b", execv2.Feature_FEATURE_STDIN_EOF},
-		{8, "stdin EOF", "X3b", execv2.Feature_FEATURE_STDIN_EOF},
-		{9, "a session has exactly one end and at most one Ended (the frame, last on its stream, when a stream is attached at the end; the tombstone when none is), typed for every kind of end (exited, signaled, closed, failed, lost), counts exact", "X3a (the wire body) and X3c (the tombstone)", none},
-		{10, "detach and reattach: replay plus live is one uninterrupted transcript; a tombstone is readable", "X3c", management},
-		{11, "the lease ends a detached session at the fake-clock timeout", "X3c", management},
-		{12, "limits: too many sessions, input too large, env or cwd unsupported are typed", "X3a (the wire body)", none},
-		{13, "errors: class, reason and facts round-trip and a canary in Error.Err appears nowhere", "X3a (the Open wire body)", none},
-		{14, "a retired connection ends its sessions", "X3a (the wire body)", none},
+		{6, "resize: a storm delivers at most two sizes, the last seq is acknowledged, the initial size is first", "", none},
+		{7, "signals only as declared, Close graceful and kill, remote_may_survive agrees with the capability", "", none},
+		{8, "stdin EOF", "", none},
+		{9, "a session has exactly one end and at most one Ended (the frame, last on its stream, when a stream is attached at the end; the tombstone when none is: read from ListSessions, a lease that ran out included), typed for every kind of end (exited, signaled, closed, failed, lost), counts exact", "", management},
+		{10, "detach and reattach: replay plus live is one uninterrupted transcript; a tombstone is readable", "", management},
+		{11, "the lease ends a detached session when it runs out, closed by DETACH_TIMEOUT, and an attach cancels it", "", management},
+		{12, "limits: too many sessions, input too large, env or cwd unsupported are typed", "", none},
+		{13, "errors: class, reason and facts round-trip and a canary in Error.Err appears nowhere", "", none},
+		{14, "a retired connection ends its sessions", "", none},
 		{15, "Run: empty argv, bounds, timeout, cancel, capture accounting, valid_utf8, concurrency", "", none},
-		{16, "lost: a stream that ends with no status ends Lost, never Exited 0, and a run ends OUTCOME_LOST", "X3a (the Open wire body)", none},
-		{17, "exit source and report round-trip; a Signaled from a CODE target is a contract violation", "X3a (the wire body)", none},
+		{16, "lost: a stream that ends with no status ends Lost, never Exited 0, and a run ends OUTCOME_LOST", "", none},
+		{17, "exit source and report round-trip; a Signaled from a CODE target is a contract violation", "", none},
 		{18, "completeness: LOSSY drains into the ring and counts; PROPAGATES blocks and ends COMPLETE", "", none},
 		{19, "marks: nonce trust, command ids, D without C, a foreign 133, and the nonce appears nowhere", "X4a", execv2.Feature_FEATURE_MARKS},
 		{20, "integration: no wrapper without consent; the wrapper runs the requested shell", "X4b", execv2.Feature_FEATURE_INTEGRATION},
-		{21, "attach is atomic: replay.bytes == end - start, replay plus live is the transcript", "X3c", management},
-		{22, "detach: the stream ends and not the session, Detached is last, the lease is clamped", "X3c", management},
-		{23, "link: sent on a change only; a stalled link that ends the session ends it Lost", "X3a (the wire body)", none},
+		{21, "attach is atomic: replay.bytes == end - start, replay plus live is the transcript", "", management},
+		{22, "detach: the stream ends and not the session, Detached is last, the lease is clamped", "", management},
+		{23, "link: sent on a change only; a stalled link that ends the session ends it Lost", "", none},
 		{24, "mode_reset: the exact bytes with FEATURE_MODES and the fixed full reset without it, present and empty for a session without a terminal; the step pins the fixed string in its own test", "X4a", execv2.Feature_FEATURE_MODES},
-		{25, "every stream that can still receive frames ends with exactly one of Ended or Detached; a session has at most one Ended, none when it ends while no stream is attached (its end is the tombstone's), never to a detached or superseded stream (X3a: one stream, X3c: attach, supersede, detach)", "X3a (the one-stream wire body) and X3c", none},
-		{26, "capabilities narrow per session: exec and attach on one Pod kind get different ExitReport and HostRestart in Opened (from Choice.capabilities), not in Started, which narrows only what is learned at run time; a widening is clamped, a choice's and a Started's alike", "X3a (the wire body)", none},
+		{25, "every stream that can still receive frames ends with exactly one of Ended or Detached; a session has at most one Ended, none when it ends while no stream is attached (its end is the tombstone's), never to a detached or superseded stream (over one stream, and over the streams of one session that attach, supersede and detach)", "", management},
+		{26, "capabilities narrow per session: exec and attach on one Pod kind get different ExitReport and HostRestart in Opened (from Choice.capabilities), not in Started, which narrows only what is learned at run time; a widening is clamped, a choice's and a Started's alike", "", none},
 		{27, "a run failure after the command was handed to the target is a RunResult with OUTCOME_FAILED carrying partial output, completeness, start_observed and remote_may_survive; a refusal before the hand-off is a status; a host never retries a failed or lost end", "", none},
-		{28, "remote_may_survive per end kind: Lost true, process exit and signal false, transport exit and failure absent, closed false only when the session's Kill is TERMINATES; absent is never read as no (X2a: the end mapping, X3a: sessions)", "X3a (the wire body)", none},
+		{28, "remote_may_survive per end kind: Lost true, process exit and signal false, transport exit and failure absent, closed false only when the session's Kill is TERMINATES; absent is never read as no (X2a: the end mapping, X3a: sessions)", "", none},
 		{0, pairRunOpenName, "", none},
-		{0, "pair P2: Open, detach, attach(from_offset) equals one uninterrupted Open", "X3c", management},
+		{0, pairReplayName, "", management},
 		{0, pairEngineWireName, "", none},
 		{0, "pair P4: the host's local provider equals the engine with a pty-backed fake", "H1a-2", none},
-		{0, pairEndingName, "X3a (the wire body)", none},
+		{0, pairEndingName, "", none},
 		{0, "pair P6: the legacy adapter equals the new lane on the same fake remote, for the bytes", "H1a-1", none},
-		{0, stressName, "X3b and X3c", management},
+		{0, stressName, "", management},
 	}
 	cases := make([]engineCase, len(rows))
 	for i, row := range rows {
@@ -417,6 +435,8 @@ func inProcessBody(row caseRow) func(t checkT, target exec.Target, env *inProces
 		return caseEveryEndIsTyped
 	case row.number == 14:
 		return caseRetiredConnection
+	case row.number == 17:
+		return caseExitViolations
 	case row.number == 28:
 		return caseSurvival
 	case row.name == pairEndingName:
@@ -440,32 +460,73 @@ func wireBody(row caseRow) func(t checkT, target exec.Target, env *wireEnv) {
 		return caseWireSlowConsumer
 	case row.number == 5:
 		return caseWireIsolation
+	case row.number == 6:
+		return caseWireResize
+	case row.number == 7:
+		return caseWireSignals
+	case row.number == 8:
+		return caseWireStdinEOF
+	case row.number == 9:
+		return caseWireEnds
+	case row.number == 12:
+		return caseWireLimits
 	case row.number == 13:
-		return caseWireErrorsRun
+		return caseWireErrors
+	case row.number == 14:
+		return caseWireRetired
 	case row.number == 15:
 		return caseWireRun
 	case row.number == 16:
-		return caseWireLostRun
+		return caseWireLost
+	case row.number == 17:
+		return caseWireExits
 	case row.number == 18:
 		return caseWireCompleteness
+	case row.number == 23:
+		return caseWireLink
+	case row.number == 25:
+		return caseWireOneEndPerStream
+	case row.number == 26:
+		return caseWireNarrowing
 	case row.number == 27:
 		return caseWireRunFailure
+	case row.number == 28:
+		return caseWireSurvival
+	case row.number == 10:
+		return caseWireDetachReattach
+	case row.number == 11:
+		return caseWireLease
+	case row.number == 21:
+		return caseWireAtomicAttach
+	case row.number == 22:
+		return caseWireDetach
+	case row.name == pairReplayName:
+		return casePairReplay
 	case row.name == pairRunOpenName:
 		return casePairRunOpen
 	case row.name == pairEngineWireName:
 		return casePairEngineWire
+	case row.name == pairEndingName:
+		return casePairWireEnding
 	}
 	return nil
 }
 
 // wireFeatures is what the build must list for the wire body of a row to run: FEATURE_SESSION for the cases that open a session,
-// FEATURE_RUN for the cases of the bounded run, and both for the pair that runs a command both ways.
+// FEATURE_RUN for the cases of the bounded run, and both for the pair that runs a command both ways and for the two cases whose body has a part
+// for Open and a part for Run (13 and 16). Each part of such a case runs for the target only when it declares what the part drives. The cases
+// about a session that outlives its stream (9 and 25 for the tombstone and the streams that leave, 10, 11, 21, 22 and the pair P2) drive
+// ListSessions, ReadOutput, EndSession, Detach or an attach as well, which only a build that lists FEATURE_SESSION_MANAGEMENT serves.
 func wireFeatures(row caseRow) []execv2.Feature {
-	session, run := execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN
+	session, run, management := execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN, execv2.Feature_FEATURE_SESSION_MANAGEMENT
 	switch {
-	case row.name == pairRunOpenName:
+	case row.number == 8:
+		return []execv2.Feature{session, execv2.Feature_FEATURE_STDIN_EOF}
+	case row.name == pairRunOpenName, row.number == 13, row.number == 16:
 		return []execv2.Feature{session, run}
-	case row.number == 13, row.number == 15, row.number == 16, row.number == 27, row.name == pairEngineWireName:
+	case row.number == 9, row.number == 10, row.number == 11, row.number == 21, row.number == 22, row.number == 25, row.name == pairReplayName:
+		return []execv2.Feature{session, management}
+	case row.number == 15, row.number == 27, row.name == pairEngineWireName:
 		return []execv2.Feature{run}
 	}
 	return []execv2.Feature{session}

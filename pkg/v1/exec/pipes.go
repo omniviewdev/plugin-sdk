@@ -10,25 +10,25 @@ import (
 )
 
 // This file holds the bounded pipes between the host and an author's function: the input the function reads as
-// Proc.Stdin, the output it writes as Proc.Stdout and Proc.Stderr, and the size channel it reads as Proc.Resize. They
-// are what makes the engine's memory and blocking rules true, so each one states its bound:
+// Proc.Stdin, the output of a run, which it writes as Proc.Stdout and Proc.Stderr, and the size channel it reads as
+// Proc.Resize. They are what makes the engine's memory and blocking rules true, so each one states its bound:
 //
 //   - the input queue holds at most stdioQueueBytes (256 KiB). A host that sends more waits in Write until the function
 //     reads, which is the backpressure the host sees;
-//   - the output queue of a target that blocks (StallPropagates, or nothing declared) holds at most stdioQueueBytes (256 KiB)
-//     and at most maxOutputSegments (4,096) runs of one stream, and a full queue blocks the function's Write. The queue of a
-//     target that stalls lossily (StallLossy) holds what the session's replay ring is declared to hold instead:
-//     Session.ReplayBytes (1 MiB by default, up to Session.MaxReplayBytes, 4 MiB by default, when the host asks for more)
-//     for a session, and stdioQueueBytes for a run. A full queue of that kind overwrites the oldest bytes and counts them, and
-//     never blocks for longer than it takes to take a lock. Either way an ending session never waits for a reader: its pipe
-//     overwrites the oldest bytes instead of blocking;
+//   - the output queue of a run (outputPipe) holds at most stdioQueueBytes (256 KiB) and at most maxOutputSegments (4,096)
+//     runs of one stream. For a target that blocks (StallPropagates, or nothing declared) a full queue blocks the function's
+//     Write; for a target that stalls lossily (StallLossy) it overwrites the oldest bytes and counts them, and never blocks
+//     for longer than it takes to take a lock. Either way an ending run never waits for a reader: its pipe overwrites the
+//     oldest bytes instead of blocking. The output of a session is not a queue but the replay ring (ring.go), which holds
+//     the bytes after they are read, so that a host that leaves can ask for them again;
 //   - the size channel holds one size in flight and one pending: the latest wins.
 //
 // Every pipe is safe for use by many goroutines and allocates when it grows (the rings double up to their bound) and
 // when it reports a dropped range, and not otherwise.
 
 const (
-	// stdioQueueBytes is the bound of the input queue and of the output queue of a session.
+	// stdioQueueBytes is the bound of the input queue and of the output queue of a run, and the most output that a session
+	// whose reader may not lose a byte leaves unread before its function's Write waits.
 	stdioQueueBytes = 256 << 10
 	// maxOutputSegments is the most runs of one stream the output queue holds at once. A terminal has one stream and so
 	// one run; a command without a terminal that alternates stdout and stderr in tiny writes makes a run for each
@@ -184,12 +184,13 @@ type outputChunk struct {
 
 // pipeStats are the counts of an output queue.
 type pipeStats struct {
-	Written uint64 // bytes the function wrote and the queue accepted, dropped ones included: the session's output offset
-	Dropped uint64 // of those, bytes overwritten before the reader took them
-	Queued  uint64 // bytes waiting for the reader
-	Stalls  uint64 // writes that had to wait for the reader
-	Late    uint64 // writes refused because the queue was closed
-	LateB   uint64 // bytes in those writes
+	Written         uint64 // bytes the function wrote and the queue accepted, dropped ones included: the session's output offset
+	Dropped         uint64 // of those, bytes overwritten before any reader took them
+	DroppedDetached uint64 // of those, bytes that were overwritten while no stream was attached (a ring only)
+	Queued          uint64 // bytes waiting for the reader
+	Stalls          uint64 // writes that had to wait for the reader
+	Late            uint64 // writes refused because the queue was closed
+	LateB           uint64 // bytes in those writes
 }
 
 // outputPipe carries what the function writes to Proc.Stdout and Proc.Stderr to the reader, in the order it was written,
@@ -554,7 +555,19 @@ func (p *inputPipe) Accepted() uint64 {
 type resizeRequest struct {
 	seq     uint32
 	size    Size
-	initial bool // the size the command was opened with, not a host's resize
+	initial bool        // the size the command was opened with, not a host's resize
+	owner   resizeOwner // who sent it: the stream of the host that is told when the function takes it; nil for none
+}
+
+// resizeOwner is the stream of a host that sent a size, which acknowledges it. Only the owner of a size is told what became of it: a
+// stream that attaches later never hears of the sizes of the one before it, and learns the size in force from what Opened says of
+// the replay.
+type resizeOwner interface {
+	// resizeAccepted is called as the size is accepted and before the function can take it, so that what the owner records for it
+	// is there when it is taken. It runs under the resizer's lock: it must not block or call the resizer.
+	resizeAccepted(seq uint32, size Size)
+	// resizeTaken is called when the function took the size, after the command has recorded it. It must not block.
+	resizeTaken(seq uint32, size Size)
 }
 
 // resizer delivers terminal sizes to Proc.Resize: the initial size first, and then latest wins, and it never blocks the
@@ -592,15 +605,18 @@ func newResizer(initial Size, applied func(uint32, Size), unreadAfter time.Durat
 // channel returns the channel the function reads.
 func (r *resizer) channel() <-chan Size { return r.out }
 
-// submit makes size the one to deliver next, replacing a size that has not been taken. It never blocks, and reports
-// false once the resizer has stopped.
-func (r *resizer) submit(seq uint32, size Size) bool {
+// submit makes size the one to deliver next, replacing a size that has not been taken, and tells owner (when there is one) that it
+// was accepted, before the function can take it. It never blocks, and reports false once the resizer has stopped.
+func (r *resizer) submit(seq uint32, size Size, owner resizeOwner) bool {
 	r.mu.Lock()
 	if r.stopped {
 		r.mu.Unlock()
 		return false
 	}
-	r.pending, r.has = resizeRequest{seq: seq, size: size}, true
+	if owner != nil {
+		owner.resizeAccepted(seq, size)
+	}
+	r.pending, r.has = resizeRequest{seq: seq, size: size, owner: owner}, true
 	r.mu.Unlock()
 	select {
 	case r.wakeup <- struct{}{}:
@@ -663,8 +679,13 @@ func (r *resizer) deliver(req resizeRequest) bool {
 	for {
 		select {
 		case r.out <- req.size:
-			if !req.initial && r.applied != nil {
-				r.applied(req.seq, req.size)
+			if !req.initial {
+				if r.applied != nil {
+					r.applied(req.seq, req.size)
+				}
+				if req.owner != nil {
+					req.owner.resizeTaken(req.seq, req.size)
+				}
 			}
 			return true
 		case <-late:

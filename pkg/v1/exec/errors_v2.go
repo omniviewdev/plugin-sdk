@@ -249,9 +249,6 @@ func (e *Error) status() error {
 	return detailed.Err()
 }
 
-// unsupportedError is the typed refusal of a method this SDK build does not serve.
-func unsupportedError() *Error { return &Error{Class: ErrorClassUnsupported} }
-
 // errorFromStatus decodes the error of a call to an exec v2 service. The status the call returned is decoded first, and
 // the caller's context is read only when the status itself says the context ended the call. An exec refusal is an
 // *Error. A resource-layer refusal (the connection lease, the catalog pin) is the *resourcev2.ResourceOperationError it
@@ -425,7 +422,8 @@ func classFromResourceCode(code string) ErrorClass {
 
 // classifyError turns an error an author's callback returned into the *Error that may cross the wire. In order: an
 // *Error the author built; the target's own Classify; the SDK's classification of context, resource-lane, gRPC and
-// network errors; ErrorClassInternal. The local cause is kept in Err and never sent.
+// network errors, and of an error that carries an HTTP status (HTTPStatus or StatusCode, see ErrorFromHTTPStatus);
+// ErrorClassInternal. The local cause is kept in Err and never sent.
 func classifyError(classify ClassifyFunc, err error) *Error {
 	if err == nil {
 		return nil
@@ -447,7 +445,19 @@ func classifyError(classify ClassifyFunc, err error) *Error {
 			return out
 		}
 	}
-	return &Error{Class: sdkClass(err), Err: err}
+	return sdkError(err)
+}
+
+// sdkError is the *Error the SDK makes of an error nobody else classified: what sdkClass knows, and then the status of an error that
+// carries an HTTP one, before ErrorClassInternal.
+func sdkError(err error) *Error {
+	if class := sdkClass(err); class != ErrorClassInternal {
+		return &Error{Class: class, Err: err}
+	}
+	if status, ok := httpStatusOf(err); ok {
+		return ErrorFromHTTPStatus(status, err)
+	}
+	return &Error{Class: ErrorClassInternal, Err: err}
 }
 
 // sdkClass is the SDK's own classification of the errors every plugin shares.

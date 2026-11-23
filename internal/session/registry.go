@@ -273,6 +273,27 @@ func (r *Registry[S]) Len() int {
 	return len(r.entries)
 }
 
+// Get returns the live entry with the id. An entry is live until it is removed, so one that has ended is found, with its cause, until
+// its end function has returned. A lane that has to reach one of its sessions by the id a client names (an attach, an end) uses it.
+func (r *Registry[S]) Get(id string) (*Entry[S], bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e, ok := r.entries[id]
+	return e, ok
+}
+
+// Entries returns the live entries, sorted by id. It is a copy of the list: it does not change as the entries do.
+func (r *Registry[S]) Entries() []*Entry[S] {
+	r.mu.Lock()
+	entries := make([]*Entry[S], 0, len(r.entries))
+	for _, e := range r.entries {
+		entries = append(entries, e)
+	}
+	r.mu.Unlock()
+	slices.SortFunc(entries, func(a, b *Entry[S]) int { return strings.Compare(a.id, b.id) })
+	return entries
+}
+
 // startFinisher starts the goroutine that finishes e: the first End calls it.
 func (r *Registry[S]) startFinisher(e *Entry[S]) {
 	if spawn := r.seams.spawn; spawn != nil {
