@@ -10,7 +10,7 @@ package exec_test
 //
 //	Create, CreateResource, CreateSameID (starts: a fresh ID each time, and one ID for all)
 //	Get, List, Attach, Detach, CloseSession, Resize, Write (input through a stream)
-//	Stream, StreamEnd (opening a stream; ending one, which cancels every session)
+//	Stream, StreamEnd (opening a stream and closing its input; opening one and ending its context. Either way the stream ends, and cancels the sessions it served)
 //	Close
 //	ProcessExit, TerminalHangup (a session that ends by itself: its process leaves, its terminal hangs up)
 //

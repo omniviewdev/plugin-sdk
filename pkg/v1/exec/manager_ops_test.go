@@ -334,7 +334,9 @@ func opWrite(e *env, rng *rand.Rand) {
 	}
 }
 
-// opStream opens a stream and closes its input, which ends it without touching a session.
+// opStream opens a stream and closes its input, which ends it, as the host's closing its side of
+// the RPC does. A stream that ends cancels the sessions it served, by this exit as by the other one that
+// opStreamEnd takes; a stream that a later call of opStream or opStreamEnd replaced served none.
 func opStream(e *env, _ *rand.Rand) {
 	input := make(chan exec.StreamInput)
 	if _, err := e.r.m.Stream(e.streamCtx, input); err != nil {
@@ -344,8 +346,8 @@ func opStream(e *env, _ *rand.Rand) {
 	e.saw("Stream", "opened and closed")
 }
 
-// opStreamEnd opens a stream and ends its context. A stream that ends cancels every
-// session the manager has, because they can no longer deliver their output.
+// opStreamEnd opens a stream and ends its context. A stream that ends cancels the sessions it served,
+// because they can no longer deliver their output; one that a later stream replaced served none.
 func opStreamEnd(e *env, _ *rand.Rand) {
 	ctx, cancel := context.WithCancel(e.streamCtx)
 	if _, err := e.r.m.Stream(ctx, make(chan exec.StreamInput)); err != nil {

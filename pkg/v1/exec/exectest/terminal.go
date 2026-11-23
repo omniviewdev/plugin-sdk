@@ -82,6 +82,16 @@ func (t *FakeTerminal) InjectOutput(data []byte) (int, error) {
 	return t.masterW.Write(data)
 }
 
+// MarkEnd implements exec.EndMarker: the mark is written to the master write end, so it is read after the output
+// injected before it, as the mark of a real terminal is. The manager uses it to deliver the last of the output of
+// a session before the Close signal, as it does on a real terminal. It fails once the terminal is closed.
+func (t *FakeTerminal) MarkEnd(mark []byte) error {
+	_, err := t.masterW.Write(mark)
+	return err
+}
+
+var _ exec.EndMarker = (*FakeTerminal)(nil)
+
 // Resizes returns a copy of all resize records.
 func (t *FakeTerminal) Resizes() []ResizeRecord {
 	t.mu.Lock()
