@@ -171,6 +171,112 @@ func Block() Step {
 	})
 }
 
+// CopyInput copies the command's stdin to its output until stdin ends (the host closed the input, or the session ended)
+// or the command is cancelled: an echo, the command of a shell that only repeats what it is told. The step goes on when
+// stdin ends. A write that fails because the session ended is the command's end, not a failure of the target.
+func CopyInput() Step {
+	return stepFunc(func(ctx context.Context, p *exec.Proc) (bool, exec.Exit, error) {
+		if p.Stdin == nil {
+			return true, exec.Exit{}, errors.New("exectest: CopyInput on a command with no stdin")
+		}
+		done := make(chan error, 1)
+		go func() {
+			_, err := io.Copy(p.Stdout, p.Stdin)
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if err != nil && ctx.Err() == nil && !errors.Is(err, io.ErrClosedPipe) {
+				return true, exec.Exit{}, err
+			}
+			return false, exec.Exit{}, nil
+		case <-ctx.Done():
+			return true, exec.Exit{}, ctx.Err()
+		}
+	})
+}
+
+// IgnoreCancel waits until the test opens the gate and looks at nothing else, the command's context included: a function
+// that ignores its cancelled context. It is the stuck mode of a target; the engine gives up on such a function after its
+// grace, and the test opens the gate afterwards so that the goroutine ends with the test.
+func IgnoreCancel(g *Gate) Step {
+	return stepFunc(func(context.Context, *exec.Proc) (bool, exec.Exit, error) {
+		<-g.Opened()
+		return false, exec.Exit{}, nil
+	})
+}
+
+// LateWrites records what the goroutine of OutliveWith got when it used the command's stdio after the function returned.
+type LateWrites struct {
+	mu     sync.Mutex
+	stdout error
+	stderr error
+	stdin  error
+	nOut   int
+	nErr   int
+	done   chan struct{}
+}
+
+// NewLateWrites returns an empty record.
+func NewLateWrites() *LateWrites { return &LateWrites{done: make(chan struct{})} }
+
+// Done is closed when the goroutine has used the stdio.
+func (l *LateWrites) Done() <-chan struct{} { return l.done }
+
+// Stdout returns how many bytes the late write to stdout took and the error it got.
+func (l *LateWrites) Stdout() (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.nOut, l.stdout
+}
+
+// Stderr returns how many bytes the late write to stderr took and the error it got, or (0, nil) when the command has no
+// stderr.
+func (l *LateWrites) Stderr() (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.nErr, l.stderr
+}
+
+// Stdin returns the error the late read of stdin got: io.EOF once the session has ended.
+func (l *LateWrites) Stdin() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.stdin
+}
+
+// OutliveWith starts a goroutine that keeps the command's stdio and, when the gate opens, writes data to stdout and to
+// stderr and reads stdin once, recording what each returned in late. The step goes on at once, so that the steps after it
+// end the command and the goroutine outlives its function: a function that returns before its process ends, and a
+// goroutine that writes after the return.
+func OutliveWith(g *Gate, data string, late *LateWrites) Step {
+	return stepFunc(func(_ context.Context, p *exec.Proc) (bool, exec.Exit, error) {
+		go func() {
+			defer close(late.done)
+			<-g.Opened()
+			n, err := io.WriteString(p.Stdout, data)
+			late.mu.Lock()
+			late.nOut, late.stdout = n, err
+			late.mu.Unlock()
+			if p.Stderr != nil {
+				n, err = io.WriteString(p.Stderr, data)
+				late.mu.Lock()
+				late.nErr, late.stderr = n, err
+				late.mu.Unlock()
+			}
+			if p.Stdin != nil {
+				_, err = p.Stdin.Read(make([]byte, 1))
+				late.mu.Lock()
+				late.stdin = err
+				late.mu.Unlock()
+			}
+			p.Started(exec.SessionFacts{})
+			p.Link(exec.LinkGood)
+		}()
+		return false, exec.Exit{}, nil
+	})
+}
+
 // FakeTargetOption configures NewFakeTarget.
 type FakeTargetOption func(*fakeTarget)
 

@@ -163,7 +163,7 @@ func RegisterPlugin(
 		return err
 	}
 	if capability.v2 != nil {
-		capability.v2.server.log = p.Log.Named("exec.v2")
+		capability.v2.server.setLogger(p.Log.Named("exec.v2"))
 	}
 	if len(opts.Handlers) > 0 || len(opts.Targets) == 0 {
 		capability.Impl = NewManager(ManagerConfig{

@@ -15,6 +15,12 @@ func (s Size) IsZero() bool { return s == Size{} }
 
 // Proc is the command's world, owned by the SDK: the validated request and the stdio the author copies between
 // the target and the host. An ExecFunc receives one per command.
+//
+// The SDK runs the function once, on a goroutine of its own. A panic in the function is recovered: the command ends as a
+// failure of the target and the panic value stays in the plugin's log. The goroutines the function starts are its own:
+// a panic in one of them is not recovered. Started and Link may be called from any goroutine of the function while it
+// runs. Whatever the function does with the Proc after it returned or after the session ended (a write, Started, Link) is
+// refused, counted and logged, and never changes the end.
 type Proc struct {
 	// Context is the admitted, connection-bound plugin context of the request.
 	Context *types.PluginContext
@@ -33,8 +39,9 @@ type Proc struct {
 	Stdin io.Reader
 	// Stdout is the command's output; the only output of a command that runs with a terminal. For a target whose
 	// Capabilities.Stall is StallPropagates, Write blocks while the host is slow, so that the pace of the host
-	// reaches the target; for StallLossy it is never blocked for more than 50 ms and the SDK counts what it
-	// overwrites. It fails once the session has ended.
+	// reaches the target, at 256 KiB of queued output; for StallLossy it never blocks: the SDK drops the oldest bytes,
+	// counts them and tells the host which ranges it lost. A session that is ending never waits for a reader. A write
+	// fails with io.ErrClosedPipe once the function has returned or the session has ended.
 	Stdout io.Writer
 	// Stderr is the command's error output. It is nil for a command that runs with a terminal.
 	Stderr io.Writer
