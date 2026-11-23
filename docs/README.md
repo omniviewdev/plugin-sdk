@@ -18,6 +18,8 @@ Create a read-only notes plugin, run it locally, and see an exact-value resource
 | Choose which SDK capabilities my plugin exposes | [Plugin anatomy and capabilities](capabilities.md) |
 | Add a resource type, point reads, or source pages | [Expose resources](resources.md) |
 | Add a schema-validated, non-resource tool | [Expose a custom tool](tools.md) |
+| Run commands in a Pod/host/VM | [Exec: run commands in a target](exec.md) |
+| Check what must be met before any tag ships the exec v2 contract | [Before any tag that ships `exec.v2`](exec-before-any-tag.md) |
 | Open native clients and handle connection shutdown | [Manage connections](connections.md) |
 | Look up interfaces, request types, and return contracts | [Resource API reference](resource-v2-api.md) |
 | Move an existing resource plugin to v2 | [Migrate from resource v1](sdk-v1-v2-overview.md) |

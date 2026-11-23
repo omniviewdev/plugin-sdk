@@ -1,0 +1,4 @@
+# Byte-pinned goldens: tests compare their bytes, so a checkout must never convert line endings
+# (Windows runners check files out with CRLF by default).
+testdata/compat-v0.21.0/exec/legacy_transcript.json -text
+proto/exec/v2/exec.contract.golden -text

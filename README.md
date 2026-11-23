@@ -9,6 +9,15 @@ Start with the [plugin author guides](docs/README.md), or
 Use the [resource API reference](docs/resource-v2-api.md) for signatures and contracts,
 and the [migration guide](docs/sdk-v1-v2-overview.md) when moving from resource v1.
 
+## Exec
+
+Run a command in a Pod, container, host or VM. The legacy `exec.Handler` lane keeps working; the exec v2 lane
+(`pkg/v1/exec`, `proto/exec/v2`) is a contract in which a plugin author writes one function, `ExecFunc`, and declares
+the `Target` it runs in. This build serves `Describe` and `Options`; every other v2 RPC answers a typed
+`UNSUPPORTED`, and the SDK does not call `ExecFunc` yet.
+
+See [docs/exec.md](docs/exec.md).
+
 ## Internal Logging
 
 Use `log` for plugin runtime/internal logging. This is separate from the log capability API in `pkg/v1/logs`.

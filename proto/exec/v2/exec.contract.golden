@@ -1,0 +1,659 @@
+contract_version 1
+syntax proto3
+package omniview.sdk.exec.v2
+
+service Exec
+  rpc Describe(DescribeRequest) returns (DescribeResponse)
+  rpc EndSession(EndSessionRequest) returns (EndSessionResponse)
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse)
+  rpc Open(stream ClientFrame) returns (stream ServerFrame)
+  rpc Options(OptionsRequest) returns (OptionsResponse)
+  rpc ReadOutput(ReadOutputRequest) returns (ReadOutputResponse)
+  rpc Run(RunRequest) returns (RunResult)
+  rpc RunStream(RunRequest) returns (stream RunEvent)
+
+enum ChoiceState
+  0 CHOICE_STATE_UNSPECIFIED
+  1 CHOICE_STATE_READY
+  2 CHOICE_STATE_STARTING
+  3 CHOICE_STATE_STOPPED
+
+enum CloseMode
+  0 CLOSE_MODE_UNSPECIFIED
+  1 CLOSE_MODE_GRACEFUL
+  2 CLOSE_MODE_KILL
+
+enum ClosedBy
+  0 CLOSED_BY_UNSPECIFIED
+  1 CLOSED_BY_REQUEST
+  2 CLOSED_BY_PLUGIN_SHUTDOWN
+  3 CLOSED_BY_DETACH_TIMEOUT
+  4 CLOSED_BY_IDLE_TIMEOUT
+  5 CLOSED_BY_CONNECTION_RETIRED
+  6 CLOSED_BY_RUN_TIMEOUT
+  7 CLOSED_BY_CANCELLED
+
+enum DetachReason
+  0 DETACH_REASON_UNSPECIFIED
+  1 DETACH_REASON_REQUESTED
+  2 DETACH_REASON_SUPERSEDED
+
+enum DropReason
+  0 DROP_REASON_UNSPECIFIED
+  1 DROP_REASON_REPLAY_FULL
+  2 DROP_REASON_DETACHED_OVERFLOW
+  3 DROP_REASON_EAGER_DRAIN_OVERFLOW
+
+enum ErrorClass
+  0 ERROR_CLASS_UNSPECIFIED
+  1 ERROR_CLASS_FORBIDDEN
+  2 ERROR_CLASS_UNAUTHORIZED
+  3 ERROR_CLASS_NOT_FOUND
+  4 ERROR_CLASS_CONFLICT
+  5 ERROR_CLASS_UNAVAILABLE
+  6 ERROR_CLASS_CONNECTION
+  7 ERROR_CLASS_TIMEOUT
+  8 ERROR_CLASS_INVALID_REQUEST
+  9 ERROR_CLASS_UNSUPPORTED
+  10 ERROR_CLASS_LIMIT
+  11 ERROR_CLASS_CANCELLED
+  12 ERROR_CLASS_INTERNAL
+
+enum ErrorReason
+  0 ERROR_REASON_UNSPECIFIED
+  1 ERROR_REASON_TARGET_DENIED
+  2 ERROR_REASON_TARGET_GONE
+  3 ERROR_REASON_TARGET_REPLACED
+  4 ERROR_REASON_NOT_RUNNING
+  5 ERROR_REASON_NO_SUCH_EXECUTABLE
+  6 ERROR_REASON_TTY_UNSUPPORTED
+  7 ERROR_REASON_TOO_MANY_SESSIONS
+  8 ERROR_REASON_TOO_MANY_RUNS
+  9 ERROR_REASON_INPUT_TOO_LARGE
+  10 ERROR_REASON_CONNECTION_RETIRED
+  11 ERROR_REASON_SESSION_EXISTS
+  12 ERROR_REASON_SESSION_UNKNOWN
+  13 ERROR_REASON_CONSENT_REQUIRED
+  14 ERROR_REASON_INPUT_BACKLOG
+
+enum ExitReport
+  0 EXIT_REPORT_UNSPECIFIED
+  1 EXIT_REPORT_NONE
+  2 EXIT_REPORT_CODE
+  3 EXIT_REPORT_CODE_AND_SIGNAL
+
+enum ExitSource
+  0 EXIT_SOURCE_UNSPECIFIED
+  1 EXIT_SOURCE_PROCESS
+  2 EXIT_SOURCE_SIGNAL_FOLDED
+  3 EXIT_SOURCE_TRANSPORT
+  4 EXIT_SOURCE_HOST
+
+enum FactKind
+  0 FACT_KIND_UNSPECIFIED
+  1 FACT_KIND_FOREGROUND
+  2 FACT_KIND_CWD
+  3 FACT_KIND_INTEGRATION_TIER
+
+enum FactMode
+  0 FACT_MODE_UNSPECIFIED
+  1 FACT_MODE_NONE
+  2 FACT_MODE_PULL
+  3 FACT_MODE_PUSH
+
+enum FailureStage
+  0 FAILURE_STAGE_UNSPECIFIED
+  1 FAILURE_STAGE_START
+  2 FAILURE_STAGE_RUN
+  3 FAILURE_STAGE_STREAM
+
+enum Feature
+  0 FEATURE_UNSPECIFIED
+  1 FEATURE_MARKS
+  2 FEATURE_SESSION_MANAGEMENT
+  3 FEATURE_RUN_STREAM
+  4 FEATURE_ENV
+  5 FEATURE_CWD
+  6 FEATURE_STDIN_EOF
+  7 FEATURE_MODES
+  8 FEATURE_INTEGRATION
+  9 FEATURE_SESSION
+  10 FEATURE_RUN
+
+enum ForegroundState
+  0 FOREGROUND_STATE_UNSPECIFIED
+  1 FOREGROUND_STATE_IDLE
+  2 FOREGROUND_STATE_BUSY
+
+enum IntegrationMode
+  0 INTEGRATION_MODE_UNSPECIFIED
+  1 INTEGRATION_MODE_NONE
+  2 INTEGRATION_MODE_ARGV_WRAPPER
+
+enum IntegrationTier
+  0 INTEGRATION_TIER_UNSPECIFIED
+  1 INTEGRATION_TIER_NONE
+  2 INTEGRATION_TIER_BASIC
+  3 INTEGRATION_TIER_RICH
+
+enum KillBehavior
+  0 KILL_BEHAVIOR_UNSPECIFIED
+  1 KILL_BEHAVIOR_TERMINATES
+  2 KILL_BEHAVIOR_BEST_EFFORT
+  3 KILL_BEHAVIOR_CLOSES_STREAM_ONLY
+
+enum LinkState
+  0 LINK_STATE_UNSPECIFIED
+  1 LINK_STATE_GOOD
+  2 LINK_STATE_DEGRADED
+  3 LINK_STATE_STALLED
+
+enum LostCause
+  0 LOST_CAUSE_UNSPECIFIED
+  1 LOST_CAUSE_NO_STATUS
+  2 LOST_CAUSE_LINK_DEAD
+
+enum MarkKind
+  0 MARK_KIND_UNSPECIFIED
+  1 MARK_KIND_PROMPT_START
+  2 MARK_KIND_INPUT_START
+  3 MARK_KIND_COMMAND_START
+  4 MARK_KIND_COMMAND_END
+  5 MARK_KIND_CWD
+
+enum MarkTrust
+  0 MARK_TRUST_UNSPECIFIED
+  1 MARK_TRUST_UNVERIFIED
+  2 MARK_TRUST_NONCE
+
+enum MouseEncoding
+  0 MOUSE_ENCODING_UNSPECIFIED
+  1 MOUSE_ENCODING_X10
+  2 MOUSE_ENCODING_UTF8
+  3 MOUSE_ENCODING_SGR
+  4 MOUSE_ENCODING_URXVT
+
+enum MouseTracking
+  0 MOUSE_TRACKING_UNSPECIFIED
+  1 MOUSE_TRACKING_NONE
+  2 MOUSE_TRACKING_X10
+  3 MOUSE_TRACKING_NORMAL
+  4 MOUSE_TRACKING_BUTTON
+  5 MOUSE_TRACKING_ANY
+
+enum NoticeKind
+  0 NOTICE_KIND_UNSPECIFIED
+  1 NOTICE_KIND_ENV_IGNORED
+  2 NOTICE_KIND_CWD_IGNORED
+  3 NOTICE_KIND_FEATURE_IGNORED
+  4 NOTICE_KIND_SIZE_DEFAULTED
+  5 NOTICE_KIND_INTEGRATION_IGNORED
+
+enum Outcome
+  0 OUTCOME_UNSPECIFIED
+  1 OUTCOME_EXITED
+  2 OUTCOME_SIGNALED
+  3 OUTCOME_TIMED_OUT
+  4 OUTCOME_CANCELLED
+  5 OUTCOME_LOST
+  6 OUTCOME_FAILED
+
+enum OutputCompleteness
+  0 OUTPUT_COMPLETENESS_UNSPECIFIED
+  1 OUTPUT_COMPLETENESS_COMPLETE
+  2 OUTPUT_COMPLETENESS_TRUNCATED
+
+enum ResizeResult
+  0 RESIZE_RESULT_UNSPECIFIED
+  1 RESIZE_RESULT_APPLIED
+  2 RESIZE_RESULT_IGNORED
+  3 RESIZE_RESULT_FAILED
+
+enum Signal
+  0 SIGNAL_UNSPECIFIED
+  1 SIGNAL_INT
+  2 SIGNAL_QUIT
+  3 SIGNAL_TERM
+  4 SIGNAL_KILL
+  5 SIGNAL_HUP
+  6 SIGNAL_USR1
+  7 SIGNAL_USR2
+
+enum StallBehavior
+  0 STALL_BEHAVIOR_UNSPECIFIED
+  1 STALL_BEHAVIOR_PROPAGATES
+  2 STALL_BEHAVIOR_LOSSY
+
+enum Stream
+  0 STREAM_UNSPECIFIED
+  1 STREAM_TTY
+  2 STREAM_STDOUT
+  3 STREAM_STDERR
+
+enum Survival
+  0 SURVIVAL_UNSPECIFIED
+  1 SURVIVAL_NONE
+  2 SURVIVAL_TARGET_PROCESS
+  3 SURVIVAL_TARGET_SESSION
+
+enum TruncatePolicy
+  0 TRUNCATE_POLICY_UNSPECIFIED
+  1 TRUNCATE_POLICY_HEAD_TAIL
+  2 TRUNCATE_POLICY_HEAD
+  3 TRUNCATE_POLICY_TAIL
+
+enum UnknownReason
+  0 UNKNOWN_REASON_UNSPECIFIED
+  1 UNKNOWN_REASON_UNSUPPORTED
+  2 UNKNOWN_REASON_QUERY_FAILED
+  3 UNKNOWN_REASON_REMOTE
+
+message Attach
+  1 from_offset uint64
+
+message Capabilities
+  1 tty optional bool
+  2 separate_stderr optional bool
+  3 resize optional bool
+  4 initial_size optional bool
+  5 stdin_eof optional bool
+  6 signals message SignalSet
+  7 kill enum KillBehavior
+  8 env optional bool
+  9 cwd optional bool
+  10 cwd_fact enum FactMode
+  11 foreground_fact enum FactMode
+  12 host_restart enum Survival
+  13 exit_report enum ExitReport
+  14 stall enum StallBehavior
+  15 link_health optional bool
+  16 integration message IntegrationModeSet
+
+message Choice
+  1 value string
+  2 display_name string
+  3 state enum ChoiceState
+  4 detail string
+  5 is_default bool
+  6 kind string
+  7 capabilities message Capabilities
+
+message ClientFrame
+  1 open message OpenRequest oneof frame
+  2 input bytes oneof frame
+  3 resize message Resize oneof frame
+  4 signal enum Signal oneof frame
+  5 close_input message CloseInput oneof frame
+  6 query message Query oneof frame
+  7 close message Close oneof frame
+  8 detach message Detach oneof frame
+
+message Close
+  1 mode enum CloseMode
+
+message CloseInput
+
+message Closed
+  1 by enum ClosedBy
+
+message DescribeRequest
+
+message DescribeResponse
+  1 contract_version uint32
+  2 features repeated packed enum Feature
+  3 targets repeated message TargetInfo
+
+message Detach
+  1 lease_ms uint32
+
+message Detached
+  1 lease_expires_unix_ms int64
+  2 reason enum DetachReason
+
+message Directory
+  1 path string
+  2 reason enum UnknownReason
+
+message Dropped
+  1 stream enum Stream
+  2 from_offset uint64
+  3 bytes uint64
+  4 reason enum DropReason
+  5 mode_reset optional bytes
+
+message End
+  1 exited message Exited oneof kind
+  2 signaled message Signaled oneof kind
+  3 closed message Closed oneof kind
+  4 failed message Failed oneof kind
+  5 lost message Lost oneof kind
+  6 remote_may_survive optional bool
+
+message EndSessionRequest
+  1 session_id string
+  2 mode enum CloseMode
+
+message EndSessionResponse
+
+message Ended
+  1 end message End
+  2 start_observed bool
+  3 duration_ms uint64
+  4 bytes_out uint64
+  5 bytes_in uint64
+  6 dropped_bytes uint64
+  7 output enum OutputCompleteness
+  8 last_offset uint64
+  9 mode_reset optional bytes
+
+message ErrorFacts
+  1 program string
+  2 selection_name string
+  3 selection_value string
+  4 retry_after_ms uint32
+
+message Exited
+  1 exit_code sint64
+  2 source enum ExitSource
+
+message Fact
+  1 query_id uint32
+  2 foreground message Foreground oneof value
+  3 cwd message Directory oneof value
+  4 tier enum IntegrationTier oneof value
+
+message Failed
+  1 class enum ErrorClass
+  2 reason enum ErrorReason
+  3 facts message ErrorFacts
+  4 stage enum FailureStage
+  5 public_message string
+
+message Foreground
+  1 state enum ForegroundState
+  2 name string
+  3 pgid uint32
+  4 reason enum UnknownReason
+
+message IntegrationFacts
+  1 mode enum IntegrationMode
+  2 nonce string
+
+message IntegrationModeSet
+  1 modes repeated packed enum IntegrationMode
+
+message IntegrationRequest
+  1 mode enum IntegrationMode
+  2 consent bool
+
+message Link
+  1 state enum LinkState
+  2 silent_ms uint32
+
+message ListSessionsRequest
+
+message ListSessionsResponse
+  1 sessions repeated message SessionInfo
+
+message Lost
+  1 cause enum LostCause
+
+message Mark
+  1 kind enum MarkKind
+  2 at_offset uint64
+  3 exit_code optional sint64
+  4 cwd string
+  5 command_id string
+  6 command_line string
+  7 trust enum MarkTrust
+  8 duration_ms optional uint64
+  9 redraw bool
+
+message NameValue
+  1 name string
+  2 value string
+
+message Notice
+  1 kind enum NoticeKind
+
+message OpenRequest
+  1 session_id string
+  2 start message Start oneof kind
+  3 attach message Attach oneof kind
+
+message Opened
+  1 facts message SessionFacts
+  2 replay message Replay
+
+message Option
+  1 name string
+  2 choices repeated message Choice
+  3 required bool
+
+message OptionsRequest
+  1 target message TargetRef
+
+message OptionsResponse
+  1 options repeated message Option
+  2 observed_at_unix_ms int64
+
+message Output
+  1 stream enum Stream
+  2 offset uint64
+  3 data bytes
+
+message OutputAccount
+  1 total_bytes uint64
+  2 kept_bytes uint64
+  3 dropped_bytes uint64
+  4 truncated bool
+  5 head_bytes uint32
+  6 tail_bytes uint32
+  7 valid_utf8 bool
+  8 completeness enum OutputCompleteness
+
+message OutputLimits
+  1 max_stdout_bytes uint32
+  2 max_stderr_bytes uint32
+  3 policy enum TruncatePolicy
+
+message Program
+  1 argv repeated string
+  2 name string
+  3 path string
+
+message Query
+  1 id uint32
+  2 kind enum FactKind
+
+message ReadOutputRequest
+  1 session_id string
+  2 from_offset uint64
+  3 max_bytes uint32
+
+message ReadOutputResponse
+  1 chunks repeated message Output
+  2 replay_start uint64
+  3 next_offset uint64
+  4 ended bool
+
+message Replay
+  1 start uint64
+  2 end uint64
+  3 bytes uint64
+  4 start_size message Size
+  5 start_modes message TerminalModes
+  6 size message Size
+  7 modes message TerminalModes
+
+message Resize
+  1 seq uint32
+  2 size message Size
+
+message Resized
+  1 seq uint32
+  2 size message Size
+  3 result enum ResizeResult
+
+message RunEnded
+  1 result message RunResult
+
+message RunEvent
+  1 started message RunStarted oneof event
+  2 output message Output oneof event
+  3 progress message RunProgress oneof event
+  4 ended message RunEnded oneof event
+
+message RunLimits
+  1 default_timeout_ms uint32
+  2 max_timeout_ms uint32
+  3 default_output_bytes uint32
+  4 max_output_bytes uint32
+  5 max_stdin_bytes uint32
+  6 max_concurrent uint32
+  7 max_argv_bytes uint32
+  8 max_env_bytes uint32
+  9 post_exit_drain_ms uint32
+
+message RunProgress
+  1 elapsed_ms uint64
+  2 bytes_out uint64
+
+message RunRequest
+  1 request_id string
+  2 target message TargetRef
+  3 argv repeated string
+  4 stdin bytes
+  5 env repeated message NameValue
+  6 cwd string
+  7 timeout_ms uint32
+  8 output message OutputLimits
+  9 labels repeated message NameValue
+
+message RunResult
+  1 request_id string
+  2 outcome enum Outcome
+  3 exit_code optional sint64
+  4 signal string
+  5 signal_number int32
+  6 stdout bytes
+  7 stderr bytes
+  8 stdout_account message OutputAccount
+  9 stderr_account message OutputAccount
+  10 duration_ms uint64
+  11 start_observed bool
+  12 remote_may_survive optional bool
+  13 target message TargetFacts
+  14 program message Program
+  15 exit_source enum ExitSource
+  16 failed message Failed
+
+message RunStarted
+  1 target message TargetFacts
+  2 program message Program
+
+message ServerFrame
+  1 opened message Opened oneof frame
+  2 output message Output oneof frame
+  3 resized message Resized oneof frame
+  4 mark message Mark oneof frame
+  5 fact message Fact oneof frame
+  6 dropped message Dropped oneof frame
+  7 notice message Notice oneof frame
+  8 ended message Ended oneof frame
+  9 started message Started oneof frame
+  10 link message Link oneof frame
+  11 detached message Detached oneof frame
+
+message SessionFacts
+  1 session_id string
+  2 target message TargetFacts
+  3 program message Program
+  4 tty optional bool
+  5 size message Size
+  6 capabilities message Capabilities
+  7 limits message SessionLimits
+  8 created_at_unix_ms int64
+  9 pid uint32
+  10 transport string
+  11 term string
+  12 integration message IntegrationFacts
+
+message SessionInfo
+  1 facts message SessionFacts
+  2 attached bool
+  3 ended_with message Ended
+  4 next_offset uint64
+  5 replay_start uint64
+  6 last_activity_unix_ms int64
+  7 link enum LinkState
+  8 lease_expires_unix_ms int64
+
+message SessionLimits
+  1 max_sessions uint32
+  2 max_input_frame uint32
+  3 replay_bytes uint32
+  4 max_replay_bytes uint32
+  5 detach_timeout_ms uint32
+  6 max_detach_timeout_ms uint32
+  7 max_dimension uint32
+
+message SignalSet
+  1 signals repeated packed enum Signal
+
+message Signaled
+  1 signal string
+  2 signal_number int32
+  3 core_dumped optional bool
+  4 source enum ExitSource
+
+message Size
+  1 cols uint32
+  2 rows uint32
+
+message Start
+  1 target message TargetRef
+  2 argv repeated string
+  3 tty bool
+  4 size message Size
+  5 env repeated message NameValue
+  6 cwd string
+  7 labels repeated message NameValue
+  8 detach_timeout_ms uint32
+  9 replay_bytes uint32
+  10 features repeated packed enum Feature
+  11 integration message IntegrationRequest
+
+message Started
+  1 facts message SessionFacts
+
+message TargetFacts
+  1 provider string
+  2 type string
+  3 id string
+  4 display_name string
+  5 selection map<string, string>
+
+message TargetInfo
+  1 provider string
+  2 type string
+  3 display_name string
+  4 default_argv repeated string
+  5 capabilities message Capabilities
+  6 session message SessionLimits
+  7 run message RunLimits
+
+message TargetRef
+  1 reference message omniview.resource.v2.ResourceReference
+  2 route message omniview.resource.v2.AccessRoute
+  3 selection repeated message NameValue
+
+message TerminalModes
+  1 alt_screen bool
+  2 bracketed_paste bool
+  3 application_cursor bool
+  4 focus_events bool
+  5 cursor_hidden bool
+  6 mouse_tracking enum MouseTracking
+  7 mouse_encoding enum MouseEncoding
+  8 kitty_keyboard repeated packed uint32

@@ -19,7 +19,7 @@ A Go backend plugin is an executable with metadata and one or more registered ca
 | Capability | Author entrypoint | What it adds |
 | --- | --- | --- |
 | Resources | [`sdk.RegisterResourcePlugin`](../pkg/sdk/plugin.go) | Catalog plus independently supported resource operations. |
-| Exec | [`exec.RegisterPlugin`](../pkg/v1/exec/plugin.go) | Terminal/session handlers. |
+| Exec | [`exec.RegisterPlugin`](../pkg/v1/exec/plugin.go) | Terminal/session handlers (legacy `Handlers`) and exec v2 `Targets`: one function that runs a command in a target. This build serves v2 `Describe` and `Options` only. See the [exec guide](exec.md). |
 | Logs | [`logs.RegisterPlugin`](../pkg/v1/logs/plugin.go) | Log handlers and source resolvers. Registered capability name is `log`. |
 | Metrics | [`metric.RegisterPlugin`](../pkg/v1/metric/plugin.go) | Query, polling, and streaming handlers. |
 | Forwarding | [`networker.RegisterPlugin`](../pkg/v1/networker/plugin.go) | Resource or static port-forward handlers. |

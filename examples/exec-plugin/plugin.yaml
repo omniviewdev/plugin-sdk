@@ -1,0 +1,8 @@
+id: echo-exec
+name: Echo exec
+version: 0.1.0
+description: Run commands in a host that echoes its input back.
+repository: https://github.com/omniviewdev/plugin-sdk
+capabilities:
+  - exec
+sdk_protocol_version: 1

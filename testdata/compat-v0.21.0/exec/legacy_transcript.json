@@ -1,0 +1,297 @@
+{
+  "sdk": "github.com/omniviewdev/plugin-sdk",
+  "tag": "v0.21.0",
+  "commit": "ae56fb095c665edc0298c7a7e19cfa8bad8aabca",
+  "transcript": {
+    "steps": [
+      {
+        "name": "get-supported-resources",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/GetSupportedResources",
+        "request": {
+          "hex": "",
+          "text": ""
+        },
+        "response": {
+          "hex": "0a390a06636f6d70617412046563686f1a230a044563686f1a0d6d657461646174612e6e616d65220c0a046b696e6412046563686f22046563686f",
+          "text": "handlers { plugin: \"compat\" resource: \"echo\" target_builder { label: \"Echo\" paths: \"metadata.name\" selectors { key: \"kind\" value: \"echo\" } } default_command: \"echo\" }"
+        },
+        "code": "OK",
+        "message": "",
+        "error": ""
+      },
+      {
+        "name": "open-stream",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/Stream",
+        "request": {
+          "hex": "",
+          "text": ""
+        },
+        "response": {
+          "hex": "",
+          "text": ""
+        },
+        "code": "OK",
+        "message": "",
+        "error": ""
+      },
+      {
+        "name": "create-session",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/CreateResourceSession",
+        "request": {
+          "hex": "0a10636f6d7061742d73657373696f6e2d3112046563686f180122120a087363656e6172696f12066c65676163792a0f0a0573756974651206636f6d7061743206636f6d7061743a046563686f5002",
+          "text": "id: \"compat-session-1\" command: \"echo\" tty: true params { key: \"scenario\" value: \"legacy\" } labels { key: \"suite\" value: \"compat\" } resource_plugin: \"compat\" resource_key: \"echo\" resource_wire_version: 2"
+        },
+        "response": {
+          "hex": "0802123f0a10636f6d7061742d73657373696f6e2d311a046563686f22120a087363656e6172696f12066c65676163792a0f0a0573756974651206636f6d7061743200",
+          "text": "resource_wire_version: 2 session { id: \"compat-session-1\" command: \"echo\" params { key: \"scenario\" value: \"legacy\" } labels { key: \"suite\" value: \"compat\" } created_at {} }"
+        },
+        "code": "OK",
+        "message": "",
+        "error": ""
+      },
+      {
+        "name": "attach-session",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/AttachSession",
+        "request": {
+          "hex": "0a10636f6d7061742d73657373696f6e2d31",
+          "text": "id: \"compat-session-1\""
+        },
+        "response": {
+          "hex": "0a410a10636f6d7061742d73657373696f6e2d3110011a046563686f22120a087363656e6172696f12066c65676163792a0f0a0573756974651206636f6d7061743200",
+          "text": "session { id: \"compat-session-1\" attached: true command: \"echo\" params { key: \"scenario\" value: \"legacy\" } labels { key: \"suite\" value: \"compat\" } created_at {} }"
+        },
+        "code": "OK",
+        "message": "",
+        "error": ""
+      },
+      {
+        "name": "resize-session",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/ResizeSession",
+        "request": {
+          "hex": "0a10636f6d7061742d73657373696f6e2d3110281878",
+          "text": "id: \"compat-session-1\" rows: 40 cols: 120"
+        },
+        "response": {
+          "hex": "0801",
+          "text": "success: true"
+        },
+        "code": "OK",
+        "message": "",
+        "error": ""
+      },
+      {
+        "name": "list-sessions",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/ListSessions",
+        "request": {
+          "hex": "",
+          "text": ""
+        },
+        "response": {
+          "hex": "0a410a10636f6d7061742d73657373696f6e2d3110011a046563686f22120a087363656e6172696f12066c65676163792a0f0a0573756974651206636f6d70617432001001",
+          "text": "sessions { id: \"compat-session-1\" attached: true command: \"echo\" params { key: \"scenario\" value: \"legacy\" } labels { key: \"suite\" value: \"compat\" } created_at {} } success: true"
+        },
+        "code": "OK",
+        "message": "",
+        "error": ""
+      },
+      {
+        "name": "get-session",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/GetSession",
+        "request": {
+          "hex": "0a10636f6d7061742d73657373696f6e2d31",
+          "text": "id: \"compat-session-1\""
+        },
+        "response": {
+          "hex": "0a410a10636f6d7061742d73657373696f6e2d3110011a046563686f22120a087363656e6172696f12066c65676163792a0f0a0573756974651206636f6d70617432001001",
+          "text": "session { id: \"compat-session-1\" attached: true command: \"echo\" params { key: \"scenario\" value: \"legacy\" } labels { key: \"suite\" value: \"compat\" } created_at {} } success: true"
+        },
+        "code": "OK",
+        "message": "",
+        "error": ""
+      },
+      {
+        "name": "detach-session",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/DetachSession",
+        "request": {
+          "hex": "0a10636f6d7061742d73657373696f6e2d31",
+          "text": "id: \"compat-session-1\""
+        },
+        "response": {
+          "hex": "0a3f0a10636f6d7061742d73657373696f6e2d311a046563686f22120a087363656e6172696f12066c65676163792a0f0a0573756974651206636f6d7061743200",
+          "text": "session { id: \"compat-session-1\" command: \"echo\" params { key: \"scenario\" value: \"legacy\" } labels { key: \"suite\" value: \"compat\" } created_at {} }"
+        },
+        "code": "OK",
+        "message": "",
+        "error": ""
+      },
+      {
+        "name": "attach-session-again",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/AttachSession",
+        "request": {
+          "hex": "0a10636f6d7061742d73657373696f6e2d31",
+          "text": "id: \"compat-session-1\""
+        },
+        "response": {
+          "hex": "0a410a10636f6d7061742d73657373696f6e2d3110011a046563686f22120a087363656e6172696f12066c65676163792a0f0a0573756974651206636f6d7061743200121072656164790d0a676f743a70696e670a",
+          "text": "session { id: \"compat-session-1\" attached: true command: \"echo\" params { key: \"scenario\" value: \"legacy\" } labels { key: \"suite\" value: \"compat\" } created_at {} } buffer: \"ready\\r\\ngot:ping\\n\""
+        },
+        "code": "OK",
+        "message": "",
+        "error": ""
+      },
+      {
+        "name": "get-session-unknown",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/GetSession",
+        "request": {
+          "hex": "0a0e636f6d7061742d6d697373696e67",
+          "text": "id: \"compat-missing\""
+        },
+        "response": {
+          "hex": "",
+          "text": ""
+        },
+        "code": "NotFound",
+        "message": "[SESSION_NOT_FOUND] session compat-missing: session not found",
+        "error": "rpc error: code = NotFound desc = [SESSION_NOT_FOUND] session compat-missing: session not found"
+      },
+      {
+        "name": "create-session-unknown-handler",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/CreateResourceSession",
+        "request": {
+          "hex": "0a10636f6d7061742d73657373696f6e2d3212046563686f18013206636f6d7061743a076d697373696e675002",
+          "text": "id: \"compat-session-2\" command: \"echo\" tty: true resource_plugin: \"compat\" resource_key: \"missing\" resource_wire_version: 2"
+        },
+        "response": {
+          "hex": "",
+          "text": ""
+        },
+        "code": "Internal",
+        "message": "resource operation failed",
+        "error": "{\"code\":\"PROVIDER_ERROR\",\"title\":\"\",\"message\":\"\"}"
+      },
+      {
+        "name": "create-session-plain-no-handler",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/CreateSession",
+        "request": {
+          "hex": "0a10636f6d7061742d73657373696f6e2d3212046563686f1801",
+          "text": "id: \"compat-session-2\" command: \"echo\" tty: true"
+        },
+        "response": {
+          "hex": "",
+          "text": ""
+        },
+        "code": "NotFound",
+        "message": "[HANDLER_NOT_FOUND] no handler for \"/\" (available: [compat/echo])",
+        "error": "rpc error: code = NotFound desc = [HANDLER_NOT_FOUND] no handler for \"/\" (available: [compat/echo])"
+      },
+      {
+        "name": "close-session-unknown",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/CloseSession",
+        "request": {
+          "hex": "0a0e636f6d7061742d6d697373696e67",
+          "text": "id: \"compat-missing\""
+        },
+        "response": {
+          "hex": "",
+          "text": ""
+        },
+        "code": "NotFound",
+        "message": "[SESSION_NOT_FOUND] session compat-missing: session not found",
+        "error": "rpc error: code = NotFound desc = [SESSION_NOT_FOUND] session compat-missing: session not found"
+      },
+      {
+        "name": "close-session",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/CloseSession",
+        "request": {
+          "hex": "0a10636f6d7061742d73657373696f6e2d31",
+          "text": "id: \"compat-session-1\""
+        },
+        "response": {
+          "hex": "0801",
+          "text": "success: true"
+        },
+        "code": "OK",
+        "message": "",
+        "error": ""
+      },
+      {
+        "name": "close-session-again",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/CloseSession",
+        "request": {
+          "hex": "0a10636f6d7061742d73657373696f6e2d31",
+          "text": "id: \"compat-session-1\""
+        },
+        "response": {
+          "hex": "",
+          "text": ""
+        },
+        "code": "NotFound",
+        "message": "[SESSION_NOT_FOUND] session compat-session-1: session not found",
+        "error": "rpc error: code = NotFound desc = [SESSION_NOT_FOUND] session compat-session-1: session not found"
+      },
+      {
+        "name": "get-session-closed",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/GetSession",
+        "request": {
+          "hex": "0a10636f6d7061742d73657373696f6e2d31",
+          "text": "id: \"compat-session-1\""
+        },
+        "response": {
+          "hex": "",
+          "text": ""
+        },
+        "code": "NotFound",
+        "message": "[SESSION_NOT_FOUND] session compat-session-1: session not found",
+        "error": "rpc error: code = NotFound desc = [SESSION_NOT_FOUND] session compat-session-1: session not found"
+      },
+      {
+        "name": "list-sessions-closed",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/ListSessions",
+        "request": {
+          "hex": "",
+          "text": ""
+        },
+        "response": {
+          "hex": "1001",
+          "text": "success: true"
+        },
+        "code": "OK",
+        "message": "",
+        "error": ""
+      },
+      {
+        "name": "end-stream",
+        "method": "/omniview.sdk.exec.v1.ExecPlugin/Stream",
+        "request": {
+          "hex": "",
+          "text": ""
+        },
+        "response": {
+          "hex": "",
+          "text": ""
+        },
+        "code": "OK",
+        "message": "",
+        "error": ""
+      }
+    ],
+    "sent": [
+      {
+        "hex": "0a10636f6d7061742d73657373696f6e2d31120570696e670a",
+        "text": "id: \"compat-session-1\" data: \"ping\\n\""
+      }
+    ],
+    "data": [
+      {
+        "hex": "0a10636f6d7061742d73657373696f6e2d311a1072656164790d0a676f743a70696e670a",
+        "text": "id: \"compat-session-1\" data: \"ready\\r\\ngot:ping\\n\""
+      }
+    ],
+    "signals": [
+      {
+        "hex": "0a10636f6d7061742d73657373696f6e2d311a100a53657373696f6e20636c6f7365640a2001",
+        "text": "id: \"compat-session-1\" data: \"\\nSession closed\\n\" signal: STREAM_SIGNAL_CLOSE"
+      }
+    ]
+  }
+}

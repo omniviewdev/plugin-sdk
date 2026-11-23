@@ -58,3 +58,69 @@ jobs:
           cache: true
       - name: Exercise SDK under the race detector
         run: go test -race ./... -count=1
+  exec-compat:
+    name: Exec compat with SDK v0.21.0 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      GOWORK: "off"
+      OMNIVIEW_COMPAT_V0210: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: A v0.21.0 host and plugin against this tree, both directions
+        # The test builds each fixture (download, tidy, three builds) with its own 15 minute budget per command, in
+        # sequence, before it runs the scenarios: the package timeout must cover all of them, and go test's default of
+        # 10 minutes does not (the safety bound only turns a hang into a failure).
+        run: go test ./pkg/v1/exec/ -run '^TestCompatV0210$' -count=1 -timeout 90m -v
+  proto-breaking:
+    name: Proto breaking changes against the last release tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: buf breaking against the latest release tag
+        # The baseline is the latest STABLE release tag: vX.Y.Z, never a prerelease such as vX.Y.Z-rc.1 (which sorts
+        # ahead of its release and may already lack a field that the release still has).
+        run: |
+          tag="$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)"
+          if [ -z "$tag" ]; then
+            echo "::notice::the repository has no stable v* release tag, so there is no release to break: skipping buf breaking"
+            exit 0
+          fi
+          echo "buf breaking against ${tag}"
+          buf breaking --against ".git#tag=${tag}"
+  proto-generated:
+    name: Generated exec protobuf code is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: buf generate leaves no diff
+        # An edit of a .proto file without the regenerated Go code (or the reverse) fails here, new files included.
+        run: |
+          buf generate
+          if [ -n "$(git status --porcelain -- proto)" ]; then
+            git status --porcelain -- proto
+            git diff -- proto | head -n 200
+            echo "::error::the generated protobuf code under proto/ is not what buf generate produces: run buf generate and commit the result"
+            exit 1
+          fi
