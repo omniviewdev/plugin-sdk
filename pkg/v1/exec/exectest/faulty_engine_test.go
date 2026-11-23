@@ -75,14 +75,14 @@ func (e *faultyEngine) wrap(cmd exechook.Command, err error) (exechook.Command, 
 
 func (e *faultyEngine) Open(ctx context.Context, req *execv2.OpenRequest) (exechook.Command, error) {
 	if e.fault == faultRefuseWrongClass && e.closed.Load() {
-		return nil, &exec.Error{Class: exec.ClassInternal}
+		return nil, &exec.Error{Class: exec.ErrorClassInternal}
 	}
 	return e.wrap(e.Engine.Open(ctx, req))
 }
 
 func (e *faultyEngine) Run(ctx context.Context, req *execv2.RunRequest) (exechook.Command, error) {
 	if e.fault == faultRefuseWrongClass && e.closed.Load() {
-		return nil, &exec.Error{Class: exec.ClassInternal}
+		return nil, &exec.Error{Class: exec.ErrorClassInternal}
 	}
 	return e.wrap(e.Engine.Run(ctx, req))
 }

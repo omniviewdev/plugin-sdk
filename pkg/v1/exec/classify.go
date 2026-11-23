@@ -16,7 +16,7 @@ import (
 //     Closed, whoever asked, whatever the function returned afterwards. What a function returns after its context was
 //     cancelled is the aftermath of the cancel and never the command's status. Whether the process may still run
 //     follows the session's Kill capability.
-//  2. The function panicked: Failed, ClassInternal. The panic value never leaves the plugin.
+//  2. The function panicked: Failed, ErrorClassInternal. The panic value never leaves the plugin.
 //  3. The function returned an error: Failed, classified by the author's Target.Classify and the SDK's own rules for
 //     context, resource-lane, gRPC and network errors. An Exit returned beside the error is a contract violation and is
 //     not used: an error is never turned into an exit 0.
@@ -74,7 +74,7 @@ func decideEnd(in endInputs) endDecision {
 	out := in.outcome
 	switch {
 	case out.panicked:
-		failure := &Error{Class: ClassInternal, Err: fmt.Errorf("the function panicked: %v", out.panicValue)}
+		failure := &Error{Class: ErrorClassInternal, Err: fmt.Errorf("the function panicked: %v", out.panicValue)}
 		return endDecision{
 			end:        failedEnd(failure, failureStage(failure, in.started)),
 			violations: []violation{{violationPanic, "the function panicked; the panic value and stack are in the plugin's log"}},
@@ -123,7 +123,7 @@ func failureStage(failure *Error, started bool) execv2.FailureStage {
 	switch {
 	case !started:
 		return execv2.FailureStage_FAILURE_STAGE_START
-	case failure.Class == ClassConnection:
+	case failure.Class == ErrorClassConnection:
 		return execv2.FailureStage_FAILURE_STAGE_STREAM
 	}
 	return execv2.FailureStage_FAILURE_STAGE_RUN

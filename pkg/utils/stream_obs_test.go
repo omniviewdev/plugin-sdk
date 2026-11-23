@@ -107,10 +107,16 @@ func TestStreamingMethodFilterSkipsLongLivedStreams(t *testing.T) {
 		"/omniview.settings.SettingsPlugin/CommitSettings",
 		"/omniview.resource.v2.ResourceAncillary/WatchConnections",
 		"/omniview.metric.MetricPlugin/StreamMetrics",
+		// An interactive exec session is one stream for as long as the session lives: the engine's own session span covers it.
+		"/omniview.sdk.exec.v2.Exec/Open",
+		"/omniview.sdk.exec.v2.Exec/RunStream",
 	} {
 		if filter(&stats.RPCTagInfo{FullMethodName: method}) {
 			t.Fatalf("%s should not get an otelgrpc span", method)
 		}
+	}
+	if !filter(&stats.RPCTagInfo{FullMethodName: "/omniview.sdk.exec.v2.Exec/Options"}) || !filter(&stats.RPCTagInfo{FullMethodName: "/omniview.sdk.exec.v2.Exec/Describe"}) {
+		t.Fatal("the exec v2 unary methods must stay traced")
 	}
 	if !filter(&stats.RPCTagInfo{FullMethodName: "/omniview.metric.MetricPlugin/Query"}) {
 		t.Fatal("unary methods must stay traced")

@@ -480,14 +480,18 @@ func (r *rig) drained() (left []string) {
 }
 
 // assertDrained checks the state a manager must be left in once Close has returned and
-// every start has returned: nothing registered, no goroutine of a session, every terminal
-// closed, every process gone, and every admitted session has said goodbye, once and last.
+// every start has returned: nothing registered, no output kept for an attach, no goroutine of
+// a session, every terminal closed, every process gone, and every admitted session has said
+// goodbye, once and last.
 // The processes a handler started, and the last instructions of a session's goroutines,
 // end a moment after Close returns, so those are awaited; the rest must hold at once.
 func (r *rig) assertDrained(t testing.TB) {
 	t.Helper()
 	if sessions, err := r.m.ListSessions(nil); err != nil || len(sessions) != 0 {
 		t.Errorf("sessions left after Close: %d (err=%v)", len(sessions), err)
+	}
+	if kept := exec.RetainedSessions(r.m); kept != 0 {
+		t.Errorf("the output of %d ended sessions is still kept for an attach after Close", kept)
 	}
 	deadline := time.Now().Add(drainWait)
 	left := r.drained()

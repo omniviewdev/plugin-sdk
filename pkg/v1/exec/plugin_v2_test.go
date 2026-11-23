@@ -102,13 +102,13 @@ func TestAPluginThatServesOnlyTheLegacyLaneRefusesTheV2ClientWithAnUnsupportedEr
 
 	if _, err := client.V2().Describe(ctx); err == nil {
 		t.Fatal("Describe of a plugin that does not serve the lane succeeded")
-	} else if got := asExecError(t, err); got.Class != exec.ClassUnsupported {
+	} else if got := asExecError(t, err); got.Class != exec.ErrorClassUnsupported {
 		t.Errorf("Describe: class = %s, want UNSUPPORTED", got.Class)
 	}
 	connections := exectestkit.NewConnectionsT(t, "k8s")
 	if _, err := client.V2().Options(connections.Context(ctx), connections.TargetRef("pods", "p")); err == nil {
 		t.Fatal("Options of a plugin that does not serve the lane succeeded")
-	} else if got := asExecError(t, err); got.Class != exec.ClassUnsupported {
+	} else if got := asExecError(t, err); got.Class != exec.ErrorClassUnsupported {
 		t.Errorf("Options: class = %s, want UNSUPPORTED", got.Class)
 	}
 	if handlers := client.GetSupportedResources(nil); len(handlers) != 1 || handlers[0].ID() != "k8s/pods" {
@@ -198,12 +198,12 @@ func TestAResponseThatBreaksTheContractIsNotUsed(t *testing.T) {
 	})
 	if _, err := client.Describe(context.Background()); err == nil {
 		t.Error("Describe accepted a target with no type")
-	} else if got := asExecError(t, err); got.Class != exec.ClassInternal {
+	} else if got := asExecError(t, err); got.Class != exec.ErrorClassInternal {
 		t.Errorf("Describe: class = %s", got.Class)
 	}
 	if _, err := client.Options(context.Background(), exectestkit.NewConnections("k8s").TargetRef("pods", "p")); err == nil {
 		t.Error("Options accepted an option that is not a closed code")
-	} else if got := asExecError(t, err); got.Class != exec.ClassInternal {
+	} else if got := asExecError(t, err); got.Class != exec.ErrorClassInternal {
 		t.Errorf("Options: class = %s", got.Class)
 	}
 }

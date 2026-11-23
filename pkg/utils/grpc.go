@@ -28,6 +28,8 @@ func StreamingMethodFilter() otelgrpc.Filter {
 		"/CommitSettings",
 		"/StreamAction",
 		"/Run",
+		".Exec/Open",
+		".Exec/RunStream",
 	}
 	return func(info *stats.RPCTagInfo) bool {
 		for _, suffix := range skip {

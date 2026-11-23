@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"testing"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -16,6 +15,15 @@ import (
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/exec"
 	execv2 "github.com/omniviewdev/plugin-sdk/proto/exec/v2"
 )
+
+// TB is the part of testing.TB that Serve, the connection registry and the clients of a Server use. A *testing.T has it all;
+// a recorder that stands in for one lets a suite be run against a server that is wrong and be seen to fail.
+type TB interface {
+	Helper()
+	Fatalf(format string, args ...any)
+	Errorf(format string, args ...any)
+	Cleanup(func())
+}
 
 // ServeConfig configures Serve.
 type ServeConfig struct {
@@ -45,7 +53,7 @@ type Server struct {
 
 // Serve serves cfg.Targets as an exec plugin and returns the server with a connected client. Everything is torn
 // down at the end of the test: the client first, then the server, waiting for its serve loop to return.
-func Serve(t testing.TB, cfg ServeConfig) *Server {
+func Serve(t TB, cfg ServeConfig) *Server {
 	t.Helper()
 	log := cfg.Logger
 	if log == nil {
@@ -83,7 +91,7 @@ func Serve(t testing.TB, cfg ServeConfig) *Server {
 }
 
 // listen opens the listener of a Server and returns the target a client dials.
-func listen(t testing.TB) (net.Listener, string) {
+func listen(t TB) (net.Listener, string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -108,7 +116,7 @@ func listen(t testing.TB) (net.Listener, string) {
 
 // Client returns the host-side client of the served plugin, as the host dispenses it. Its V2 method is the exec v2
 // client; its legacy methods address the legacy lane.
-func (s *Server) Client(t testing.TB) *exec.PluginClient {
+func (s *Server) Client(t TB) *exec.PluginClient {
 	t.Helper()
 	client, err := (&exec.Plugin{}).GRPCClient(context.Background(), nil, s.conn)
 	if err != nil {
@@ -122,7 +130,7 @@ func (s *Server) Client(t testing.TB) *exec.PluginClient {
 }
 
 // V2 returns the exec v2 client of the served plugin.
-func (s *Server) V2(t testing.TB) exec.Client {
+func (s *Server) V2(t TB) exec.Client {
 	t.Helper()
 	return s.Client(t).V2()
 }

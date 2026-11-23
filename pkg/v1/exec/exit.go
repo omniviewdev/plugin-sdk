@@ -19,11 +19,11 @@ type exitInt interface {
 // Exactly one of three shapes is valid: a Code (the command exited), a Signal or SignalNumber (the command was
 // killed by a signal, only for a target whose Capabilities.ExitReport is ExitReportCodeAndSignal), or Lost (the
 // process's fate is unknown). An empty Exit is not an exit 0: the SDK reports it as a failure of the target with
-// ClassInternal. An Exit that mixes shapes is reported the same way.
+// ErrorClassInternal. An Exit that mixes shapes is reported the same way.
 //
 // A signal needs a target that declares ExitReportCodeAndSignal. A signal returned by a target that declares less is
 // never folded into an exit code: whatever its source, name and number, the SDK reports it as a failure of the target
-// with ClassInternal and leaves the process's fate unknown. A target that folds a death by signal itself reports the
+// with ErrorClassInternal and leaves the process's fate unknown. A target that folds a death by signal itself reports the
 // code, with ExitFolded. For a target that declares signals, a signal name or number the wire cannot carry is dropped,
 // and the failure is reported when none is left.
 type Exit struct {

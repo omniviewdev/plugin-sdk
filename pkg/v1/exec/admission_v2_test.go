@@ -32,8 +32,8 @@ func TestARefusedSelectionNeverEchoesItsKeyOrValue(t *testing.T) {
 			if refusal == nil {
 				t.Fatal("the selection was accepted")
 			}
-			if refusal.Class != ClassInvalidRequest {
-				t.Errorf("class = %s, want %s", refusal.Class, ClassInvalidRequest)
+			if refusal.Class != ErrorClassInvalidRequest {
+				t.Errorf("class = %s, want %s", refusal.Class, ErrorClassInvalidRequest)
 			}
 			if strings.Contains(refusal.Error(), canary) || (refusal.Err != nil && strings.Contains(refusal.Err.Error(), canary)) {
 				t.Errorf("the refusal repeats the caller's text: %v / %v", refusal, refusal.Err)
@@ -330,19 +330,19 @@ func TestRejectUnknownFields(t *testing.T) {
 		start.Env = []*execv2.NameValue{{Name: canary, Value: canary}}
 		start.Env[0].ProtoReflect().SetUnknown(rqtUnknownBytes(canary))
 		refusal := rejectUnknownFields(start)
-		rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 		rqtRequireNoCanary(t, refusal, canary)
 	})
 	t.Run("a list longer than any request may carry is invalid, whatever else the request holds", func(t *testing.T) {
 		start := rqtWireStart()
 		start.Env = rqtEntries("E", 1025, map[int][]byte{0: rqtVarint})
 		refusal := rejectUnknownFields(start)
-		rqtRequireRefusal(t, refusal, ClassInvalidRequest, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassInvalidRequest, ErrorReasonUnspecified)
 	})
 	t.Run("a list at the longest a request may carry is read, and its unknown field is unsupported", func(t *testing.T) {
 		start := rqtWireStart()
 		start.Env = rqtEntries("E", 1024, map[int][]byte{1023: rqtVarint})
-		rqtRequireRefusal(t, rejectUnknownFields(start), ClassUnsupported, ReasonUnspecified)
+		rqtRequireRefusal(t, rejectUnknownFields(start), ErrorClassUnsupported, ErrorReasonUnspecified)
 	})
 	t.Run("a list at the longest a request may carry is not a refusal for its length", func(t *testing.T) {
 		start := rqtWireStart()
@@ -484,14 +484,14 @@ func TestHasLongListLeavesTheScopeOfAReferenceToTheResourcePolicy(t *testing.T) 
 		start := rqtWireStart()
 		start.Target.Reference.Address.Scope = rqtScopeEntries(2000, map[int][]byte{1999: rqtVarint})
 		refusal := rejectUnknownFields(start)
-		rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 	})
 
 	t.Run("an env of 1,025 entries is still refused before it is read, with a long scope beside it", func(t *testing.T) {
 		start := rqtWireStart()
 		start.Target.Reference.Address.Scope = rqtScopeEntries(1025, nil)
 		start.Env = rqtEntries("E", 1025, nil)
-		rqtRequireRefusal(t, rejectUnknownFields(start), ClassInvalidRequest, ReasonUnspecified)
+		rqtRequireRefusal(t, rejectUnknownFields(start), ErrorClassInvalidRequest, ErrorReasonUnspecified)
 	})
 }
 
@@ -523,8 +523,8 @@ func TestNameValueMapReadsTheListAsAMapAndRefusesAnyNameTwice(t *testing.T) {
 			if got != nil {
 				t.Errorf("a refused list returned a map: %v", got)
 			}
-			if refusal.Class != ClassInvalidRequest {
-				t.Errorf("class = %s, want %s", refusal.Class, ClassInvalidRequest)
+			if refusal.Class != ErrorClassInvalidRequest {
+				t.Errorf("class = %s, want %s", refusal.Class, ErrorClassInvalidRequest)
 			}
 			if strings.Contains(refusal.Error(), canary) || (refusal.Err != nil && strings.Contains(refusal.Err.Error(), canary)) {
 				t.Errorf("the refusal repeats the caller's name: %v / %v", refusal, refusal.Err)
@@ -556,7 +556,7 @@ func TestNameValueMapBoundsTheListBeforeReadingIt(t *testing.T) {
 	if got, refusal := nameValueMap(list(8), "selection", 8); refusal != nil || len(got) != 8 {
 		t.Errorf("a list at its bound: %d names, %v", len(got), refusal)
 	}
-	if got, refusal := nameValueMap(list(9), "selection", 8); refusal == nil || refusal.Class != ClassInvalidRequest || got != nil {
+	if got, refusal := nameValueMap(list(9), "selection", 8); refusal == nil || refusal.Class != ErrorClassInvalidRequest || got != nil {
 		t.Errorf("a list over its bound: %v, %v", got, refusal)
 	}
 	// A list over its bound that also repeats a name is refused for its size: the bound is checked before any entry.
@@ -565,7 +565,7 @@ func TestNameValueMapBoundsTheListBeforeReadingIt(t *testing.T) {
 	entries := list(8)
 	over := append(entries, &execv2.NameValue{Name: entries[0].Name, Value: "again"})
 	_, refusal := nameValueMap(over, "selection", 8)
-	if refusal == nil || refusal.Class != ClassInvalidRequest || !strings.Contains(refusal.Err.Error(), "exceed") {
+	if refusal == nil || refusal.Class != ErrorClassInvalidRequest || !strings.Contains(refusal.Err.Error(), "exceed") {
 		t.Errorf("a list over its bound that repeats a name is refused for something else: %v", refusal)
 	}
 }
@@ -574,7 +574,7 @@ func TestNameValueMapBoundsTheListBeforeReadingIt(t *testing.T) {
 // bounds of the contract: at most 8 entries, each name a closed code, no name twice, each value at most 256 bytes of
 // plain text. It returns nothing of a request it refuses.
 func TestAdmitTargetRef(t *testing.T) {
-	invalid := ClassInvalidRequest
+	invalid := ErrorClassInvalidRequest
 	rows := []struct {
 		name     string
 		target   func() *execv2.TargetRef
@@ -641,8 +641,8 @@ func TestAdmitTargetRef(t *testing.T) {
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			ref, selection, refusal := admitTargetRef(row.target(), !row.noSelect)
-			if row.class != ClassUnspecified {
-				rqtRequireRefusal(t, refusal, row.class, ReasonUnspecified)
+			if row.class != ErrorClassUnspecified {
+				rqtRequireRefusal(t, refusal, row.class, ErrorReasonUnspecified)
 				require.Zero(t, ref, "a refusal returns nothing of the target")
 				require.Nil(t, selection, "a refusal returns nothing of the selection")
 				return
@@ -680,17 +680,17 @@ func TestAdmitTargetRefReadsTheSelectionAsAMapAndRefusesADuplicate(t *testing.T)
 	if _, selection, refusal := admitTargetRef(wireTargetOf(t, "k8s", "pods"), true); refusal != nil || selection != nil {
 		t.Errorf("no selection: %v, %v", selection, refusal)
 	}
-	if _, _, refusal := admitTargetRef(wireTargetOf(t, "k8s", "pods", nameValues("container", "app", "container", "other")...), true); refusal == nil || refusal.Class != ClassInvalidRequest {
+	if _, _, refusal := admitTargetRef(wireTargetOf(t, "k8s", "pods", nameValues("container", "app", "container", "other")...), true); refusal == nil || refusal.Class != ErrorClassInvalidRequest {
 		t.Errorf("the same option twice: %v", refusal)
 	}
 	// Options takes no selection: any entry is refused, a duplicate or not.
-	if _, _, refusal := admitTargetRef(wireTargetOf(t, "k8s", "pods", nameValues("container", "app")...), false); refusal == nil || refusal.Class != ClassInvalidRequest {
+	if _, _, refusal := admitTargetRef(wireTargetOf(t, "k8s", "pods", nameValues("container", "app")...), false); refusal == nil || refusal.Class != ErrorClassInvalidRequest {
 		t.Errorf("a selection where none is used: %v", refusal)
 	}
 	if _, selection, refusal := admitTargetRef(wireTargetOf(t, "k8s", "pods"), false); refusal != nil || selection != nil {
 		t.Errorf("no selection where none is used: %v, %v", selection, refusal)
 	}
-	if _, _, refusal := admitTargetRef(wireTargetOf(t, "k8s", "pods", nameValues("Not A Code", "x")...), true); refusal == nil || refusal.Class != ClassInvalidRequest {
+	if _, _, refusal := admitTargetRef(wireTargetOf(t, "k8s", "pods", nameValues("Not A Code", "x")...), true); refusal == nil || refusal.Class != ErrorClassInvalidRequest {
 		t.Errorf("a selection name that is not a closed code: %v", refusal)
 	}
 }
@@ -728,7 +728,7 @@ func TestTargetRefToProto(t *testing.T) {
 			require.Nil(t, wire)
 			var refusal *Error
 			require.ErrorAs(t, err, &refusal)
-			rqtRequireRefusal(t, refusal, ClassInvalidRequest, ReasonUnspecified)
+			rqtRequireRefusal(t, refusal, ErrorClassInvalidRequest, ErrorReasonUnspecified)
 		})
 	}
 }

@@ -211,36 +211,36 @@ func (m IntegrationMode) String() string { return enumName(m.toProto(), "INTEGRA
 // ErrorClass is the closed vocabulary of why something failed.
 type ErrorClass int
 
-// The error classes. ClassUnspecified (an unknown class) reads as ClassInternal.
+// The error classes. ErrorClassUnspecified (an unknown class) reads as ErrorClassInternal.
 const (
-	ClassUnspecified    ErrorClass = iota
-	ClassForbidden                 // the target's own authorization refused
-	ClassUnauthorized              // the credentials the plugin holds were missing or refused
-	ClassNotFound                  // the target, the executable or the session does not exist
-	ClassConflict                  // the request conflicts with the current state
-	ClassUnavailable               // the target cannot serve now
-	ClassConnection                // the connection to the target failed or was retired
-	ClassTimeout                   // a bound on time was reached
-	ClassInvalidRequest            // the request is malformed or breaks a bound
-	ClassUnsupported               // the plugin, the SDK build or the target does not support the request
-	ClassLimit                     // a declared limit was reached
-	ClassCancelled                 // the call or the command was cancelled
-	ClassInternal                  // an unclassifiable failure, or a broken contract
+	ErrorClassUnspecified    ErrorClass = iota
+	ErrorClassForbidden                 // the target's own authorization refused
+	ErrorClassUnauthorized              // the credentials the plugin holds were missing or refused
+	ErrorClassNotFound                  // the target, the executable or the session does not exist
+	ErrorClassConflict                  // the request conflicts with the current state
+	ErrorClassUnavailable               // the target cannot serve now
+	ErrorClassConnection                // the connection to the target failed or was retired
+	ErrorClassTimeout                   // a bound on time was reached
+	ErrorClassInvalidRequest            // the request is malformed or breaks a bound
+	ErrorClassUnsupported               // the plugin, the SDK build or the target does not support the request
+	ErrorClassLimit                     // a declared limit was reached
+	ErrorClassCancelled                 // the call or the command was cancelled
+	ErrorClassInternal                  // an unclassifiable failure, or a broken contract
 )
 
 var errorClassPairs = []enumPair[ErrorClass, execv2.ErrorClass]{
-	{ClassForbidden, execv2.ErrorClass_ERROR_CLASS_FORBIDDEN},
-	{ClassUnauthorized, execv2.ErrorClass_ERROR_CLASS_UNAUTHORIZED},
-	{ClassNotFound, execv2.ErrorClass_ERROR_CLASS_NOT_FOUND},
-	{ClassConflict, execv2.ErrorClass_ERROR_CLASS_CONFLICT},
-	{ClassUnavailable, execv2.ErrorClass_ERROR_CLASS_UNAVAILABLE},
-	{ClassConnection, execv2.ErrorClass_ERROR_CLASS_CONNECTION},
-	{ClassTimeout, execv2.ErrorClass_ERROR_CLASS_TIMEOUT},
-	{ClassInvalidRequest, execv2.ErrorClass_ERROR_CLASS_INVALID_REQUEST},
-	{ClassUnsupported, execv2.ErrorClass_ERROR_CLASS_UNSUPPORTED},
-	{ClassLimit, execv2.ErrorClass_ERROR_CLASS_LIMIT},
-	{ClassCancelled, execv2.ErrorClass_ERROR_CLASS_CANCELLED},
-	{ClassInternal, execv2.ErrorClass_ERROR_CLASS_INTERNAL},
+	{ErrorClassForbidden, execv2.ErrorClass_ERROR_CLASS_FORBIDDEN},
+	{ErrorClassUnauthorized, execv2.ErrorClass_ERROR_CLASS_UNAUTHORIZED},
+	{ErrorClassNotFound, execv2.ErrorClass_ERROR_CLASS_NOT_FOUND},
+	{ErrorClassConflict, execv2.ErrorClass_ERROR_CLASS_CONFLICT},
+	{ErrorClassUnavailable, execv2.ErrorClass_ERROR_CLASS_UNAVAILABLE},
+	{ErrorClassConnection, execv2.ErrorClass_ERROR_CLASS_CONNECTION},
+	{ErrorClassTimeout, execv2.ErrorClass_ERROR_CLASS_TIMEOUT},
+	{ErrorClassInvalidRequest, execv2.ErrorClass_ERROR_CLASS_INVALID_REQUEST},
+	{ErrorClassUnsupported, execv2.ErrorClass_ERROR_CLASS_UNSUPPORTED},
+	{ErrorClassLimit, execv2.ErrorClass_ERROR_CLASS_LIMIT},
+	{ErrorClassCancelled, execv2.ErrorClass_ERROR_CLASS_CANCELLED},
+	{ErrorClassInternal, execv2.ErrorClass_ERROR_CLASS_INTERNAL},
 }
 
 func (c ErrorClass) toProto() execv2.ErrorClass { return enumToProto(errorClassPairs, c) }
@@ -251,40 +251,40 @@ func (c ErrorClass) String() string { return enumName(c.toProto(), "ERROR_CLASS_
 // ErrorReason says why, within a class; closed, and valid only beside the classes listed in reasonClasses.
 type ErrorReason int
 
-// The reasons. ReasonUnspecified pairs with every class.
+// The reasons. ErrorReasonUnspecified pairs with every class.
 const (
-	ReasonUnspecified       ErrorReason = iota
-	ReasonTargetDenied                  // Forbidden
-	ReasonTargetGone                    // NotFound
-	ReasonTargetReplaced                // Conflict
-	ReasonNotRunning                    // Unavailable
-	ReasonNoSuchExecutable              // NotFound
-	ReasonTTYUnsupported                // Unsupported
-	ReasonTooManySessions               // Limit
-	ReasonTooManyRuns                   // Limit
-	ReasonInputTooLarge                 // Limit
-	ReasonConnectionRetired             // Connection
-	ReasonSessionExists                 // Conflict
-	ReasonSessionUnknown                // NotFound
-	ReasonConsentRequired               // InvalidRequest
-	ReasonInputBacklog                  // Limit
+	ErrorReasonUnspecified       ErrorReason = iota
+	ErrorReasonTargetDenied                  // Forbidden
+	ErrorReasonTargetGone                    // NotFound
+	ErrorReasonTargetReplaced                // Conflict
+	ErrorReasonNotRunning                    // Unavailable
+	ErrorReasonNoSuchExecutable              // NotFound
+	ErrorReasonTTYUnsupported                // Unsupported
+	ErrorReasonTooManySessions               // Limit
+	ErrorReasonTooManyRuns                   // Limit
+	ErrorReasonInputTooLarge                 // Limit
+	ErrorReasonConnectionRetired             // Connection
+	ErrorReasonSessionExists                 // Conflict
+	ErrorReasonSessionUnknown                // NotFound
+	ErrorReasonConsentRequired               // InvalidRequest
+	ErrorReasonInputBacklog                  // Limit
 )
 
 var errorReasonPairs = []enumPair[ErrorReason, execv2.ErrorReason]{
-	{ReasonTargetDenied, execv2.ErrorReason_ERROR_REASON_TARGET_DENIED},
-	{ReasonTargetGone, execv2.ErrorReason_ERROR_REASON_TARGET_GONE},
-	{ReasonTargetReplaced, execv2.ErrorReason_ERROR_REASON_TARGET_REPLACED},
-	{ReasonNotRunning, execv2.ErrorReason_ERROR_REASON_NOT_RUNNING},
-	{ReasonNoSuchExecutable, execv2.ErrorReason_ERROR_REASON_NO_SUCH_EXECUTABLE},
-	{ReasonTTYUnsupported, execv2.ErrorReason_ERROR_REASON_TTY_UNSUPPORTED},
-	{ReasonTooManySessions, execv2.ErrorReason_ERROR_REASON_TOO_MANY_SESSIONS},
-	{ReasonTooManyRuns, execv2.ErrorReason_ERROR_REASON_TOO_MANY_RUNS},
-	{ReasonInputTooLarge, execv2.ErrorReason_ERROR_REASON_INPUT_TOO_LARGE},
-	{ReasonConnectionRetired, execv2.ErrorReason_ERROR_REASON_CONNECTION_RETIRED},
-	{ReasonSessionExists, execv2.ErrorReason_ERROR_REASON_SESSION_EXISTS},
-	{ReasonSessionUnknown, execv2.ErrorReason_ERROR_REASON_SESSION_UNKNOWN},
-	{ReasonConsentRequired, execv2.ErrorReason_ERROR_REASON_CONSENT_REQUIRED},
-	{ReasonInputBacklog, execv2.ErrorReason_ERROR_REASON_INPUT_BACKLOG},
+	{ErrorReasonTargetDenied, execv2.ErrorReason_ERROR_REASON_TARGET_DENIED},
+	{ErrorReasonTargetGone, execv2.ErrorReason_ERROR_REASON_TARGET_GONE},
+	{ErrorReasonTargetReplaced, execv2.ErrorReason_ERROR_REASON_TARGET_REPLACED},
+	{ErrorReasonNotRunning, execv2.ErrorReason_ERROR_REASON_NOT_RUNNING},
+	{ErrorReasonNoSuchExecutable, execv2.ErrorReason_ERROR_REASON_NO_SUCH_EXECUTABLE},
+	{ErrorReasonTTYUnsupported, execv2.ErrorReason_ERROR_REASON_TTY_UNSUPPORTED},
+	{ErrorReasonTooManySessions, execv2.ErrorReason_ERROR_REASON_TOO_MANY_SESSIONS},
+	{ErrorReasonTooManyRuns, execv2.ErrorReason_ERROR_REASON_TOO_MANY_RUNS},
+	{ErrorReasonInputTooLarge, execv2.ErrorReason_ERROR_REASON_INPUT_TOO_LARGE},
+	{ErrorReasonConnectionRetired, execv2.ErrorReason_ERROR_REASON_CONNECTION_RETIRED},
+	{ErrorReasonSessionExists, execv2.ErrorReason_ERROR_REASON_SESSION_EXISTS},
+	{ErrorReasonSessionUnknown, execv2.ErrorReason_ERROR_REASON_SESSION_UNKNOWN},
+	{ErrorReasonConsentRequired, execv2.ErrorReason_ERROR_REASON_CONSENT_REQUIRED},
+	{ErrorReasonInputBacklog, execv2.ErrorReason_ERROR_REASON_INPUT_BACKLOG},
 }
 
 func (r ErrorReason) toProto() execv2.ErrorReason { return enumToProto(errorReasonPairs, r) }

@@ -39,7 +39,7 @@ func TestEveryReasonHasItsClassesAndNoOtherPairingIsValid(t *testing.T) {
 		}
 	}
 	for _, c := range errorClassPairs {
-		if !validPair(c.g, ReasonUnspecified) {
+		if !validPair(c.g, ErrorReasonUnspecified) {
 			t.Errorf("an unspecified reason must pair with %s", c.g)
 		}
 		for _, p := range errorReasonPairs {
@@ -52,7 +52,7 @@ func TestEveryReasonHasItsClassesAndNoOtherPairingIsValid(t *testing.T) {
 			}
 		}
 	}
-	if validPair(ClassUnspecified, ReasonUnspecified) {
+	if validPair(ErrorClassUnspecified, ErrorReasonUnspecified) {
 		t.Error("an unspecified class is not a class a producer may send")
 	}
 }
@@ -64,57 +64,57 @@ func TestNormalizedBoundsWhatMayCrossTheWire(t *testing.T) {
 		in   *Error
 		want Error // compared without Err
 	}{
-		{"nil", nil, Error{Class: ClassInternal}},
-		{"unspecified class reads as internal", &Error{}, Error{Class: ClassInternal}},
+		{"nil", nil, Error{Class: ErrorClassInternal}},
+		{"unspecified class reads as internal", &Error{}, Error{Class: ErrorClassInternal}},
 		{
 			"valid pair is kept",
-			&Error{Class: ClassForbidden, Reason: ReasonTargetDenied, Message: "no"},
-			Error{Class: ClassForbidden, Reason: ReasonTargetDenied, Message: "no"},
+			&Error{Class: ErrorClassForbidden, Reason: ErrorReasonTargetDenied, Message: "no"},
+			Error{Class: ErrorClassForbidden, Reason: ErrorReasonTargetDenied, Message: "no"},
 		},
 		{
 			"a reason of another class is a broken contract",
-			&Error{Class: ClassNotFound, Reason: ReasonTargetDenied, Message: "kept?"},
-			Error{Class: ClassInternal},
+			&Error{Class: ErrorClassNotFound, Reason: ErrorReasonTargetDenied, Message: "kept?"},
+			Error{Class: ErrorClassInternal},
 		},
 		{
 			"facts that break their bound are dropped, never truncated",
-			&Error{Class: ClassNotFound, Facts: ErrorFacts{Program: long, SelectionName: "c\x00", SelectionValue: "app"}},
-			Error{Class: ClassNotFound, Facts: ErrorFacts{SelectionValue: "app"}},
+			&Error{Class: ErrorClassNotFound, Facts: ErrorFacts{Program: long, SelectionName: "c\x00", SelectionValue: "app"}},
+			Error{Class: ErrorClassNotFound, Facts: ErrorFacts{SelectionValue: "app"}},
 		},
 		{
 			"retry advice is whole milliseconds",
-			&Error{Class: ClassUnavailable, Facts: ErrorFacts{RetryAfter: 1500*time.Millisecond + 400*time.Microsecond}},
-			Error{Class: ClassUnavailable, Facts: ErrorFacts{RetryAfter: 1500 * time.Millisecond}},
+			&Error{Class: ErrorClassUnavailable, Facts: ErrorFacts{RetryAfter: 1500*time.Millisecond + 400*time.Microsecond}},
+			Error{Class: ErrorClassUnavailable, Facts: ErrorFacts{RetryAfter: 1500 * time.Millisecond}},
 		},
 		{
 			"retry advice beyond the wire range is dropped",
-			&Error{Class: ClassUnavailable, Facts: ErrorFacts{RetryAfter: 100 * 24 * 365 * time.Hour}},
-			Error{Class: ClassUnavailable},
+			&Error{Class: ErrorClassUnavailable, Facts: ErrorFacts{RetryAfter: 100 * 24 * 365 * time.Hour}},
+			Error{Class: ErrorClassUnavailable},
 		},
 		{
 			"a message is dropped for an internal error",
-			&Error{Class: ClassInternal, Message: "details"},
-			Error{Class: ClassInternal},
+			&Error{Class: ErrorClassInternal, Message: "details"},
+			Error{Class: ErrorClassInternal},
 		},
 		{
 			"a message that is too long is dropped",
-			&Error{Class: ClassForbidden, Message: strings.Repeat("m", maxPublicMessage+1)},
-			Error{Class: ClassForbidden},
+			&Error{Class: ErrorClassForbidden, Message: strings.Repeat("m", maxPublicMessage+1)},
+			Error{Class: ErrorClassForbidden},
 		},
 		{
 			"a message that is not plain text is dropped",
-			&Error{Class: ClassForbidden, Message: "bad\x1b[31m"},
-			Error{Class: ClassForbidden},
+			&Error{Class: ErrorClassForbidden, Message: "bad\x1b[31m"},
+			Error{Class: ErrorClassForbidden},
 		},
 		{
 			"a message that is not UTF-8 is dropped",
-			&Error{Class: ClassForbidden, Message: "bad\xff"},
-			Error{Class: ClassForbidden},
+			&Error{Class: ErrorClassForbidden, Message: "bad\xff"},
+			Error{Class: ErrorClassForbidden},
 		},
 		{
 			"a message at the bound is kept",
-			&Error{Class: ClassForbidden, Message: strings.Repeat("m", maxPublicMessage)},
-			Error{Class: ClassForbidden, Message: strings.Repeat("m", maxPublicMessage)},
+			&Error{Class: ErrorClassForbidden, Message: strings.Repeat("m", maxPublicMessage)},
+			Error{Class: ErrorClassForbidden, Message: strings.Repeat("m", maxPublicMessage)},
 		},
 	}
 	for _, tc := range tests {
@@ -141,14 +141,14 @@ func TestNormalizedBoundsWhatMayCrossTheWire(t *testing.T) {
 
 func TestStatusRoundTripsClassReasonFactsAndMessage(t *testing.T) {
 	cases := []*Error{
-		{Class: ClassForbidden, Reason: ReasonTargetDenied, Message: "exec in this Pod is not allowed"},
-		{Class: ClassNotFound, Reason: ReasonNoSuchExecutable, Facts: ErrorFacts{Program: "/bin/bash", SelectionName: "container", SelectionValue: "app"}},
-		{Class: ClassLimit, Reason: ReasonTooManySessions, Facts: ErrorFacts{RetryAfter: 2 * time.Second}},
-		{Class: ClassConnection, Reason: ReasonConnectionRetired},
-		{Class: ClassInvalidRequest, Reason: ReasonConsentRequired},
-		{Class: ClassInternal},
-		{Class: ClassTimeout},
-		{Class: ClassCancelled},
+		{Class: ErrorClassForbidden, Reason: ErrorReasonTargetDenied, Message: "exec in this Pod is not allowed"},
+		{Class: ErrorClassNotFound, Reason: ErrorReasonNoSuchExecutable, Facts: ErrorFacts{Program: "/bin/bash", SelectionName: "container", SelectionValue: "app"}},
+		{Class: ErrorClassLimit, Reason: ErrorReasonTooManySessions, Facts: ErrorFacts{RetryAfter: 2 * time.Second}},
+		{Class: ErrorClassConnection, Reason: ErrorReasonConnectionRetired},
+		{Class: ErrorClassInvalidRequest, Reason: ErrorReasonConsentRequired},
+		{Class: ErrorClassInternal},
+		{Class: ErrorClassTimeout},
+		{Class: ErrorClassCancelled},
 	}
 	for _, in := range cases {
 		t.Run(in.Class.String()+"/"+in.Reason.String(), func(t *testing.T) {
@@ -188,8 +188,8 @@ func TestStatusRoundTripsClassReasonFactsAndMessage(t *testing.T) {
 
 func TestStatusUsesTheExecDomainAndTheDocumentedMetadata(t *testing.T) {
 	wire := (&Error{
-		Class:   ClassNotFound,
-		Reason:  ReasonNoSuchExecutable,
+		Class:   ErrorClassNotFound,
+		Reason:  ErrorReasonNoSuchExecutable,
 		Facts:   ErrorFacts{Program: "sh", SelectionName: "container", SelectionValue: "app", RetryAfter: 1500 * time.Millisecond},
 		Message: "there is no shell in this image",
 	}).status()
@@ -231,11 +231,11 @@ func TestEveryClassHasAGRPCCodeAndItsReverseIsAClass(t *testing.T) {
 		if code == codes.OK {
 			t.Errorf("%s maps to OK", p.g)
 		}
-		if classFromCode(code) == ClassUnspecified {
+		if classFromCode(code) == ErrorClassUnspecified {
 			t.Errorf("code %v reads as an unspecified class", code)
 		}
 	}
-	if ClassUnspecified.grpcCode() != codes.Internal {
+	if ErrorClassUnspecified.grpcCode() != codes.Internal {
 		t.Errorf("an unknown class is an internal error")
 	}
 }
@@ -247,13 +247,13 @@ func TestErrorFromStatusClassifiesWhatCarriesNoExecDetail(t *testing.T) {
 		err  error
 		want ErrorClass
 	}{
-		{"the plugin does not serve the lane", status.Error(codes.Unimplemented, "unknown service omniview.sdk.exec.v2.Exec"), ClassUnsupported},
-		{"the plugin is gone", status.Error(codes.Unavailable, "connection refused"), ClassConnection},
-		{"a deadline of the call", status.Error(codes.DeadlineExceeded, "deadline"), ClassTimeout},
-		{"a rejection of the call", status.Error(codes.InvalidArgument, "bad"), ClassInvalidRequest},
-		{"an internal failure", status.Error(codes.Internal, "boom"), ClassInternal},
-		{"an error that is not a status", errors.New("plain"), ClassInternal},
-		{"an unknown code", status.Error(codes.Code(99), "x"), ClassInternal},
+		{"the plugin does not serve the lane", status.Error(codes.Unimplemented, "unknown service omniview.sdk.exec.v2.Exec"), ErrorClassUnsupported},
+		{"the plugin is gone", status.Error(codes.Unavailable, "connection refused"), ErrorClassConnection},
+		{"a deadline of the call", status.Error(codes.DeadlineExceeded, "deadline"), ErrorClassTimeout},
+		{"a rejection of the call", status.Error(codes.InvalidArgument, "bad"), ErrorClassInvalidRequest},
+		{"an internal failure", status.Error(codes.Internal, "boom"), ErrorClassInternal},
+		{"an error that is not a status", errors.New("plain"), ErrorClassInternal},
+		{"an unknown code", status.Error(codes.Code(99), "x"), ErrorClassInternal},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -277,19 +277,19 @@ func TestErrorFromStatusReadsThePeersContextAsTheCallers(t *testing.T) {
 	cancel()
 	err := errorFromStatus(canceled, status.Error(codes.Canceled, "x"))
 	var typed *Error
-	if !errors.As(err, &typed) || typed.Class != ClassCancelled || !errors.Is(err, context.Canceled) {
+	if !errors.As(err, &typed) || typed.Class != ErrorClassCancelled || !errors.Is(err, context.Canceled) {
 		t.Errorf("a cancelled call decoded to %#v", err)
 	}
 	expired, stop := context.WithDeadline(context.Background(), time.Unix(1, 0))
 	defer stop()
 	err = errorFromStatus(expired, status.Error(codes.DeadlineExceeded, "x"))
-	if !errors.As(err, &typed) || typed.Class != ClassTimeout || !errors.Is(err, context.DeadlineExceeded) {
+	if !errors.As(err, &typed) || typed.Class != ErrorClassTimeout || !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("a call past its deadline decoded to %#v", err)
 	}
 }
 
 // A bare status keeps the class of its own code. The caller's context error is wrapped only when it says the same thing
-// the status does: a Canceled status stays ClassCancelled and a DeadlineExceeded status stays ClassTimeout, whichever
+// the status does: a Canceled status stays ErrorClassCancelled and a DeadlineExceeded status stays ErrorClassTimeout, whichever
 // way the context ended after the call returned, and the error then wraps no context error that would contradict it.
 func TestErrorFromStatusKeepsTheClassOfABareStatusWhateverTheContextSays(t *testing.T) {
 	canceled, cancel := context.WithCancel(context.Background())
@@ -303,10 +303,10 @@ func TestErrorFromStatusKeepsTheClassOfABareStatusWhateverTheContextSays(t *test
 		class ErrorClass
 		cause error // wrapped, or nil when the context does not say what the status says
 	}{
-		{"a Canceled status, the caller cancelled", canceled, codes.Canceled, ClassCancelled, context.Canceled},
-		{"a Canceled status, the caller's deadline passed", expired, codes.Canceled, ClassCancelled, nil},
-		{"a DeadlineExceeded status, the caller's deadline passed", expired, codes.DeadlineExceeded, ClassTimeout, context.DeadlineExceeded},
-		{"a DeadlineExceeded status, the caller cancelled", canceled, codes.DeadlineExceeded, ClassTimeout, nil},
+		{"a Canceled status, the caller cancelled", canceled, codes.Canceled, ErrorClassCancelled, context.Canceled},
+		{"a Canceled status, the caller's deadline passed", expired, codes.Canceled, ErrorClassCancelled, nil},
+		{"a DeadlineExceeded status, the caller's deadline passed", expired, codes.DeadlineExceeded, ErrorClassTimeout, context.DeadlineExceeded},
+		{"a DeadlineExceeded status, the caller cancelled", canceled, codes.DeadlineExceeded, ErrorClassTimeout, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -342,8 +342,8 @@ func TestErrorFromStatusDecodesTheStatusBeforeItReadsTheContext(t *testing.T) {
 		class        ErrorClass
 		cause        error
 	}{
-		{"cancelled", canceled, codes.Canceled, "CANCELLED", ClassCancelled, context.Canceled},
-		{"past its deadline", expired, codes.DeadlineExceeded, "TIMEOUT", ClassTimeout, context.DeadlineExceeded},
+		{"cancelled", canceled, codes.Canceled, "CANCELLED", ErrorClassCancelled, context.Canceled},
+		{"past its deadline", expired, codes.DeadlineExceeded, "TIMEOUT", ErrorClassTimeout, context.DeadlineExceeded},
 	}
 	for _, caller := range callers {
 		t.Run("the caller is "+caller.name, func(t *testing.T) {
@@ -354,15 +354,15 @@ func TestErrorFromStatusDecodesTheStatusBeforeItReadsTheContext(t *testing.T) {
 				}
 			}
 			t.Run("a typed refusal of the plugin", func(t *testing.T) {
-				err := errorFromStatus(caller.ctx, (&Error{Class: ClassConflict, Reason: ReasonSessionExists}).status())
+				err := errorFromStatus(caller.ctx, (&Error{Class: ErrorClassConflict, Reason: ErrorReasonSessionExists}).status())
 				var typed *Error
-				if !errors.As(err, &typed) || typed.Class != ClassConflict || typed.Reason != ReasonSessionExists {
+				if !errors.As(err, &typed) || typed.Class != ErrorClassConflict || typed.Reason != ErrorReasonSessionExists {
 					t.Fatalf("decoded to %#v, want the plugin's CONFLICT/SESSION_EXISTS", err)
 				}
 				notTheContext(t, err)
 			})
 			t.Run("a typed refusal that is a cancellation or a timeout of the plugin's own", func(t *testing.T) {
-				for _, class := range []ErrorClass{ClassCancelled, ClassTimeout} {
+				for _, class := range []ErrorClass{ErrorClassCancelled, ErrorClassTimeout} {
 					err := errorFromStatus(caller.ctx, (&Error{Class: class}).status())
 					var typed *Error
 					if !errors.As(err, &typed) || typed.Class != class {
@@ -382,8 +382,8 @@ func TestErrorFromStatusDecodesTheStatusBeforeItReadsTheContext(t *testing.T) {
 			t.Run("a failure of the connection", func(t *testing.T) {
 				err := errorFromStatus(caller.ctx, status.Error(codes.Unavailable, "connection reset"))
 				var typed *Error
-				if !errors.As(err, &typed) || typed.Class != ClassConnection {
-					t.Fatalf("decoded to %#v, want ClassConnection", err)
+				if !errors.As(err, &typed) || typed.Class != ErrorClassConnection {
+					t.Fatalf("decoded to %#v, want ErrorClassConnection", err)
 				}
 				notTheContext(t, err)
 			})
@@ -425,8 +425,8 @@ func TestErrorFromStatusDecodesTheStatusBeforeItReadsTheContext(t *testing.T) {
 	t.Run("an error that is not a status and not a context error stays internal", func(t *testing.T) {
 		err := errorFromStatus(canceled, errors.New("plain"))
 		var typed *Error
-		if !errors.As(err, &typed) || typed.Class != ClassInternal || errors.Is(err, context.Canceled) {
-			t.Errorf("decoded to %#v, want ClassInternal", err)
+		if !errors.As(err, &typed) || typed.Class != ErrorClassInternal || errors.Is(err, context.Canceled) {
+			t.Errorf("decoded to %#v, want ErrorClassInternal", err)
 		}
 	})
 }
@@ -461,7 +461,7 @@ func TestErrorFromStatusIsStrictAboutWhatThePeerSent(t *testing.T) {
 	}
 	t.Run("an unknown class reads as internal", func(t *testing.T) {
 		got := errorFromStatus(context.Background(), build(&errdetails.ErrorInfo{Domain: errorDomain, Reason: "TELEPORTED"}))
-		if typed, ok := got.(*Error); !ok || typed.Class != ClassInternal {
+		if typed, ok := got.(*Error); !ok || typed.Class != ErrorClassInternal {
 			t.Errorf("got %#v", got)
 		}
 	})
@@ -469,7 +469,7 @@ func TestErrorFromStatusIsStrictAboutWhatThePeerSent(t *testing.T) {
 		got := errorFromStatus(context.Background(), build(&errdetails.ErrorInfo{
 			Domain: errorDomain, Reason: "FORBIDDEN", Metadata: map[string]string{"reason": "TARGET_GONE"},
 		}))
-		if typed, ok := got.(*Error); !ok || typed.Class != ClassForbidden || typed.Reason != ReasonUnspecified {
+		if typed, ok := got.(*Error); !ok || typed.Class != ErrorClassForbidden || typed.Reason != ErrorReasonUnspecified {
 			t.Errorf("got %#v", got)
 		}
 	})
@@ -505,14 +505,14 @@ func TestErrorFromStatusIsStrictAboutWhatThePeerSent(t *testing.T) {
 	})
 	t.Run("an ErrorInfo of another domain is not ours", func(t *testing.T) {
 		got := errorFromStatus(context.Background(), build(&errdetails.ErrorInfo{Domain: "example.com", Reason: "FORBIDDEN"}))
-		if typed, ok := got.(*Error); !ok || typed.Class != ClassConflict {
+		if typed, ok := got.(*Error); !ok || typed.Class != ErrorClassConflict {
 			t.Errorf("a foreign domain was read as ours: %#v", got)
 		}
 	})
 }
 
 func TestErrorDescribesClassAndReasonAndNeverTheCause(t *testing.T) {
-	e := &Error{Class: ClassNotFound, Reason: ReasonTargetGone, Message: "the Pod is gone", Err: errors.New(canary)}
+	e := &Error{Class: ErrorClassNotFound, Reason: ErrorReasonTargetGone, Message: "the Pod is gone", Err: errors.New(canary)}
 	if got, want := e.Error(), "exec: NOT_FOUND/TARGET_GONE: the Pod is gone"; got != want {
 		t.Errorf("Error() = %q, want %q", got, want)
 	}
@@ -522,14 +522,14 @@ func TestErrorDescribesClassAndReasonAndNeverTheCause(t *testing.T) {
 	if !errors.Is(e, e.Err) || e.Unwrap() != e.Err {
 		t.Error("the local cause is not reachable through errors.Is")
 	}
-	if got := (&Error{Class: ClassTimeout}).Error(); got != "exec: TIMEOUT" {
+	if got := (&Error{Class: ErrorClassTimeout}).Error(); got != "exec: TIMEOUT" {
 		t.Errorf("Error() = %q", got)
 	}
 	var nilErr *Error
 	if nilErr.Error() == "" || nilErr.Unwrap() != nil {
 		t.Errorf("a nil *Error must be safe: %q", nilErr.Error())
 	}
-	if got := NewError(ClassConflict, ReasonSessionExists, errors.New("x")); got.Class != ClassConflict || got.Reason != ReasonSessionExists {
+	if got := NewError(ErrorClassConflict, ErrorReasonSessionExists, errors.New("x")); got.Class != ErrorClassConflict || got.Reason != ErrorReasonSessionExists {
 		t.Errorf("NewError = %+v", got)
 	}
 }
@@ -549,10 +549,10 @@ func TestClassifyErrorOrder(t *testing.T) {
 	}
 
 	t.Run("the author's own *Error wins, even wrapped, even over Classify", func(t *testing.T) {
-		author := NewError(ClassForbidden, ReasonTargetDenied, cause)
-		classify := func(error) (*Error, bool) { return &Error{Class: ClassNotFound}, true }
+		author := NewError(ErrorClassForbidden, ErrorReasonTargetDenied, cause)
+		classify := func(error) (*Error, bool) { return &Error{Class: ErrorClassNotFound}, true }
 		got := classifyError(classify, fmt.Errorf("wrapped: %w", author))
-		if got.Class != ClassForbidden || got.Reason != ReasonTargetDenied {
+		if got.Class != ErrorClassForbidden || got.Reason != ErrorReasonTargetDenied {
 			t.Errorf("got %+v", got)
 		}
 		if !errors.Is(got.Err, cause) {
@@ -563,22 +563,24 @@ func TestClassifyErrorOrder(t *testing.T) {
 		var seen error
 		classify := func(err error) (*Error, bool) {
 			seen = err
-			return &Error{Class: ClassNotFound, Reason: ReasonTargetGone}, true
+			return &Error{Class: ErrorClassNotFound, Reason: ErrorReasonTargetGone}, true
 		}
 		got := classifyError(classify, cause)
-		if got.Class != ClassNotFound || got.Reason != ReasonTargetGone || seen != cause || !errors.Is(got.Err, cause) {
+		if got.Class != ErrorClassNotFound || got.Reason != ErrorReasonTargetGone || seen != cause || !errors.Is(got.Err, cause) {
 			t.Errorf("got %+v seen %v", got, seen)
 		}
 	})
 	t.Run("Classify declining leaves it to the SDK", func(t *testing.T) {
 		got := classifyError(func(error) (*Error, bool) { return nil, false }, context.Canceled)
-		if got.Class != ClassCancelled {
+		if got.Class != ErrorClassCancelled {
 			t.Errorf("got %+v", got)
 		}
 	})
 	t.Run("Classify returning an invalid pair is a broken contract", func(t *testing.T) {
-		got := classifyError(func(error) (*Error, bool) { return &Error{Class: ClassNotFound, Reason: ReasonTargetDenied}, true }, cause)
-		if got.Class != ClassInternal || got.Reason != ReasonUnspecified {
+		got := classifyError(func(error) (*Error, bool) {
+			return &Error{Class: ErrorClassNotFound, Reason: ErrorReasonTargetDenied}, true
+		}, cause)
+		if got.Class != ErrorClassInternal || got.Reason != ErrorReasonUnspecified {
 			t.Errorf("got %+v", got)
 		}
 	})
@@ -587,23 +589,23 @@ func TestClassifyErrorOrder(t *testing.T) {
 		err  error
 		want ErrorClass
 	}{
-		{"cancellation", fmt.Errorf("x: %w", context.Canceled), ClassCancelled},
-		{"deadline", context.DeadlineExceeded, ClassTimeout},
-		{"resource: not found", resourcev2.NewError("NOT_FOUND", "x"), ClassNotFound},
-		{"resource: reset required has no exec class", resourcev2.NewError("RESET_REQUIRED", "x"), ClassInternal},
-		{"resource: connection error", resourcev2.NewError("CONNECTION_ERROR", "x"), ClassConnection},
-		{"resource: limit", resourcev2.NewError("RESOURCE_LIMIT", "x"), ClassLimit},
-		{"resource: permission denied", resourcev2.NewError("PERMISSION_DENIED", "x"), ClassForbidden},
-		{"grpc: permission denied", status.Error(codes.PermissionDenied, "x"), ClassForbidden},
-		{"grpc: unavailable", status.Error(codes.Unavailable, "x"), ClassConnection},
-		{"network timeout", timeoutNetError{timeout: true}, ClassTimeout},
-		{"network failure", timeoutNetError{}, ClassConnection},
-		{"anything else", cause, ClassInternal},
+		{"cancellation", fmt.Errorf("x: %w", context.Canceled), ErrorClassCancelled},
+		{"deadline", context.DeadlineExceeded, ErrorClassTimeout},
+		{"resource: not found", resourcev2.NewError("NOT_FOUND", "x"), ErrorClassNotFound},
+		{"resource: reset required has no exec class", resourcev2.NewError("RESET_REQUIRED", "x"), ErrorClassInternal},
+		{"resource: connection error", resourcev2.NewError("CONNECTION_ERROR", "x"), ErrorClassConnection},
+		{"resource: limit", resourcev2.NewError("RESOURCE_LIMIT", "x"), ErrorClassLimit},
+		{"resource: permission denied", resourcev2.NewError("PERMISSION_DENIED", "x"), ErrorClassForbidden},
+		{"grpc: permission denied", status.Error(codes.PermissionDenied, "x"), ErrorClassForbidden},
+		{"grpc: unavailable", status.Error(codes.Unavailable, "x"), ErrorClassConnection},
+		{"network timeout", timeoutNetError{timeout: true}, ErrorClassTimeout},
+		{"network failure", timeoutNetError{}, ErrorClassConnection},
+		{"anything else", cause, ErrorClassInternal},
 	}
 	for _, tc := range sdk {
 		t.Run("sdk: "+tc.name, func(t *testing.T) {
 			got := classifyError(nil, tc.err)
-			if got.Class != tc.want || got.Reason != ReasonUnspecified {
+			if got.Class != tc.want || got.Reason != ErrorReasonUnspecified {
 				t.Errorf("got %+v, want class %s", got, tc.want)
 			}
 			if !errors.Is(got.Err, tc.err) && got.Err != tc.err {
@@ -623,11 +625,11 @@ func TestEveryResourceCodeMapsToAClass(t *testing.T) {
 		if !resourcev2.IsErrorCode(code) {
 			t.Errorf("%s is not a resource error code any more: update the mapping", code)
 		}
-		if classFromResourceCode(code) == ClassUnspecified {
+		if classFromResourceCode(code) == ErrorClassUnspecified {
 			t.Errorf("%s maps to an unspecified class", code)
 		}
 	}
-	if classFromResourceCode("NO_SUCH_CODE") != ClassInternal {
+	if classFromResourceCode("NO_SUCH_CODE") != ErrorClassInternal {
 		t.Error("an unknown resource code must read as internal")
 	}
 }
@@ -646,7 +648,7 @@ func TestValidTextRejectsEveryControlCharacterAndKeepsOrdinaryUnicode(t *testing
 	if validText("a\xffb") {
 		t.Error("text that is not UTF-8 must be refused")
 	}
-	if got := (&Error{Class: ClassNotFound, Message: "gone\u0085"}).normalized().Message; got != "" {
+	if got := (&Error{Class: ErrorClassNotFound, Message: "gone\u0085"}).normalized().Message; got != "" {
 		t.Errorf("a message with a C1 control survived normalization: %+q", got)
 	}
 }

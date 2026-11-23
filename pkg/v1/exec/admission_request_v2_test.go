@@ -80,7 +80,7 @@ func rqtNoTTY(tg *Target) {
 // accepted and the first value beyond it is refused; the last rows break two rules at once and show which refusal
 // the documented order of the checks gives.
 func rqtStartRows() []rqtStartRow {
-	invalid, unsupported := ClassInvalidRequest, ClassUnsupported
+	invalid, unsupported := ErrorClassInvalidRequest, ErrorClassUnsupported
 	noEnv := func(tg *Target) { tg.Info.Capabilities.Env = false }
 	noCwd := func(tg *Target) { tg.Info.Capabilities.Cwd = false }
 	noSessions := func(tg *Target) { tg.Info.Session = SessionLimits{} }
@@ -107,7 +107,7 @@ func rqtStartRows() []rqtStartRow {
 		{name: "argv without a default", target: noDefault},
 
 		// the terminal
-		{name: "a terminal on a target that has none", target: rqtNoTTY, wire: func(p *execv2.Start) { p.Integration = nil }, class: unsupported, reason: ReasonTTYUnsupported},
+		{name: "a terminal on a target that has none", target: rqtNoTTY, wire: func(p *execv2.Start) { p.Integration = nil }, class: unsupported, reason: ErrorReasonTTYUnsupported},
 		{name: "no terminal on a target that has none", target: rqtNoTTY, wire: noTerminal},
 		{name: "a size without a terminal", wire: func(p *execv2.Start) { p.Tty = false }, class: invalid},
 		{name: "a terminal without a size", wire: func(p *execv2.Start) { p.Size = nil }},
@@ -186,13 +186,13 @@ func rqtStartRows() []rqtStartRow {
 			p.Integration = &execv2.IntegrationRequest{Mode: none}
 		}},
 		{name: "the argv wrapper with consent", wire: integration(wrapper, true)},
-		{name: "the argv wrapper without consent", wire: integration(wrapper, false), class: invalid, reason: ReasonConsentRequired},
+		{name: "the argv wrapper without consent", wire: integration(wrapper, false), class: invalid, reason: ErrorReasonConsentRequired},
 		{name: "the argv wrapper with consent, on a target that lists no mode", target: noIntegration, wire: integration(wrapper, true), class: unsupported},
 		{name: "the argv wrapper with consent, when the build does not serve integration", without: []execv2.Feature{rqtFeatureIntegration}, wire: integration(wrapper, true), class: unsupported},
 		{name: "an unknown mode with consent", wire: integration(99, true), class: unsupported},
-		{name: "an unknown mode without consent: consent comes first", wire: integration(99, false), class: invalid, reason: ReasonConsentRequired},
-		{name: "consent is checked before the target's modes", target: noIntegration, wire: integration(wrapper, false), class: invalid, reason: ReasonConsentRequired},
-		{name: "consent is checked before the build's features", without: []execv2.Feature{rqtFeatureIntegration}, wire: integration(wrapper, false), class: invalid, reason: ReasonConsentRequired},
+		{name: "an unknown mode without consent: consent comes first", wire: integration(99, false), class: invalid, reason: ErrorReasonConsentRequired},
+		{name: "consent is checked before the target's modes", target: noIntegration, wire: integration(wrapper, false), class: invalid, reason: ErrorReasonConsentRequired},
+		{name: "consent is checked before the build's features", without: []execv2.Feature{rqtFeatureIntegration}, wire: integration(wrapper, false), class: invalid, reason: ErrorReasonConsentRequired},
 
 		// a request that breaks two rules is refused by the one the order of the checks puts first
 		{name: "order: an unknown field comes before everything", wire: func(p *execv2.Start) {
@@ -207,13 +207,13 @@ func rqtStartRows() []rqtStartRow {
 			p.Argv = []string{"\x00"}
 			p.Integration = nil
 		}, class: invalid},
-		{name: "order: consent comes before an unknown mode", wire: integration(99, false), class: invalid, reason: ReasonConsentRequired},
+		{name: "order: consent comes before an unknown mode", wire: integration(99, false), class: invalid, reason: ErrorReasonConsentRequired},
 		{name: "order: a target without sessions comes before the terminal", target: func(tg *Target) { noSessions(tg); rqtNoTTY(tg) }, wire: func(p *execv2.Start) { p.Integration = nil }, class: unsupported},
 		{name: "order: a missing default argv comes before the terminal", target: func(tg *Target) { noDefault(tg); rqtNoTTY(tg) }, wire: func(p *execv2.Start) { p.Argv = nil; p.Integration = nil }, class: invalid},
 		{name: "order: the terminal comes before the size limit", target: rqtNoTTY, wire: func(p *execv2.Start) {
 			p.Size = &execv2.Size{Cols: 501, Rows: 40}
 			p.Integration = nil
-		}, class: unsupported, reason: ReasonTTYUnsupported},
+		}, class: unsupported, reason: ErrorReasonTTYUnsupported},
 		{name: "order: a size without a terminal comes before env", target: noEnv, wire: func(p *execv2.Start) { p.Tty = false }, class: invalid},
 		{name: "order: the size limit comes before env", target: noEnv, wire: func(p *execv2.Start) { p.Size = &execv2.Size{Cols: 501, Rows: 40} }, class: invalid},
 		{name: "order: env comes before the lease", target: noEnv, wire: func(p *execv2.Start) { p.DetachTimeoutMs = rqtMaxDetachMillis + 1 }, class: unsupported},
@@ -238,7 +238,7 @@ func TestAdmitStartAgainstTheTarget(t *testing.T) {
 				row.wire(wire)
 			}
 			got, refusal := admitStart(wire, target, rqtServed(row.without...))
-			if row.class == ClassUnspecified {
+			if row.class == ErrorClassUnspecified {
 				require.Nil(t, refusal)
 				require.Empty(t, rqtStartViolation(got, target), "an admitted Start is within every bound")
 				return
@@ -323,7 +323,7 @@ func rqtTightRun(tg *Target) {
 // rqtRunRows returns the rows of the rules a RunRequest has against its target and its build, the way
 // rqtStartRows does for a Start.
 func rqtRunRows() []rqtRunRow {
-	invalid, unsupported := ClassInvalidRequest, ClassUnsupported
+	invalid, unsupported := ErrorClassInvalidRequest, ErrorClassUnsupported
 	noEnv := func(tg *Target) { tg.Info.Capabilities.Env = false }
 	noCwd := func(tg *Target) { tg.Info.Capabilities.Cwd = false }
 	noRuns := func(tg *Target) { tg.Info.Run = RunLimits{} }
@@ -361,9 +361,9 @@ func rqtRunRows() []rqtRunRow {
 		// stdin: a limit, not an invalid request
 		{name: "no stdin", wire: func(p *execv2.RunRequest) { p.Stdin = nil }},
 		{name: "stdin of the target's limit", wire: func(p *execv2.RunRequest) { p.Stdin = make([]byte, rqtRunStdinBytes) }},
-		{name: "stdin of the target's limit + 1", wire: func(p *execv2.RunRequest) { p.Stdin = make([]byte, rqtRunStdinBytes+1) }, class: ClassLimit, reason: ReasonInputTooLarge},
+		{name: "stdin of the target's limit + 1", wire: func(p *execv2.RunRequest) { p.Stdin = make([]byte, rqtRunStdinBytes+1) }, class: ErrorClassLimit, reason: ErrorReasonInputTooLarge},
 		{name: "stdin of a tight target's limit", target: rqtTightRun, wire: tight(func(p *execv2.RunRequest) { p.Stdin = make([]byte, 1000) })},
-		{name: "stdin of a tight target's limit + 1", target: rqtTightRun, wire: tight(func(p *execv2.RunRequest) { p.Stdin = make([]byte, 1001) }), class: ClassLimit, reason: ReasonInputTooLarge},
+		{name: "stdin of a tight target's limit + 1", target: rqtTightRun, wire: tight(func(p *execv2.RunRequest) { p.Stdin = make([]byte, 1001) }), class: ErrorClassLimit, reason: ErrorReasonInputTooLarge},
 
 		// env and cwd: never ignored
 		{name: "env on a target without env", target: noEnv, class: unsupported},
@@ -429,7 +429,7 @@ func rqtRunRows() []rqtRunRow {
 		{name: "order: stdin comes before the env total", wire: func(p *execv2.RunRequest) {
 			p.Stdin = make([]byte, rqtRunStdinBytes+1)
 			p.Env = rqtListOf(rqtEnvOfSize(rqtRunEnvBytes + 1))
-		}, class: ClassLimit, reason: ReasonInputTooLarge},
+		}, class: ErrorClassLimit, reason: ErrorReasonInputTooLarge},
 		{name: "order: the env total comes before the target's env capability", target: noEnv, wire: func(p *execv2.RunRequest) { p.Env = rqtListOf(rqtEnvOfSize(rqtRunEnvBytes + 1)) }, class: invalid},
 		{name: "order: env comes before the timeout", target: noEnv, wire: func(p *execv2.RunRequest) { p.TimeoutMs = rqtRunTimeoutMillis + 1 }, class: unsupported},
 		{name: "order: cwd comes before the output caps", target: noCwd, wire: func(p *execv2.RunRequest) { p.Output.MaxStdoutBytes = rqtRunOutputBytes + 1 }, class: unsupported},
@@ -448,7 +448,7 @@ func TestAdmitRunRequestAgainstTheTarget(t *testing.T) {
 				row.wire(wire)
 			}
 			got, admitted, refusal := admitRunRequest(wire, reg, rqtServed(row.without...))
-			if row.class == ClassUnspecified {
+			if row.class == ErrorClassUnspecified {
 				require.Nil(t, refusal)
 				require.Same(t, target, admitted)
 				require.Empty(t, rqtRunViolation(got, target), "an admitted RunRequest is within every bound")
@@ -529,7 +529,7 @@ func TestRequestSizeBounds(t *testing.T) {
 			got, refusal := requestSizeFromProto(row.wire)
 			if row.bad {
 				require.Zero(t, got)
-				rqtRequireRefusal(t, refusal, ClassInvalidRequest, ReasonUnspecified)
+				rqtRequireRefusal(t, refusal, ErrorClassInvalidRequest, ErrorReasonUnspecified)
 				return
 			}
 			require.Nil(t, refusal)
@@ -542,7 +542,7 @@ func TestRequestSizeBounds(t *testing.T) {
 // attach that names no target and a start that is admitted against the target its reference names.
 func TestAdmitOpenRequest(t *testing.T) {
 	reg, target := rqtTarget(t, nil)
-	invalid := ClassInvalidRequest
+	invalid := ErrorClassInvalidRequest
 
 	attach := func(id string, offset uint64) *execv2.OpenRequest {
 		return &execv2.OpenRequest{SessionId: id, Kind: &execv2.OpenRequest_Attach{Attach: &execv2.Attach{FromOffset: offset}}}
@@ -590,9 +590,9 @@ func TestAdmitOpenRequest(t *testing.T) {
 		{name: "an attach", wire: attach("s-1", 12345)},
 		{name: "an attach from the beginning", wire: attach("s-1", 0)},
 		{name: "an attach from the largest offset", wire: attach("s-1", 1<<64-1)},
-		{name: "an attach in a build that serves no features", wire: attach("s-1", 0), without: rqtAllFeatures, class: ClassUnsupported},
-		{name: "an attach in a build that does not serve sessions", wire: attach("s-1", 0), without: []execv2.Feature{rqtFeatureSession}, class: ClassUnsupported},
-		{name: "an attach in a build that does not serve session management", wire: attach("s-1", 0), without: []execv2.Feature{rqtFeatureSessionManagement}, class: ClassUnsupported},
+		{name: "an attach in a build that serves no features", wire: attach("s-1", 0), without: rqtAllFeatures, class: ErrorClassUnsupported},
+		{name: "an attach in a build that does not serve sessions", wire: attach("s-1", 0), without: []execv2.Feature{rqtFeatureSession}, class: ErrorClassUnsupported},
+		{name: "an attach in a build that does not serve session management", wire: attach("s-1", 0), without: []execv2.Feature{rqtFeatureSessionManagement}, class: ErrorClassUnsupported},
 		{name: "an attach in a build that serves only sessions and their management", wire: attach("s-1", 0), without: []execv2.Feature{
 			rqtFeatureMarks, rqtFeatureRunStream, rqtFeatureEnv, rqtFeatureCwd, rqtFeatureStdinEOF, rqtFeatureModes, rqtFeatureIntegration, rqtFeatureRun,
 		}},
@@ -600,17 +600,17 @@ func TestAdmitOpenRequest(t *testing.T) {
 
 		// a start is admitted against the target its reference names
 		{name: "a start", wire: start("s-1", nil)},
-		{name: "a start of an unregistered provider", wire: start("s-1", func(s *execv2.Start) { s.Target.Reference.Address.Provider = "other" }), class: ClassUnsupported},
-		{name: "a start of an unregistered type", wire: start("s-1", func(s *execv2.Start) { s.Target.Reference.Address.Type = "services" }), class: ClassUnsupported},
+		{name: "a start of an unregistered provider", wire: start("s-1", func(s *execv2.Start) { s.Target.Reference.Address.Provider = "other" }), class: ErrorClassUnsupported},
+		{name: "a start of an unregistered type", wire: start("s-1", func(s *execv2.Start) { s.Target.Reference.Address.Type = "services" }), class: ErrorClassUnsupported},
 		{name: "a start without a target", wire: start("s-1", func(s *execv2.Start) { s.Target = nil }), class: invalid},
 		{name: "a start that breaks a bound", wire: start("s-1", func(s *execv2.Start) { s.Argv = []string{"\x00"} }), class: invalid},
-		{name: "a start that the target cannot serve", wire: start("s-1", func(s *execv2.Start) { s.Env = rqtListOf(rqtEnvOfCount(1)) }), without: []execv2.Feature{rqtFeatureEnv}, class: ClassUnsupported},
-		{name: "a start in a build that serves no sessions", wire: start("s-1", nil), without: []execv2.Feature{rqtFeatureSession}, class: ClassUnsupported},
-		{name: "a start that asks for a lease in a build that serves no session management", wire: start("s-1", nil), without: []execv2.Feature{rqtFeatureSessionManagement}, class: ClassUnsupported},
+		{name: "a start that the target cannot serve", wire: start("s-1", func(s *execv2.Start) { s.Env = rqtListOf(rqtEnvOfCount(1)) }), without: []execv2.Feature{rqtFeatureEnv}, class: ErrorClassUnsupported},
+		{name: "a start in a build that serves no sessions", wire: start("s-1", nil), without: []execv2.Feature{rqtFeatureSession}, class: ErrorClassUnsupported},
+		{name: "a start that asks for a lease in a build that serves no session management", wire: start("s-1", nil), without: []execv2.Feature{rqtFeatureSessionManagement}, class: ErrorClassUnsupported},
 		{name: "a start that asks for neither a lease nor a replay ring, in a build that serves no session management", wire: start("s-1", func(s *execv2.Start) {
 			s.DetachTimeoutMs, s.ReplayBytes = 0, 0
 		}), without: []execv2.Feature{rqtFeatureSessionManagement}},
-		{name: "a start that asks for consent it does not give", wire: start("s-1", func(s *execv2.Start) { s.Integration.Consent = false }), class: invalid, reason: ReasonConsentRequired},
+		{name: "a start that asks for consent it does not give", wire: start("s-1", func(s *execv2.Start) { s.Integration.Consent = false }), class: invalid, reason: ErrorReasonConsentRequired},
 		{name: "a start of mode none", wire: start("s-1", func(s *execv2.Start) {
 			s.Integration = &execv2.IntegrationRequest{Mode: execv2.IntegrationMode_INTEGRATION_MODE_NONE}
 		})},
@@ -621,12 +621,12 @@ func TestAdmitOpenRequest(t *testing.T) {
 		{name: "order: an unregistered target comes before the start's bounds", wire: start("s-1", func(s *execv2.Start) {
 			s.Target.Reference.Address.Provider = "other"
 			s.Argv = []string{"\x00"}
-		}), class: ClassUnsupported},
+		}), class: ErrorClassUnsupported},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			got, admitted, refusal := admitOpenRequest(row.wire, reg, rqtServed(row.without...))
-			if row.class != ClassUnspecified {
+			if row.class != ErrorClassUnspecified {
 				require.Zero(t, got, "a refused request leaves nothing behind")
 				require.Nil(t, admitted)
 				rqtRequireRefusal(t, refusal, row.class, row.reason)
@@ -668,52 +668,52 @@ func TestAdmitNilAndAbsent(t *testing.T) {
 	t.Run("nil messages", func(t *testing.T) {
 		start, refusal := admitStart(nil, target, served)
 		require.Zero(t, start)
-		rqtRequireRefusal(t, refusal, ClassInvalidRequest, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassInvalidRequest, ErrorReasonUnspecified)
 
 		var typedNil *execv2.Start
 		start, refusal = admitStart(typedNil, target, served)
 		require.Zero(t, start)
-		rqtRequireRefusal(t, refusal, ClassInvalidRequest, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassInvalidRequest, ErrorReasonUnspecified)
 
 		run, admitted, refusal := admitRunRequest(nil, reg, served)
 		require.Zero(t, run)
 		require.Nil(t, admitted)
-		rqtRequireRefusal(t, refusal, ClassInvalidRequest, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassInvalidRequest, ErrorReasonUnspecified)
 
 		open, admitted, refusal := admitOpenRequest(nil, reg, served)
 		require.Zero(t, open)
 		require.Nil(t, admitted)
-		rqtRequireRefusal(t, refusal, ClassInvalidRequest, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassInvalidRequest, ErrorReasonUnspecified)
 	})
 
 	t.Run("empty messages", func(t *testing.T) {
 		_, refusal := admitStart(&execv2.Start{}, target, served)
-		rqtRequireRefusal(t, refusal, ClassInvalidRequest, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassInvalidRequest, ErrorReasonUnspecified)
 		_, _, refusal = admitRunRequest(&execv2.RunRequest{}, reg, served)
-		rqtRequireRefusal(t, refusal, ClassInvalidRequest, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassInvalidRequest, ErrorReasonUnspecified)
 	})
 
 	t.Run("no registered target", func(t *testing.T) {
 		_, refusal := admitStart(rqtWireStart(), nil, served)
-		rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 	})
 
 	t.Run("no registry", func(t *testing.T) {
 		_, _, refusal := admitRunRequest(rqtWireRun(), nil, served)
-		rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 		start := &execv2.OpenRequest{SessionId: "s", Kind: &execv2.OpenRequest_Start{Start: rqtWireStart()}}
 		_, _, refusal = admitOpenRequest(start, nil, served)
-		rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 	})
 
 	t.Run("no feature set serves nothing", func(t *testing.T) {
 		_, refusal := admitStart(rqtWireStart(), target, nil)
-		rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 		_, _, refusal = admitRunRequest(rqtWireRun(), reg, nil)
-		rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 		attach := &execv2.OpenRequest{SessionId: "s", Kind: &execv2.OpenRequest_Attach{Attach: &execv2.Attach{}}}
 		_, _, refusal = admitOpenRequest(attach, reg, nil)
-		rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 	})
 }
 
@@ -756,13 +756,13 @@ func TestAdmitRejectsUnknownFields(t *testing.T) {
 			set(wire)
 			got, refusal := admitStart(wire, target, served)
 			require.Zero(t, got)
-			rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+			rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 
 			decoded := new(execv2.Start)
 			rqtThroughTheWire(t, wire, decoded)
 			got, refusal = admitStart(decoded, target, served)
 			require.Zero(t, got, "after the wire")
-			rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+			rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 		})
 		t.Run("admitOpenRequest/"+name, func(t *testing.T) {
 			wire := rqtWireStart()
@@ -771,14 +771,14 @@ func TestAdmitRejectsUnknownFields(t *testing.T) {
 			got, admitted, refusal := admitOpenRequest(open, reg, served)
 			require.Zero(t, got)
 			require.Nil(t, admitted)
-			rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+			rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 
 			decoded := new(execv2.OpenRequest)
 			rqtThroughTheWire(t, open, decoded)
 			got, admitted, refusal = admitOpenRequest(decoded, reg, served)
 			require.Zero(t, got, "after the wire")
 			require.Nil(t, admitted)
-			rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+			rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 		})
 	}
 
@@ -798,14 +798,14 @@ func TestAdmitRejectsUnknownFields(t *testing.T) {
 			got, admitted, refusal := admitRunRequest(wire, reg, served)
 			require.Zero(t, got)
 			require.Nil(t, admitted)
-			rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+			rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 
 			decoded := new(execv2.RunRequest)
 			rqtThroughTheWire(t, wire, decoded)
 			got, admitted, refusal = admitRunRequest(decoded, reg, served)
 			require.Zero(t, got, "after the wire")
 			require.Nil(t, admitted)
-			rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+			rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 		})
 	}
 
@@ -831,14 +831,14 @@ func TestAdmitRejectsUnknownFields(t *testing.T) {
 			got, admitted, refusal := admitOpenRequest(build(), reg, served)
 			require.Zero(t, got)
 			require.Nil(t, admitted)
-			rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+			rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 
 			decoded := new(execv2.OpenRequest)
 			rqtThroughTheWire(t, build(), decoded)
 			got, admitted, refusal = admitOpenRequest(decoded, reg, served)
 			require.Zero(t, got, "after the wire")
 			require.Nil(t, admitted)
-			rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+			rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 		})
 	}
 
@@ -850,7 +850,7 @@ func TestAdmitRejectsUnknownFields(t *testing.T) {
 		decoded := new(execv2.Start)
 		require.NoError(t, proto.Unmarshal(raw, decoded))
 		_, refusal := admitStart(decoded, target, served)
-		rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 	})
 
 	t.Run("the same message without the unknown field is admitted", func(t *testing.T) {
@@ -873,16 +873,16 @@ func TestAdmitUnknownEnums(t *testing.T) {
 			features []execv2.Feature
 			class    ErrorClass
 		}{
-			{name: "99", features: []execv2.Feature{99}, class: ClassUnsupported},
-			{name: "unspecified", features: []execv2.Feature{execv2.Feature_FEATURE_UNSPECIFIED}, class: ClassUnsupported},
-			{name: "negative", features: []execv2.Feature{-1}, class: ClassUnsupported},
-			{name: "the largest value", features: []execv2.Feature{1<<31 - 1}, class: ClassUnsupported},
-			{name: "after a known one", features: []execv2.Feature{marks, 99}, class: ClassUnsupported},
-			{name: "before a known one", features: []execv2.Feature{99, modes}, class: ClassUnsupported},
-			{name: "between known ones", features: []execv2.Feature{marks, 99, modes}, class: ClassUnsupported},
-			{name: "twice", features: []execv2.Feature{99, 99}, class: ClassUnsupported},
-			{name: "a known value that cannot be requested, then 99", features: []execv2.Feature{execv2.Feature_FEATURE_SESSION_MANAGEMENT, 99}, class: ClassInvalidRequest},
-			{name: "the next value after the last this build has", features: []execv2.Feature{execv2.Feature_FEATURE_RUN + 1}, class: ClassUnsupported},
+			{name: "99", features: []execv2.Feature{99}, class: ErrorClassUnsupported},
+			{name: "unspecified", features: []execv2.Feature{execv2.Feature_FEATURE_UNSPECIFIED}, class: ErrorClassUnsupported},
+			{name: "negative", features: []execv2.Feature{-1}, class: ErrorClassUnsupported},
+			{name: "the largest value", features: []execv2.Feature{1<<31 - 1}, class: ErrorClassUnsupported},
+			{name: "after a known one", features: []execv2.Feature{marks, 99}, class: ErrorClassUnsupported},
+			{name: "before a known one", features: []execv2.Feature{99, modes}, class: ErrorClassUnsupported},
+			{name: "between known ones", features: []execv2.Feature{marks, 99, modes}, class: ErrorClassUnsupported},
+			{name: "twice", features: []execv2.Feature{99, 99}, class: ErrorClassUnsupported},
+			{name: "a known value that cannot be requested, then 99", features: []execv2.Feature{execv2.Feature_FEATURE_SESSION_MANAGEMENT, 99}, class: ErrorClassInvalidRequest},
+			{name: "the next value after the last this build has", features: []execv2.Feature{execv2.Feature_FEATURE_RUN + 1}, class: ErrorClassUnsupported},
 		}
 		for _, row := range rows {
 			t.Run(row.name, func(t *testing.T) {
@@ -890,12 +890,12 @@ func TestAdmitUnknownEnums(t *testing.T) {
 				wire.Features = row.features
 				got, refusal := admitStart(wire, target, served)
 				require.Zero(t, got)
-				rqtRequireRefusal(t, refusal, row.class, ReasonUnspecified)
+				rqtRequireRefusal(t, refusal, row.class, ErrorReasonUnspecified)
 
 				decoded := new(execv2.Start)
 				rqtThroughTheWire(t, wire, decoded)
 				_, refusal = admitStart(decoded, target, served)
-				rqtRequireRefusal(t, refusal, row.class, ReasonUnspecified)
+				rqtRequireRefusal(t, refusal, row.class, ErrorReasonUnspecified)
 			})
 		}
 	})
@@ -908,12 +908,12 @@ func TestAdmitUnknownEnums(t *testing.T) {
 			class   ErrorClass
 			reason  ErrorReason
 		}{
-			{name: "99 with consent", mode: 99, consent: true, class: ClassUnsupported},
-			{name: "99 without consent: consent comes first", mode: 99, class: ClassInvalidRequest, reason: ReasonConsentRequired},
-			{name: "negative with consent", mode: -1, consent: true, class: ClassUnsupported},
-			{name: "negative without consent: consent comes first", mode: -1, class: ClassInvalidRequest, reason: ReasonConsentRequired},
-			{name: "the next value after the last this build has", mode: execv2.IntegrationMode_INTEGRATION_MODE_ARGV_WRAPPER + 1, consent: true, class: ClassUnsupported},
-			{name: "the largest value with consent", mode: 1<<31 - 1, consent: true, class: ClassUnsupported},
+			{name: "99 with consent", mode: 99, consent: true, class: ErrorClassUnsupported},
+			{name: "99 without consent: consent comes first", mode: 99, class: ErrorClassInvalidRequest, reason: ErrorReasonConsentRequired},
+			{name: "negative with consent", mode: -1, consent: true, class: ErrorClassUnsupported},
+			{name: "negative without consent: consent comes first", mode: -1, class: ErrorClassInvalidRequest, reason: ErrorReasonConsentRequired},
+			{name: "the next value after the last this build has", mode: execv2.IntegrationMode_INTEGRATION_MODE_ARGV_WRAPPER + 1, consent: true, class: ErrorClassUnsupported},
+			{name: "the largest value with consent", mode: 1<<31 - 1, consent: true, class: ErrorClassUnsupported},
 		}
 		for _, row := range rows {
 			t.Run(row.name, func(t *testing.T) {
@@ -938,12 +938,12 @@ func TestAdmitUnknownEnums(t *testing.T) {
 			got, admitted, refusal := admitRunRequest(wire, reg, served)
 			require.Zero(t, got, "policy %d", policy)
 			require.Nil(t, admitted)
-			rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+			rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 
 			decoded := new(execv2.RunRequest)
 			rqtThroughTheWire(t, wire, decoded)
 			_, _, refusal = admitRunRequest(decoded, reg, served)
-			rqtRequireRefusal(t, refusal, ClassUnsupported, ReasonUnspecified)
+			rqtRequireRefusal(t, refusal, ErrorClassUnsupported, ErrorReasonUnspecified)
 		}
 	})
 }
@@ -1236,13 +1236,13 @@ func TestAdmitRefusesHugeRequestsWithoutWork(t *testing.T) {
 		cases = append(cases, hugeCase{
 			name:  name,
 			admit: func() *Error { _, refusal := admitStart(s, target, served); return refusal },
-			class: ClassInvalidRequest,
+			class: ErrorClassInvalidRequest,
 		})
 		open := &execv2.OpenRequest{SessionId: "s-1", Kind: &execv2.OpenRequest_Start{Start: s}}
 		cases = append(cases, hugeCase{
 			name:  "open/" + name,
 			admit: func() *Error { _, _, refusal := admitOpenRequest(open, reg, served); return refusal },
-			class: ClassInvalidRequest,
+			class: ErrorClassInvalidRequest,
 		})
 	}
 	addRun := func(name string, r *execv2.RunRequest, class ErrorClass, reason ErrorReason) {
@@ -1258,11 +1258,11 @@ func TestAdmitRefusesHugeRequestsWithoutWork(t *testing.T) {
 	addStart("start with 100,000 labels", startWith(func(s *execv2.Start) { s.Labels = manyLabels }))
 	addStart("start with 100,000 selections", startWith(func(s *execv2.Start) { s.Target.Selection = manySelection }))
 	addStart("start with 1,000,000 features", startWith(func(s *execv2.Start) { s.Features = hugeFeatures }))
-	addRun("run with 1,000,000 argv elements", runWith(func(r *execv2.RunRequest) { r.Argv = hugeArgv }), ClassInvalidRequest, ReasonUnspecified)
-	addRun("run with 100,000 env entries", runWith(func(r *execv2.RunRequest) { r.Env = manyEnv }), ClassInvalidRequest, ReasonUnspecified)
-	addRun("run with 100,000 labels", runWith(func(r *execv2.RunRequest) { r.Labels = manyLabels }), ClassInvalidRequest, ReasonUnspecified)
-	addRun("run with 100,000 selections", runWith(func(r *execv2.RunRequest) { r.Target.Selection = manySelection }), ClassInvalidRequest, ReasonUnspecified)
-	addRun("run with 8 MiB of stdin", runWith(func(r *execv2.RunRequest) { r.Stdin = hugeStdin }), ClassLimit, ReasonInputTooLarge)
+	addRun("run with 1,000,000 argv elements", runWith(func(r *execv2.RunRequest) { r.Argv = hugeArgv }), ErrorClassInvalidRequest, ErrorReasonUnspecified)
+	addRun("run with 100,000 env entries", runWith(func(r *execv2.RunRequest) { r.Env = manyEnv }), ErrorClassInvalidRequest, ErrorReasonUnspecified)
+	addRun("run with 100,000 labels", runWith(func(r *execv2.RunRequest) { r.Labels = manyLabels }), ErrorClassInvalidRequest, ErrorReasonUnspecified)
+	addRun("run with 100,000 selections", runWith(func(r *execv2.RunRequest) { r.Target.Selection = manySelection }), ErrorClassInvalidRequest, ErrorReasonUnspecified)
+	addRun("run with 8 MiB of stdin", runWith(func(r *execv2.RunRequest) { r.Stdin = hugeStdin }), ErrorClassLimit, ErrorReasonInputTooLarge)
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1523,7 +1523,7 @@ func rqtCheckRefusal(t *testing.T, refusal *Error) {
 		t.Fatalf("a refusal that may not cross the wire: %s/%s", refusal.Class, refusal.Reason)
 	}
 	switch refusal.Class {
-	case ClassInvalidRequest, ClassUnsupported, ClassLimit:
+	case ErrorClassInvalidRequest, ErrorClassUnsupported, ErrorClassLimit:
 	default:
 		t.Fatalf("admission refused with class %s: %v", refusal.Class, refusal.Err)
 	}

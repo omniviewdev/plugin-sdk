@@ -101,8 +101,8 @@ func assertCompatDescription(t *testing.T, d *execv2.DescribeResponse) {
 	if d.GetContractVersion() != exec.ContractVersion {
 		t.Errorf("contract version = %d, want %d", d.GetContractVersion(), exec.ContractVersion)
 	}
-	if len(d.GetFeatures()) != 0 {
-		t.Errorf("features = %v, want none", d.GetFeatures())
+	if want := []execv2.Feature{execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD}; !slices.Equal(d.GetFeatures(), want) {
+		t.Errorf("features = %v, want %v", d.GetFeatures(), want)
 	}
 	if len(d.GetTargets()) != 1 {
 		t.Fatalf("targets = %v, want exactly compat/echo", d.GetTargets())

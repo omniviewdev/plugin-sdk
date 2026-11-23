@@ -55,7 +55,7 @@ func TestAnEndThatTheFunctionDidNotCauseIsClosedWhateverItReturned(t *testing.T)
 		{},
 		{exit: ExitCode(0)},
 		{exit: ExitLost(LostNoStatus)},
-		{err: &Error{Class: ClassInternal}},
+		{err: &Error{Class: ErrorClassInternal}},
 		{panicked: true, panicValue: "x"},
 	}
 	for _, cause := range []session.Cause{session.CauseRequested, session.CauseShutdown, session.CauseRetired, session.CauseTimeout, session.CauseCancelled} {

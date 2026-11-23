@@ -155,7 +155,8 @@ func readToTheEnd(cmd exechook.Command) (read, dropped uint64) {
 // A thousand sessions, ended every way an end can come (the function returning a status, a failure, a panic, a lost stream,
 // a close, a kill, and a function that ignores its cancel), leave at rest: no session in the engine, a session gauge at
 // zero, no function abandoned once the stuck ones return, no goroutine over the baseline taken before the first, each
-// session ended exactly once and every byte it wrote delivered or counted as dropped.
+// session ended exactly once and every byte it wrote delivered or counted as dropped. The target declares room for the
+// 125 functions it will abandon: an abandoned function keeps its place (TestAbandonedFunctionsAreBounded...).
 func TestAThousandSessionsOfEveryKindOfEndLeaveNoSessionAndNoGoroutine(t *testing.T) {
 	const sessions, workers = 1000, 8
 	stuck := exectest.NewGate()
@@ -181,7 +182,7 @@ func TestAThousandSessionsOfEveryKindOfEndLeaveNoSessionAndNoGoroutine(t *testin
 			<-ctx.Done()
 			return exec.Exit{}, ctx.Err()
 		}
-	}))
+	}, func(i *exec.TargetInfo) { i.Session.MaxSessions = 1000 }))
 	baseline := lifecycletest.TakeBaseline()
 
 	kinds := []string{"exit", "echo", "fail", "panic", "lost", "close", "kill", "stuck"}

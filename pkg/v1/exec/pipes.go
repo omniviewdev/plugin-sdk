@@ -15,10 +15,13 @@ import (
 //
 //   - the input queue holds at most stdioQueueBytes (256 KiB). A host that sends more waits in Write until the function
 //     reads, which is the backpressure the host sees;
-//   - the output queue holds at most stdioQueueBytes (256 KiB) and at most maxOutputSegments (4,096) runs of one stream.
-//     What a full queue does follows the target's Capabilities.Stall: it blocks the function's Write (StallPropagates),
-//     or overwrites the oldest bytes and counts them (StallLossy), and never blocks for longer than it takes to take a
-//     lock. An ending session never waits for a reader: its pipe overwrites the oldest bytes instead of blocking;
+//   - the output queue of a target that blocks (StallPropagates, or nothing declared) holds at most stdioQueueBytes (256 KiB)
+//     and at most maxOutputSegments (4,096) runs of one stream, and a full queue blocks the function's Write. The queue of a
+//     target that stalls lossily (StallLossy) holds what the session's replay ring is declared to hold instead:
+//     Session.ReplayBytes (1 MiB by default, up to Session.MaxReplayBytes, 4 MiB by default, when the host asks for more)
+//     for a session, and stdioQueueBytes for a run. A full queue of that kind overwrites the oldest bytes and counts them, and
+//     never blocks for longer than it takes to take a lock. Either way an ending session never waits for a reader: its pipe
+//     overwrites the oldest bytes instead of blocking;
 //   - the size channel holds one size in flight and one pending: the latest wins.
 //
 // Every pipe is safe for use by many goroutines and allocates when it grows (the rings double up to their bound) and

@@ -190,7 +190,7 @@ func TestTwoStartsOfOneIdAdmitExactlyOneAndNeverRunTheFunctionForTheLoser(t *tes
 			wins++
 			continue
 		}
-		if refusal := refusalOf(t, r.err); refusal.Class != exec.ClassConflict || refusal.Reason != exec.ReasonSessionExists {
+		if refusal := refusalOf(t, r.err); refusal.Class != exec.ErrorClassConflict || refusal.Reason != exec.ErrorReasonSessionExists {
 			t.Errorf("a losing start was refused with %v/%v, want CONFLICT/SESSION_EXISTS", refusal.Class, refusal.Reason)
 		}
 	}
@@ -210,7 +210,7 @@ func TestAFullTargetRefusesAnotherSessionUntilOneEnds(t *testing.T) {
 	}))
 	a, b := rig.mustOpen("a"), rig.mustOpen("b")
 	_, err := rig.open("c")
-	if refusal := refusalOf(t, err); refusal.Class != exec.ClassLimit || refusal.Reason != exec.ReasonTooManySessions {
+	if refusal := refusalOf(t, err); refusal.Class != exec.ErrorClassLimit || refusal.Reason != exec.ErrorReasonTooManySessions {
 		t.Fatalf("a third session was refused with %v/%v, want LIMIT/TOO_MANY_SESSIONS", refusal.Class, refusal.Reason)
 	}
 	a.Close(false)
@@ -240,7 +240,7 @@ func TestARunAndASessionAreCountedApart(t *testing.T) {
 	session := rig.mustOpen("s1") // the run does not take the session's place
 	if _, err := rig.eng.Run(rig.request(), runRequest("r2")); err == nil {
 		t.Fatal("a second concurrent run was admitted")
-	} else if refusal := refusalOf(t, err); refusal.Class != exec.ClassLimit || refusal.Reason != exec.ReasonTooManyRuns {
+	} else if refusal := refusalOf(t, err); refusal.Class != exec.ErrorClassLimit || refusal.Reason != exec.ErrorReasonTooManyRuns {
 		t.Fatalf("a second run was refused with %v/%v, want LIMIT/TOO_MANY_RUNS", refusal.Class, refusal.Reason)
 	}
 	if _, err := rig.open("s2"); err == nil {
@@ -265,7 +265,7 @@ func TestAStartAfterTheEngineClosedIsRefusedAsUnavailable(t *testing.T) {
 		t.Fatalf("a second close: %v", err)
 	}
 	_, err := rig.open("late")
-	if refusal := refusalOf(t, err); refusal.Class != exec.ClassUnavailable {
+	if refusal := refusalOf(t, err); refusal.Class != exec.ErrorClassUnavailable {
 		t.Fatalf("a start after close was refused with %v, want UNAVAILABLE", refusal.Class)
 	}
 	if calls.Load() != 0 {
@@ -291,7 +291,7 @@ func TestAStartForATargetThatServesNoSessionsIsRefusedWithNothingRunning(t *test
 		i.Run = exec.DefaultRunLimits()
 	}))
 	_, err := rig.open("s1")
-	if refusal := refusalOf(t, err); refusal.Class != exec.ClassUnsupported {
+	if refusal := refusalOf(t, err); refusal.Class != exec.ErrorClassUnsupported {
 		t.Fatalf("a session on a target that serves only runs: %v, want UNSUPPORTED", refusal.Class)
 	}
 }
@@ -349,7 +349,7 @@ func TestASelectionThatTheOptionsDoNotOfferIsRefusedAndTheFunctionNeverRuns(t *t
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := rig.open("s1", tc.mods...)
 			refusal := refusalOf(t, err)
-			if refusal.Class != exec.ClassInvalidRequest || refusal.Facts != tc.facts {
+			if refusal.Class != exec.ErrorClassInvalidRequest || refusal.Facts != tc.facts {
 				t.Fatalf("refused with %v facts %+v, want INVALID_REQUEST with %+v", refusal.Class, refusal.Facts, tc.facts)
 			}
 		})
@@ -362,7 +362,7 @@ func TestASelectionThatTheOptionsDoNotOfferIsRefusedAndTheFunctionNeverRuns(t *t
 func TestARequiredOptionWithNoDefaultMustBeSelected(t *testing.T) {
 	rig := newEngineRig(t, engineRigConfig{}, targetWithOptions(blockUntilCancelled, engOptions(true)))
 	_, err := rig.open("s1")
-	if refusal := refusalOf(t, err); refusal.Class != exec.ClassInvalidRequest || refusal.Facts.SelectionName != "image" {
+	if refusal := refusalOf(t, err); refusal.Class != exec.ErrorClassInvalidRequest || refusal.Facts.SelectionName != "image" {
 		t.Fatalf("a request that omits the required image: %+v, want INVALID_REQUEST naming it", refusal)
 	}
 	cmd := rig.mustOpen("s2", withSelection("image", "debian"))
@@ -373,7 +373,7 @@ func TestARequiredOptionWithNoDefaultMustBeSelected(t *testing.T) {
 func TestATargetWithNoOptionsRefusesAnySelection(t *testing.T) {
 	rig := newEngineRig(t, engineRigConfig{}, engTarget(blockUntilCancelled))
 	_, err := rig.open("s1", withSelection("container", "app"))
-	if refusal := refusalOf(t, err); refusal.Class != exec.ClassInvalidRequest {
+	if refusal := refusalOf(t, err); refusal.Class != exec.ErrorClassInvalidRequest {
 		t.Fatalf("a selection on a target with no options: %v, want INVALID_REQUEST", refusal.Class)
 	}
 }
@@ -422,13 +422,13 @@ func TestAnOptionsCallbackThatFailsOrPanicsIsARefusalAndNeverTakesThePluginDown(
 	}{
 		{"an error the target classifies", func(*types.PluginContext, resourcev2.ResourceReference) ([]exec.Option, error) {
 			return nil, errors.New(canary + " pod not found")
-		}, exec.ClassNotFound, exec.ReasonTargetGone},
+		}, exec.ErrorClassNotFound, exec.ErrorReasonTargetGone},
 		{"a panic", func(*types.PluginContext, resourcev2.ResourceReference) ([]exec.Option, error) {
 			panic(canary)
-		}, exec.ClassInternal, exec.ReasonUnspecified},
+		}, exec.ErrorClassInternal, exec.ErrorReasonUnspecified},
 		{"options that break their contract", func(*types.PluginContext, resourcev2.ResourceReference) ([]exec.Option, error) {
 			return []exec.Option{{Name: "Not A Closed Code"}}, nil
-		}, exec.ClassInternal, exec.ReasonUnspecified},
+		}, exec.ErrorClassInternal, exec.ErrorReasonUnspecified},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -440,7 +440,7 @@ func TestAnOptionsCallbackThatFailsOrPanicsIsARefusalAndNeverTakesThePluginDown(
 			target.Options = tc.options
 			target.Classify = func(err error) (*exec.Error, bool) {
 				if err != nil && engContainsCanary("pod not found", err.Error()) {
-					return exec.NewError(exec.ClassNotFound, exec.ReasonTargetGone, err), true
+					return exec.NewError(exec.ErrorClassNotFound, exec.ErrorReasonTargetGone, err), true
 				}
 				return nil, false
 			}

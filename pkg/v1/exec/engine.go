@@ -48,7 +48,7 @@ import (
 // What the engine does with a function that breaks the contract is decided in one place and tested as a set: it returns
 // before the command ended (the session ends at the return and later writes fail), writes after it returned (refused,
 // counted, logged once), ignores its context (abandoned after the grace, counted in the abandoned gauge), panics (a
-// Failed end of ClassInternal, never the plugin), never reads Proc.Resize (nothing blocks; a warning after a wait),
+// Failed end of ErrorClassInternal, never the plugin), never reads Proc.Resize (nothing blocks; a warning after a wait),
 // returns an exit 0 for a connection it lost (read as the transport's word where the SDK has evidence), or reports its
 // start twice or too late (refused). Each is either loud (a log line, a diagnostics count, a violation on the result) or
 // contained, and most are both.
@@ -62,6 +62,13 @@ const (
 	defaultResizeUnreadAfter = 5 * time.Second
 	// defaultMetricsEvery is how often a running session reports its traffic to the diagnostics.
 	defaultMetricsEvery = 10 * time.Second
+	// defaultOptionsDeadline is how long an author's Options callback may take during a start before the engine cancels its
+	// context; the callback then has the grace to return before the engine gives up on it. It matches the call timeout the
+	// host applies to the Options RPC.
+	defaultOptionsDeadline = 30 * time.Second
+	// defaultClassifyDeadline is how long an author's Classify function may take before the engine gives up on it: it maps
+	// an error to a class and has no context to honor, so it is given no grace.
+	defaultClassifyDeadline = 5 * time.Second
 )
 
 // commandKind is the shape a command was started for.
@@ -95,6 +102,9 @@ type engineConfig struct {
 	closeGrace        time.Duration
 	resizeUnreadAfter time.Duration
 	metricsEvery      time.Duration
+	// optionsDeadline and classifyDeadline bound the author's Options callback and Classify function.
+	optionsDeadline  time.Duration
+	classifyDeadline time.Duration
 }
 
 // engine runs the commands of one plugin.
@@ -110,8 +120,17 @@ type engine struct {
 	afterFunctionEnded func()
 
 	// afterAbandonDecision is a test seam, nil in production: it runs on the supervisor's goroutine right after it decided,
-	// by the compare-and-swap that the function's own return also makes, whether it gave up on the function.
+	// by the decision that the function's own return also makes (under one lock: authorCall), whether it gave up on the
+	// function.
 	afterAbandonDecision func(abandoned bool)
+
+	// mu guards heldLogged, the last time each target's refusal for abandoned places was logged.
+	mu         sync.Mutex
+	heldLogged map[string]time.Time
+
+	// afterEndEmitted is a test seam, nil in production: it runs on the registry's finisher goroutine right after a command's
+	// Done is closed and before its id is released, which is the window between Done and Gone that a test holds open.
+	afterEndEmitted func()
 }
 
 // newEngine returns an engine for the targets of cfg. It runs nothing until a command starts.
@@ -130,6 +149,12 @@ func newEngine(cfg engineConfig) *engine {
 	}
 	if cfg.metricsEvery <= 0 {
 		cfg.metricsEvery = defaultMetricsEvery
+	}
+	if cfg.optionsDeadline <= 0 {
+		cfg.optionsDeadline = defaultOptionsDeadline
+	}
+	if cfg.classifyDeadline <= 0 {
+		cfg.classifyDeadline = defaultClassifyDeadline
 	}
 	e := &engine{cfg: cfg, log: cfg.log, tel: newTelemetry(cfg.diagnostics)}
 	e.reg = session.New(session.Config[*command]{OnEnd: e.onEnd})
@@ -185,11 +210,11 @@ type startParams struct {
 // A refusal means nothing ran: *Error for a refusal the exec lane classifies (a closed plugin, a live id, a full target, a
 // selection the options do not allow, a failure of the target's own Options), the resource lane's own
 // *resourcev2.ResourceOperationError for the connection and catalog admission (RESET_REQUIRED, a connection that is not
-// started), and an *Error of ClassCancelled or ClassTimeout when ctx ended first. Everything after the hand-over is the
+// started), and an *Error of ErrorClassCancelled or ErrorClassTimeout when ctx ended first. Everything after the hand-over is the
 // command's End.
 func (e *engine) start(ctx context.Context, p startParams) (*command, error) {
 	if p.ID == "" || p.Target == nil {
-		return nil, &Error{Class: ClassInternal, Err: errors.New("start without an id or a target")}
+		return nil, &Error{Class: ErrorClassInternal, Err: errors.New("start without an id or a target")}
 	}
 	if p.Kind == kindRun && !p.Target.servesRuns() || p.Kind == kindSession && !p.Target.servesSessions() {
 		return nil, unsupportedRequest("the target does not serve %ss", p.Kind)
@@ -205,6 +230,9 @@ func (e *engine) start(ctx context.Context, p startParams) (*command, error) {
 		return c, nil
 	})
 	if err != nil {
+		if errors.Is(err, session.ErrHeld) {
+			e.refusedForAbandoned(ctx, p, group)
+		}
 		return nil, admissionRefusal(err, tooMany)
 	}
 	c.entry = entry
@@ -253,25 +281,49 @@ func admissionGroup(p startParams) (group string, limit int, reason ErrorReason)
 	// not share a group by the way their names run together. A NUL cannot appear in either (both are plain text).
 	key := info.Provider + "\x00" + info.Type
 	if p.Kind == kindRun {
-		return "run\x00" + key, info.Run.MaxConcurrent, ReasonTooManyRuns
+		return "run\x00" + key, info.Run.MaxConcurrent, ErrorReasonTooManyRuns
 	}
-	return "session\x00" + key, info.Session.MaxSessions, ReasonTooManySessions
+	return "session\x00" + key, info.Session.MaxSessions, ErrorReasonTooManySessions
 }
 
-// admissionRefusal types an error of the registry's admission.
+// admissionRefusal types an error of the registry's admission. A target whose places the abandoned calls hold is unavailable,
+// not full: it has fewer sessions than it declares, and the host must not read "too many sessions" into it.
 func admissionRefusal(err error, tooMany ErrorReason) error {
 	switch {
 	case errors.Is(err, session.ErrClosed):
-		return &Error{Class: ClassUnavailable, Err: err}
+		return &Error{Class: ErrorClassUnavailable, Err: err}
 	case errors.Is(err, session.ErrExists):
-		return NewError(ClassConflict, ReasonSessionExists, err)
+		return NewError(ErrorClassConflict, ErrorReasonSessionExists, err)
 	case errors.Is(err, session.ErrLimit):
-		return NewError(ClassLimit, tooMany, err)
+		return NewError(ErrorClassLimit, tooMany, err)
+	case errors.Is(err, session.ErrHeld):
+		return &Error{Class: ErrorClassUnavailable, Err: err}
 	}
-	return &Error{Class: ClassInternal, Err: err}
+	return &Error{Class: ErrorClassInternal, Err: err}
 }
 
-// contextRefusal is the refusal of a start whose context ended: ClassTimeout for a deadline, ClassCancelled otherwise.
+// refusedForAbandoned counts a start refused because the places of its target are held by author code that was given up on,
+// and says so in the log: the first time, and at most once a second after that for each target, because a host that retries
+// is a host that would otherwise write a line each.
+func (e *engine) refusedForAbandoned(ctx context.Context, p startParams, group string) {
+	e.tel.abandonedRefused()
+	e.mu.Lock()
+	last, now := e.heldLogged[group], time.Now()
+	say := now.Sub(last) >= time.Second
+	if say {
+		if e.heldLogged == nil {
+			e.heldLogged = map[string]time.Time{}
+		}
+		e.heldLogged[group] = now
+	}
+	e.mu.Unlock()
+	if say {
+		e.log.Warnw(ctx, "exec start refused: the target's places are held by functions that were abandoned",
+			"provider", p.Target.info.Provider, "type", p.Target.info.Type, "held", e.reg.Held(group), "kind", p.Kind.String())
+	}
+}
+
+// contextRefusal is the refusal of a start whose context ended: ErrorClassTimeout for a deadline, ErrorClassCancelled otherwise.
 func contextRefusal(err error) *Error { return contextError(err) }
 
 // refusalForCause is the refusal of a start that the SDK ended before the command was handed to its function. cause is
@@ -279,17 +331,17 @@ func contextRefusal(err error) *Error { return contextError(err) }
 func refusalForCause(cause session.Cause, err error) error {
 	switch cause {
 	case session.CauseShutdown:
-		return &Error{Class: ClassUnavailable, Err: err}
+		return &Error{Class: ErrorClassUnavailable, Err: err}
 	case session.CauseCancelled:
-		return &Error{Class: ClassCancelled, Err: err}
+		return &Error{Class: ErrorClassCancelled, Err: err}
 	case session.CauseRetired:
-		return NewError(ClassConnection, ReasonConnectionRetired, err)
+		return NewError(ErrorClassConnection, ErrorReasonConnectionRetired, err)
 	case session.CauseNone, session.CauseFinished, session.CauseRequested, session.CauseExpired, session.CauseTimeout:
 	}
 	if err != nil {
 		return err
 	}
-	return &Error{Class: ClassCancelled}
+	return &Error{Class: ErrorClassCancelled}
 }
 
 // phase is how far a command got in its start.
@@ -299,13 +351,6 @@ const (
 	phaseAdmitting phase = iota // the lease and the options are being taken
 	phaseRunning                // handed to the function
 	phaseRefused                // never handed over: nothing ran
-)
-
-// Function states: the function runs, it returned, or the engine gave up on it and it has not returned yet.
-const (
-	fnRunning int32 = iota
-	fnReturned
-	fnAbandoned
 )
 
 // command is one command: the author's function running with a Proc, its pipes and its end.
@@ -537,14 +582,14 @@ func (c *command) runLeased(bound *types.PluginContext) error {
 		c.rz.stop()
 		c.rz.run()
 	}
-	var state atomic.Int32
+	call := c.e.newAuthorCall(c.entry)
 	returned := make(chan functionOutcome, 1)
 	// The function's goroutine is the one goroutine of a command that the registry does not wait for beyond the grace:
-	// see abandon.
-	go c.callFunction(authorCtx, proc, &state, returned)
+	// see abandon.go.
+	go c.callFunction(authorCtx, proc, call, returned)
 	c.admitted <- nil
 
-	outcome, gaveUp := c.await(bound.Context, returned, &state, cancelAuthor)
+	outcome, gaveUp := c.await(bound.Context, returned, call, cancelAuthor)
 	c.closeStdio()
 	c.conclude(outcome, gaveUp)
 	return nil
@@ -578,7 +623,7 @@ func (c *command) newOutput(opened Capabilities) *outputPipe {
 // function's context was cancelled before it returned, the SDK ended it (whoever asked), and what the function returned
 // is the aftermath; otherwise the function ended it. It closes the stdio before it reports, so that a goroutine the
 // function left behind is refused at once.
-func (c *command) callFunction(ctx context.Context, proc *Proc, state *atomic.Int32, returned chan<- functionOutcome) {
+func (c *command) callFunction(ctx context.Context, proc *Proc, call *authorCall, returned chan<- functionOutcome) {
 	var outcome functionOutcome
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -587,9 +632,9 @@ func (c *command) callFunction(ctx context.Context, proc *Proc, state *atomic.In
 		c.fnReturned.Store(true)
 		c.closeStdio()
 		// Whether the engine gave up on this function is decided here, once and before the end is recorded: the engine's
-		// grace and kill paths decide it with the same compare-and-swap, so a function that has returned is never taken for
+		// grace and kill paths decide it under the same lock (authorCall), so a function that has returned is never taken for
 		// an abandoned one, whatever order its return and the end reached the supervisor in.
-		gaveUpOn := !state.CompareAndSwap(fnRunning, fnReturned)
+		gaveUpOn, release := call.markReturned()
 		cause := session.CauseFinished
 		if ctx.Err() != nil {
 			// The function's context ended before it returned and the entry had not ended it (End records its cause before it
@@ -602,17 +647,15 @@ func (c *command) callFunction(ctx context.Context, proc *Proc, state *atomic.In
 			hook()
 		}
 		returned <- outcome
-		if gaveUpOn {
-			// The engine had given up on this function: it has returned, so it is no longer abandoned.
-			c.e.tel.abandonedChanged(-1)
-		}
+		// If the engine had given up on this function it has returned now: its place is free and it is no longer counted.
+		call.settle(gaveUpOn, release)
 	}()
 	outcome.exit, outcome.err = c.target.target.Exec(ctx, proc)
 }
 
 // await watches the function until it has returned or the engine gave up on it. It reports what the function returned
 // and whether the engine gave up.
-func (c *command) await(lease context.Context, returned <-chan functionOutcome, state *atomic.Int32, cancelAuthor func()) (outcome functionOutcome, gaveUp bool) {
+func (c *command) await(lease context.Context, returned <-chan functionOutcome, call *authorCall, cancelAuthor func()) (outcome functionOutcome, gaveUp bool) {
 	flush := time.NewTicker(c.e.cfg.metricsEvery)
 	defer flush.Stop()
 	leaseDone := lease.Done()
@@ -621,7 +664,7 @@ func (c *command) await(lease context.Context, returned <-chan functionOutcome, 
 		case out := <-returned:
 			return out, false
 		case <-c.entry.Ended():
-			return c.drain(returned, state, cancelAuthor)
+			return c.drain(returned, call, cancelAuthor)
 		case <-leaseDone:
 			c.entry.End(session.CauseRetired)
 			leaseDone = nil
@@ -633,8 +676,9 @@ func (c *command) await(lease context.Context, returned <-chan functionOutcome, 
 
 // drain is the wait for a function whose session the SDK has ended: it cancels the function's context, releases a function
 // that a full queue holds in Write, and waits for it to return. A graceful end waits for the grace; a kill does not. A
-// function that has not returned by then is abandoned: the command ends without it.
-func (c *command) drain(returned <-chan functionOutcome, state *atomic.Int32, cancelAuthor func()) (functionOutcome, bool) {
+// function that has not returned by then is abandoned: the command ends without it, and its place stays taken until it
+// returns.
+func (c *command) drain(returned <-chan functionOutcome, call *authorCall, cancelAuthor func()) (functionOutcome, bool) {
 	c.out.beginEnding()
 	if c.in != nil {
 		// The session has ended: the host can send no more, and a goroutine of the function blocked reading Stdin returns
@@ -655,12 +699,11 @@ func (c *command) drain(returned <-chan functionOutcome, state *atomic.Int32, ca
 	case <-graceOver:
 		c.violate(violation{violationIgnoredCancel, "the function did not return within the grace after its context was cancelled: the command ends without it"})
 	}
-	abandon := state.CompareAndSwap(fnRunning, fnAbandoned)
+	abandon := call.giveUp()
 	if hook := c.e.afterAbandonDecision; hook != nil {
 		hook(abandon)
 	}
 	if abandon {
-		c.e.tel.abandonedChanged(1)
 		return functionOutcome{}, true
 	}
 	return <-returned, false
@@ -697,7 +740,7 @@ func (c *command) conclude(outcome functionOutcome, gaveUp bool) {
 		caps:     c.gate.effective(),
 		started:  c.startObserved(),
 		link:     c.linkState(),
-		classify: c.target.target.Classify,
+		classify: c.guardedClassify(),
 	})
 	for _, v := range decision.violations {
 		c.violate(v)
@@ -740,7 +783,7 @@ func (c *command) conclude(outcome functionOutcome, gaveUp bool) {
 
 // onEnd is the one place a command's end is emitted: the registry calls it once, after the command's last goroutine
 // returned, so the result the supervisor concluded is final. A command that was never handed to its function has nothing
-// to emit.
+// to emit. The id is released when it returns: Done closes before that, and Gone after.
 func (e *engine) onEnd(entry *session.Entry[*command]) {
 	c := entry.Value()
 	if !c.handedOver() {
@@ -749,6 +792,9 @@ func (e *engine) onEnd(entry *session.Entry[*command]) {
 	}
 	c.endObservation()
 	close(c.doneC)
+	if hook := e.afterEndEmitted; hook != nil {
+		hook()
+	}
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -759,22 +805,42 @@ func (e *engine) onEnd(entry *session.Entry[*command]) {
 // request's selection against them, and returns the capabilities the session is opened with. A selection that names
 // something the options do not offer, or omits a required option that has no default, is a refusal: Request.Selection
 // holds exactly the choices the options declared.
+//
+// The callback is author code that runs while the start waits, so it is bounded: it has the engine's deadline (and its
+// context says so), and when its context ends for any reason (the deadline, a caller that gave up, a shutdown, the
+// connection's retirement) it has the grace to return. A callback that does not is given up on: the start is refused, the
+// lease is released, and the goroutine keeps the start's place until it returns (abandon.go).
 func (c *command) resolveOptions(bound *types.PluginContext) (Capabilities, error) {
 	info := &c.target.info
 	var options []Option
 	if fn := c.target.target.Options; fn != nil {
-		var err error
-		options, err = callOptions(bound.Context, c.e.log, fn, bound, c.request.Ref)
-		if err != nil {
-			failure, classifyPanic := classifyErrorSafely(c.target.target.Classify, err)
+		callCtx, cancel := context.WithTimeout(bound.Context, c.e.cfg.optionsDeadline)
+		defer cancel()
+		callPC := *bound
+		callPC.Context = callCtx
+		answer, ok := callBounded(c, callCtx, c.e.cfg.closeGrace, func() optionsAnswer {
+			options, err := callOptions(callCtx, c.e.log, fn, &callPC, c.request.Ref)
+			return optionsAnswer{options: options, err: err}
+		})
+		if !ok {
+			c.violate(violation{violationOptionsHung, "the options callback did not return within its deadline and the grace after its context ended: the start is refused without it"})
+			return Capabilities{}, c.callbackRefusal(bound)
+		}
+		if err := answer.err; err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				// The callback was stopped by its context: the refusal says what stopped it, not what the callback made of it.
+				return Capabilities{}, c.callbackRefusal(bound)
+			}
+			failure, classifyPanic := classifyErrorSafely(c.guardedClassify(), err)
 			if classifyPanic != nil {
 				c.violate(violation{violationClassifyPanic, "the target's Classify panicked on an error of Options: the error is classified as INTERNAL"})
 			}
 			return Capabilities{}, failure
 		}
+		options = answer.options
 		if err := validateOptions(options); err != nil {
 			c.violate(violation{violationOptionsContract, "the options callback broke its contract: " + err.Error()})
-			return Capabilities{}, &Error{Class: ClassInternal, Err: err}
+			return Capabilities{}, &Error{Class: ErrorClassInternal, Err: err}
 		}
 		var widened []choiceViolation
 		options, widened = clampChoiceCapabilities(info.Capabilities, options)
@@ -788,12 +854,69 @@ func (c *command) resolveOptions(bound *types.PluginContext) (Capabilities, erro
 	return openedCapabilities(info.Capabilities, options, c.request.Selection), nil
 }
 
+// optionsAnswer is what an Options callback returned.
+type optionsAnswer struct {
+	options []Option
+	err     error
+}
+
+// callbackRefusal is the refusal of a start whose Options callback was stopped by its context or given up on: when the SDK
+// ended the start (a shutdown, a caller that gave up) the refusal says so; when the connection's lease was cancelled under
+// the callback the connection was retired; otherwise it was the engine's own deadline.
+func (c *command) callbackRefusal(bound *types.PluginContext) error {
+	if cause := c.entry.Cause(); cause != session.CauseNone {
+		return refusalForCause(cause, nil)
+	}
+	if bound.Context.Err() != nil {
+		return NewError(ErrorClassConnection, ErrorReasonConnectionRetired, nil)
+	}
+	return &Error{Class: ErrorClassTimeout}
+}
+
+// guardedClassify is the target's Classify held to the engine's deadline, or nil when the target has none. Classify maps an
+// error to a class and has no context to honor, so a call that does not return by the deadline is given up on at once: the
+// error is then classified by the SDK's own rules, the author is told in the log and the counters, and the goroutine keeps
+// the command's place until it returns. A panic of the author's function is raised again in the caller, which records it
+// (classifyErrorSafely), because a goroutine that nobody waits for cannot be recovered from outside.
+func (c *command) guardedClassify() ClassifyFunc {
+	classify := c.target.target.Classify
+	if classify == nil {
+		return nil
+	}
+	return func(err error) (*Error, bool) {
+		type classified struct {
+			failure  *Error
+			ok       bool
+			panicked any
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), c.e.cfg.classifyDeadline)
+		defer cancel()
+		got, ok := callBounded(c, ctx, 0, func() (answer classified) {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					answer = classified{panicked: recovered}
+				}
+			}()
+			answer.failure, answer.ok = classify(err)
+			return answer
+		})
+		switch {
+		case !ok:
+			c.violate(violation{violationClassifyHung, "the target's Classify did not return within its deadline: the error is classified by the SDK's own rules"})
+			return nil, false
+		case got.panicked != nil:
+			panic(got.panicked)
+		}
+		return got.failure, got.ok
+	}
+}
+
 // callOptions runs the author's callback; a panic in it is the author's bug and must not take the plugin down.
 func callOptions(ctx context.Context, log logging.Logger, fn OptionsFunc, pc *types.PluginContext, ref resourcev2.ResourceReference) (options []Option, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			log.Errorw(ctx, "exec options callback panicked", "panic", fmt.Sprint(recovered))
-			options, err = nil, &Error{Class: ClassInternal, Err: fmt.Errorf("options callback panicked: %v", recovered)}
+			options, err = nil, &Error{Class: ErrorClassInternal, Err: fmt.Errorf("options callback panicked: %v", recovered)}
 		}
 	}()
 	return fn(pc, ref)
@@ -805,10 +928,10 @@ func checkSelection(options []Option, selection map[string]string) *Error {
 	for name, value := range selection {
 		i := slices.IndexFunc(options, func(o Option) bool { return o.Name == name })
 		if i < 0 {
-			return &Error{Class: ClassInvalidRequest, Facts: ErrorFacts{SelectionName: name}, Err: fmt.Errorf("the resource offers no option %q", name)}
+			return &Error{Class: ErrorClassInvalidRequest, Facts: ErrorFacts{SelectionName: name}, Err: fmt.Errorf("the resource offers no option %q", name)}
 		}
 		if !slices.ContainsFunc(options[i].Choices, func(c Choice) bool { return c.Value == value }) {
-			return &Error{Class: ClassInvalidRequest, Facts: ErrorFacts{SelectionName: name, SelectionValue: value}, Err: fmt.Errorf("option %q has no such choice", name)}
+			return &Error{Class: ErrorClassInvalidRequest, Facts: ErrorFacts{SelectionName: name, SelectionValue: value}, Err: fmt.Errorf("option %q has no such choice", name)}
 		}
 	}
 	for i := range options {
@@ -817,7 +940,7 @@ func checkSelection(options []Option, selection map[string]string) *Error {
 			continue
 		}
 		if !slices.ContainsFunc(o.Choices, func(c Choice) bool { return c.IsDefault }) {
-			return &Error{Class: ClassInvalidRequest, Facts: ErrorFacts{SelectionName: o.Name}, Err: fmt.Errorf("option %q is required and has no default", o.Name)}
+			return &Error{Class: ErrorClassInvalidRequest, Facts: ErrorFacts{SelectionName: o.Name}, Err: fmt.Errorf("option %q is required and has no default", o.Name)}
 		}
 	}
 	return nil
@@ -1180,8 +1303,14 @@ func (c *command) Close(cause session.Cause, kill bool) {
 }
 
 // Done is closed when the command has ended and its result is final: the one moment the End is emitted. The output may
-// still be waiting to be read.
+// still be waiting to be read. The command's id is still held at that moment, until its end has been emitted; Gone is
+// closed once it is free.
 func (c *command) Done() <-chan struct{} { return c.doneC }
+
+// Gone is closed once the command has been removed from the engine: its id and its place among the target's sessions are
+// free. It is closed after Done, and never before the end has been emitted, which is why a start of the same id right
+// after Done may still be refused as a conflict, and one after Gone never is.
+func (c *command) Gone() <-chan struct{} { return c.entry.Removed() }
 
 // Result waits for the end of the command and returns it.
 func (c *command) Result() commandResult {
@@ -1272,6 +1401,12 @@ func (e *engine) configure(cfg exechook.EngineConfig) {
 	}
 	if cfg.MetricsEvery > 0 {
 		e.cfg.metricsEvery = cfg.MetricsEvery
+	}
+	if cfg.OptionsDeadline > 0 {
+		e.cfg.optionsDeadline = cfg.OptionsDeadline
+	}
+	if cfg.ClassifyDeadline > 0 {
+		e.cfg.classifyDeadline = cfg.ClassifyDeadline
 	}
 }
 

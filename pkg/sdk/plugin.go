@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"slices"
+	"time"
 
 	"github.com/hashicorp/go-plugin"
 	"go.uber.org/zap"
@@ -298,6 +299,34 @@ func (p *Plugin) Serve() {
 			return GRPCServerFactoryWithLogger(p.Log, opts)
 		},
 	})
+	p.shutdownCapabilities(capabilityShutdownBound)
+}
+
+// capabilityShutdownBound is how long the plugin waits for its capabilities to end what they hold once its server has stopped.
+const capabilityShutdownBound = 10 * time.Second
+
+// capabilityShutdown is implemented by a capability that holds work to end when the plugin stops: the exec lane's sessions,
+// whose functions are cancelled and given their grace, and whose remote processes are told to go. Shutdown returns when the
+// capability has ended it, or when ctx ends, with ctx's error.
+type capabilityShutdown interface {
+	Shutdown(ctx context.Context) error
+}
+
+// shutdownCapabilities tells each capability that holds work, in the order of their names, that the plugin has stopped, and
+// waits for each at most as long as bound allows in all: one that does not return is given up on, and the plugin goes on
+// stopping.
+func (p *Plugin) shutdownCapabilities(bound time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), bound)
+	defer cancel()
+	for _, name := range slices.Sorted(maps.Keys(p.pluginMap)) {
+		capability, ok := p.pluginMap[name].(capabilityShutdown)
+		if !ok {
+			continue
+		}
+		if err := capability.Shutdown(ctx); err != nil {
+			p.Log.Warn(context.Background(), "capability shutdown did not complete", logging.String("capability", name), logging.Error(err))
+		}
+	}
 }
 
 // registerLifecycle auto-registers the PluginLifecycle gRPC service.

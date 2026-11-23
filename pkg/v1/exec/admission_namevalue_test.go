@@ -200,13 +200,13 @@ func rqtAdmitWith(t *testing.T, ep rqtEntryPoint, afterTheWire bool, build func(
 // rqtRequireClass requires refusal to be of the class, and, when the entry point keeps the local cause, to carry one.
 func rqtRequireClass(t *testing.T, ep rqtEntryPoint, refusal *Error, class ErrorClass) {
 	t.Helper()
-	if class == ClassUnspecified {
+	if class == ErrorClassUnspecified {
 		require.Nil(t, refusal)
 		return
 	}
 	require.NotNil(t, refusal, "want a %s refusal", class)
 	require.Equal(t, class, refusal.Class)
-	require.Equal(t, ReasonUnspecified, refusal.Reason)
+	require.Equal(t, ErrorReasonUnspecified, refusal.Reason)
 	if ep.keepsLocalCause {
 		require.Error(t, refusal.Err, "a refusal keeps its local cause")
 	}
@@ -216,9 +216,9 @@ func rqtRequireClass(t *testing.T, ep rqtEntryPoint, refusal *Error, class Error
 // Options request, which takes none.
 func rqtCleanClass(ep rqtEntryPoint, list rqtList) ErrorClass {
 	if ep.name == "Options" && list.name == "selection" {
-		return ClassInvalidRequest
+		return ErrorClassInvalidRequest
 	}
-	return ClassUnspecified
+	return ErrorClassUnspecified
 }
 
 // A request is strict inside the elements of every list it carries: an unknown field in any element is refused
@@ -246,22 +246,22 @@ func TestEveryListOfARequestIsStrictInsideItsElements(t *testing.T) {
 					// an unknown field in each position of lists of one to four elements
 					for n := 1; n <= 4; n++ {
 						for position := range n {
-							rqtRequireClass(t, ep, admit(n, map[int][]byte{position: rqtVarint}), ClassUnsupported)
+							rqtRequireClass(t, ep, admit(n, map[int][]byte{position: rqtVarint}), ErrorClassUnsupported)
 						}
 					}
 					// in every element, and in two of them
-					rqtRequireClass(t, ep, admit(3, map[int][]byte{0: rqtVarint, 1: rqtVarint, 2: rqtVarint}), ClassUnsupported)
-					rqtRequireClass(t, ep, admit(4, map[int][]byte{0: rqtVarint, 3: rqtVarint}), ClassUnsupported)
+					rqtRequireClass(t, ep, admit(3, map[int][]byte{0: rqtVarint, 1: rqtVarint, 2: rqtVarint}), ErrorClassUnsupported)
+					rqtRequireClass(t, ep, admit(4, map[int][]byte{0: rqtVarint, 3: rqtVarint}), ErrorClassUnsupported)
 					// each kind of field, in the middle element
 					for encoding, raw := range rqtUnknownEncodings() {
 						refusal := admit(3, map[int][]byte{1: raw})
 						require.NotNil(t, refusal, "%s, %s", encoding, mode)
-						require.Equal(t, ClassUnsupported, refusal.Class, "%s, %s", encoding, mode)
+						require.Equal(t, ErrorClassUnsupported, refusal.Class, "%s, %s", encoding, mode)
 					}
 					// the elements around it are all there: a list of the largest length the walk reads, with the field in
 					// the last element and in the first
-					rqtRequireClass(t, ep, admit(100, map[int][]byte{99: rqtVarint}), ClassUnsupported)
-					rqtRequireClass(t, ep, admit(100, map[int][]byte{0: rqtVarint}), ClassUnsupported)
+					rqtRequireClass(t, ep, admit(100, map[int][]byte{99: rqtVarint}), ErrorClassUnsupported)
+					rqtRequireClass(t, ep, admit(100, map[int][]byte{0: rqtVarint}), ErrorClassUnsupported)
 				}
 			})
 		}
@@ -296,7 +296,7 @@ func TestTheWalkReadsEveryEntryOfAScopeBeyondTheListLimit(t *testing.T) {
 				}{{1025, 1024}, {1025, 1023}, {1025, 0}, {20_000, 19_999}, {20_000, 1024}} {
 					refusal := walk(afterTheWire, c.n, map[int][]byte{c.position: rqtVarint})
 					require.NotNil(t, refusal, "%d entries, unknown field in entry %d, after the wire %v", c.n, c.position, afterTheWire)
-					require.Equal(t, ClassUnsupported, refusal.Class)
+					require.Equal(t, ErrorClassUnsupported, refusal.Class)
 				}
 			}
 		})
@@ -332,7 +332,7 @@ func TestEveryNameInARequestListIsUnique(t *testing.T) {
 				for label, entries := range lists {
 					for _, afterTheWire := range []bool{false, true} {
 						refusal, _ := rqtAdmitWith(t, ep, afterTheWire, func(s rqtSlots) bool { return list.names(s, entries) })
-						rqtRequireClass(t, ep, refusal, ClassInvalidRequest)
+						rqtRequireClass(t, ep, refusal, ErrorClassInvalidRequest)
 						require.NotContains(t, refusal.Error(), name, "%s, after the wire %v", label, afterTheWire)
 						if refusal.Err != nil {
 							require.NotContains(t, refusal.Err.Error(), name, "%s, after the wire %v", label, afterTheWire)
@@ -372,7 +372,7 @@ func TestAnUnknownFieldInAnEntryComesBeforeEverythingAboutTheList(t *testing.T) 
 				for label, entries := range cases {
 					for _, afterTheWire := range []bool{false, true} {
 						refusal, _ := rqtAdmitWith(t, ep, afterTheWire, func(s rqtSlots) bool { return list.names(s, entries) })
-						rqtRequireClass(t, ep, refusal, ClassUnsupported)
+						rqtRequireClass(t, ep, refusal, ErrorClassUnsupported)
 						require.NotNil(t, refusal, label)
 					}
 				}
@@ -381,7 +381,7 @@ func TestAnUnknownFieldInAnEntryComesBeforeEverythingAboutTheList(t *testing.T) 
 				// read, so the unknown field in it is not seen.
 				tooLong := rqtEntries("o", 1025, map[int][]byte{0: rqtVarint})
 				refusal, _ := rqtAdmitWith(t, ep, true, func(s rqtSlots) bool { return list.names(s, tooLong) })
-				rqtRequireClass(t, ep, refusal, ClassInvalidRequest)
+				rqtRequireClass(t, ep, refusal, ErrorClassInvalidRequest)
 			})
 		}
 	}
@@ -397,11 +397,11 @@ func TestAnUnknownFieldInAnEntryComesBeforeEverythingAboutTheList(t *testing.T) 
 			}
 			t.Run("without the field/"+ep.name+"/"+list.name, func(t *testing.T) {
 				refusal, _ := rqtAdmitWith(t, ep, true, func(s rqtSlots) bool { return list.names(s, nameValues("dup", "1", "dup", "2")) })
-				rqtRequireClass(t, ep, refusal, ClassInvalidRequest)
+				rqtRequireClass(t, ep, refusal, ErrorClassInvalidRequest)
 				refusal, _ = rqtAdmitWith(t, ep, true, func(s rqtSlots) bool { return list.names(s, []*execv2.NameValue{list.invalid}) })
-				rqtRequireClass(t, ep, refusal, ClassInvalidRequest)
+				rqtRequireClass(t, ep, refusal, ErrorClassInvalidRequest)
 				refusal, _ = rqtAdmitWith(t, ep, true, func(s rqtSlots) bool { return list.fill(s, list.overBound, nil) })
-				rqtRequireClass(t, ep, refusal, ClassInvalidRequest)
+				rqtRequireClass(t, ep, refusal, ErrorClassInvalidRequest)
 			})
 		}
 	}

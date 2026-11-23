@@ -83,15 +83,21 @@ func hammerIn(t *testing.T, newLane func(*lifecycletest.Recorder) lifecycletest.
 	return f
 }
 
-// quick is a config for a short run: a hammer that is expected to fail must not take long to.
+// quick is a config for a short run: a hammer that is expected to fail must not take long to. Its bounds are those only a
+// real hang can exceed, so that a busy machine cannot make a correct Close or a correct settling look broken: the cases
+// that want a report of one broken rule get that report and no other timing.
 func quick() lifecycletest.Config {
 	return lifecycletest.Config{
 		Workers:    4,
 		Duration:   200 * time.Millisecond,
-		CloseBound: 300 * time.Millisecond,
-		Settle:     200 * time.Millisecond,
+		CloseBound: 10 * time.Second,
+		Settle:     10 * time.Second,
 	}
 }
+
+// shortClose and shortSettle shorten one bound of a config, for the lanes that break that bound for good.
+func shortClose(cfg *lifecycletest.Config)  { cfg.CloseBound = 300 * time.Millisecond }
+func shortSettle(cfg *lifecycletest.Config) { cfg.Settle = 200 * time.Millisecond }
 
 // faults select how the test lane is broken. The zero value is a correct lane.
 type faults struct {
@@ -411,6 +417,10 @@ func TestHammerReportsEachKindOfBrokenLane(t *testing.T) {
 		// make returns the faults and a function that undoes what they leave running.
 		make func() (faults, func())
 		want string
+		// bound shortens a bound of the config for a case whose fault is a bound: what never ends exceeds any bound, so a short
+		// one only makes the hammer report it sooner. The other cases are about a report, not a time, and run with the
+		// generous bounds of quick.
+		bound func(*lifecycletest.Config)
 	}{
 		{
 			name: "an event after the end",
@@ -428,9 +438,10 @@ func TestHammerReportsEachKindOfBrokenLane(t *testing.T) {
 			want: "never ended",
 		},
 		{
-			name: "a session admitted after Close returned",
-			make: func() (faults, func()) { return faults{reopenAfterClose: true}, func() {} },
-			want: "after Close returned",
+			name:  "a session admitted after Close returned",
+			make:  func() (faults, func()) { return faults{reopenAfterClose: true}, func() {} },
+			want:  "after Close returned",
+			bound: shortSettle, // the sessions of the reopened lane stay until the test shuts it down; Settle would wait for them
 		},
 		{
 			name: "a Live that stays above zero at rest",
@@ -443,7 +454,8 @@ func TestHammerReportsEachKindOfBrokenLane(t *testing.T) {
 				gate := make(chan struct{})
 				return faults{closeHangs: gate}, func() { close(gate) }
 			},
-			want: "ignores its context",
+			want:  "ignores its context",
+			bound: shortClose, // the Close never returns on its own: a short bound only makes the hammer give up on it sooner
 		},
 		{
 			name: "a Close that honours its context and does not finish in time",
@@ -452,6 +464,9 @@ func TestHammerReportsEachKindOfBrokenLane(t *testing.T) {
 				return faults{closeTooSlow: gate}, func() { close(gate) }
 			},
 			want: "did not finish within the bound",
+			// The Close waits for a gate that opens only after the hammer is done, so any bound is exceeded; and it never closes the
+			// registry, so its sessions stay until the test shuts the lane down, and Settle would wait for them.
+			bound: func(cfg *lifecycletest.Config) { shortClose(cfg); shortSettle(cfg) },
 		},
 		{
 			name: "a goroutine leaked for each session",
@@ -459,7 +474,8 @@ func TestHammerReportsEachKindOfBrokenLane(t *testing.T) {
 				gate := make(chan struct{})
 				return faults{leakPerSession: gate}, func() { close(gate) }
 			},
-			want: "goroutines",
+			want:  "goroutines",
+			bound: shortSettle, // the leaked goroutines never return: a short Settle only ends the wait for them sooner
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -467,7 +483,11 @@ func TestHammerReportsEachKindOfBrokenLane(t *testing.T) {
 			before := lifecycletest.TakeBaseline()
 			f, release := tc.make()
 			ls := lanes{f: f}
-			got := hammerIn(t, ls.newLane, quick())
+			cfg := quick()
+			if tc.bound != nil {
+				tc.bound(&cfg)
+			}
+			got := hammerIn(t, ls.newLane, cfg)
 			release()
 			ls.shutdown(t)
 			if err := before.Check(10 * time.Second); err != nil {

@@ -73,7 +73,7 @@ func TestServeServesTheTargetsOverARealTransport(t *testing.T) {
 	bare := exectestkit.Serve(t, exectestkit.ServeConfig{})
 	_, err = bare.V2(t).Describe(context.Background())
 	var refusal *exec.Error
-	if !errors.As(err, &refusal) || refusal.Class != exec.ClassUnsupported {
+	if !errors.As(err, &refusal) || refusal.Class != exec.ErrorClassUnsupported {
 		t.Errorf("Describe of a plugin with no targets = %v, want the typed refusal of a plugin that does not serve the lane", err)
 	}
 }

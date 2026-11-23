@@ -33,6 +33,10 @@ type Entry[S any] struct {
 	// the entry under the lock that admits producers: a Go that races the finisher is waited for
 	// or refused, never lost.
 	prod producers.Group
+
+	// retained and releaseRetain are guarded by the registry's lock: see Retain.
+	retained      bool
+	releaseRetain func()
 }
 
 // ID returns the id the entry was admitted with.
@@ -64,6 +68,19 @@ func (e *Entry[S]) Done() <-chan struct{} { return e.done }
 // refused for this entry. A lane that refuses a start after admitting it waits for it, so that
 // a retry of the same id is not refused for the entry that has just ended.
 func (e *Entry[S]) Removed() <-chan struct{} { return e.gone }
+
+// Retain keeps the entry's place in its group after the entry is removed, until the returned release is called. The place
+// becomes a hold at that moment, without the group's count changing, and the entry's removal then does not free it. It is for
+// work that outlives its entry and still uses what the place stood for: a goroutine that was told to stop and has not, and
+// that the lane gave up waiting for. The entry ends, its end is emitted and its id is free; the place is not, so that a lane
+// asked to start sessions as fast as it can end them is not made to leak a goroutine each. The group's limit is then a bound
+// on the live entries and the holds together, and an Admit that the holds alone make full is refused with [ErrHeld].
+//
+// A hold is not an entry: [Registry.Close] does not wait for it. Retain may be called more than once (every call returns the
+// same release), by a producer of the entry or by anyone before the entry is removed; after that the place is already gone
+// and the hold is a new one, which takes the group over its limit if others have filled the place since. release may be
+// called more than once and from any goroutine; only the first call counts.
+func (e *Entry[S]) Retain() (release func()) { return e.reg.retain(e) }
 
 // Go starts fn as one producer of the entry, in a goroutine that the entry's end waits for.
 // It reports whether it did: it does not once End has returned, or once the entry's producers

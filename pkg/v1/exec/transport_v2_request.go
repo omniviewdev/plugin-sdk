@@ -15,7 +15,7 @@ import (
 // its own, though admission has bounded the lists before: rejectUnknownFields every list, nameValueMap the lists of
 // names.
 //
-// Every refusal is an *Error: ClassInvalidRequest, or ClassUnsupported for a feature or an integration mode that
+// Every refusal is an *Error: ErrorClassInvalidRequest, or ErrorClassUnsupported for a feature or an integration mode that
 // this build does not know. The detail is local text and never quotes the request: argv elements, environment
 // values and ids can hold secrets.
 
@@ -177,8 +177,8 @@ func requestSizeFromProto(p *execv2.Size) (Size, *Error) {
 }
 
 // validateRequestFeatures checks the features of a Start in list order, and the first violation decides: a feature
-// this build does not know (unspecified, or a number of a newer contract) is ClassUnsupported; a feature that cannot
-// be requested, or one listed twice, is ClassInvalidRequest. Only marks and modes may be requested.
+// this build does not know (unspecified, or a number of a newer contract) is ErrorClassUnsupported; a feature that cannot
+// be requested, or one listed twice, is ErrorClassInvalidRequest. Only marks and modes may be requested.
 func validateRequestFeatures(features []execv2.Feature) *Error {
 	for i, f := range features {
 		switch {
@@ -194,14 +194,14 @@ func validateRequestFeatures(features []execv2.Feature) *Error {
 }
 
 // validateRequestIntegration decides on an integration request. A request for no mode is accepted whatever its
-// consent flag says. Any mode without the host's consent is ClassInvalidRequest with ReasonConsentRequired, and
-// consent is checked before anything else about the mode; a mode this build does not know is ClassUnsupported.
+// consent flag says. Any mode without the host's consent is ErrorClassInvalidRequest with ErrorReasonConsentRequired, and
+// consent is checked before anything else about the mode; a mode this build does not know is ErrorClassUnsupported.
 func validateRequestIntegration(requested, known, consent bool) *Error {
 	switch {
 	case !requested:
 		return nil
 	case !consent:
-		return NewError(ClassInvalidRequest, ReasonConsentRequired, errors.New("shell integration needs the host's consent"))
+		return NewError(ErrorClassInvalidRequest, ErrorReasonConsentRequired, errors.New("shell integration needs the host's consent"))
 	case !known:
 		return unsupportedRequest("the integration mode is not one this build knows")
 	}

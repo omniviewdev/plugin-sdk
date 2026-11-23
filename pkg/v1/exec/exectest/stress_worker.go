@@ -136,13 +136,13 @@ func (r *stressRound) refused(err error, id string, a stressAttempt) {
 	allowed := false
 	switch {
 	case !typed:
-	case class == exec.ClassLimit:
+	case class == exec.ErrorClassLimit:
 		allowed = (!a.run && name == "LIMIT/TOO_MANY_SESSIONS") || (a.run && name == "LIMIT/TOO_MANY_RUNS")
-	case class == exec.ClassUnavailable:
-		allowed = r.closing.Load()
-	case class == exec.ClassConflict:
+	case class == exec.ErrorClassUnavailable:
+		allowed = r.closing.Load() || r.mayHold.Load() // a closed engine, or a target whose places abandoned functions hold
+	case class == exec.ErrorClassConflict:
 		allowed = a.duplicate && name == "CONFLICT/SESSION_EXISTS"
-	case class == exec.ClassCancelled:
+	case class == exec.ErrorClassCancelled:
 		allowed = a.ctxEnded
 	}
 	if !allowed {
@@ -160,6 +160,9 @@ func (r *stressRound) lateAdmit(id string) {
 
 // admit takes a command the engine admitted: the recorder is told, and a reader of its own reads it to its end.
 func (r *stressRound) admit(c *stressCommand) {
+	if c.b.name == "stuck" {
+		r.mayHold.Store(true) // its function ignores its context: the engine gives up on it and holds its place
+	}
 	r.rec.Admitted(c.key)
 	r.outstanding.add(c)
 	kind := "session"
@@ -568,6 +571,9 @@ func (w *stressWorker) resize(c *stressCommand) {
 
 // end asks for the command to end, gracefully or with a kill.
 func (w *stressWorker) end(c *stressCommand, kill bool) {
+	if kill {
+		w.r.mayHold.Store(true) // a function given up on holds its place until it returns
+	}
 	c.cmd.Close(kill)
 	if kill {
 		w.r.tally.add("op/kill")
