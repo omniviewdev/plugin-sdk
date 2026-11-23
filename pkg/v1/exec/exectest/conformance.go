@@ -38,10 +38,19 @@ func ConformanceResource(id string) ConformanceOption {
 //
 //	func TestConformance(t *testing.T) { exectest.Conformance(t, myTarget()) }
 //
-// This build runs the cases of what the SDK serves, Describe and Options. The cases that need a session or a run
-// (the numbered cases 1 to 28, the pair tests and the stress harness) are listed under "engine" and skipped with the
-// step that fills them; a build that lists a feature in Describe without its cases written fails instead of skipping,
-// so a feature cannot be served without being checked.
+// The cases that need a session or a run (the numbered cases 1 to 28, the pair tests and the stress harness) are listed
+// under "engine". Five of them run the real engine in this process now, in a subtest "in process" that passes or fails:
+// case 9 (every kind of end is typed, a command has one, nothing follows it), case 14 (a retired connection ends its
+// commands), case 28 (remote_may_survive per kind of end), the pair test P5 (ending twice, after the exit and during the
+// start give the same end) and the stress harness (Stress). The first four run against a fake target that has the Info you
+// declared and a script of their own, and your Exec is never called, so what you declared decides what they expect: a
+// signal is expected only when ExitReport is CODE_AND_SIGNAL, and a Closed end says the process is gone only when Kill is
+// TERMINATES. The stress harness runs the SDK's own scripted targets: it checks the end state of the engine, not your
+// declaration, for 5 seconds (1 under -short, or as long as OMNIVIEW_LIFECYCLE_HAMMER says). A target that declares neither
+// sessions nor runs has nothing to run, so they skip. What stays unwritten of those five is what crosses the wire (the Ended
+// frame and the tombstone, and for the stress the signal, detach and attach), and every other case: each is skipped with the
+// step that fills it. A build that lists a feature in Describe without its cases written fails instead of skipping, so a
+// feature cannot be served without being checked.
 func Conformance(t *testing.T, target exec.Target, opts ...ConformanceOption) {
 	t.Helper()
 	cfg := conformanceConfig{id: "conformance-target"}
@@ -62,8 +71,9 @@ func Conformance(t *testing.T, target exec.Target, opts ...ConformanceOption) {
 			return connections.TargetRef(target.Info.Type, cfg.id), true
 		},
 	})
+	env := &inProcessEnv{resource: cfg.id}
 	t.Run("engine", func(t *testing.T) {
-		listEngineCases(t, func(t testing.TB) *execv2.DescribeResponse {
+		listEngineCases(t, target, env, func(t testing.TB) *execv2.DescribeResponse {
 			t.Helper()
 			description, err := newClient(t).Describe(connections.Context(context.Background()))
 			if err != nil {
@@ -261,12 +271,22 @@ func caseOptionsWiring(t *testing.T, client exec.Client, server *exectestkit.Ser
 	})
 }
 
-// engineCase is one case of the suite that needs the engine: it is listed, and skipped with the step that fills it.
-type engineCase struct {
-	number   int // the case number, or 0 for a pair test or the stress harness
+// caseRow is one case of the suite that needs the engine: its number (0 for a pair test or the stress harness), what it checks,
+// the step that writes what is unwritten of it, and the feature that step makes the build list.
+type caseRow struct {
+	number   int
 	name     string
 	step     string
 	requires execv2.Feature
+}
+
+// engineCase is a row of the skeleton and, for a case the in-process engine satisfies, the body that runs now. The row's step and
+// feature gate what is left of the case, which is the part that needs the wire.
+type engineCase struct {
+	caseRow
+	// inProcess runs the case against the real engine in this process, with the author's declared target. It is nil for a case
+	// that is only listed.
+	inProcess func(t checkT, target exec.Target, env *inProcessEnv)
 }
 
 // caseT is the part of testing.T that an engine case uses to say how it ended.
@@ -285,12 +305,19 @@ func (c engineCase) conclude(t caseT, served []execv2.Feature) {
 	t.Skipf("step %s: the SDK build does not serve %s yet", c.step, c.requires)
 }
 
+// The names of the two cases that carry no number, which the bodies are found by.
+const (
+	pairEndingName = "pair P5: ending twice, after the exit and during the start give the same final Ended"
+	stressName     = "stress: N workers loop open, input, resize, signal, detach, attach, end, run, cancel; the end-state invariant holds"
+)
+
 // engineCases is the skeleton of the suite: the plan's numbered cases 1 to 24 and the cases 25 to 28 that the review of
 // the contract added, the pair tests P1 to P6 and the stress harness, each with the step that writes it and the feature
-// that step makes the build list.
+// that step makes the build list. Cases 9, 14, 28, P5 and the stress run in process now: the step of each names what is
+// left of it, which needs the wire.
 func engineCases() []engineCase {
 	session, run, management := execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN, execv2.Feature_FEATURE_SESSION_MANAGEMENT
-	return []engineCase{
+	rows := []caseRow{
 		{1, "Opened is first and its facts agree with Describe", "X3a", session},
 		{2, "input and resize frames reach the author in order", "X3a", session},
 		{3, "output offsets are contiguous and the bytes untouched", "X3a", session},
@@ -299,12 +326,12 @@ func engineCases() []engineCase {
 		{6, "resize: a storm delivers at most two sizes, the last seq is acknowledged, the initial size is first", "X3b", session},
 		{7, "signals only as declared, Close graceful and kill, remote_may_survive agrees with the capability", "X3b", session},
 		{8, "stdin EOF", "X3b", execv2.Feature_FEATURE_STDIN_EOF},
-		{9, "a session has exactly one end and at most one Ended (the frame, last on its stream, when a stream is attached at the end; the tombstone when none is), typed for every kind of end (exited, signaled, closed, failed, lost), counts exact", "X2a and X3a", session},
+		{9, "a session has exactly one end and at most one Ended (the frame, last on its stream, when a stream is attached at the end; the tombstone when none is), typed for every kind of end (exited, signaled, closed, failed, lost), counts exact", "X3a", session},
 		{10, "detach and reattach: replay plus live is one uninterrupted transcript; a tombstone is readable", "X3c", management},
 		{11, "the lease ends a detached session at the fake-clock timeout", "X3c", management},
 		{12, "limits: too many sessions, input too large, env or cwd unsupported are typed", "X3a", session},
 		{13, "errors: class, reason and facts round-trip and a canary in Error.Err appears nowhere", "X2b and X3a", session},
-		{14, "a retired connection ends its sessions", "X2a", session},
+		{14, "a retired connection ends its sessions", "X3a", session},
 		{15, "Run: empty argv, bounds, timeout, cancel, capture accounting, valid_utf8, concurrency", "X2b", run},
 		{16, "lost: a stream that ends with no status ends Lost, never Exited 0, and a run ends OUTCOME_LOST", "X3a", session},
 		{17, "exit source and report round-trip; a Signaled from a CODE target is a contract violation", "X3a", session},
@@ -318,26 +345,60 @@ func engineCases() []engineCase {
 		{25, "every stream that can still receive frames ends with exactly one of Ended or Detached; a session has at most one Ended, none when it ends while no stream is attached (its end is the tombstone's), never to a detached or superseded stream (X3a: one stream, X3c: attach, supersede, detach)", "X3a and X3c", session},
 		{26, "capabilities narrow per session: exec and attach on one Pod kind get different ExitReport and HostRestart in Opened (from Choice.capabilities), not in Started, which narrows only what is learned at run time; a widening is clamped, a choice's and a Started's alike", "X3a", session},
 		{27, "a run failure after the command was handed to the target is a RunResult with OUTCOME_FAILED carrying partial output, completeness, start_observed and remote_may_survive; a refusal before the hand-off is a status; a host never retries a failed or lost end", "X2b", run},
-		{28, "remote_may_survive per end kind: Lost true, process exit and signal false, transport exit and failure absent, closed false only when the session's Kill is TERMINATES; absent is never read as no (X2a: the end mapping, X3a: sessions)", "X2a and X3a", session},
+		{28, "remote_may_survive per end kind: Lost true, process exit and signal false, transport exit and failure absent, closed false only when the session's Kill is TERMINATES; absent is never read as no (X2a: the end mapping, X3a: sessions)", "X3a", session},
 		{0, "pair P1: Run(argv) equals Open(argv, tty=false) collected to the end", "X2b", run},
 		{0, "pair P2: Open, detach, attach(from_offset) equals one uninterrupted Open", "X3c", management},
 		{0, "pair P3: the engine over gRPC equals the engine in process", "X2b", run},
 		{0, "pair P4: the host's local provider equals the engine with a pty-backed fake", "H1a-2", session},
-		{0, "pair P5: ending twice, after the exit and during the start give the same final Ended", "X2a", session},
+		{0, pairEndingName, "X3a", session},
 		{0, "pair P6: the legacy adapter equals the new lane on the same fake remote, for the bytes", "H1a-1", session},
-		{0, "stress: N workers loop open, input, resize, signal, detach, attach, end, run, cancel; the end-state invariant holds", "X2a", session},
+		{0, stressName, "X3b and X3c", management},
 	}
+	cases := make([]engineCase, len(rows))
+	for i, row := range rows {
+		cases[i] = engineCase{caseRow: row, inProcess: inProcessBody(row)}
+	}
+	return cases
 }
 
-// listEngineCases lists the engine cases as subtests. A case is skipped while the build does not list the feature its step
-// makes it list; a build that lists the feature without the case written fails the case (see conclude).
-func listEngineCases(t *testing.T, describe func(t testing.TB) *execv2.DescribeResponse) {
+// inProcessBody is the body that the engine satisfies for a row, or nil for a row that is only listed.
+func inProcessBody(row caseRow) func(t checkT, target exec.Target, env *inProcessEnv) {
+	switch {
+	case row.number == 9:
+		return caseEveryEndIsTyped
+	case row.number == 14:
+		return caseRetiredConnection
+	case row.number == 28:
+		return caseSurvival
+	case row.name == pairEndingName:
+		return casePairEnding
+	case row.name == stressName:
+		return caseStressEntry
+	}
+	return nil
+}
+
+// listEngineCases lists the engine cases as subtests. A case that has a body runs it first, in a subtest "in process" that
+// passes or fails; what is left of the case is skipped while the build does not list the feature its step makes it list, and a
+// build that lists the feature without that written fails the case (see conclude).
+func listEngineCases(t *testing.T, target exec.Target, env *inProcessEnv, describe func(t testing.TB) *execv2.DescribeResponse) {
 	t.Helper()
-	for _, c := range engineCases() {
+	listCases(t, engineCases(), target, env, describe)
+}
+
+// listCases is listEngineCases for the cases it is given.
+func listCases(t *testing.T, cases []engineCase, target exec.Target, env *inProcessEnv, describe func(t testing.TB) *execv2.DescribeResponse) {
+	t.Helper()
+	for _, c := range cases {
 		name := c.name
 		if c.number > 0 {
 			name = fmt.Sprintf("case %02d: %s", c.number, c.name)
 		}
-		t.Run(name, func(t *testing.T) { c.conclude(t, describe(t).GetFeatures()) })
+		t.Run(name, func(t *testing.T) {
+			if c.inProcess != nil {
+				t.Run("in process", func(t *testing.T) { c.inProcess(t, target, env) })
+			}
+			c.conclude(t, describe(t).GetFeatures())
+		})
 	}
 }

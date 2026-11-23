@@ -18,7 +18,8 @@ import (
 //
 // This build serves Describe and Options. Open, Run, RunStream, ListSessions, ReadOutput and EndSession answer
 // Unimplemented with a typed ClassUnsupported refusal, and Describe lists no feature for them (servedFeatures), so
-// a host that asks first never calls them.
+// a host that asks first never calls them. The server holds the engine that will run the commands of those RPCs (engine.go);
+// nothing calls it from the wire yet, and it is driven in process by the tests (engine_hook.go).
 type serverV2 struct {
 	log logging.Logger
 	reg *targetRegistry
@@ -26,13 +27,26 @@ type serverV2 struct {
 	// It is read at each call: the SDK binds it after the capability is registered.
 	connections func() resourcev2.ConnectionContextProvider
 	now         func() time.Time
+	engine      *engine
 }
 
 func newServerV2(log logging.Logger, reg *targetRegistry, connections func() resourcev2.ConnectionContextProvider) *serverV2 {
 	if log == nil {
 		log = logging.NewNop()
 	}
-	return &serverV2{log: log, reg: reg, connections: connections, now: time.Now}
+	s := &serverV2{log: log, reg: reg, connections: connections, now: time.Now}
+	s.engine = newEngine(engineConfig{log: log, targets: reg, connections: connections})
+	return s
+}
+
+// setLogger names the server's logger, and the engine's. The SDK does it when it registers the capability, before
+// anything serves.
+func (s *serverV2) setLogger(log logging.Logger) {
+	if log == nil {
+		log = logging.NewNop()
+	}
+	s.log = log
+	s.engine.setLogger(log)
 }
 
 // refuse logs the local cause of a refusal and returns its wire status. The status carries the class, reason and

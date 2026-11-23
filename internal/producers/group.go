@@ -11,7 +11,10 @@
 // never lost.
 package producers
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 // Group tracks the producers of one owner: the goroutines that go on feeding it after its own
 // work is over. Its owner waits for them, so that it can publish its end when the last one
@@ -93,6 +96,47 @@ func (g *Group) Wait() {
 	<-idle
 }
 
+// WaitContext is Wait that gives up when ctx ends. It returns nil once the group has ended,
+// that is, once no producer is left, and ctx.Err() if ctx ended first. When the group has
+// ended by the time WaitContext looks at ctx, or ends at the same moment as ctx, the answer is
+// nil: the end the caller waited for is the one it is told of. A group that has ended, or that
+// has no producer to wait for, is reported ended whatever ctx says, as Wait would.
+//
+// Giving up leaves the group exactly as Wait leaves it while it blocks: closing, its
+// producers still running and still admitted, and ended by the last of them. It may be called
+// again, by the owner or by another, and by many goroutines at once, with Wait or with other
+// contexts. It follows Wait step for step until the point where Wait blocks, so the two are to
+// be kept in step.
+func (g *Group) WaitContext(ctx context.Context) error {
+	g.mu.Lock()
+	g.waiting = true
+	if g.ended {
+		g.mu.Unlock()
+		return nil
+	}
+	if g.running == 0 {
+		g.end()
+		g.mu.Unlock()
+		return nil
+	}
+	if g.idle == nil {
+		g.idle = make(chan struct{})
+	}
+	idle := g.idle
+	g.mu.Unlock()
+	select {
+	case <-idle:
+		return nil
+	case <-ctx.Done():
+		select {
+		case <-idle:
+			return nil // both are ready: the group's end is the answer
+		default:
+			return ctx.Err()
+		}
+	}
+}
+
 // end moves the group to its final state. The caller holds g.mu and has checked
 // that the group has not ended.
 func (g *Group) end() {
@@ -102,10 +146,10 @@ func (g *Group) end() {
 	}
 }
 
-// Freeze holds the group's lock until the returned function is called: every Start, Done and
-// Wait blocks meanwhile. It is a seam for tests that have to hold a producer's reservation
-// where it happens, to force an interleaving of the code that reserves it; nothing else should
-// call it.
+// Freeze holds the group's lock until the returned function is called: every Start, Done,
+// Wait and WaitContext blocks meanwhile. It is a seam for tests that have to hold a
+// producer's reservation where it happens, to force an interleaving of the code that
+// reserves it; nothing else should call it.
 func (g *Group) Freeze() (thaw func()) {
 	g.mu.Lock()
 	return g.mu.Unlock

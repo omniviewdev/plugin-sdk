@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/omniviewdev/plugin-sdk/pkg/v1/exec"
 	execv2 "github.com/omniviewdev/plugin-sdk/proto/exec/v2"
 )
 
@@ -72,7 +73,7 @@ func TestTheEngineCasesTheReviewAddedAreListedWithTheirSteps(t *testing.T) {
 			"OUTCOME_FAILED", "partial output", "completeness", "start_observed", "remote_may_survive",
 			"refusal before the hand-off is a status", "never retries a failed or lost end",
 		}},
-		{28, "X2a and X3a", session, []string{
+		{28, "X3a", session, []string{
 			"remote_may_survive", "Lost true", "process exit and signal false", "transport exit and failure absent", "never read as no",
 		}},
 	} {
@@ -171,16 +172,20 @@ func TestAnEngineCaseFailsOnceItsFeatureIsListedAndIsSkippedUntilThen(t *testing
 }
 
 // Listing the engine cases asks the build for its features once per case, in the subtest of that case, and a build that
-// lists none skips every one: the numbered cases are named by their number.
+// lists none skips every one: the numbered cases are named by their number. The bodies are left out here: they are run, and
+// held to what they claim, by the tests of conformance_inprocess_test.go.
 func TestListingTheEngineCasesAsksTheBuildOncePerCase(t *testing.T) {
 	var asked []string
+	cases := engineCases()
+	for i := range cases {
+		cases[i].inProcess = nil
+	}
 	t.Run("engine", func(t *testing.T) {
-		listEngineCases(t, func(t testing.TB) *execv2.DescribeResponse {
+		listCases(t, cases, exec.Target{}, &inProcessEnv{}, func(t testing.TB) *execv2.DescribeResponse {
 			asked = append(asked, t.Name())
 			return &execv2.DescribeResponse{}
 		})
 	})
-	cases := engineCases()
 	if len(asked) != len(cases) {
 		t.Fatalf("the build was asked %d times for %d cases", len(asked), len(cases))
 	}

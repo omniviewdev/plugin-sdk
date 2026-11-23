@@ -20,10 +20,15 @@ type registeredTarget struct {
 	info   TargetInfo
 }
 
+// servesSessions reports whether the target serves interactive sessions, and servesRuns whether it serves bounded runs.
+// They are the one place the declaration of a service is read by the engine: how an author declares that a target serves
+// one (a section of Info that is not zero today) is decided here and nowhere else, so that it can change in one line.
+func (t *registeredTarget) servesSessions() bool { return !t.info.Session.IsZero() }
+
+func (t *registeredTarget) servesRuns() bool { return !t.info.Run.IsZero() }
+
 // runsCommands reports whether the target serves interactive sessions or runs, as opposed to only Options.
-func (t *registeredTarget) runsCommands() bool {
-	return !t.target.Info.Session.IsZero() || !t.target.Info.Run.IsZero()
-}
+func (t *registeredTarget) runsCommands() bool { return t.servesSessions() || t.servesRuns() }
 
 // targetRegistry holds the validated targets of a plugin, in registration order.
 type targetRegistry struct {
