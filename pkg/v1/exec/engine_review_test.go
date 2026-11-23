@@ -153,7 +153,9 @@ func TestAKillRacingTheFunctionsOwnReturnNeverCallsAReturnedFunctionAbandoned(t 
 			t.Fatalf("round %d: the function ended the session and returned, yet abandoned=%v end=%v", i, res.Abandoned, res.End)
 		}
 	}
-	if n := rig.eng.Abandoned(); n != 0 {
-		t.Fatalf("%d functions are counted abandoned though every one returned", n)
-	}
+	// A kill that reaches the supervisor before the function has returned abandons it, by design: such a function returns a
+	// moment later and is no longer counted. Every function here returns, so the count falls to zero.
+	eventually(t, "the functions that were abandoned in the race to return and stop being counted", func() bool {
+		return rig.eng.Abandoned() == 0
+	})
 }

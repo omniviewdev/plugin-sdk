@@ -165,7 +165,8 @@ type stressRound struct {
 	gates *stressGates
 	eng   exechook.Engine
 	rec   *lifecycletest.Recorder
-	found findings
+	found findings // what the workers and the readers found while the round ran
+	rest  findings // what the checks at rest found: kept apart, so that a flood of the first cannot hide the second
 	tally *tally
 
 	// closing is set before the first Close is called, closed once one has returned: a start that finds closing set may be
@@ -265,7 +266,7 @@ func (r *stressRound) execute(baseline lifecycletest.GoroutineBaseline) (failed 
 		return true
 	}
 	r.atRest(closers, baseline)
-	violations := r.found.list()
+	violations := append(r.found.list(), r.rest.list()...)
 	for _, v := range violations {
 		t.Errorf("exectest.Stress: round %d: %s", r.n, v)
 	}
@@ -323,18 +324,18 @@ func (r *stressRound) atRest(c *closers, baseline lifecycletest.GoroutineBaselin
 	for i, res := range c.results {
 		switch {
 		case res.err != nil:
-			r.found.add("Close #%d returned %v after %v: it did not finish within the bound %v", i, res.err, res.elapsed.Round(time.Millisecond), r.cfg.CloseBound)
+			r.rest.add("Close #%d returned %v after %v: it did not finish within the bound %v", i, res.err, res.elapsed.Round(time.Millisecond), r.cfg.CloseBound)
 		case res.elapsed > r.cfg.CloseBound:
-			r.found.add("Close #%d took %v, over the bound %v", i, res.elapsed.Round(time.Millisecond), r.cfg.CloseBound)
+			r.rest.add("Close #%d took %v, over the bound %v", i, res.elapsed.Round(time.Millisecond), r.cfg.CloseBound)
 		}
 	}
 	if live := r.eng.Live(); len(live) != 0 {
-		r.found.add("Live() is %s at rest, after Close returned: it must be empty", listIDs(live, 10))
+		r.rest.add("Live() is %s at rest, after Close returned: it must be empty", listIDs(live, 10))
 	}
 	r.probeAfterClose()
 	if n := r.lateAdmits.Load(); n > 0 {
 		first, _ := r.firstLate.Load().(string)
-		r.found.add("%d starts were admitted after a Close had returned, the first %q: a closed engine must refuse every start", n, first)
+		r.rest.add("%d starts were admitted after a Close had returned, the first %q: a closed engine must refuse every start", n, first)
 	}
 
 	r.gates.open() // the functions that ignored their context return, and the goroutines that outlived theirs write
@@ -343,13 +344,13 @@ func (r *stressRound) atRest(c *closers, baseline lifecycletest.GoroutineBaselin
 	r.checkAbandoned()
 	r.checkLateWriters()
 	for _, v := range r.rec.Violations() {
-		r.found.add("%s", v)
+		r.rest.add("%s", v)
 	}
 	for _, v := range r.rec.CheckAtRest() {
-		r.found.add("%s", v)
+		r.rest.add("%s", v)
 	}
 	if err := baseline.Check(r.cfg.Settle); err != nil {
-		r.found.add("%v", err)
+		r.rest.add("%v", err)
 	}
 }
 
@@ -358,7 +359,7 @@ func (r *stressRound) probeAfterClose() {
 	b := stressBehaviours[0]
 	target, err := wireTarget(r.conns, b.name, stressThing)
 	if err != nil {
-		r.found.add("%v", err)
+		r.rest.add("%v", err)
 		return
 	}
 	ctx := r.conns.Context(context.Background())
@@ -366,14 +367,14 @@ func (r *stressRound) probeAfterClose() {
 		SessionId: "after-close-s", Kind: &execv2.OpenRequest_Start{Start: &execv2.Start{Target: target}},
 	})
 	if v := checkRefusedAfterClose(err); v != "" {
-		r.found.add("an Open: %s", v)
+		r.rest.add("an Open: %s", v)
 	}
 	if err == nil {
 		session.Close(true)
 	}
 	run, err := r.eng.Run(ctx, &execv2.RunRequest{RequestId: "after-close-r", Target: target, Argv: []string{"stress"}})
 	if v := checkRefusedAfterClose(err); v != "" {
-		r.found.add("a Run: %s", v)
+		r.rest.add("a Run: %s", v)
 	}
 	if err == nil {
 		run.Close(true)
@@ -390,13 +391,13 @@ func (r *stressRound) waitReaders() {
 		return
 	}
 	for _, line := range r.outstanding.describe(10) {
-		r.found.add("%s", line)
+		r.rest.add("%s", line)
 	}
 	r.stopReaders()
 	again, stopWaiting := context.WithTimeout(context.Background(), r.cfg.CloseBound)
 	defer stopWaiting()
 	if r.readers.WaitContext(again) != nil {
-		r.found.add("the readers did not return even when their context ended\n%s", goroutineDump(6<<10))
+		r.rest.add("the readers did not return even when their context ended\n%s", goroutineDump(6<<10))
 	}
 }
 
@@ -415,7 +416,7 @@ func (r *stressRound) disposeLeft() {
 // each returns, and the count falls to zero.
 func (r *stressRound) checkAbandoned() {
 	if !poll(r.hooks.abandonBound, func() bool { return r.eng.Abandoned() == 0 }) {
-		r.found.add("Abandoned() is %d, %v after the harness opened every gate: a function the engine gave up on never returned, or was never forgotten",
+		r.rest.add("Abandoned() is %d, %v after the harness opened every gate: a function the engine gave up on never returned, or was never forgotten",
 			r.eng.Abandoned(), r.hooks.abandonBound)
 	}
 }
@@ -431,17 +432,17 @@ func (r *stressRound) checkLateWriters() {
 		select {
 		case <-record.Done():
 		case <-deadline.C:
-			r.found.add("late writer #%d did not use its stdio within %v of the harness opening its gate", i, r.hooks.abandonBound)
+			r.rest.add("late writer #%d did not use its stdio within %v of the harness opening its gate", i, r.hooks.abandonBound)
 			return
 		}
 		if n, err := record.Stdout(); n != 0 || !errors.Is(err, io.ErrClosedPipe) {
-			r.found.add("late writer #%d: a write to stdout after the function returned took %d bytes and returned %v, want 0 and io.ErrClosedPipe", i, n, err)
+			r.rest.add("late writer #%d: a write to stdout after the function returned took %d bytes and returned %v, want 0 and io.ErrClosedPipe", i, n, err)
 		}
 		if n, err := record.Stderr(); n != 0 || (err != nil && !errors.Is(err, io.ErrClosedPipe)) {
-			r.found.add("late writer #%d: a write to stderr after the function returned took %d bytes and returned %v, want 0 and io.ErrClosedPipe", i, n, err)
+			r.rest.add("late writer #%d: a write to stderr after the function returned took %d bytes and returned %v, want 0 and io.ErrClosedPipe", i, n, err)
 		}
 		if err := record.Stdin(); !errors.Is(err, io.EOF) {
-			r.found.add("late writer #%d: a read of stdin after the function returned gave %v, want io.EOF", i, err)
+			r.rest.add("late writer #%d: a read of stdin after the function returned gave %v, want io.EOF", i, err)
 		}
 	}
 }

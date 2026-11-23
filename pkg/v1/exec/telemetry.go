@@ -1,8 +1,11 @@
 package exec
 
 import (
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"weak"
 
 	sdkdiag "github.com/omniviewdev/plugin-sdk/pkg/diagnostics"
 	execv2 "github.com/omniviewdev/plugin-sdk/proto/exec/v2"
@@ -44,7 +47,7 @@ const (
 
 // telemetry holds the instruments of one engine. Instruments are registered once per registry: building a telemetry on a
 // registry that already holds them returns the same instruments, so engines share their series, as the plugin's engines
-// are one plugin.
+// are one plugin. The counts that the two gauges report are shared the same way (see gaugeCounts).
 type telemetry struct {
 	sessions   *sdkdiag.Gauge
 	ended      *sdkdiag.Counter
@@ -53,11 +56,34 @@ type telemetry struct {
 	stalls     *sdkdiag.Counter
 	violations *sdkdiag.Counter
 	abandoned  *sdkdiag.Gauge
+	counts     *gaugeCounts
+	own        atomic.Int64 // the functions this engine gave up on that have not returned; the gauge counts every engine of the registry
+}
 
+// gaugeCounts is what the two gauges of a registry report. The counts belong to the registry and not to an engine: engines
+// that publish to one registry share its gauges, and a gauge set from one engine's own count would overwrite the others'.
+type gaugeCounts struct {
 	// mu orders the updates of a gauge with the count it reports, so that the last value written is the newest.
-	mu         sync.Mutex
-	live       int64
-	abandonedN int64
+	mu        sync.Mutex
+	live      int64
+	abandoned int64
+}
+
+// registryCounts holds the counts of each registry an engine publishes to. The key is a weak reference, so the map does not
+// keep a registry alive: the process registry lives as long as the process, and a registry that a test made goes with it.
+var registryCounts sync.Map // weak.Pointer[sdkdiag.Registry] -> *gaugeCounts
+
+// countsOf returns the counts that the engines publishing to r share.
+func countsOf(r *sdkdiag.Registry) *gaugeCounts {
+	key := weak.Make(r)
+	if counts, ok := registryCounts.Load(key); ok {
+		return counts.(*gaugeCounts)
+	}
+	counts, loaded := registryCounts.LoadOrStore(key, &gaugeCounts{})
+	if !loaded {
+		runtime.AddCleanup(r, func(k weak.Pointer[sdkdiag.Registry]) { registryCounts.Delete(k) }, key)
+	}
+	return counts.(*gaugeCounts)
 }
 
 // newTelemetry registers the engine's instruments on r (the process registry when r is nil). A registry that is full
@@ -66,7 +92,7 @@ func newTelemetry(r *sdkdiag.Registry) *telemetry {
 	if r == nil {
 		r = sdkdiag.Default()
 	}
-	t := &telemetry{}
+	t := &telemetry{counts: countsOf(r)}
 	t.sessions, _ = r.Gauge(metricSessions, "1")
 	t.ended, _ = r.Counter(metricEnded, "1")
 	t.bytes, _ = r.Counter(metricBytes, "{byte}")
@@ -82,10 +108,10 @@ func word(name, prefix string) string { return strings.ToLower(strings.TrimPrefi
 
 // sessionStarted counts a session that was handed to its function.
 func (t *telemetry) sessionStarted() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.live++
-	t.sessions.Set(float64(t.live), sdkdiag.Attr{Key: sdkdiag.KeyState, Value: "running"})
+	t.counts.mu.Lock()
+	defer t.counts.mu.Unlock()
+	t.counts.live++
+	t.sessions.Set(float64(t.counts.live), sdkdiag.Attr{Key: sdkdiag.KeyState, Value: "running"})
 }
 
 // sessionEnded counts a session that ended, by the kind of its end.
@@ -103,19 +129,20 @@ func (t *telemetry) sessionEnded(end *execv2.End) {
 	case *execv2.End_Lost:
 		outcome = "lost"
 	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.live--
-	t.sessions.Set(float64(t.live), sdkdiag.Attr{Key: sdkdiag.KeyState, Value: "running"})
+	t.counts.mu.Lock()
+	defer t.counts.mu.Unlock()
+	t.counts.live--
+	t.sessions.Set(float64(t.counts.live), sdkdiag.Attr{Key: sdkdiag.KeyState, Value: "running"})
 	t.ended.Add(1, sdkdiag.Attr{Key: sdkdiag.KeyOutcome, Value: outcome})
 }
 
 // abandonedChanged moves the count of functions the engine gave up on that have not returned yet.
 func (t *telemetry) abandonedChanged(delta int64) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.abandonedN += delta
-	t.abandoned.Set(float64(t.abandonedN))
+	t.own.Add(delta)
+	t.counts.mu.Lock()
+	defer t.counts.mu.Unlock()
+	t.counts.abandoned += delta
+	t.abandoned.Set(float64(t.counts.abandoned))
 }
 
 // violation counts a contract violation of an author's function.
@@ -140,9 +167,5 @@ func (t *telemetry) traffic(out, in, dropped, stalls uint64, dropReason execv2.D
 	}
 }
 
-// abandonedCount returns how many functions the engine gave up on that have not returned.
-func (t *telemetry) abandonedCount() int64 {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.abandonedN
-}
+// abandonedCount returns how many functions this engine gave up on that have not returned.
+func (t *telemetry) abandonedCount() int64 { return t.own.Load() }

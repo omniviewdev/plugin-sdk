@@ -103,6 +103,15 @@ type engine struct {
 	log logging.Logger
 	reg *session.Registry[*command]
 	tel *telemetry
+
+	// afterFunctionEnded is a test seam, nil in production: it runs on the function's goroutine right after the function
+	// ended its session and before it reports what it returned, which is the one moment at which the order of the function's
+	// own bookkeeping and the supervisor's decision about it can be forced. A test sets it before it starts a command.
+	afterFunctionEnded func()
+
+	// afterAbandonDecision is a test seam, nil in production: it runs on the supervisor's goroutine right after it decided,
+	// by the compare-and-swap that the function's own return also makes, whether it gave up on the function.
+	afterAbandonDecision func(abandoned bool)
 }
 
 // newEngine returns an engine for the targets of cfg. It runs nothing until a command starts.
@@ -589,6 +598,9 @@ func (c *command) callFunction(ctx context.Context, proc *Proc, state *atomic.In
 			cause = session.CauseRetired
 		}
 		c.entry.End(cause)
+		if hook := c.e.afterFunctionEnded; hook != nil {
+			hook()
+		}
 		returned <- outcome
 		if gaveUpOn {
 			// The engine had given up on this function: it has returned, so it is no longer abandoned.
@@ -643,7 +655,11 @@ func (c *command) drain(returned <-chan functionOutcome, state *atomic.Int32, ca
 	case <-graceOver:
 		c.violate(violation{violationIgnoredCancel, "the function did not return within the grace after its context was cancelled: the command ends without it"})
 	}
-	if state.CompareAndSwap(fnRunning, fnAbandoned) {
+	abandon := state.CompareAndSwap(fnRunning, fnAbandoned)
+	if hook := c.e.afterAbandonDecision; hook != nil {
+		hook(abandon)
+	}
+	if abandon {
 		c.e.tel.abandonedChanged(1)
 		return functionOutcome{}, true
 	}

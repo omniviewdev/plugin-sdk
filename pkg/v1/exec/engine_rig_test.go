@@ -47,13 +47,19 @@ type engineRigConfig struct {
 	metricsEvery time.Duration
 	// noConnections binds no connection registry, as a plugin without a resource provider.
 	noConnections bool
+	// diag is the diagnostics registry the engine publishes to; a test that wants two engines on one registry gives both the
+	// same one.
+	diag *sdkdiag.Registry
 }
 
 // newEngineRig builds an engine for targets and closes it when the test ends: every command ended and removed, within a
 // bound, and the engine holding nothing.
 func newEngineRig(t testing.TB, cfg engineRigConfig, targets ...exec.Target) *engineRig {
 	t.Helper()
-	r := &engineRig{t: t, logs: &logtest.RecordingSink{}, diag: sdkdiag.NewRegistry()}
+	r := &engineRig{t: t, logs: &logtest.RecordingSink{}, diag: cfg.diag}
+	if r.diag == nil {
+		r.diag = sdkdiag.NewRegistry()
+	}
 	r.conns = exectestkit.NewConnectionsT(t, "fake")
 	logger := logging.New(logging.Config{
 		Backend: logging.NewSinkBackend(r.logs),
