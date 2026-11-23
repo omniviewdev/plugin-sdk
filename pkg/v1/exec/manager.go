@@ -674,10 +674,6 @@ func isEndOfOutput(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, syscall.EIO) || errors.Is(err, os.ErrClosed)
 }
 
-// endMarker is implemented by a terminal that can have a mark written after everything its process wrote
-// (see realTerminal.markEnd).
-type endMarker interface{ markEnd(mark []byte) error }
-
 // drainTerminal gives the reader of a session whose process is over the time to take what the process wrote
 // last. Output the reader has not taken stays in the kernel's queue, and closing the terminal throws it away; the
 // kernel is no help in telling when the reader has everything (macOS and the BSDs drop the queue when the slave
@@ -690,7 +686,7 @@ type endMarker interface{ markEnd(mark []byte) error }
 // a session, or a manager that closes, is not waiting for its output. What the reader has not taken by then is
 // lost, and the Close signal is still the last thing the session says. A terminal that cannot take a mark is not waited for.
 func (m *Manager) drainTerminal(ss *sessionState) {
-	terminal, ok := ss.terminal.(endMarker)
+	terminal, ok := ss.terminal.(EndMarker)
 	if !ok || ss.ctx.Err() != nil {
 		return
 	}
@@ -706,7 +702,7 @@ func (m *Manager) drainTerminal(ss *sessionState) {
 	// The kernel queues little for a master that is not read, so the write can wait for the reader: it is done
 	// where the wait can be given up, and the close of the terminal sets it free. If it fails the output ends
 	// by itself (the slave is closed), and the reader says so.
-	go func() { _ = terminal.markEnd(mark) }()
+	go func() { _ = terminal.MarkEnd(mark) }()
 	select {
 	case <-ss.readerDone:
 	case <-ss.ctx.Done():
@@ -788,7 +784,7 @@ func (m *Manager) leave(ss *sessionState) {
 	ss.gone = true
 	var kept *retainedOutput
 	if !ss.session.Attached && !ss.requested.Load() {
-		kept = &retainedOutput{session: ss.snapshotLocked(), output: ss.getBufferData()}
+		kept = &retainedOutput{owner: ss.waitDone(), session: ss.snapshotLocked(), output: ss.getBufferData()}
 	}
 	ss.mu.Unlock()
 
@@ -824,12 +820,15 @@ func (m *Manager) retain(id string, kept *retainedOutput) {
 	m.retained[id] = kept
 }
 
-// takeRetained gives the first attach to a session that ended the output it left, if it is still kept.
-func (m *Manager) takeRetained(id string) (*retainedOutput, bool) {
+// takeRetained gives the first attach to a session that ended the output it left, if it is still kept. An
+// attach that found a session of its own (owner is the session's done channel) takes only what that session left:
+// what a session that took its ID in the meantime left is not its output, and stays for the attach that asks for
+// that one. An attach that found no session (owner nil) takes what the latest session with the ID left.
+func (m *Manager) takeRetained(id string, owner <-chan struct{}) (*retainedOutput, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	kept, ok := m.retained[id]
-	if !ok {
+	if !ok || (owner != nil && kept.owner != owner) {
 		return nil, false
 	}
 	delete(m.retained, id)
@@ -878,6 +877,7 @@ func (m *Manager) AttachSession(
 	m.mu.RLock()
 	ss, exists := m.sessions[sessionID]
 	m.mu.RUnlock()
+	var lost <-chan struct{} // the done channel of the session this call found and lost to its end
 
 	if exists {
 		// The session is found, and not yet attached to: it may end before this call has it. A test stops here,
@@ -898,11 +898,12 @@ func (m *Manager) AttachSession(
 			return &snap, bufData, nil
 		}
 		ss.mu.Unlock()
+		lost = ss.waitDone()
 		// The session ended while this call was on its way to it. It left its output in the step in
 		// which it left the manager (see leave), so it is found where the ended sessions are.
 	}
 
-	if kept, ok := m.takeRetained(sessionID); ok {
+	if kept, ok := m.takeRetained(sessionID, lost); ok {
 		m.log.Debugw(pluginContextOr(context.Background(), pluginctx),
 			"output of an ended session attached", "session", sessionID)
 		session := kept.session
@@ -940,8 +941,14 @@ func (m *Manager) CloseSession(pluginctx *types.PluginContext, sessionID string)
 		return NewSessionNotFoundError(sessionID)
 	}
 
-	ss.stop()
 	ctx := pluginContextOr(ss.ctx, pluginctx)
+	// The session is found, and not yet stopped: it may end before this call stops it. A test stops here, by the
+	// logger, to have the session end between the two steps.
+	m.log.Debugw(ctx, "close found the session", "session", sessionID)
+	if !ss.stopUnlessGone() {
+		// It ended by itself in between, and left its output as such: there is no session to close.
+		return NewSessionNotFoundError(sessionID)
+	}
 	m.log.Debugw(ctx, "session terminated", "session", sessionID)
 
 	// Wait for session goroutines to complete with a safety timeout.

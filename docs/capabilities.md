@@ -103,9 +103,10 @@ These rules hold for sessions made by a `TTYHandler`, for a plugin built with an
   the terminal and sends the Close signal: the output a process wrote before it ended comes before its
   Close signal, which is the last thing a session sends. The wait is bounded (500 ms on the manager's
   clock), so a consumer that does not take output cannot keep a session from ending; what was not read
-  by then is lost. Only the terminals the SDK opens (`NewRealTerminalFactory`, the default) are waited
-  for; a terminal from a custom `TerminalFactory` is closed at once. A session ended by `CloseSession`,
-  by `Manager.Close` or by the end of its stream is not waited for.
+  by then is lost. The terminals the SDK opens (`NewRealTerminalFactory`, the default) are waited for, and so
+  is `exectest.FakeTerminal`, which a plugin tests with: both implement `exec.EndMarker`. A terminal from a
+  custom `TerminalFactory` that does not is closed at once. A session ended by `CloseSession`, by
+  `Manager.Close` or by the end of its stream is not waited for.
 - **A session that ended before the host attached.** If a session ends by itself while no host is
   attached, its output is kept for the first `AttachSession` to it, which returns the output and
   the session as it was; no other call finds a session that has ended, and the output is gone after

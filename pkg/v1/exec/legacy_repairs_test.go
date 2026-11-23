@@ -272,11 +272,19 @@ func TestTheEndMarkIsFoundWhereverTheOutputIsCut(t *testing.T) {
 				check(whole[:i], whole[i:j], whole[j:])
 			}
 		}
-		// Without the mark everything is delivered but for what could be its beginning, which is dropped when the output ends.
+		// Without the mark everything is delivered but for the longest end of the output that is a beginning of
+		// the mark, which is dropped when the output ends: exactly that, whatever the cut.
+		held := 0
+		for n := min(len(mark)-1, len(before)); n > 0; n-- {
+			if bytes.HasSuffix(before, mark[:n]) {
+				held = n
+				break
+			}
+		}
 		for i := 0; i <= len(before); i++ {
 			got, found := exec.ScanMark(mark, before[:i], before[i:])
-			if found || !bytes.HasPrefix(before, got) || len(before)-len(got) >= len(mark) {
-				t.Fatalf("the output %q cut at %d, with no mark in it: delivered %q (mark reached: %v)", before, i, got, found)
+			if found || !bytes.Equal(got, before[:len(before)-held]) {
+				t.Fatalf("the output %q cut at %d, with no mark in it: delivered %q (mark reached: %v), want %q", before, i, got, found, before[:len(before)-held])
 			}
 		}
 	}
@@ -309,7 +317,7 @@ func TestARetiredStreamsSinkDoesNotHoldUpTheReaderOfASession(t *testing.T) {
 			}
 			process := sc.session(t, "s")
 			// The process writes until the reader is held up: the channel of the stream holds a few thousand frames.
-			for i := 0; !anyGoroutine("(*ChannelSink).OnOutput", "(*Manager).emitData"); i++ {
+			for i := 0; !anyGoroutineIn("select", "(*ChannelSink).OnOutput", "(*Manager).emitData"); i++ {
 				if i > 1<<20 {
 					t.Fatal("the reader of the session was not held up by a stream that nobody reads")
 				}
@@ -545,9 +553,8 @@ func TestAFrameDoesNotHoldTheBufferItWasReadInto(t *testing.T) {
 
 // endUnattached makes a session write data and end by itself with nobody attached, and returns
 // once its Close signal is out: the session has ended, and the output is whatever it left. The
-// output is read (counted by the manager) before the process ends: a pipe, unlike a terminal, has no
-// kernel to keep what was written to it, and what the manager had not read when the session ended is
-// not something the lane can promise to deliver.
+// output is read (counted by the manager) before the process ends, so that what is built on these sessions does
+// not depend on the wait for the tail, which has tests of its own.
 func endUnattached(t testing.TB, sc *scripted, m *exec.Manager, closes *exectest.RecordingOutput, id string, data []byte, end error) {
 	t.Helper()
 	createSessions(t, m, id)
@@ -835,6 +842,185 @@ func TestTwoAttachesToAnEndedSessionOneGetsTheOutput(t *testing.T) {
 	wg.Wait()
 	if wins.Load() != 1 || misses.Load() != callers-1 {
 		t.Fatalf("%d attaches got the output and %d found nothing, want 1 and %d", wins.Load(), misses.Load(), callers-1)
+	}
+}
+
+// An attach that found a session and lost it to the end must not take the output of the session that took
+// its ID in the meantime: what it finds is the output of the session it found, or nothing. (Whoever keys
+// state on an ID may reuse it once the session has ended: the SessionOptions say that a restart needs a new one,
+// and a host that does not follows the rule of the manager: an ID is free once its session has ended.)
+func TestAnAttachThatFoundASessionDoesNotTakeTheOutputOfItsSuccessor(t *testing.T) {
+	sc := newScripted()
+	sink := exectest.NewRecordingOutput()
+	var held atomic.Pointer[gate]
+	m := sc.manager(t, scriptedOptions{sink: sink, hook: func(msg string) {
+		if g := held.Load(); g != nil && msg == "attach found the session" {
+			g.hold()
+		}
+	}})
+	attachHeld := newGate(t) // registered after the manager: a failing test lets the attach go before the manager closes
+	held.Store(attachHeld)
+
+	firstData, secondData := []byte("the output of the first session"), []byte("the output of the one that took its ID")
+	createSessions(t, m, "s")
+	first := sc.session(t, "s")
+	first.write(t, firstData)
+	awaitWithin(t, func() bool {
+		total, ok := exec.BufferTotal(m, "s")
+		return ok && total == uint64(len(firstData))
+	}, "the manager to read what the first session wrote")
+
+	type attachResult struct {
+		output []byte
+		err    error
+	}
+	got := make(chan attachResult, 1)
+	go func() {
+		_, output, err := m.AttachSession(nil, "s")
+		got <- attachResult{output, err}
+	}()
+	awaitClosed(t, attachHeld.reached, "the attach to find the first session")
+	first.end(nil)
+	awaitWithin(t, func() bool { return closeSignalsFor(sink, "s") == 1 }, "the first session to end")
+
+	createSessions(t, m, "s") // the ID is free: the new session drops what the first one left
+	second := sc.session(t, "s")
+	second.write(t, secondData)
+	awaitWithin(t, func() bool {
+		total, ok := exec.BufferTotal(m, "s")
+		return ok && total == uint64(len(secondData))
+	}, "the manager to read what the second session wrote")
+	second.end(nil)
+	awaitWithin(t, func() bool { return closeSignalsFor(sink, "s") == 2 }, "the second session to end")
+	attachHeld.release()
+
+	select {
+	case result := <-got:
+		if !errors.Is(result.err, exec.ErrSessionNotFound) {
+			t.Fatalf("the attach that found the first session returned (%q, %v): it must not get the output of the session that took its ID",
+				result.output, result.err)
+		}
+	case <-time.After(mustHappen):
+		t.Fatal("the attach did not return")
+	}
+	if _, output, err := m.AttachSession(nil, "s"); err != nil || !bytes.Equal(output, secondData) {
+		t.Errorf("the first attach to the second session returned (%q, %v), want its own output", output, err)
+	}
+}
+
+// A close can find a session and lose it to the end before it has stopped it. The session then ended by itself
+// and left its output, and the close says that the session is gone: it is never both a success, which promises that
+// the session keeps nothing, and a session that kept its output. Both orders are forced.
+func TestACloseThatFoundASessionBeforeItEndedSaysSoAndTheOutputIsKept(t *testing.T) {
+	for _, order := range []struct {
+		name         string
+		endInBetween bool
+	}{
+		{"the process ends between the lookup and the stop", true},
+		{"the close comes first", false},
+	} {
+		t.Run(order.name, func(t *testing.T) {
+			sc := newScripted()
+			sink := exectest.NewRecordingOutput()
+			var held atomic.Pointer[gate]
+			m := sc.manager(t, scriptedOptions{sink: sink, hook: func(msg string) {
+				if g := held.Load(); g != nil && msg == "close found the session" {
+					g.hold()
+				}
+			}})
+			closeHeld := newGate(t) // registered after the manager: a failing test lets the close go before the manager closes
+			if order.endInBetween {
+				held.Store(closeHeld)
+			}
+			data := []byte("what the process wrote")
+			createSessions(t, m, "s")
+			process := sc.session(t, "s")
+			process.write(t, data)
+			awaitWithin(t, func() bool {
+				total, ok := exec.BufferTotal(m, "s")
+				return ok && total == uint64(len(data))
+			}, "the manager to read what the process wrote")
+
+			closed := make(chan error, 1)
+			go func() { closed <- m.CloseSession(nil, "s") }()
+			if order.endInBetween {
+				select {
+				case <-closeHeld.reached: // the close has the session, and has not stopped it
+				case <-time.After(repairWait):
+					t.Fatal("the close did not find the session")
+				}
+				process.end(nil)
+				awaitWithin(t, func() bool { return closeSignalsFor(sink, "s") == 1 }, "the session to end")
+				closeHeld.release()
+			}
+			var closeErr error
+			select {
+			case closeErr = <-closed:
+			case <-time.After(mustHappen):
+				t.Fatal("CloseSession did not return")
+			}
+
+			_, output, attachErr := m.AttachSession(nil, "s")
+			if order.endInBetween {
+				if !errors.Is(closeErr, exec.ErrSessionNotFound) {
+					t.Errorf("a close that lost its session to the end returned %v, want %v: the session ended by itself", closeErr, exec.ErrSessionNotFound)
+				}
+				if attachErr != nil || !bytes.Equal(output, data) {
+					t.Errorf("the session that ended by itself kept (%q, %v) for its first attach, want its output", output, attachErr)
+				}
+				return
+			}
+			if closeErr != nil {
+				t.Errorf("CloseSession of a live session: %v", closeErr)
+			}
+			if !errors.Is(attachErr, exec.ErrSessionNotFound) {
+				t.Errorf("a session that the host closed kept (%q, %v) for an attach, want nothing", output, attachErr)
+			}
+		})
+	}
+}
+
+// A pipe-backed terminal has no kernel to keep what a process wrote, and plugins test with it: it must end a session
+// as a real terminal does, with what the process wrote last delivered before the Close signal, however soon the
+// process is reported over. Nothing here waits for the manager to read before it ends the session.
+func TestAFakeTerminalSessionDeliversItsTailBeforeClose(t *testing.T) {
+	const runs = 200
+	sc := newScripted()
+	sink := exectest.NewRecordingOutput()
+	m := sc.manager(t, scriptedOptions{sink: sink})
+
+	var short, lost int
+	for run := range runs {
+		id := fmt.Sprintf("fake-%d", run)
+		data := patterned(100+run*13%3000, run)
+		createSessions(t, m, id)
+		if _, _, err := m.AttachSession(nil, id); err != nil {
+			t.Fatalf("AttachSession: %v", err)
+		}
+		process := sc.session(t, id)
+		process.write(t, data)
+		process.end(nil)
+		awaitWithin(t, func() bool { return closeSignalsFor(sink, id) == 1 }, "the session to say goodbye")
+
+		var got []byte
+		for _, output := range sink.Outputs() {
+			if output.SessionID != id {
+				continue
+			}
+			if output.Signal == exec.StreamSignalClose {
+				break
+			}
+			if output.Signal == exec.StreamSignalNone {
+				got = append(got, output.Data...)
+			}
+		}
+		if !bytes.Equal(got, data) {
+			short++
+			lost += len(data) - len(got)
+		}
+	}
+	if short > 0 {
+		t.Errorf("%d of %d sessions on a pipe-backed terminal lost the end of their output (%d bytes in all): the Close signal came before it was read", short, runs, lost)
 	}
 }
 

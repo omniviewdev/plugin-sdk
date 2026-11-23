@@ -382,7 +382,7 @@ func TestTheWaitForTheTailIsBounded(t *testing.T) {
 			awaitWithin(t, func() bool { return sessionsOf(s.m) == 0 },
 				"the session to leave the manager when the wait for the tail was over, though its consumer is still stuck")
 			s.finish(t, consumer.holdLast) // with the last frame held everything was read: all of it is delivered
-			awaitWithin(t, func() bool { return !anyGoroutine("exec.(*realTerminal).markEnd") },
+			awaitWithin(t, func() bool { return !anyGoroutine("exec.(*realTerminal).MarkEnd") },
 				"the goroutine that writes the end mark to be gone")
 		})
 	}
@@ -435,7 +435,7 @@ func TestTheCloseOfATerminalSetsAWriteOfTheMarkFree(t *testing.T) {
 	}()
 	// The call is in progress until the close of the terminal sets it free; it waits for the writer before it (a
 	// file serializes its writes) as for the master.
-	awaitWithin(t, func() bool { return anyGoroutine("exec.(*realTerminal).markEnd") },
+	awaitWithin(t, func() bool { return anyGoroutine("exec.(*realTerminal).MarkEnd") },
 		"the write of the mark to be waiting")
 
 	if closeErr := terminal.Close(); closeErr != nil {

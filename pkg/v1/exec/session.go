@@ -129,6 +129,22 @@ func (ss *sessionState) stop() {
 	ss.cancel()
 }
 
+// stopUnlessGone is stop for a call that found the session in the manager and may find it gone when it acts. It
+// reports false, and stops nothing, if the session has left the manager (see Manager.leave): a session is either
+// stopped before it leaves, and keeps no output, or has left, and the caller is told. Both are decided under
+// ss.mu, where leave decides them.
+func (ss *sessionState) stopUnlessGone() bool {
+	ss.mu.Lock()
+	if ss.gone {
+		ss.mu.Unlock()
+		return false
+	}
+	ss.requested.Store(true)
+	ss.mu.Unlock()
+	ss.cancel()
+	return true
+}
+
 // endMark returns the end mark of the session, or nil while its process is not over.
 func (ss *sessionState) endMark() []byte {
 	if mark := ss.mark.Load(); mark != nil {
@@ -159,6 +175,7 @@ func (ss *sessionState) waitDone() <-chan struct{} {
 // session as it was, and the output it wrote, for the first attach that comes for it. The manager keeps
 // a bounded number of them, for a bounded time.
 type retainedOutput struct {
+	owner   <-chan struct{} // the done channel of the session that left it: it names the session without keeping it alive
 	session Session
 	output  []byte
 	at      time.Time // when the session ended, by the manager's clock

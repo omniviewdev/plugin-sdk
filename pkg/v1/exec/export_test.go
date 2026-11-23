@@ -75,11 +75,11 @@ func BufferTotal(m *Manager, id string) (uint64, bool) {
 // MarkEnd writes mark to a terminal the way the manager does when the process behind a session is over, and
 // reports whether the terminal can take a mark at all. It returns when the write does.
 func MarkEnd(t Terminal, mark []byte) (supported bool, err error) {
-	terminal, ok := t.(endMarker)
+	terminal, ok := t.(EndMarker)
 	if !ok {
 		return false, nil
 	}
-	return true, terminal.markEnd(mark)
+	return true, terminal.MarkEnd(mark)
 }
 
 // ScanMark runs the output of a terminal, in the chunks it came in, through the scanner of the end mark as the
