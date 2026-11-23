@@ -16,10 +16,10 @@ import (
 
 // serverV2 serves the exec v2 service of a plugin: the targets it registered.
 //
-// This build serves Describe, Options and Open (one interactive session on one stream: open_server.go). Run, RunStream,
-// ListSessions, ReadOutput and EndSession answer Unimplemented with a typed ErrorClassUnsupported refusal, and Describe
-// lists no feature for them (servedFeatures), so a host that asks first never calls them. The server holds the engine that
-// runs the commands (engine.go).
+// This build serves Describe, Options, Open (one interactive session on one stream: open_server.go), Run and RunStream (one
+// bounded run, as one result or as events: run_server.go). ListSessions, ReadOutput and EndSession answer Unimplemented with a
+// typed ErrorClassUnsupported refusal, and Describe lists no feature for them (servedFeatures), so a host that asks first never
+// calls them. The server holds the engine that runs the commands (engine.go), which holds sessions and runs in one id space.
 type serverV2 struct {
 	log logging.Logger
 	reg *targetRegistry
@@ -31,6 +31,11 @@ type serverV2 struct {
 	// openFirstFrameTimeout is how long an Open stream may take to send its open frame. It is a field so that a test can
 	// shorten it.
 	openFirstFrameTimeout time.Duration
+	// run holds the timings and the seams of the bounded runs this server serves (run_server.go); its zero value is the
+	// production setting.
+	run runConfig
+	// inflight counts the calls that hold a command until they have delivered its end: Shutdown waits for them (inflight.go).
+	inflight inflight
 }
 
 func newServerV2(log logging.Logger, reg *targetRegistry, connections func() resourcev2.ConnectionContextProvider) *serverV2 {
@@ -81,7 +86,10 @@ func (s *serverV2) Describe(ctx context.Context, req *execv2.DescribeRequest) (*
 // Options lists the choices of one resource. The request is strict, the target must be registered, and the request is
 // admitted like every resource utility call, for every target: the session context of the call is read, and the
 // connection is leased with the caller's route and the catalog pin checked. The author's callback, when the target has
-// one, runs inside the lease. A target with no callback answers an empty list, once admitted.
+// one, runs inside the lease and is bounded as the callback of a start is (engine.optionsCall): its context ends at the
+// engine's deadline and when the caller gives up, the plugin stops or the connection is retired, it then has the grace to
+// return, and one that does not is given up on, which releases the lease; the callbacks of one target that are in flight,
+// the ones given up on included, are capped. A target with no callback answers an empty list, once admitted.
 func (s *serverV2) Options(ctx context.Context, req *execv2.OptionsRequest) (*execv2.OptionsResponse, error) {
 	if refusal := rejectUnknownFields(req); refusal != nil {
 		return nil, s.refuse(ctx, "Options", refusal)
@@ -117,7 +125,10 @@ func (s *serverV2) Options(ctx context.Context, req *execv2.OptionsRequest) (*ex
 		// admitted (a stale pin, another connection's route, no session) is refused for every target alike, and it is
 		// answered at the same point: where its callback would have returned.
 		if fn := target.target.Options; fn != nil {
-			options, callbackErr = s.callOptions(ctx, fn, bound, ref)
+			options, callbackErr = s.engine.optionsCall(ctx, target, bound, func(callPC *types.PluginContext) optionsAnswer {
+				options, err := s.callOptions(callPC.Context, fn, callPC, ref)
+				return optionsAnswer{options: options, err: err}
+			})
 		}
 		// Read right after the callback returns, before the lease checks the catalog once more and releases: the
 		// choices are as old as the callback's return, however long that check takes.
@@ -168,7 +179,8 @@ func (s *serverV2) Options(ctx context.Context, req *execv2.OptionsRequest) (*ex
 	return &execv2.OptionsResponse{Options: optionsToProto(options), ObservedAtUnixMs: observedAt.UnixMilli()}, nil
 }
 
-// callOptions runs the author's callback; a panic is the author's bug and must not take the plugin down.
+// callOptions runs the author's callback; a panic is the author's bug and must not take the plugin down. A callback that the
+// engine gave up on may panic after the call returned, where nobody could recover it, so the recover is here, at the callback.
 func (s *serverV2) callOptions(ctx context.Context, fn OptionsFunc, pc *types.PluginContext, ref TargetRef) (options []Option, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -177,16 +189,6 @@ func (s *serverV2) callOptions(ctx context.Context, fn OptionsFunc, pc *types.Pl
 		}
 	}()
 	return fn(pc, ref.Reference)
-}
-
-// Run is not served by this build.
-func (s *serverV2) Run(context.Context, *execv2.RunRequest) (*execv2.RunResult, error) {
-	return nil, unsupportedError().status()
-}
-
-// RunStream is not served by this build.
-func (s *serverV2) RunStream(*execv2.RunRequest, execv2.Exec_RunStreamServer) error {
-	return unsupportedError().status()
 }
 
 // ListSessions is not served by this build.

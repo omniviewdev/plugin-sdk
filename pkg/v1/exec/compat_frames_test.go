@@ -92,7 +92,7 @@ func readCompatGolden(t *testing.T) (*compatGolden, []byte) {
 }
 
 // assertCompatDescription checks what a host reads of the compat plugin through Describe: exactly the target
-// compat/echo, the contract version of this build, and no feature (this build serves Describe and Options only).
+// compat/echo, the contract version of this build, and the features this build serves.
 func assertCompatDescription(t *testing.T, d *execv2.DescribeResponse) {
 	t.Helper()
 	if d == nil {
@@ -101,7 +101,10 @@ func assertCompatDescription(t *testing.T, d *execv2.DescribeResponse) {
 	if d.GetContractVersion() != exec.ContractVersion {
 		t.Errorf("contract version = %d, want %d", d.GetContractVersion(), exec.ContractVersion)
 	}
-	if want := []execv2.Feature{execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD}; !slices.Equal(d.GetFeatures(), want) {
+	if want := []execv2.Feature{
+		execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN, execv2.Feature_FEATURE_RUN_STREAM,
+		execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD,
+	}; !slices.Equal(d.GetFeatures(), want) {
 		t.Errorf("features = %v, want %v", d.GetFeatures(), want)
 	}
 	if len(d.GetTargets()) != 1 {

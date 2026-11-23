@@ -268,6 +268,7 @@ const (
 	ErrorReasonSessionUnknown                // NotFound
 	ErrorReasonConsentRequired               // InvalidRequest
 	ErrorReasonInputBacklog                  // Limit
+	ErrorReasonTargetWedged                  // Unavailable: abandoned author code holds the target's places; restart the plugin
 )
 
 var errorReasonPairs = []enumPair[ErrorReason, execv2.ErrorReason]{
@@ -285,6 +286,7 @@ var errorReasonPairs = []enumPair[ErrorReason, execv2.ErrorReason]{
 	{ErrorReasonSessionUnknown, execv2.ErrorReason_ERROR_REASON_SESSION_UNKNOWN},
 	{ErrorReasonConsentRequired, execv2.ErrorReason_ERROR_REASON_CONSENT_REQUIRED},
 	{ErrorReasonInputBacklog, execv2.ErrorReason_ERROR_REASON_INPUT_BACKLOG},
+	{ErrorReasonTargetWedged, execv2.ErrorReason_ERROR_REASON_TARGET_WEDGED},
 }
 
 func (r ErrorReason) toProto() execv2.ErrorReason { return enumToProto(errorReasonPairs, r) }

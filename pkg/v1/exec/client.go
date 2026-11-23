@@ -51,6 +51,27 @@ type Client interface {
 	// The request is sent as it is: the plugin refuses what it does not accept, and a host that wants to know before it
 	// asks reads Describe.
 	Open(ctx context.Context, req *execv2.OpenRequest) (Conn, error)
+	// Run runs one bounded command in a target and returns how it ended: req is the wire's RunRequest, sent as it is (the
+	// plugin refuses what it does not accept, and a host that wants to know before it asks reads Describe). Once the plugin
+	// handed the command to the target, the answer is a RunResult whatever happened to it: every outcome, LOST and FAILED
+	// included, is a result and never an error, and the result is the plugin's message as it came, with its absent facts
+	// absent (an absent exit_code is none, never 0, and an outcome that is not said is never success). An error means the
+	// plugin did not take the command or its answer never arrived: an *Error for a refusal of the exec lane (nothing ran, and
+	// a host may retry only when its class and reason say a retry can help), the resource lane's own error for the
+	// connection and the catalog pin, and an *Error of the transport's own class (CONNECTION, TIMEOUT or CANCELLED) when the
+	// call broke before the result arrived. That last one says nothing about whether the command ran: a host never reads it
+	// as a failure of the command and never retries on its strength. Cancelling ctx cancels the run. A call whose ctx has no
+	// deadline is bounded by the run's own timeout (RunRequest.timeout_ms; an hour when it is zero, the longest a target may
+	// allow) plus the SDK's call timeout.
+	Run(ctx context.Context, req *execv2.RunRequest) (*execv2.RunResult, error)
+	// RunStream is Run with its output as it happens. It returns once the plugin has taken the run and sent its first event,
+	// with the stream open; a refusal is an error and means nothing ran, as for Run. The first event of a run whose start is
+	// not observed (a command that reports nothing and writes nothing) is the end of the run, so a silent command makes
+	// RunStream wait until it ends: a caller that must act meanwhile calls it on a goroutine of its own and cancels ctx to
+	// stop it. The events and the end of the stream are those of RunConn. Cancelling ctx, or closing the conn, cancels the
+	// run. A call whose ctx has no deadline is bounded as Run is, for the whole stream: a run cannot outlast its timeout, so
+	// a stream that does is the plugin's failure.
+	RunStream(ctx context.Context, req *execv2.RunRequest) (RunConn, error)
 }
 
 // Conn is one Open stream as the host sees it: the frames of the plugin in order, and the frames the host sends. It is
@@ -74,5 +95,25 @@ type Conn interface {
 	Send(frame *execv2.ClientFrame) error
 	// Close ends the stream from the host's side and releases it. In this build the session ends with its stream. It may
 	// be called more than once and from any goroutine; it does not wait for the plugin.
+	Close() error
+}
+
+// RunConn is one RunStream as the host sees it: the events of the plugin in order. It is the wire's own message, RunEvent,
+// because a consumer's job is to read the facts exactly. An event kind a reader does not know arrives as a RunEvent whose
+// Event is nil, and the consumer ignores it.
+//
+// A run is RunStarted (once, when the plugin observed the command start: a run that failed or was lost before that has
+// none), Output and RunProgress events, and RunEnded, which is last and carries the result without the payloads (stdout and
+// stderr are empty: they were streamed). Recv is not safe for use from two goroutines at once; Close may be called from any
+// goroutine, at any time.
+type RunConn interface {
+	// Recv returns the next event the plugin sent, in order. The first call returns the event RunStream read to know the
+	// run was taken. After RunEnded, Recv returns io.EOF: the stream ended with status OK and nothing follows. A stream that
+	// ends before RunEnded returns an error of the transport's own (a class, never an end: what became of the command is not
+	// known from it, and it is never read as a failure of the command), and so does one the plugin ended with status OK and
+	// no RunEnded, which is the plugin's breach of the contract: Recv never returns io.EOF for a run it did not see end.
+	Recv() (*execv2.RunEvent, error)
+	// Close cancels the run if it has not ended, ends the stream from the host's side and releases it. It may be called
+	// more than once and from any goroutine; it does not wait for the plugin. A conn that is not read to its end is closed.
 	Close() error
 }

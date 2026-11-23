@@ -25,6 +25,7 @@ const (
 	metricAbandoned        = "omniview.plugin.self.sdk.exec.abandoned"
 	metricFrames           = "omniview.plugin.self.sdk.exec.frames.ignored"
 	metricAbandonedRefused = "omniview.plugin.self.sdk.exec.abandoned.refused"
+	metricOptionsRefused   = "omniview.plugin.self.sdk.exec.options.refused"
 )
 
 // The closed words of the violations metric: what an author's function did that the contract forbids. Each is also the
@@ -47,23 +48,25 @@ const (
 	violationOptionsContract = "options_contract"  // Target.Options broke its contract during a start
 	violationOptionsHung     = "options_hung"      // Target.Options did not return within its deadline and the grace
 	violationClassifyHung    = "classify_hung"     // Target.Classify did not return within its deadline
+	violationDidNotReturn    = "did_not_return"    // a function did not return within the kill wait after a kill
 )
 
 // telemetry holds the instruments of one engine. Instruments are registered once per registry: building a telemetry on a
 // registry that already holds them returns the same instruments, so engines share their series, as the plugin's engines
 // are one plugin. The counts that the two gauges report are shared the same way (see gaugeCounts).
 type telemetry struct {
-	sessions   *sdkdiag.Gauge
-	ended      *sdkdiag.Counter
-	bytes      *sdkdiag.Counter
-	dropped    *sdkdiag.Counter
-	stalls     *sdkdiag.Counter
-	violations *sdkdiag.Counter
-	abandoned  *sdkdiag.Gauge
-	frames     *sdkdiag.Counter
-	refused    *sdkdiag.Counter
-	counts     *gaugeCounts
-	own        atomic.Int64 // the functions this engine gave up on that have not returned; the gauge counts every engine of the registry
+	sessions       *sdkdiag.Gauge
+	ended          *sdkdiag.Counter
+	bytes          *sdkdiag.Counter
+	dropped        *sdkdiag.Counter
+	stalls         *sdkdiag.Counter
+	violations     *sdkdiag.Counter
+	abandoned      *sdkdiag.Gauge
+	frames         *sdkdiag.Counter
+	refused        *sdkdiag.Counter
+	refusedOptions *sdkdiag.Counter
+	counts         *gaugeCounts
+	own            atomic.Int64 // the functions this engine gave up on that have not returned; the gauge counts every engine of the registry
 }
 
 // gaugeCounts is what the two gauges of a registry report. The counts belong to the registry and not to an engine: engines
@@ -108,6 +111,7 @@ func newTelemetry(r *sdkdiag.Registry) *telemetry {
 	t.abandoned, _ = r.Gauge(metricAbandoned, "1")
 	t.frames, _ = r.Counter(metricFrames, "1")
 	t.refused, _ = r.Counter(metricAbandonedRefused, "1")
+	t.refusedOptions, _ = r.Counter(metricOptionsRefused, "1")
 	return t
 }
 
@@ -165,6 +169,10 @@ func (t *telemetry) frameIgnored(kind string) {
 
 // abandonedRefused counts a start refused because abandoned author code holds the places of its target.
 func (t *telemetry) abandonedRefused() { t.refused.Add(1) }
+
+// optionsRefused counts a call of the Options RPC refused because the target has as many Options callbacks in flight as the SDK
+// allows.
+func (t *telemetry) optionsRefused() { t.refusedOptions.Add(1) }
 
 // traffic adds what a session moved since it last reported: the bytes its function wrote and the host sent, the bytes
 // the output queue overwrote (and why), and the writes that had to wait for a reader.

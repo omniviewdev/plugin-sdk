@@ -47,15 +47,16 @@ import (
 //
 // What the engine does with a function that breaks the contract is decided in one place and tested as a set: it returns
 // before the command ended (the session ends at the return and later writes fail), writes after it returned (refused,
-// counted, logged once), ignores its context (abandoned after the grace, counted in the abandoned gauge), panics (a
-// Failed end of ErrorClassInternal, never the plugin), never reads Proc.Resize (nothing blocks; a warning after a wait),
-// returns an exit 0 for a connection it lost (read as the transport's word where the SDK has evidence), or reports its
-// start twice or too late (refused). Each is either loud (a log line, a diagnostics count, a violation on the result) or
-// contained, and most are both.
+// counted, logged once), ignores its context (abandoned after the grace, after the kill wait for a kill, or after the
+// shutdown grace for a plugin that is stopping: counted in the abandoned gauge, logged at error, and its place held until it
+// returns), panics (a Failed end of ErrorClassInternal, never the plugin), never reads Proc.Resize (nothing blocks; a warning
+// after a wait), returns an exit 0 for a connection it lost (read as the transport's word where the SDK has evidence), or
+// reports its start twice or too late (refused). Each is either loud (a log line, a diagnostics count, a violation on the
+// result) or contained, and most are both.
 
 const (
 	// defaultCloseGrace is how long a graceful end waits for the function to return after its context was cancelled before
-	// the engine gives up on it. A kill does not wait.
+	// the engine gives up on it. A kill waits defaultKillWait, and a plugin that is stopping defaultShutdownGrace.
 	defaultCloseGrace = 5 * time.Second
 	// defaultResizeUnreadAfter is how long a size may wait for a function that declared Resize and does not read it before
 	// the engine says so in the log.
@@ -69,6 +70,18 @@ const (
 	// defaultClassifyDeadline is how long an author's Classify function may take before the engine gives up on it: it maps
 	// an error to a class and has no context to honor, so it is given no grace.
 	defaultClassifyDeadline = 5 * time.Second
+	// defaultKillWait is how long a kill waits for the function to return before the engine gives up on it, counted from the
+	// kill. A function that honors its cancelled context returns within it: it is then not abandoned and holds no place when
+	// the command's end is delivered. One that does not is given up on at the end of it, never at the end of the grace.
+	defaultKillWait = 50 * time.Millisecond
+	// defaultShutdownGrace is how long each function has to return after its context was cancelled when the engine closes
+	// (the plugin is stopping), instead of the close grace: the host stops a plugin two seconds after it asks, so a function
+	// that ignores its context must not be waited for longer than the plugin has.
+	defaultShutdownGrace = time.Second
+	// defaultOptionsInFlight is how many Options callbacks of one target the unary Options RPC may have in flight, the ones the
+	// engine gave up on and that have not returned included. A call that would be one more is refused UNAVAILABLE: a unary
+	// call has no session to hold a place with, so this is what bounds the callbacks that never return.
+	defaultOptionsInFlight = 32
 )
 
 // commandKind is the shape a command was started for.
@@ -105,6 +118,11 @@ type engineConfig struct {
 	// optionsDeadline and classifyDeadline bound the author's Options callback and Classify function.
 	optionsDeadline  time.Duration
 	classifyDeadline time.Duration
+	// killWait and shutdownGrace bound the wait for a function that was told to stop by a kill and by the engine's close, and
+	// optionsInFlight how many Options callbacks of one target the unary Options RPC may have in flight. Zero is the default.
+	killWait        time.Duration
+	shutdownGrace   time.Duration
+	optionsInFlight int
 }
 
 // engine runs the commands of one plugin.
@@ -124,9 +142,27 @@ type engine struct {
 	// function.
 	afterAbandonDecision func(abandoned bool)
 
-	// mu guards heldLogged, the last time each target's refusal for abandoned places was logged.
-	mu         sync.Mutex
-	heldLogged map[string]time.Time
+	// afterCallReturned is a test seam, nil in production: it runs on the goroutine of a bounded call of author code (an Options
+	// callback, a Classify) right after the call returned and was marked as returned, and before the engine hears of it: the
+	// moment at which a wait that runs out is decided against a call that has already returned.
+	afterCallReturned func()
+
+	// logs decides when the lines that a host could provoke without end are written (a refusal for abandoned places, an
+	// abandoned function, a hung Options callback): the first one, and then at most one a second for each target.
+	logs logLimit
+
+	// closingC is closed when the engine begins to close: the functions that are waited for then have the shutdown grace.
+	closingC  chan struct{}
+	closeOnce sync.Once
+
+	// flightMu guards flights, what each target has of the unary Options RPC in flight (abandon.go).
+	flightMu sync.Mutex
+	flights  map[*registeredTarget]*optionsFlight
+
+	// now and newTimer are test seams, nil in production. now is the clock of the log limits, and newTimer makes the timers of
+	// the waits for author code (the grace, the kill wait, the shutdown grace), so that a test decides when each runs out.
+	now      func() time.Time
+	newTimer func(d time.Duration) (c <-chan time.Time, stop func())
 
 	// afterEndEmitted is a test seam, nil in production: it runs on the registry's finisher goroutine right after a command's
 	// Done is closed and before its id is released, which is the window between Done and Gone that a test holds open.
@@ -156,7 +192,16 @@ func newEngine(cfg engineConfig) *engine {
 	if cfg.classifyDeadline <= 0 {
 		cfg.classifyDeadline = defaultClassifyDeadline
 	}
-	e := &engine{cfg: cfg, log: cfg.log, tel: newTelemetry(cfg.diagnostics)}
+	if cfg.killWait <= 0 {
+		cfg.killWait = defaultKillWait
+	}
+	if cfg.shutdownGrace <= 0 {
+		cfg.shutdownGrace = defaultShutdownGrace
+	}
+	if cfg.optionsInFlight <= 0 {
+		cfg.optionsInFlight = defaultOptionsInFlight
+	}
+	e := &engine{cfg: cfg, log: cfg.log, tel: newTelemetry(cfg.diagnostics), closingC: make(chan struct{})}
 	e.reg = session.New(session.Config[*command]{OnEnd: e.onEnd})
 	return e
 }
@@ -170,9 +215,13 @@ func (e *engine) setLogger(log logging.Logger) {
 	e.log = log
 }
 
-// close refuses every later start, ends every command (graceful: each function is cancelled and given the grace) and waits
-// until each has ended and emitted its end, or until ctx ends. It may be called again and by many goroutines.
-func (e *engine) close(ctx context.Context) error { return e.reg.Close(ctx) }
+// close refuses every later start, ends every command (graceful: each function is cancelled and given the shutdown grace, not
+// the close grace) and waits until each has ended and emitted its end, or until ctx ends. It may be called again and by many
+// goroutines. A function that is already being waited for when it is called has at most the shutdown grace left from then.
+func (e *engine) close(ctx context.Context) error {
+	e.closeOnce.Do(func() { close(e.closingC) })
+	return e.reg.Close(ctx)
+}
 
 // live returns the ids of the commands the engine holds, sorted.
 func (e *engine) live() []string {
@@ -286,8 +335,11 @@ func admissionGroup(p startParams) (group string, limit int, reason ErrorReason)
 	return "session\x00" + key, info.Session.MaxSessions, ErrorReasonTooManySessions
 }
 
-// admissionRefusal types an error of the registry's admission. A target whose places the abandoned calls hold is unavailable,
-// not full: it has fewer sessions than it declares, and the host must not read "too many sessions" into it.
+// admissionRefusal types an error of the registry's admission. A target whose places the abandoned calls hold is not full: it has
+// fewer sessions than it declares, and the host must not read "too many sessions" into it. It is wedged: functions that were
+// given up on and have not returned keep what they hold until they return, which they may never do, so it is UNAVAILABLE with
+// the reason TARGET_WEDGED ("restart the plugin"), which a host tells from a shutdown (UNAVAILABLE, no reason) and from a
+// full target (LIMIT).
 func admissionRefusal(err error, tooMany ErrorReason) error {
 	switch {
 	case errors.Is(err, session.ErrClosed):
@@ -297,7 +349,7 @@ func admissionRefusal(err error, tooMany ErrorReason) error {
 	case errors.Is(err, session.ErrLimit):
 		return NewError(ErrorClassLimit, tooMany, err)
 	case errors.Is(err, session.ErrHeld):
-		return &Error{Class: ErrorClassUnavailable, Err: err}
+		return NewError(ErrorClassUnavailable, ErrorReasonTargetWedged, err)
 	}
 	return &Error{Class: ErrorClassInternal, Err: err}
 }
@@ -307,20 +359,11 @@ func admissionRefusal(err error, tooMany ErrorReason) error {
 // is a host that would otherwise write a line each.
 func (e *engine) refusedForAbandoned(ctx context.Context, p startParams, group string) {
 	e.tel.abandonedRefused()
-	e.mu.Lock()
-	last, now := e.heldLogged[group], time.Now()
-	say := now.Sub(last) >= time.Second
-	if say {
-		if e.heldLogged == nil {
-			e.heldLogged = map[string]time.Time{}
-		}
-		e.heldLogged[group] = now
+	if !e.logs.allow("held\x00"+group, e.clock()) {
+		return
 	}
-	e.mu.Unlock()
-	if say {
-		e.log.Warnw(ctx, "exec start refused: the target's places are held by functions that were abandoned",
-			"provider", p.Target.info.Provider, "type", p.Target.info.Type, "held", e.reg.Held(group), "kind", p.Kind.String())
-	}
+	e.log.Warnw(ctx, "exec start refused: the target's places are held by functions that were abandoned",
+		"provider", p.Target.info.Provider, "type", p.Target.info.Type, "held", e.reg.Held(group), "kind", p.Kind.String())
 }
 
 // contextRefusal is the refusal of a start whose context ended: ErrorClassTimeout for a deadline, ErrorClassCancelled otherwise.
@@ -361,6 +404,7 @@ type command struct {
 	target  *registeredTarget
 	route   resourcev2.AccessRoute
 	request Request
+	group   string // the group the command is counted in among its target's commands (admissionGroup)
 	// replayBytes is the output queue the host asked for a lossy session; zero is the target's default.
 	replayBytes int
 	created     time.Time
@@ -424,8 +468,8 @@ type commandResult struct {
 	// Output is the most the engine can say about the output: COMPLETE only for a status the target relayed with nothing
 	// lost or refused; a consumer that did not deliver every byte says less.
 	Output execv2.OutputCompleteness
-	// Abandoned is true when the engine did not wait for the function to return: it ignored its cancelled context for the
-	// grace, or the end was a kill.
+	// Abandoned is true when the engine did not wait for the function to return: it ignored its cancelled context for the grace
+	// or, after a kill, for the kill wait.
 	Abandoned bool
 	// Violations are the ways the function broke the contract, one for each kind, in the order they happened.
 	Violations []string
@@ -434,8 +478,9 @@ type commandResult struct {
 // newCommand builds the command of an admitted start. It runs under the registry's lock: it allocates and nothing else.
 // The output queue is made at the hand-over, when the capabilities that decide its policy are known.
 func (e *engine) newCommand(p startParams) *command {
+	group, _, _ := admissionGroup(p)
 	c := &command{
-		e: e, id: p.ID, kind: p.Kind, target: p.Target, route: p.Route, replayBytes: p.ReplayBytes,
+		e: e, id: p.ID, kind: p.Kind, group: group, target: p.Target, route: p.Route, replayBytes: p.ReplayBytes,
 		request:      cloneRequest(p.Request),
 		created:      time.Now(),
 		admitted:     make(chan error, 1),
@@ -675,9 +720,14 @@ func (c *command) await(lease context.Context, returned <-chan functionOutcome, 
 }
 
 // drain is the wait for a function whose session the SDK has ended: it cancels the function's context, releases a function
-// that a full queue holds in Write, and waits for it to return. A graceful end waits for the grace; a kill does not. A
-// function that has not returned by then is abandoned: the command ends without it, and its place stays taken until it
-// returns.
+// that a full queue holds in Write, and waits for it to return. How long is decided by the bounds that apply (graceWait). A
+// graceful end waits for the grace. A kill waits for the kill wait, counted from the kill, and never for the grace: a function
+// that honors its cancelled context returns within it, is not abandoned, and holds no place when the command's end is
+// delivered, so that a host that kills a session and starts another at once is not refused for the first. A kill that comes
+// while the grace runs leaves the grace running and adds the kill wait, so the wait ends at the first of the two. An engine that
+// is closing gives each function the shutdown grace instead of the grace. A function that has not returned when the first bound
+// runs out is abandoned: the command ends without it, the engine says so in the log and records the violation, and the place
+// of the command stays taken until the function returns.
 func (c *command) drain(returned <-chan functionOutcome, call *authorCall, cancelAuthor func()) (functionOutcome, bool) {
 	c.out.beginEnding()
 	if c.in != nil {
@@ -686,24 +736,37 @@ func (c *command) drain(returned <-chan functionOutcome, call *authorCall, cance
 		c.in.Close()
 	}
 	cancelAuthor()
-	var graceOver <-chan time.Time
-	if !c.killed() {
-		timer := time.NewTimer(c.e.cfg.closeGrace)
-		defer timer.Stop()
-		graceOver = timer.C
-	}
-	select {
-	case out := <-returned:
-		return out, false
-	case <-c.killC:
-	case <-graceOver:
-		c.violate(violation{violationIgnoredCancel, "the function did not return within the grace after its context was cancelled: the command ends without it"})
+	wait := c.e.newGraceWait(c.e.cfg.closeGrace, c.killed())
+	defer wait.stop()
+	const graceDetail = "the function did not return within the grace after its context was cancelled: the command ends without it"
+	const killDetail = "the function did not return within the kill wait after its context was cancelled: the command ends without it"
+	killC, closingC := c.killC, c.e.closingC
+	var word, detail string
+	for word == "" {
+		select {
+		case out := <-returned:
+			return out, false
+		case <-killC:
+			killC = nil
+			wait.killed()
+		case <-closingC:
+			closingC = nil
+			wait.closing()
+		case <-wait.kill:
+			word, detail = violationDidNotReturn, killDetail
+		case <-wait.grace:
+			word, detail = violationIgnoredCancel, graceDetail
+		case <-wait.shutdown:
+			word, detail = violationIgnoredCancel, graceDetail
+		}
 	}
 	abandon := call.giveUp()
 	if hook := c.e.afterAbandonDecision; hook != nil {
 		hook(abandon)
 	}
 	if abandon {
+		// The violation is recorded only when the engine gave up: a function that returned as the wait ran out is not blamed for it.
+		c.violate(violation{word, detail})
 		return functionOutcome{}, true
 	}
 	return <-returned, false
@@ -806,20 +869,17 @@ func (e *engine) onEnd(entry *session.Entry[*command]) {
 // something the options do not offer, or omits a required option that has no default, is a refusal: Request.Selection
 // holds exactly the choices the options declared.
 //
-// The callback is author code that runs while the start waits, so it is bounded: it has the engine's deadline (and its
-// context says so), and when its context ends for any reason (the deadline, a caller that gave up, a shutdown, the
-// connection's retirement) it has the grace to return. A callback that does not is given up on: the start is refused, the
-// lease is released, and the goroutine keeps the start's place until it returns (abandon.go).
+// The callback is author code that runs while the start waits, so it is bounded as the callback of the Options RPC is
+// (boundedOptions): it has the engine's deadline (and its context says so), and when its context ends for any reason (the
+// deadline, a caller that gave up, a shutdown, the connection's retirement) it has the grace to return, the shutdown grace when
+// the plugin is stopping. A callback that does not is given up on: the start is refused, the lease is released, and the
+// goroutine keeps the start's place until it returns (abandon.go).
 func (c *command) resolveOptions(bound *types.PluginContext) (Capabilities, error) {
 	info := &c.target.info
 	var options []Option
 	if fn := c.target.target.Options; fn != nil {
-		callCtx, cancel := context.WithTimeout(bound.Context, c.e.cfg.optionsDeadline)
-		defer cancel()
-		callPC := *bound
-		callPC.Context = callCtx
-		answer, ok := callBounded(c, callCtx, c.e.cfg.closeGrace, func() optionsAnswer {
-			options, err := callOptions(callCtx, c.e.log, fn, &callPC, c.request.Ref)
+		answer, ok := c.e.boundedOptions(c.e.newAuthorCall(c.entry), bound, func(callPC *types.PluginContext) optionsAnswer {
+			options, err := callOptions(callPC.Context, c.e.log, fn, callPC, c.request.Ref)
 			return optionsAnswer{options: options, err: err}
 		})
 		if !ok {
@@ -860,6 +920,19 @@ type optionsAnswer struct {
 	err     error
 }
 
+// boundedOptions runs an Options callback, which run calls with the context that the callback gets, as author code that cannot be
+// stopped but by returning (callBounded): its context is bound's with the engine's deadline, and it ends when that does, when
+// bound's does, or when the engine closes, and the callback has the grace to return after that. call is the account of the
+// callback, which says what the callback holds when the engine gives up on it. It is the one bound that a start and the Options
+// RPC share. It reports false when the callback was given up on.
+func (e *engine) boundedOptions(call *authorCall, bound *types.PluginContext, run func(*types.PluginContext) optionsAnswer) (optionsAnswer, bool) {
+	callCtx, cancel := context.WithTimeout(bound.Context, e.cfg.optionsDeadline)
+	defer cancel()
+	callPC := *bound
+	callPC.Context = callCtx
+	return callBounded(call, callCtx, e.cfg.closeGrace, func() optionsAnswer { return run(&callPC) })
+}
+
 // callbackRefusal is the refusal of a start whose Options callback was stopped by its context or given up on: when the SDK
 // ended the start (a shutdown, a caller that gave up) the refusal says so; when the connection's lease was cancelled under
 // the callback the connection was retired; otherwise it was the engine's own deadline.
@@ -891,7 +964,7 @@ func (c *command) guardedClassify() ClassifyFunc {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), c.e.cfg.classifyDeadline)
 		defer cancel()
-		got, ok := callBounded(c, ctx, 0, func() (answer classified) {
+		got, ok := callBounded(c.e.newAuthorCall(c.entry), ctx, 0, func() (answer classified) {
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					answer = classified{panicked: recovered}
@@ -1082,7 +1155,11 @@ func (w commandWriter) Write(p []byte) (int, error) {
 // ---------------------------------------------------------------------------------------------------------------
 
 // violate records a way the function broke the contract. A kind is logged and counted once for a command: the log says
-// what to fix, the count says how many commands broke the rule, and a function in a loop cannot flood either.
+// what to fix, the count says how many commands broke the rule, and a function in a loop cannot flood either. The two kinds
+// that say a function was given up on (ignored_cancel after the grace, did_not_return after a kill) are written at error, at the
+// moment it is given up on, and for each target at most once a second: a host that kills and starts again as fast as it can,
+// against a function that returns a moment after the engine gave up on it, would otherwise write a line for each command. Every
+// one is still counted, and listed in the result of its command.
 func (c *command) violate(v violation) {
 	c.mu.Lock()
 	first := !c.violationSet[v.kind]
@@ -1096,7 +1173,13 @@ func (c *command) violate(v violation) {
 	}
 	c.e.tel.violation(v.kind)
 	level := c.log.Warnw
-	if v.kind == violationPanic || v.kind == violationIgnoredCancel {
+	switch v.kind {
+	case violationPanic:
+		level = c.log.Errorw
+	case violationIgnoredCancel, violationDidNotReturn:
+		if !c.e.logs.allow("abandoned\x00"+c.group, c.e.clock()) {
+			return
+		}
 		level = c.log.Errorw
 	}
 	level(context.Background(), "an exec function broke the contract", "violation", v.kind, "detail", v.detail)
@@ -1407,6 +1490,15 @@ func (e *engine) configure(cfg exechook.EngineConfig) {
 	}
 	if cfg.ClassifyDeadline > 0 {
 		e.cfg.classifyDeadline = cfg.ClassifyDeadline
+	}
+	if cfg.KillWait > 0 {
+		e.cfg.killWait = cfg.KillWait
+	}
+	if cfg.ShutdownGrace > 0 {
+		e.cfg.shutdownGrace = cfg.ShutdownGrace
+	}
+	if cfg.OptionsInFlight > 0 {
+		e.cfg.optionsInFlight = cfg.OptionsInFlight
 	}
 }
 

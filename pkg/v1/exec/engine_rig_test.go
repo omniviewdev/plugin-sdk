@@ -53,6 +53,11 @@ type engineRigConfig struct {
 	// optionsDeadline and classifyDeadline shorten how long the engine waits for an Options callback and a Classify function
 	// before it gives up on them.
 	optionsDeadline, classifyDeadline time.Duration
+	// killWait shortens (or, for a test that has to see a function return after a kill, lengthens) how long a kill waits for a
+	// function to return before the engine gives up on it; shutdownGrace is the grace of a function when the engine closes.
+	killWait, shutdownGrace time.Duration
+	// optionsInFlight is how many Options callbacks of one target the unary Options RPC may have in flight.
+	optionsInFlight int
 }
 
 // newEngineRig builds an engine for targets and closes it when the test ends: every command ended and removed, within a
@@ -72,6 +77,7 @@ func newEngineRig(t testing.TB, cfg engineRigConfig, targets ...exec.Target) *en
 		Logger: logger, Diagnostics: r.diag,
 		CloseGrace: cfg.grace, ResizeUnreadAfter: cfg.resizeUnread, MetricsEvery: cfg.metricsEvery,
 		OptionsDeadline: cfg.optionsDeadline, ClassifyDeadline: cfg.classifyDeadline,
+		KillWait: cfg.killWait, ShutdownGrace: cfg.shutdownGrace, OptionsInFlight: cfg.optionsInFlight,
 	}
 	if !cfg.noConnections {
 		engineCfg.Connections = r.conns

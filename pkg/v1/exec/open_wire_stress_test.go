@@ -309,7 +309,7 @@ func (s *stressWorker) iterate() {
 			s.opened[kind.name]++
 			_ = again.Close()
 			s.known[id] = false // the session just opened is ending, and its end is not read
-		case proofRefusal(err) == "LIMIT/TOO_MANY_SESSIONS" || proofRefusal(err) == "UNAVAILABLE" && kind.name == "stuck":
+		case proofRefusal(err) == "LIMIT/TOO_MANY_SESSIONS" || proofRefusal(err) == "UNAVAILABLE/TARGET_WEDGED" && kind.name == "stuck":
 		default:
 			s.problem("%s (%s): the id was refused right after its Ended was read: %s", id, kind.name, proofRefusal(err))
 		}
@@ -327,7 +327,7 @@ func (s *stressWorker) refused(err error, kind *stressKind, id string, own, bad 
 	switch {
 	case bad && strings.HasPrefix(name, "INVALID_REQUEST"):
 	case name == "LIMIT/TOO_MANY_SESSIONS":
-	case name == "UNAVAILABLE" && kind.name == "stuck":
+	case name == "UNAVAILABLE/TARGET_WEDGED" && kind.name == "stuck":
 		// the places of the kind are held by functions that were abandoned, until the gate lets them return
 	case name == "CONFLICT/SESSION_EXISTS":
 		if own && s.known[id] {

@@ -48,6 +48,16 @@ func ConformanceResource(id string) ConformanceOption {
 // counts what it lost, a blocking one ends COMPLETE). They open sessions with Client.Open against a fake target that carries
 // the Info you declared and a script of its own.
 //
+// The bounded run over the wire (the same subtest, run when the build lists FEATURE_RUN, and what RunStream adds when it lists
+// FEATURE_RUN_STREAM): case 15 (Run: an empty argv and every bound refused and never clamped, the exit as the target reported it,
+// a timeout and a cancel that end the run, the capture of a head and a tail with an exact account per stream, valid_utf8 of the
+// bytes as returned, the limit on runs in flight and the id of a run), the Run part of case 13 (class, reason and facts round-trip,
+// and a canary in the local cause of an error or in a panic appears nowhere), the Run part of case 16 (a stream that ends with no
+// status ends a run OUTCOME_LOST, never exit 0), case 27 (a failure after the command was handed to the target is a result with
+// OUTCOME_FAILED, the partial output and its completeness, while a refusal before it is a status), the pair test P1 (Run equals
+// Open without a terminal collected to the end) and P3 (the engine over gRPC equals the engine in process). They skip for a target
+// that declares no runs.
+//
 // In this process (a subtest "in process"): case 9 (every kind of end is typed, a command has one, nothing follows it), case
 // 14 (a retired connection ends its commands), case 28 (remote_may_survive per kind of end), the pair test P5 (ending twice,
 // after the exit and during the start give the same end) and the stress harness (Stress), against the real engine.
@@ -58,10 +68,10 @@ func ConformanceResource(id string) ConformanceOption {
 // -short, or as long as OMNIVIEW_LIFECYCLE_HAMMER says). A target that declares neither sessions nor runs has nothing to run,
 // so they skip.
 //
-// Skipped with their step: the wire part of cases 9, 12, 13, 14, 16, 17, 23, 25, 26, 28 and of P5 (the in-process parts of 9,
-// 14, 28 and P5 run), every case of the steps that are not served yet (6 to 8, 10, 11, 15, 19 to 22, 24, 27 and the other
-// pair tests). A build that lists a feature in Describe whose cases are not written fails instead of skipping, so a feature
-// cannot be served without being checked.
+// Skipped with their step: the wire part of cases 9, 12, 14, 17, 23, 25, 26, 28 and of P5, the Open part of cases 13 and 16 (the
+// in-process parts of 9, 14, 28 and P5 and the Run parts of 13 and 16 run), every case of the steps that are not served yet (6 to
+// 8, 10, 11, 19 to 22, 24 and the other pair tests). A build that lists a feature in Describe whose cases are not written fails
+// instead of skipping, so a feature cannot be served without being checked.
 func Conformance(t *testing.T, target exec.Target, opts ...ConformanceOption) {
 	t.Helper()
 	cfg := conformanceConfig{id: "conformance-target"}
@@ -303,6 +313,16 @@ type engineCase struct {
 	// wire runs the case against a plugin served over a transport, with a fake that carries the author's declared description. It
 	// is nil for a case that has none.
 	wire func(t checkT, target exec.Target, env *wireEnv)
+	// wireNeeds are the features that the build must list for wire to run; none means FEATURE_SESSION, which serves Open.
+	wireNeeds []execv2.Feature
+}
+
+// wireFeatures returns the features the build must list for the wire body of the case to run.
+func (c engineCase) wireFeatures() []execv2.Feature {
+	if len(c.wireNeeds) == 0 {
+		return []execv2.Feature{execv2.Feature_FEATURE_SESSION}
+	}
+	return c.wireNeeds
 }
 
 // caseT is the part of testing.T that an engine case uses to say how it ended.
@@ -328,18 +348,20 @@ func (c engineCase) conclude(t caseT, served []execv2.Feature) {
 	t.Skipf("step %s: the SDK build does not serve %s yet", c.step, c.requires)
 }
 
-// The names of the two cases that carry no number, which the bodies are found by.
+// The names of the cases that carry no number, which the bodies are found by.
 const (
-	pairEndingName = "pair P5: ending twice, after the exit and during the start give the same final Ended"
-	stressName     = "stress: N workers loop open, input, resize, signal, detach, attach, end, run, cancel; the end-state invariant holds"
+	pairRunOpenName    = "pair P1: Run(argv) equals Open(argv, tty=false) collected to the end"
+	pairEngineWireName = "pair P3: the engine over gRPC equals the engine in process"
+	pairEndingName     = "pair P5: ending twice, after the exit and during the start give the same final Ended"
+	stressName         = "stress: N workers loop open, input, resize, signal, detach, attach, end, run, cancel; the end-state invariant holds"
 )
 
 // engineCases is the skeleton of the suite: the plan's numbered cases 1 to 24 and the cases 25 to 28 that the review of
 // the contract added, the pair tests P1 to P6 and the stress harness, each with the step that writes it and the feature
-// that step makes the build list. Cases 9, 14, 28, P5 and the stress run in process now: the step of each names what is
-// left of it, which needs the wire.
+// that step makes the build list. Cases 9, 14, 28, P5 and the stress run in process now, and cases 1 to 5, 13 (the Run part), 15,
+// 16 (the Run part), 18, 27 and the pairs P1 and P3 over the wire: the step of each case that has one names what is left of it.
 func engineCases() []engineCase {
-	run, management := execv2.Feature_FEATURE_RUN, execv2.Feature_FEATURE_SESSION_MANAGEMENT
+	management := execv2.Feature_FEATURE_SESSION_MANAGEMENT
 	// A row whose step is "" is complete: its bodies are all of it. A row whose feature is FEATURE_UNSPECIFIED is one whose step
 	// lists no feature of its own (a step of the host, or the wire body of a case that is not written yet): it always skips with
 	// its step.
@@ -357,10 +379,10 @@ func engineCases() []engineCase {
 		{10, "detach and reattach: replay plus live is one uninterrupted transcript; a tombstone is readable", "X3c", management},
 		{11, "the lease ends a detached session at the fake-clock timeout", "X3c", management},
 		{12, "limits: too many sessions, input too large, env or cwd unsupported are typed", "X3a (the wire body)", none},
-		{13, "errors: class, reason and facts round-trip and a canary in Error.Err appears nowhere", "X3a (the Open wire body) and X2b (the Run part)", none},
+		{13, "errors: class, reason and facts round-trip and a canary in Error.Err appears nowhere", "X3a (the Open wire body)", none},
 		{14, "a retired connection ends its sessions", "X3a (the wire body)", none},
-		{15, "Run: empty argv, bounds, timeout, cancel, capture accounting, valid_utf8, concurrency", "X2b", run},
-		{16, "lost: a stream that ends with no status ends Lost, never Exited 0, and a run ends OUTCOME_LOST", "X3a (the Open wire body) and X2b (the Run part)", none},
+		{15, "Run: empty argv, bounds, timeout, cancel, capture accounting, valid_utf8, concurrency", "", none},
+		{16, "lost: a stream that ends with no status ends Lost, never Exited 0, and a run ends OUTCOME_LOST", "X3a (the Open wire body)", none},
 		{17, "exit source and report round-trip; a Signaled from a CODE target is a contract violation", "X3a (the wire body)", none},
 		{18, "completeness: LOSSY drains into the ring and counts; PROPAGATES blocks and ends COMPLETE", "", none},
 		{19, "marks: nonce trust, command ids, D without C, a foreign 133, and the nonce appears nowhere", "X4a", execv2.Feature_FEATURE_MARKS},
@@ -371,11 +393,11 @@ func engineCases() []engineCase {
 		{24, "mode_reset: the exact bytes with FEATURE_MODES and the fixed full reset without it, present and empty for a session without a terminal; the step pins the fixed string in its own test", "X4a", execv2.Feature_FEATURE_MODES},
 		{25, "every stream that can still receive frames ends with exactly one of Ended or Detached; a session has at most one Ended, none when it ends while no stream is attached (its end is the tombstone's), never to a detached or superseded stream (X3a: one stream, X3c: attach, supersede, detach)", "X3a (the one-stream wire body) and X3c", none},
 		{26, "capabilities narrow per session: exec and attach on one Pod kind get different ExitReport and HostRestart in Opened (from Choice.capabilities), not in Started, which narrows only what is learned at run time; a widening is clamped, a choice's and a Started's alike", "X3a (the wire body)", none},
-		{27, "a run failure after the command was handed to the target is a RunResult with OUTCOME_FAILED carrying partial output, completeness, start_observed and remote_may_survive; a refusal before the hand-off is a status; a host never retries a failed or lost end", "X2b", run},
+		{27, "a run failure after the command was handed to the target is a RunResult with OUTCOME_FAILED carrying partial output, completeness, start_observed and remote_may_survive; a refusal before the hand-off is a status; a host never retries a failed or lost end", "", none},
 		{28, "remote_may_survive per end kind: Lost true, process exit and signal false, transport exit and failure absent, closed false only when the session's Kill is TERMINATES; absent is never read as no (X2a: the end mapping, X3a: sessions)", "X3a (the wire body)", none},
-		{0, "pair P1: Run(argv) equals Open(argv, tty=false) collected to the end", "X2b", run},
+		{0, pairRunOpenName, "", none},
 		{0, "pair P2: Open, detach, attach(from_offset) equals one uninterrupted Open", "X3c", management},
-		{0, "pair P3: the engine over gRPC equals the engine in process", "X2b", run},
+		{0, pairEngineWireName, "", none},
 		{0, "pair P4: the host's local provider equals the engine with a pty-backed fake", "H1a-2", none},
 		{0, pairEndingName, "X3a (the wire body)", none},
 		{0, "pair P6: the legacy adapter equals the new lane on the same fake remote, for the bytes", "H1a-1", none},
@@ -383,7 +405,7 @@ func engineCases() []engineCase {
 	}
 	cases := make([]engineCase, len(rows))
 	for i, row := range rows {
-		cases[i] = engineCase{caseRow: row, inProcess: inProcessBody(row), wire: wireBody(row)}
+		cases[i] = engineCase{caseRow: row, inProcess: inProcessBody(row), wire: wireBody(row), wireNeeds: wireFeatures(row)}
 	}
 	return cases
 }
@@ -407,27 +429,53 @@ func inProcessBody(row caseRow) func(t checkT, target exec.Target, env *inProces
 
 // wireBody is the body that drives a plugin over a transport for a row, or nil for a row that has none yet.
 func wireBody(row caseRow) func(t checkT, target exec.Target, env *wireEnv) {
-	switch row.number {
-	case 1:
+	switch {
+	case row.number == 1:
 		return caseWireOpened
-	case 2:
+	case row.number == 2:
 		return caseWireInput
-	case 3:
+	case row.number == 3:
 		return caseWireOutput
-	case 4:
+	case row.number == 4:
 		return caseWireSlowConsumer
-	case 5:
+	case row.number == 5:
 		return caseWireIsolation
-	case 18:
+	case row.number == 13:
+		return caseWireErrorsRun
+	case row.number == 15:
+		return caseWireRun
+	case row.number == 16:
+		return caseWireLostRun
+	case row.number == 18:
 		return caseWireCompleteness
+	case row.number == 27:
+		return caseWireRunFailure
+	case row.name == pairRunOpenName:
+		return casePairRunOpen
+	case row.name == pairEngineWireName:
+		return casePairEngineWire
 	}
 	return nil
 }
 
+// wireFeatures is what the build must list for the wire body of a row to run: FEATURE_SESSION for the cases that open a session,
+// FEATURE_RUN for the cases of the bounded run, and both for the pair that runs a command both ways.
+func wireFeatures(row caseRow) []execv2.Feature {
+	session, run := execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN
+	switch {
+	case row.name == pairRunOpenName:
+		return []execv2.Feature{session, run}
+	case row.number == 13, row.number == 15, row.number == 16, row.number == 27, row.name == pairEngineWireName:
+		return []execv2.Feature{run}
+	}
+	return []execv2.Feature{session}
+}
+
 // listEngineCases lists the engine cases as subtests. A case that has bodies runs them first: the one that runs the engine in this
 // process in a subtest "in process", and the one that drives a plugin over a transport in a subtest "over the wire" (skipped when
-// the build does not list FEATURE_SESSION), each passing or failing. What is left of the case is skipped while the build does not list
-// the feature its step makes it list, and a build that lists the feature without that written fails the case (see conclude).
+// the build does not list the features that the case drives: FEATURE_SESSION for Open, FEATURE_RUN for Run), each passing or
+// failing. What is left of the case is skipped while the build does not list the feature its step makes it list, and a build that
+// lists the feature without that written fails the case (see conclude).
 func listEngineCases(t *testing.T, target exec.Target, env *inProcessEnv, wire *wireEnv, describe func(t testing.TB) *execv2.DescribeResponse) {
 	t.Helper()
 	listCases(t, engineCases(), target, env, wire, describe)
@@ -448,8 +496,10 @@ func listCases(t *testing.T, cases []engineCase, target exec.Target, env *inProc
 			features := describe(t).GetFeatures()
 			if c.wire != nil {
 				t.Run("over the wire", func(t *testing.T) {
-					if !slices.Contains(features, execv2.Feature_FEATURE_SESSION) {
-						t.Skipf("the SDK build does not list FEATURE_SESSION: it does not serve Open")
+					for _, need := range c.wireFeatures() {
+						if !slices.Contains(features, need) {
+							t.Skipf("the SDK build does not list %s: it does not serve what this case drives", need)
+						}
 					}
 					c.wire(t, target, wire)
 				})

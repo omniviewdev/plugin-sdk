@@ -104,16 +104,28 @@ func (p *Plugin) BindConnectionContextProvider(provider resourcev2.ConnectionCon
 	p.v2.mu.Unlock()
 }
 
-// Shutdown stops the v2 lane: it refuses every later start, ends every session the plugin holds with the cause "plugin
-// shutdown" (each attached stream receives its Ended with Closed by PLUGIN_SHUTDOWN, and each author's function is
-// cancelled and given its grace), and waits until every session has ended and been removed, or until ctx ends, and then
-// returns ctx's error. The SDK calls it when the plugin's server has stopped; it may be called more than once and from many
-// goroutines. A plugin with no targets has nothing to stop. The legacy lane is not touched.
+// Shutdown stops the v2 lane. It refuses every later start and ends every session and every run the plugin holds with the cause
+// "plugin shutdown": each author's function is cancelled and has the shutdown grace (1 s by default) to return, shorter than the
+// grace of an ordinary close because a host kills a plugin 2 s after it asks it to stop, and a function that has not returned by
+// then is given up on. It waits until every command has ended and been removed, and until the call that carries each one's end to
+// its host has delivered it and returned (the handler of a session's stream has sent its Ended, Closed by PLUGIN_SHUTDOWN; the call
+// of a run has handed its result to the transport), or until ctx ends, and then returns ctx's error.
+//
+// The SDK calls it twice. First when a host asks go-plugin's controller to stop the server, which is what Client.Kill does first:
+// the controller's call is held until Shutdown has returned or 1.5 s have passed, so that each stream receives its Ended before
+// the server stops. Then when Serve returns, whichever way the server stopped: for a plugin that stopped itself, the functions
+// are cancelled and given the same shutdown grace, though no stream is left to receive an end. A host that kills the process
+// without asking, or a plugin that crashes, ends nothing this way, and the host reads its streams as broken (CONNECTION). It may
+// be called more than once and from many goroutines. A plugin with no targets has nothing to stop. The legacy lane is not touched.
 func (p *Plugin) Shutdown(ctx context.Context) error {
 	if p == nil || p.v2 == nil {
 		return nil
 	}
-	return p.v2.server.engine.close(ctx)
+	server := p.v2.server
+	if err := server.engine.close(ctx); err != nil {
+		return err
+	}
+	return server.inflight.wait(ctx)
 }
 
 // GRPCServer registers the exec RPCs on s: the legacy service backed by Impl (unless the plugin serves only

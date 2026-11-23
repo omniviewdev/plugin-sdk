@@ -33,6 +33,21 @@ func TestTheDefaultGraceIsFiveSeconds(t *testing.T) {
 	}
 }
 
+// The bounds that docs/exec.md prints for the start of a session and the end of a command: how long a stream may take to send its
+// open frame, how long an Options callback may take before its context ends, and how long a Classify function may take (the review
+// of #90 found the first and the last unpinned: a change of either was seen by no test).
+func TestTheOpenFirstFrameOptionsAndClassifyBoundsAreTheOnesTheDocsPrint(t *testing.T) {
+	if defaultOpenFirstFrameTimeout != 10*time.Second {
+		t.Errorf("defaultOpenFirstFrameTimeout = %v, the docs say 10s", defaultOpenFirstFrameTimeout)
+	}
+	if defaultOptionsDeadline != 30*time.Second {
+		t.Errorf("defaultOptionsDeadline = %v, the docs say 30s", defaultOptionsDeadline)
+	}
+	if defaultClassifyDeadline != 5*time.Second {
+		t.Errorf("defaultClassifyDeadline = %v, the docs say 5s", defaultClassifyDeadline)
+	}
+}
+
 // An engine built with no timings uses the defaults: a zero is "the default", never "no wait".
 func TestAnEngineWithNoTimingsUsesTheDefaultGraceAndTheOtherDefaults(t *testing.T) {
 	cfg := newEngine(engineConfig{}).cfg
@@ -44,5 +59,8 @@ func TestAnEngineWithNoTimingsUsesTheDefaultGraceAndTheOtherDefaults(t *testing.
 	}
 	if cfg.metricsEvery != defaultMetricsEvery {
 		t.Errorf("metricsEvery = %v, want the default %v", cfg.metricsEvery, defaultMetricsEvery)
+	}
+	if cfg.optionsDeadline != defaultOptionsDeadline || cfg.classifyDeadline != defaultClassifyDeadline {
+		t.Errorf("optionsDeadline = %v and classifyDeadline = %v, want the defaults %v and %v", cfg.optionsDeadline, cfg.classifyDeadline, defaultOptionsDeadline, defaultClassifyDeadline)
 	}
 }

@@ -15,13 +15,15 @@ const defaultCallTimeout = 30 * time.Second
 
 // clientV2 is the host's gRPC client of the exec v2 service of one plugin.
 //
-// This build calls Describe and Options. Open, Run, RunStream, ListSessions, ReadOutput and EndSession are not part
-// of the Client interface yet: the engine step that serves them adds them with their machinery.
+// This build calls Describe and Options (this file), Open (open_client.go), and Run and RunStream (run_client.go).
+// ListSessions, ReadOutput and EndSession are not part of the Client interface yet: the engine step that serves them adds
+// them with their machinery.
 type clientV2 struct {
 	rpc execv2.ExecClient
 	log logging.Logger
-	// callTimeout is the deadline of a call whose context has none. It is a field, and not the constant, so that a
-	// test can prove it is applied.
+	// callTimeout is the deadline of a unary call whose context has none, the wait of an Open for Opened, and the time a
+	// Run or RunStream is allowed beyond its own timeout. It is a field, and not the constant, so that a test can prove it
+	// is applied.
 	callTimeout time.Duration
 }
 

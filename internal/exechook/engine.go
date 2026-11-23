@@ -33,6 +33,13 @@ type EngineConfig struct {
 	// and for its Classify function at the end of a command before it gives up on them. Zero is the default.
 	OptionsDeadline  time.Duration
 	ClassifyDeadline time.Duration
+	// KillWait is how long a kill waits for the function to return before the engine gives up on it, and ShutdownGrace how
+	// long each function has to return when the engine closes (instead of CloseGrace). Zero is the default.
+	KillWait      time.Duration
+	ShutdownGrace time.Duration
+	// OptionsInFlight is how many Options callbacks of one target the unary Options RPC may have in flight, those the engine
+	// gave up on included. Zero is the default.
+	OptionsInFlight int
 }
 
 // Engine is the exec engine of a plugin, driven in process.

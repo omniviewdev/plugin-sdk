@@ -267,7 +267,17 @@ func (p *Plugin) SetLogLevel(level logging.Level) {
 // It panics if the effective SDK protocol version exceeds the signed 32-bit
 // lifecycle wire range, rather than advertising a wrapped version. Nonpositive
 // manifest versions continue to use CurrentProtocolVersion.
-func (p *Plugin) Serve() {
+//
+// A host that stops the plugin with go-plugin's Client.Kill first calls the controller's Shutdown, which stops the server at
+// once. The server Serve hands go-plugin holds that one call until the capabilities have ended what they hold (the exec
+// lane's sessions, whose streams then receive their typed end) or until capabilityPreStopBound has passed, and then lets it
+// run. Once the server has stopped, whichever way it was stopped, the capabilities are told again: a plugin that stops
+// itself has its sessions ended too, and a second telling after the first is a no-op.
+func (p *Plugin) Serve() { p.serveWith(plugin.Serve) }
+
+// serveWith is Serve with go-plugin's entry point given, so that a test serves the plugin in process, through go-plugin's
+// test mode, and still runs everything else that Serve does.
+func (p *Plugin) serveWith(serve func(*plugin.ServeConfig)) {
 	p.profiler = p.startProfiling()
 	if p.hostConnections == nil {
 		p.hostConnections = &hostconnections.Binding{}
@@ -290,17 +300,31 @@ func (p *Plugin) Serve() {
 	}
 
 	p.registerLifecycle()
-	plugin.Serve(&plugin.ServeConfig{
+	serve(&plugin.ServeConfig{
 		HandshakeConfig: p.meta.GenerateHandshakeConfig(),
 		VersionedPlugins: map[int]plugin.PluginSet{
 			p.effectiveProtocolVersion(): p.pluginMap,
 		},
-		GRPCServer: func(opts []grpc.ServerOption) *grpc.Server {
-			return GRPCServerFactoryWithLogger(p.Log, opts)
-		},
+		GRPCServer: p.grpcServer,
 	})
 	p.shutdownCapabilities(capabilityShutdownBound)
 }
+
+// grpcServer builds the server go-plugin serves the plugin with: the SDK's middleware and wire limits, and the hold on the
+// controller's Shutdown that shutdownBeforeStop describes. The interceptor is added before the SDK's own, so it runs first.
+func (p *Plugin) grpcServer(opts []grpc.ServerOption) *grpc.Server {
+	return GRPCServerFactoryWithLogger(p.Log, append(opts, grpc.ChainUnaryInterceptor(p.shutdownBeforeStop(capabilityPreStopBound))))
+}
+
+// controllerShutdownMethod is the method of go-plugin's controller service that stops the plugin's gRPC server. A host's
+// Client.Kill calls it first, and when the call has returned waits 2 s for the process to exit before it kills it. The
+// controller answers it by stopping the server at once: no stream is ended and no call is waited for.
+const controllerShutdownMethod = "/plugin.GRPCController/Shutdown"
+
+// capabilityPreStopBound is how long the plugin holds the controller's Shutdown while its capabilities end what they hold (see
+// shutdownBeforeStop). The host is blocked in that call for as long, and then waits its 2 s for the process to exit, so the
+// bound is short.
+const capabilityPreStopBound = 1500 * time.Millisecond
 
 // capabilityShutdownBound is how long the plugin waits for its capabilities to end what they hold once its server has stopped.
 const capabilityShutdownBound = 10 * time.Second
@@ -312,7 +336,7 @@ type capabilityShutdown interface {
 	Shutdown(ctx context.Context) error
 }
 
-// shutdownCapabilities tells each capability that holds work, in the order of their names, that the plugin has stopped, and
+// shutdownCapabilities tells each capability that holds work, in the order of their names, that the plugin is stopping, and
 // waits for each at most as long as bound allows in all: one that does not return is given up on, and the plugin goes on
 // stopping.
 func (p *Plugin) shutdownCapabilities(bound time.Duration) {
@@ -326,6 +350,20 @@ func (p *Plugin) shutdownCapabilities(bound time.Duration) {
 		if err := capability.Shutdown(ctx); err != nil {
 			p.Log.Warn(context.Background(), "capability shutdown did not complete", logging.String("capability", name), logging.Error(err))
 		}
+	}
+}
+
+// shutdownBeforeStop returns the unary interceptor that holds the controller's Shutdown, the call that stops the server, until
+// the capabilities have been told that the plugin is stopping and have ended what they hold, or until bound has passed, and then
+// lets it run, whatever became of them. A stream that a capability still serves can so receive its last frame, as the exec
+// lane's sessions receive their typed end, instead of the broken connection that a stopped server leaves it. No other method is
+// touched.
+func (p *Plugin) shutdownBeforeStop(bound time.Duration) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if info.FullMethod == controllerShutdownMethod {
+			p.shutdownCapabilities(bound)
+		}
+		return handler(ctx, req)
 	}
 }
 
