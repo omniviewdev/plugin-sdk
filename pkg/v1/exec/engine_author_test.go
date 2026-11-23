@@ -170,7 +170,7 @@ func TestTheEnginesCloseIsNotHeldUpByAFunctionThatIgnoresItsContext(t *testing.T
 	}
 }
 
-// A panic in the function is the end of its session, Failed with ClassInternal, and never the plugin's: the panic value
+// A panic in the function is the end of its session, Failed with ErrorClassInternal, and never the plugin's: the panic value
 // and the stack are in the plugin's log, and nowhere else.
 func TestAPanicInTheFunctionFailsItsSessionAndNothingElse(t *testing.T) {
 	canary := "CANARY-panic-value-5d3f"
@@ -463,7 +463,7 @@ func TestACanaryInAnErrorNeverLeavesTheEngineInTheEndTheResultOrTheMeasurements(
 	rig := newEngineRig(t, engineRigConfig{}, engTarget(func(_ context.Context, p *exec.Proc) (exec.Exit, error) {
 		_, _ = p.Stdout.Write([]byte("out"))
 		return exec.Exit{}, fmt.Errorf("wrapped: %w", &exec.Error{
-			Class: exec.ClassForbidden, Reason: exec.ReasonTargetDenied, Message: "you may not exec in this pod",
+			Class: exec.ErrorClassForbidden, Reason: exec.ErrorReasonTargetDenied, Message: "you may not exec in this pod",
 			Err: errors.New(canary), Facts: exec.ErrorFacts{SelectionName: "container", SelectionValue: "app"},
 		})
 	}))
@@ -532,7 +532,7 @@ func TestTheTargetsClassifyMapsItsOwnErrorsAndTheSDKTheRest(t *testing.T) {
 	})
 	target.Classify = func(err error) (*exec.Error, bool) {
 		if strings.Contains(err.Error(), "not found in $PATH") {
-			return &exec.Error{Class: exec.ClassNotFound, Reason: exec.ReasonNoSuchExecutable, Facts: exec.ErrorFacts{Program: "nosuch"}, Err: err}, true
+			return &exec.Error{Class: exec.ErrorClassNotFound, Reason: exec.ErrorReasonNoSuchExecutable, Facts: exec.ErrorFacts{Program: "nosuch"}, Err: err}, true
 		}
 		return nil, false
 	}

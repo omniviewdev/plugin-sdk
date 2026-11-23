@@ -22,7 +22,7 @@ func init() {
 			return nil, err
 		}
 		if plugin.v2 == nil {
-			return nil, &Error{Class: ClassUnsupported, Err: errNoTargets}
+			return nil, &Error{Class: ErrorClassUnsupported, Err: errNoTargets}
 		}
 		plugin.BindConnectionContextProvider(cfg.Connections)
 		server := plugin.v2.server
@@ -54,16 +54,7 @@ func (h *hookEngine) Open(ctx context.Context, wire *execv2.OpenRequest) (execho
 	if open.Start == nil {
 		return nil, unsupportedRequest("an attach is not served by this build")
 	}
-	start := open.Start
-	cmd, err := h.server.engine.start(ctx, startParams{
-		ID:          open.SessionID,
-		Kind:        kindSession,
-		Target:      target,
-		Route:       start.Target.Route,
-		Request:     start.request(target),
-		Stdin:       true,
-		ReplayBytes: start.ReplayBytes,
-	})
+	cmd, err := h.server.startSession(ctx, open, target)
 	if err != nil {
 		return nil, err
 	}
@@ -145,6 +136,8 @@ func (h hookCommand) Resize(seq uint32, cols, rows uint16) exechook.ResizeDispos
 func (h hookCommand) Close(kill bool) { h.c.Close(session.CauseRequested, kill) }
 
 func (h hookCommand) Done() <-chan struct{} { return h.c.Done() }
+
+func (h hookCommand) Gone() <-chan struct{} { return h.c.Gone() }
 
 func (h hookCommand) Result() exechook.Result {
 	r := h.c.Result()

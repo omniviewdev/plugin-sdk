@@ -264,9 +264,9 @@ func TestARefusalIsNamedByItsClassAndReasonAndAnythingElseIsSaidToBeUnknown(t *t
 		err  error
 		want string
 	}{
-		{&exec.Error{Class: exec.ClassUnavailable}, "UNAVAILABLE"},
-		{&exec.Error{Class: exec.ClassLimit, Reason: exec.ReasonTooManySessions}, "LIMIT/TOO_MANY_SESSIONS"},
-		{fmt.Errorf("wrapped: %w", &exec.Error{Class: exec.ClassConflict, Reason: exec.ReasonSessionExists}), "CONFLICT/SESSION_EXISTS"},
+		{&exec.Error{Class: exec.ErrorClassUnavailable}, "UNAVAILABLE"},
+		{&exec.Error{Class: exec.ErrorClassLimit, Reason: exec.ErrorReasonTooManySessions}, "LIMIT/TOO_MANY_SESSIONS"},
+		{fmt.Errorf("wrapped: %w", &exec.Error{Class: exec.ErrorClassConflict, Reason: exec.ErrorReasonSessionExists}), "CONFLICT/SESSION_EXISTS"},
 		{resourcev2.NewError("CONNECTION_ERROR", "not started"), "resource:CONNECTION_ERROR"},
 		{errors.New("boom"), "unknown"},
 	} {
@@ -277,13 +277,13 @@ func TestARefusalIsNamedByItsClassAndReasonAndAnythingElseIsSaidToBeUnknown(t *t
 }
 
 func TestAStartAfterCloseIsHeldToBeingRefusedAsUnavailable(t *testing.T) {
-	if v := checkRefusedAfterClose(&exec.Error{Class: exec.ClassUnavailable}); v != "" {
+	if v := checkRefusedAfterClose(&exec.Error{Class: exec.ErrorClassUnavailable}); v != "" {
 		t.Errorf("a refusal as UNAVAILABLE is a violation: %s", v)
 	}
 	if v := checkRefusedAfterClose(nil); !strings.Contains(v, "admitted") {
 		t.Errorf("a start that was admitted after Close: %q, want it said to be admitted", v)
 	}
-	if v := checkRefusedAfterClose(&exec.Error{Class: exec.ClassLimit}); !strings.Contains(v, "LIMIT") || !strings.Contains(v, "UNAVAILABLE") {
+	if v := checkRefusedAfterClose(&exec.Error{Class: exec.ErrorClassLimit}); !strings.Contains(v, "LIMIT") || !strings.Contains(v, "UNAVAILABLE") {
 		t.Errorf("a start refused as LIMIT after Close: %q, want both classes named", v)
 	}
 	if v := checkRefusedAfterClose(errors.New("boom")); !strings.Contains(v, "unknown") {

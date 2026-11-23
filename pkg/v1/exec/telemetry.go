@@ -16,13 +16,15 @@ import (
 // every value is a short word from a closed list below (never an id, a name, an argument or an error text), and a
 // metric has at most a few series. The metric names are the engine's own, under omniview.plugin.self.sdk.exec.
 const (
-	metricSessions   = "omniview.plugin.self.sdk.exec.sessions"
-	metricEnded      = "omniview.plugin.self.sdk.exec.session.ended"
-	metricBytes      = "omniview.plugin.self.sdk.exec.bytes"
-	metricDropped    = "omniview.plugin.self.sdk.exec.dropped_bytes"
-	metricStalls     = "omniview.plugin.self.sdk.exec.stalls"
-	metricViolations = "omniview.plugin.self.sdk.exec.violations"
-	metricAbandoned  = "omniview.plugin.self.sdk.exec.abandoned"
+	metricSessions         = "omniview.plugin.self.sdk.exec.sessions"
+	metricEnded            = "omniview.plugin.self.sdk.exec.session.ended"
+	metricBytes            = "omniview.plugin.self.sdk.exec.bytes"
+	metricDropped          = "omniview.plugin.self.sdk.exec.dropped_bytes"
+	metricStalls           = "omniview.plugin.self.sdk.exec.stalls"
+	metricViolations       = "omniview.plugin.self.sdk.exec.violations"
+	metricAbandoned        = "omniview.plugin.self.sdk.exec.abandoned"
+	metricFrames           = "omniview.plugin.self.sdk.exec.frames.ignored"
+	metricAbandonedRefused = "omniview.plugin.self.sdk.exec.abandoned.refused"
 )
 
 // The closed words of the violations metric: what an author's function did that the contract forbids. Each is also the
@@ -43,6 +45,8 @@ const (
 	violationResizeUnread    = "resize_unread"     // the function never read the sizes it was sent
 	violationClassifyPanic   = "classify_panic"    // Target.Classify panicked
 	violationOptionsContract = "options_contract"  // Target.Options broke its contract during a start
+	violationOptionsHung     = "options_hung"      // Target.Options did not return within its deadline and the grace
+	violationClassifyHung    = "classify_hung"     // Target.Classify did not return within its deadline
 )
 
 // telemetry holds the instruments of one engine. Instruments are registered once per registry: building a telemetry on a
@@ -56,6 +60,8 @@ type telemetry struct {
 	stalls     *sdkdiag.Counter
 	violations *sdkdiag.Counter
 	abandoned  *sdkdiag.Gauge
+	frames     *sdkdiag.Counter
+	refused    *sdkdiag.Counter
 	counts     *gaugeCounts
 	own        atomic.Int64 // the functions this engine gave up on that have not returned; the gauge counts every engine of the registry
 }
@@ -100,6 +106,8 @@ func newTelemetry(r *sdkdiag.Registry) *telemetry {
 	t.stalls, _ = r.Counter(metricStalls, "1")
 	t.violations, _ = r.Counter(metricViolations, "1")
 	t.abandoned, _ = r.Gauge(metricAbandoned, "1")
+	t.frames, _ = r.Counter(metricFrames, "1")
+	t.refused, _ = r.Counter(metricAbandonedRefused, "1")
 	return t
 }
 
@@ -149,6 +157,14 @@ func (t *telemetry) abandonedChanged(delta int64) {
 func (t *telemetry) violation(reason string) {
 	t.violations.Add(1, sdkdiag.Attr{Key: sdkdiag.KeyReason, Value: reason})
 }
+
+// frameIgnored counts a frame of the host that this build does not serve, by the closed word of its kind.
+func (t *telemetry) frameIgnored(kind string) {
+	t.frames.Add(1, sdkdiag.Attr{Key: sdkdiag.KeyEvent, Value: kind})
+}
+
+// abandonedRefused counts a start refused because abandoned author code holds the places of its target.
+func (t *telemetry) abandonedRefused() { t.refused.Add(1) }
 
 // traffic adds what a session moved since it last reported: the bytes its function wrote and the host sent, the bytes
 // the output queue overwrote (and why), and the writes that had to wait for a reader.

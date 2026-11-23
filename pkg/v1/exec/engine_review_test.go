@@ -92,7 +92,7 @@ func TestAClassifierThatPanicsOnAnOptionsErrorIsContainedAndCounted(t *testing.T
 	target.Classify = func(error) (*exec.Error, bool) { panic("classifier bug") }
 	rig := newEngineRig(t, engineRigConfig{}, target)
 	_, err := rig.open("s1")
-	if refusal := refusalOf(t, err); refusal.Class != exec.ClassInternal {
+	if refusal := refusalOf(t, err); refusal.Class != exec.ErrorClassInternal {
 		t.Fatalf("refused with %v, want INTERNAL", refusal.Class)
 	}
 	if calls.Load() != 0 {
@@ -108,7 +108,7 @@ func TestTheRawCauseOfAFailureIsLoggedOnlyAtError(t *testing.T) {
 	fail := func(context.Context, *exec.Proc) (exec.Exit, error) { return exec.Exit{}, errors.New(canary) }
 	classified := engTarget(fail)
 	classified.Classify = func(err error) (*exec.Error, bool) {
-		return exec.NewError(exec.ClassNotFound, exec.ReasonTargetGone, err), true
+		return exec.NewError(exec.ErrorClassNotFound, exec.ErrorReasonTargetGone, err), true
 	}
 	for name, target := range map[string]exec.Target{"a failure of the target": engTarget(fail), "a classified failure": classified} {
 		rig := newEngineRig(t, engineRigConfig{}, target)

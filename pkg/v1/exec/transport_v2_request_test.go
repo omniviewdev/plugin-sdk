@@ -442,7 +442,7 @@ var rqtRunFields = rqtFields[runRequest]{
 // the environment, the working directory and the labels. The accepted row of each bound is its boundary value and
 // the refused row is the first value beyond it.
 func rqtSharedBounds[T any](f rqtFields[T]) []rqtBound[T] {
-	invalid := ClassInvalidRequest
+	invalid := ErrorClassInvalidRequest
 	rows := []rqtBound[T]{
 		{name: "valid"},
 
@@ -542,7 +542,7 @@ func rqtSharedBounds[T any](f rqtFields[T]) []rqtBound[T] {
 // Start alone (its argv may be empty and has a total of 64 KiB, its env a total of 64 KiB, its size, its features and
 // its integration).
 func rqtStartBounds() []rqtBound[startRequest] {
-	invalid, unsupported := ClassInvalidRequest, ClassUnsupported
+	invalid, unsupported := ErrorClassInvalidRequest, ErrorClassUnsupported
 	own := []rqtBound[startRequest]{
 		{name: "argv: empty (the target's default)", change: func(s *startRequest) { s.Argv = nil }},
 		{name: "argv: total of 64 KiB", change: func(s *startRequest) { s.Argv = rqtArgvOfSize(64 << 10) }},
@@ -581,7 +581,7 @@ func rqtStartBounds() []rqtBound[startRequest] {
 		}},
 		{name: "integration: argv wrapper without consent", change: func(s *startRequest) {
 			s.Integration = &integrationRequest{Mode: IntegrationArgvWrapper}
-		}, class: invalid, reason: ReasonConsentRequired},
+		}, class: invalid, reason: ErrorReasonConsentRequired},
 	}
 	// Every feature that is not requestable is refused, whatever it is.
 	for _, f := range rqtAllFeatures {
@@ -601,7 +601,7 @@ func rqtStartBounds() []rqtBound[startRequest] {
 // RunRequest alone (the ids, an argv that is required and has the target's total, an env with the target's total,
 // the stdin and the policies).
 func rqtRunBounds() []rqtBound[runRequest] {
-	invalid := ClassInvalidRequest
+	invalid := ErrorClassInvalidRequest
 	own := []rqtBound[runRequest]{
 		{name: "request id: empty", change: func(r *runRequest) { r.RequestID = "" }},
 		{name: "request id: 128 bytes", change: func(r *runRequest) { r.RequestID = rqtBytes(128) }},
@@ -676,7 +676,7 @@ func TestStartBounds(t *testing.T) {
 				row.change(&start)
 			}
 			got, refusal := admitStart(rqtWireOfStart(start), target, served)
-			if row.class == ClassUnspecified {
+			if row.class == ErrorClassUnspecified {
 				require.Nil(t, refusal)
 				require.Empty(t, rqtStartViolation(got, target), "an admitted Start is within every bound")
 				return
@@ -699,7 +699,7 @@ func TestRunRequestBounds(t *testing.T) {
 				row.change(&run)
 			}
 			got, admitted, refusal := admitRunRequest(rqtWireOfRun(run), reg, served)
-			if row.class == ClassUnspecified {
+			if row.class == ErrorClassUnspecified {
 				require.Nil(t, refusal)
 				require.Same(t, target, admitted)
 				require.Empty(t, rqtRunViolation(got, target), "an admitted RunRequest is within every bound")
@@ -731,7 +731,7 @@ func rqtMaxRun(tg *Target) {
 // target may declare at most: the base target's limits sit below them and cannot show a ceiling that is too low.
 // The first value beyond each ceiling is refused, never clamped.
 func TestRunRequestCeilingsOfTheContract(t *testing.T) {
-	invalid := ClassInvalidRequest
+	invalid := ErrorClassInvalidRequest
 	rows := []struct {
 		name   string
 		change func(*execv2.RunRequest)
@@ -743,7 +743,7 @@ func TestRunRequestCeilingsOfTheContract(t *testing.T) {
 		{name: "env total of 256 KiB", change: func(r *execv2.RunRequest) { r.Env = rqtListOf(rqtEnvOfSize(256 << 10)) }},
 		{name: "env total of 256 KiB + 1", change: func(r *execv2.RunRequest) { r.Env = rqtListOf(rqtEnvOfSize(256<<10 + 1)) }, class: invalid},
 		{name: "stdin of 1 MiB", change: func(r *execv2.RunRequest) { r.Stdin = make([]byte, 1<<20) }},
-		{name: "stdin of 1 MiB + 1", change: func(r *execv2.RunRequest) { r.Stdin = make([]byte, 1<<20+1) }, class: ClassLimit, reason: ReasonInputTooLarge},
+		{name: "stdin of 1 MiB + 1", change: func(r *execv2.RunRequest) { r.Stdin = make([]byte, 1<<20+1) }, class: ErrorClassLimit, reason: ErrorReasonInputTooLarge},
 		{name: "a timeout of an hour", change: func(r *execv2.RunRequest) { r.TimeoutMs = 3_600_000 }},
 		{name: "a timeout of an hour and a millisecond", change: func(r *execv2.RunRequest) { r.TimeoutMs = 3_600_001 }, class: invalid},
 		{name: "stdout of 1 MiB", change: func(r *execv2.RunRequest) { r.Output.MaxStdoutBytes = 1 << 20 }},
@@ -759,7 +759,7 @@ func TestRunRequestCeilingsOfTheContract(t *testing.T) {
 			wire.Output = &execv2.OutputLimits{}
 			row.change(wire)
 			got, admitted, refusal := admitRunRequest(wire, reg, rqtServed())
-			if row.class == ClassUnspecified {
+			if row.class == ErrorClassUnspecified {
 				require.Nil(t, refusal)
 				require.Same(t, target, admitted)
 				require.Empty(t, rqtRunViolation(got, target))
@@ -783,7 +783,7 @@ func TestRunRequestCeilingsOfTheContract(t *testing.T) {
 				wire := rqtWireRun()
 				change(wire)
 				_, _, refusal := admitRunRequest(wire, reg, rqtServed())
-				rqtRequireRefusal(t, refusal, invalid, ReasonUnspecified)
+				rqtRequireRefusal(t, refusal, invalid, ErrorReasonUnspecified)
 			})
 		}
 	})
@@ -797,7 +797,7 @@ func TestRunRequestCeilingsOfTheContract(t *testing.T) {
 				wire := rqtWireStart()
 				change(wire)
 				_, refusal := admitStart(wire, target, rqtServed())
-				rqtRequireRefusal(t, refusal, invalid, ReasonUnspecified)
+				rqtRequireRefusal(t, refusal, invalid, ErrorReasonUnspecified)
 			})
 		}
 	})
@@ -1044,16 +1044,16 @@ func rqtRequireNoCanary(t *testing.T, err error, canary string) {
 // admission bounds every list before it calls them: they are the contract's bounds, written once, and hold for any
 // caller.
 func TestRequestValidatorsBoundTheirCountsOnTheirOwn(t *testing.T) {
-	invalid := ClassInvalidRequest
+	invalid := ErrorClassInvalidRequest
 	t.Run("argv", func(t *testing.T) {
 		total, refusal := validateRequestArgv(rqtRepeat(1024, "a"), 64<<10, false)
 		require.Nil(t, refusal)
 		require.Equal(t, 1024, total)
 		total, refusal = validateRequestArgv(rqtRepeat(1025, "a"), 64<<10, false)
 		require.Zero(t, total)
-		rqtRequireRefusal(t, refusal, invalid, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, invalid, ErrorReasonUnspecified)
 		_, refusal = validateRequestArgv(nil, 64<<10, true)
-		rqtRequireRefusal(t, refusal, invalid, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, invalid, ErrorReasonUnspecified)
 		_, refusal = validateRequestArgv(nil, 64<<10, false)
 		require.Nil(t, refusal, "a Start's empty argv is the target's default")
 	})
@@ -1063,11 +1063,11 @@ func TestRequestValidatorsBoundTheirCountsOnTheirOwn(t *testing.T) {
 		require.Equal(t, rqtEnvSize(rqtEnvOfCount(256)), total)
 		total, refusal = validateRequestEnv(rqtEnvOfCount(257), 64<<10)
 		require.Zero(t, total)
-		rqtRequireRefusal(t, refusal, invalid, ReasonUnspecified)
+		rqtRequireRefusal(t, refusal, invalid, ErrorReasonUnspecified)
 	})
 	t.Run("labels", func(t *testing.T) {
 		require.Nil(t, validateRequestLabels(rqtLabelsOfCount(16)))
-		rqtRequireRefusal(t, validateRequestLabels(rqtLabelsOfCount(17)), invalid, ReasonUnspecified)
+		rqtRequireRefusal(t, validateRequestLabels(rqtLabelsOfCount(17)), invalid, ErrorReasonUnspecified)
 	})
 }
 
@@ -1084,14 +1084,14 @@ func TestValidateRequestIntegration(t *testing.T) {
 		{name: "no mode, no consent", requested: false, known: false, consent: false},
 		{name: "no mode, with consent", requested: false, known: false, consent: true},
 		{name: "a known mode with consent", requested: true, known: true, consent: true},
-		{name: "a known mode without consent", requested: true, known: true, consent: false, class: ClassInvalidRequest, reason: ReasonConsentRequired},
-		{name: "an unknown mode with consent", requested: true, known: false, consent: true, class: ClassUnsupported},
-		{name: "an unknown mode without consent: consent first", requested: true, known: false, consent: false, class: ClassInvalidRequest, reason: ReasonConsentRequired},
+		{name: "a known mode without consent", requested: true, known: true, consent: false, class: ErrorClassInvalidRequest, reason: ErrorReasonConsentRequired},
+		{name: "an unknown mode with consent", requested: true, known: false, consent: true, class: ErrorClassUnsupported},
+		{name: "an unknown mode without consent: consent first", requested: true, known: false, consent: false, class: ErrorClassInvalidRequest, reason: ErrorReasonConsentRequired},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			refusal := validateRequestIntegration(row.requested, row.known, row.consent)
-			if row.class == ClassUnspecified {
+			if row.class == ErrorClassUnspecified {
 				require.Nil(t, refusal)
 				return
 			}

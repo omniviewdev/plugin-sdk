@@ -232,7 +232,7 @@ func refusalName(err error) string {
 	var execErr *exec.Error
 	if errors.As(err, &execErr) {
 		name := execErr.Class.String()
-		if execErr.Reason != exec.ReasonUnspecified {
+		if execErr.Reason != exec.ErrorReasonUnspecified {
 			name += "/" + execErr.Reason.String()
 		}
 		return name
@@ -250,7 +250,7 @@ func refusalClass(err error) (exec.ErrorClass, bool) {
 	if errors.As(err, &execErr) {
 		return execErr.Class, true
 	}
-	return exec.ClassUnspecified, false
+	return exec.ErrorClassUnspecified, false
 }
 
 // checkRefusedAfterClose holds the result of a start made after Close returned to what the engine promises: it is refused,
@@ -259,7 +259,7 @@ func checkRefusedAfterClose(err error) string {
 	if err == nil {
 		return "a command was admitted after Close returned: a closed engine must refuse every start"
 	}
-	if class, ok := refusalClass(err); !ok || class != exec.ClassUnavailable {
+	if class, ok := refusalClass(err); !ok || class != exec.ErrorClassUnavailable {
 		return fmt.Sprintf("a start after Close returned was refused as %s, want UNAVAILABLE", refusalName(err))
 	}
 	return ""

@@ -145,7 +145,7 @@ var stressBehaviours = []*stressBehaviour{
 		name: "failure", weight: 6, stall: exec.StallPropagates, alone: true,
 		finishes: wantFailed(execv2.ErrorClass_ERROR_CLASS_NOT_FOUND, execv2.ErrorReason_ERROR_REASON_NO_SUCH_EXECUTABLE),
 		script: func(*stressGates) []Step {
-			return []Step{Fail(&exec.Error{Class: exec.ClassNotFound, Reason: exec.ReasonNoSuchExecutable, Facts: exec.ErrorFacts{Program: "stress"}})}
+			return []Step{Fail(&exec.Error{Class: exec.ErrorClassNotFound, Reason: exec.ErrorReasonNoSuchExecutable, Facts: exec.ErrorFacts{Program: "stress"}})}
 		},
 	},
 	{

@@ -383,9 +383,9 @@ func caseEveryEndIsTyped(t checkT, target exec.Target, env *inProcessEnv) {
 			want: wantResult{end: endLost(execv2.LostCause_LOST_CAUSE_NO_STATUS), cause: "finished"}},
 		{name: "a link that died after output", steps: []Step{WriteOut("tail"), EndWith(exec.ExitLost(exec.LostLinkDead))},
 			want: wantResult{end: endLost(execv2.LostCause_LOST_CAUSE_LINK_DEAD), cause: "finished", started: true, output: "tail"}},
-		{name: "a failure at the start", steps: []Step{Fail(&exec.Error{Class: exec.ClassNotFound, Reason: exec.ReasonNoSuchExecutable})},
+		{name: "a failure at the start", steps: []Step{Fail(&exec.Error{Class: exec.ErrorClassNotFound, Reason: exec.ErrorReasonNoSuchExecutable})},
 			want: wantResult{end: endFailed(execv2.ErrorClass_ERROR_CLASS_NOT_FOUND, execv2.ErrorReason_ERROR_REASON_NO_SUCH_EXECUTABLE, execv2.FailureStage_FAILURE_STAGE_START), cause: "finished"}},
-		{name: "a failure in the middle of the run", steps: []Step{WriteOut("x"), Fail(&exec.Error{Class: exec.ClassUnavailable, Reason: exec.ReasonNotRunning})},
+		{name: "a failure in the middle of the run", steps: []Step{WriteOut("x"), Fail(&exec.Error{Class: exec.ErrorClassUnavailable, Reason: exec.ErrorReasonNotRunning})},
 			want: wantResult{end: endFailed(execv2.ErrorClass_ERROR_CLASS_UNAVAILABLE, execv2.ErrorReason_ERROR_REASON_NOT_RUNNING, execv2.FailureStage_FAILURE_STAGE_RUN), cause: "finished", started: true, output: "x"}},
 		{name: "a close by request", steps: running, drive: drivers["close"],
 			want: wantResult{end: closed(execv2.ClosedBy_CLOSED_BY_REQUEST), cause: "requested", started: true, output: "up"}},
@@ -492,7 +492,7 @@ func caseSurvival(t checkT, target exec.Target, env *inProcessEnv) {
 	scenarios := []scenario{
 		{"a lost stream", []Step{EndWith(exec.ExitLost(exec.LostNoStatus))}, false, "lost", new(true)},
 		{"a code only the transport relayed", []Step{EndWith(exec.ExitTransport(0))}, false, "exited", nil},
-		{"a failure", []Step{Fail(&exec.Error{Class: exec.ClassUnavailable, Reason: exec.ReasonNotRunning})}, false, "failed", nil},
+		{"a failure", []Step{Fail(&exec.Error{Class: exec.ErrorClassUnavailable, Reason: exec.ErrorReasonNotRunning})}, false, "failed", nil},
 		{"a failure the SDK classifies", []Step{Fail(errors.New("a failure of the target"))}, false, "failed", nil},
 		{"a close by request", []Step{WriteOut("up"), Block()}, true, "closed", closeSurvival(caps.Kill)},
 	}

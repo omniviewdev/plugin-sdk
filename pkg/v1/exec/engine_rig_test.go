@@ -50,6 +50,9 @@ type engineRigConfig struct {
 	// diag is the diagnostics registry the engine publishes to; a test that wants two engines on one registry gives both the
 	// same one.
 	diag *sdkdiag.Registry
+	// optionsDeadline and classifyDeadline shorten how long the engine waits for an Options callback and a Classify function
+	// before it gives up on them.
+	optionsDeadline, classifyDeadline time.Duration
 }
 
 // newEngineRig builds an engine for targets and closes it when the test ends: every command ended and removed, within a
@@ -68,6 +71,7 @@ func newEngineRig(t testing.TB, cfg engineRigConfig, targets ...exec.Target) *en
 	engineCfg := exechook.EngineConfig{
 		Logger: logger, Diagnostics: r.diag,
 		CloseGrace: cfg.grace, ResizeUnreadAfter: cfg.resizeUnread, MetricsEvery: cfg.metricsEvery,
+		OptionsDeadline: cfg.optionsDeadline, ClassifyDeadline: cfg.classifyDeadline,
 	}
 	if !cfg.noConnections {
 		engineCfg.Connections = r.conns

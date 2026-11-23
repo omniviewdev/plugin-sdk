@@ -56,24 +56,24 @@ func TestEngineCasesAreNumberedFromOneWithoutGaps(t *testing.T) {
 // feature that step makes the build list, and says what the review found missing, so that it cannot be reworded into
 // something that checks less.
 func TestTheEngineCasesTheReviewAddedAreListedWithTheirSteps(t *testing.T) {
-	session, run := execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN
+	run := execv2.Feature_FEATURE_RUN
 	for _, want := range []struct {
 		number   int
 		step     string
 		requires execv2.Feature
 		says     []string
 	}{
-		{25, "X3a and X3c", session, []string{
+		{25, "X3a (the one-stream wire body) and X3c", execv2.Feature_FEATURE_UNSPECIFIED, []string{
 			"exactly one of Ended or Detached", "at most one Ended", "none when it ends while no stream is attached", "never to a detached or superseded stream",
 		}},
-		{26, "X3a", session, []string{
+		{26, "X3a (the wire body)", execv2.Feature_FEATURE_UNSPECIFIED, []string{
 			"different ExitReport and HostRestart in Opened", "Choice.capabilities", "not in Started", "widening is clamped",
 		}},
 		{27, "X2b", run, []string{
 			"OUTCOME_FAILED", "partial output", "completeness", "start_observed", "remote_may_survive",
 			"refusal before the hand-off is a status", "never retries a failed or lost end",
 		}},
-		{28, "X3a", session, []string{
+		{28, "X3a (the wire body)", execv2.Feature_FEATURE_UNSPECIFIED, []string{
 			"remote_may_survive", "Lost true", "process exit and signal false", "transport exit and failure absent", "never read as no",
 		}},
 	} {
@@ -132,13 +132,46 @@ func TestNoEngineCaseNamesAFile(t *testing.T) {
 	}
 }
 
-// Every case is filled by a step and makes the build list a feature the SDK names, and ends as the gate says: failed
-// once the build lists that feature (the case must be written by then), skipped with its step otherwise.
+// A row ends as the gate says. A row with no step is complete: its bodies are all of it, so it has a body and concluding it
+// neither skips nor fails. A row that names no feature (a step of the host, or the wire body of a case that is not written yet) always
+// skips with its step, however many features the build lists. Any other row makes the build list a feature the SDK names: failed
+// once the build lists that feature (what is left of the case must be written by then), skipped with its step otherwise.
 func TestAnEngineCaseFailsOnceItsFeatureIsListedAndIsSkippedUntilThen(t *testing.T) {
+	every := func(except execv2.Feature) []execv2.Feature {
+		var all []execv2.Feature
+		for number := range execv2.Feature_name {
+			if feature := execv2.Feature(number); feature != execv2.Feature_FEATURE_UNSPECIFIED && feature != except {
+				all = append(all, feature)
+			}
+		}
+		slices.Sort(all)
+		return all
+	}
 	for i, c := range engineCases() {
 		t.Run(fmt.Sprintf("%02d", i), func(t *testing.T) {
-			if _, named := execv2.Feature_name[int32(c.requires)]; !named || c.requires == execv2.Feature_FEATURE_UNSPECIFIED || c.step == "" {
-				t.Fatalf("case %d (%q) has step %q and feature %s", c.number, c.name, c.step, c.requires)
+			if _, named := execv2.Feature_name[int32(c.requires)]; !named {
+				t.Fatalf("case %d (%q) makes the build list %d, which is no feature", c.number, c.name, int32(c.requires))
+			}
+			switch {
+			case c.step == "":
+				if c.inProcess == nil && c.wire == nil {
+					t.Errorf("case %d (%q) has no step and no body: nothing checks it", c.number, c.name)
+				}
+				var done concluded
+				c.conclude(&done, every(execv2.Feature_FEATURE_UNSPECIFIED))
+				if len(done.fatal) != 0 || len(done.skip) != 0 {
+					t.Errorf("a case with nothing left: %d failures and %d skips, want neither", len(done.fatal), len(done.skip))
+				}
+				return
+			case c.requires == execv2.Feature_FEATURE_UNSPECIFIED:
+				for name, served := range map[string][]execv2.Feature{"no feature": nil, "every feature": every(execv2.Feature_FEATURE_UNSPECIFIED)} {
+					var skipped concluded
+					c.conclude(&skipped, served)
+					if len(skipped.skip) != 1 || len(skipped.fatal) != 0 || !strings.Contains(skipped.skip[0], "step "+c.step) {
+						t.Errorf("a row that names no feature, in a build that lists %s: skips %q and failures %q, want one skip that names the step %s", name, skipped.skip, skipped.fatal, c.step)
+					}
+				}
+				return
 			}
 
 			var listed concluded
@@ -149,15 +182,7 @@ func TestAnEngineCaseFailsOnceItsFeatureIsListedAndIsSkippedUntilThen(t *testing
 			if !strings.Contains(listed.fatal[0], c.requires.String()) || !strings.Contains(listed.fatal[0], "step "+c.step) {
 				t.Errorf("the failure %q names neither the feature %s nor the step %s", listed.fatal[0], c.requires, c.step)
 			}
-
-			var others []execv2.Feature
-			for number := range execv2.Feature_name {
-				if feature := execv2.Feature(number); feature != execv2.Feature_FEATURE_UNSPECIFIED && feature != c.requires {
-					others = append(others, feature)
-				}
-			}
-			slices.Sort(others)
-			for name, served := range map[string][]execv2.Feature{"no feature": nil, "every other feature": others} {
+			for name, served := range map[string][]execv2.Feature{"no feature": nil, "every other feature": every(c.requires)} {
 				var skipped concluded
 				c.conclude(&skipped, served)
 				if len(skipped.skip) != 1 || len(skipped.fatal) != 0 {
@@ -171,17 +196,30 @@ func TestAnEngineCaseFailsOnceItsFeatureIsListedAndIsSkippedUntilThen(t *testing
 	}
 }
 
+// The build lists FEATURE_SESSION now, so no row that is left may need it: a row that did would fail every author's run. What each
+// of them waits for is a feature the build does not list yet, or a step that lists none.
+func TestNoRowWaitsForAFeatureThatTheBuildListsNow(t *testing.T) {
+	listed := []execv2.Feature{execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD}
+	for _, c := range engineCases() {
+		var concluded concluded
+		c.conclude(&concluded, listed)
+		if len(concluded.fatal) != 0 {
+			t.Errorf("case %d (%q) fails in a build that lists %v: %q", c.number, c.name, listed, concluded.fatal)
+		}
+	}
+}
+
 // Listing the engine cases asks the build for its features once per case, in the subtest of that case, and a build that
-// lists none skips every one: the numbered cases are named by their number. The bodies are left out here: they are run, and
-// held to what they claim, by the tests of conformance_inprocess_test.go.
+// lists none skips every one that has something left: the numbered cases are named by their number. The bodies are left out
+// here: they are run, and held to what they claim, by the tests of conformance_inprocess_test.go and conformance_open_test.go.
 func TestListingTheEngineCasesAsksTheBuildOncePerCase(t *testing.T) {
 	var asked []string
 	cases := engineCases()
 	for i := range cases {
-		cases[i].inProcess = nil
+		cases[i].inProcess, cases[i].wire = nil, nil
 	}
 	t.Run("engine", func(t *testing.T) {
-		listCases(t, cases, exec.Target{}, &inProcessEnv{}, func(t testing.TB) *execv2.DescribeResponse {
+		listCases(t, cases, exec.Target{}, &inProcessEnv{}, &wireEnv{}, func(t testing.TB) *execv2.DescribeResponse {
 			asked = append(asked, t.Name())
 			return &execv2.DescribeResponse{}
 		})

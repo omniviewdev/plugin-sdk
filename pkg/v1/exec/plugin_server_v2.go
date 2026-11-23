@@ -16,10 +16,10 @@ import (
 
 // serverV2 serves the exec v2 service of a plugin: the targets it registered.
 //
-// This build serves Describe and Options. Open, Run, RunStream, ListSessions, ReadOutput and EndSession answer
-// Unimplemented with a typed ClassUnsupported refusal, and Describe lists no feature for them (servedFeatures), so
-// a host that asks first never calls them. The server holds the engine that will run the commands of those RPCs (engine.go);
-// nothing calls it from the wire yet, and it is driven in process by the tests (engine_hook.go).
+// This build serves Describe, Options and Open (one interactive session on one stream: open_server.go). Run, RunStream,
+// ListSessions, ReadOutput and EndSession answer Unimplemented with a typed ErrorClassUnsupported refusal, and Describe
+// lists no feature for them (servedFeatures), so a host that asks first never calls them. The server holds the engine that
+// runs the commands (engine.go).
 type serverV2 struct {
 	log logging.Logger
 	reg *targetRegistry
@@ -28,13 +28,16 @@ type serverV2 struct {
 	connections func() resourcev2.ConnectionContextProvider
 	now         func() time.Time
 	engine      *engine
+	// openFirstFrameTimeout is how long an Open stream may take to send its open frame. It is a field so that a test can
+	// shorten it.
+	openFirstFrameTimeout time.Duration
 }
 
 func newServerV2(log logging.Logger, reg *targetRegistry, connections func() resourcev2.ConnectionContextProvider) *serverV2 {
 	if log == nil {
 		log = logging.NewNop()
 	}
-	s := &serverV2{log: log, reg: reg, connections: connections, now: time.Now}
+	s := &serverV2{log: log, reg: reg, connections: connections, now: time.Now, openFirstFrameTimeout: defaultOpenFirstFrameTimeout}
 	s.engine = newEngine(engineConfig{log: log, targets: reg, connections: connections})
 	return s
 }
@@ -53,9 +56,9 @@ func (s *serverV2) setLogger(log logging.Logger) {
 // facts only; the cause never leaves the process.
 func (s *serverV2) refuse(ctx context.Context, method string, e *Error) error {
 	n := e.normalized()
-	if n.Err != nil || n.Class == ClassInternal {
+	if n.Err != nil || n.Class == ErrorClassInternal {
 		level := s.log.Debugw
-		if n.Class == ClassInternal {
+		if n.Class == ErrorClassInternal {
 			level = s.log.Warnw
 		}
 		cause := ""
@@ -130,7 +133,7 @@ func (s *serverV2) Options(ctx context.Context, req *execv2.OptionsRequest) (*ex
 		refusal := classifyError(target.target.Classify, callbackErr)
 		if leaseOver != nil && ctx.Err() == nil {
 			// The caller is still waiting and the lease was cancelled under the callback: the connection was retired.
-			refusal = &Error{Class: ClassConnection, Reason: ReasonConnectionRetired, Err: callbackErr}
+			refusal = &Error{Class: ErrorClassConnection, Reason: ErrorReasonConnectionRetired, Err: callbackErr}
 		}
 		return nil, s.refuse(ctx, "Options", refusal)
 	case callbackErr == nil && ctx.Err() == nil && errors.Is(leaseErr, context.Canceled):
@@ -145,7 +148,7 @@ func (s *serverV2) Options(ctx context.Context, req *execv2.OptionsRequest) (*ex
 		// be misread as a retirement: that is a provider bug (it must return its own error for such a failure), and it
 		// cannot be told apart from here, because the lease's context ends on return, so the lease itself cannot say
 		// whether it was cancelled before the provider returned or by it.
-		return nil, s.refuse(ctx, "Options", &Error{Class: ClassConnection, Reason: ReasonConnectionRetired, Err: leaseErr})
+		return nil, s.refuse(ctx, "Options", &Error{Class: ErrorClassConnection, Reason: ErrorReasonConnectionRetired, Err: leaseErr})
 	default:
 		// The connection lease or the catalog pin refused: keep the resource lane's own classification, the host's
 		// existing contract for it (RESET_REQUIRED, CONNECTION_ERROR, ...). A cancellation that is the caller's own
@@ -153,7 +156,7 @@ func (s *serverV2) Options(ctx context.Context, req *execv2.OptionsRequest) (*ex
 		return nil, resourceplugin.ResourceRPCError(leaseErr)
 	}
 	if err := validateOptions(options); err != nil {
-		return nil, s.refuse(ctx, "Options", &Error{Class: ClassInternal, Err: fmt.Errorf("options callback broke the contract: %w", err)})
+		return nil, s.refuse(ctx, "Options", &Error{Class: ErrorClassInternal, Err: fmt.Errorf("options callback broke the contract: %w", err)})
 	}
 	// A choice declares the mode of a session, and a mode is at most what its kind can do: what a choice declares above
 	// the kind's is served as the kind's value, and the author is told which field in the log, as for a Started.
@@ -170,15 +173,10 @@ func (s *serverV2) callOptions(ctx context.Context, fn OptionsFunc, pc *types.Pl
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			s.log.Errorw(ctx, "exec options callback panicked", "panic", fmt.Sprint(recovered), "stack", string(debug.Stack()))
-			options, err = nil, &Error{Class: ClassInternal, Err: fmt.Errorf("options callback panicked: %v", recovered)}
+			options, err = nil, &Error{Class: ErrorClassInternal, Err: fmt.Errorf("options callback panicked: %v", recovered)}
 		}
 	}()
 	return fn(pc, ref.Reference)
-}
-
-// Open is not served by this build.
-func (s *serverV2) Open(execv2.Exec_OpenServer) error {
-	return unsupportedError().status()
 }
 
 // Run is not served by this build.

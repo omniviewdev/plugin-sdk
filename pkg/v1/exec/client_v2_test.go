@@ -158,10 +158,10 @@ func TestTheClientReturnsTheRefusalTheCallGotWhenTheCallersDeadlineHasPassed(t *
 	defer stop()
 	for name, call := range clientCalls(t) {
 		t.Run(name+" with a refusal of the plugin", func(t *testing.T) {
-			c := newClientV2(&refusingRPC{err: (&Error{Class: ClassUnavailable, Reason: ReasonNotRunning}).status()}, nil)
+			c := newClientV2(&refusingRPC{err: (&Error{Class: ErrorClassUnavailable, Reason: ErrorReasonNotRunning}).status()}, nil)
 			err := call(c, expired)
 			var typed *Error
-			if !errors.As(err, &typed) || typed.Class != ClassUnavailable || typed.Reason != ReasonNotRunning || errors.Is(err, context.DeadlineExceeded) {
+			if !errors.As(err, &typed) || typed.Class != ErrorClassUnavailable || typed.Reason != ErrorReasonNotRunning || errors.Is(err, context.DeadlineExceeded) {
 				t.Errorf("got %#v, want the plugin's UNAVAILABLE/NOT_RUNNING", err)
 			}
 		})

@@ -29,6 +29,10 @@ type EngineConfig struct {
 	CloseGrace        time.Duration
 	ResizeUnreadAfter time.Duration
 	MetricsEvery      time.Duration
+	// OptionsDeadline and ClassifyDeadline shorten how long the engine waits for an author's Options callback during a start
+	// and for its Classify function at the end of a command before it gives up on them. Zero is the default.
+	OptionsDeadline  time.Duration
+	ClassifyDeadline time.Duration
 }
 
 // Engine is the exec engine of a plugin, driven in process.
@@ -66,8 +70,12 @@ type Command interface {
 	Resize(seq uint32, cols, rows uint16) ResizeDisposition
 	// Close ends the command with the cause "requested": graceful, or with kill without waiting for the function.
 	Close(kill bool)
-	// Done is closed when the command has ended and its Result is final.
+	// Done is closed when the command has ended and its Result is final. The command's id is still held at that moment: an
+	// Open of the same id may be refused as a conflict until Gone is closed.
 	Done() <-chan struct{}
+	// Gone is closed once the command has been removed from the engine: its id and its place among the target's sessions are
+	// free. It is closed after Done.
+	Gone() <-chan struct{}
 	// Result waits for the end and returns it.
 	Result() Result
 	// Started returns what the host would receive in Started, once there is one.

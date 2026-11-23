@@ -57,8 +57,11 @@ var (
 	// registry has removed its entry: after the end function ran, not when the session ended.
 	ErrExists = errors.New("session: id already in use")
 	// ErrLimit is returned by [Registry.Admit] when admitting the session would take its group
-	// over [Spec.Limit].
+	// over [Spec.Limit] with the live entries alone.
 	ErrLimit = errors.New("session: group limit reached")
+	// ErrHeld is returned by [Registry.Admit] when the live entries of the group are below
+	// [Spec.Limit] and the group is full only because of its holds (see [Registry.Hold]).
+	ErrHeld = errors.New("session: group limit reached by holds")
 )
 
 // Spec describes a session to admit.
@@ -112,6 +115,7 @@ type Registry[S any] struct {
 	closed  bool                 // Close has begun: nothing more is admitted
 	entries map[string]*Entry[S] // the live entries, by id
 	groups  map[string]int       // the live entries of each group
+	held    map[string]int       // the holds of each group: places kept after the work that owned them ended
 
 	// live holds one producer for each entry: started at Admit, under mu, and done after the
 	// entry is removed. Close waits for it.
@@ -142,6 +146,7 @@ func New[S any](cfg Config[S]) *Registry[S] {
 		onEnd:   cfg.OnEnd,
 		entries: make(map[string]*Entry[S]),
 		groups:  make(map[string]int),
+		held:    make(map[string]int),
 	}
 }
 
@@ -182,6 +187,8 @@ func (r *Registry[S]) admit(parent context.Context, spec Spec, init func(ctx con
 		return nil, ErrExists
 	case spec.Limit > 0 && r.groups[spec.Group] >= spec.Limit:
 		return nil, ErrLimit
+	case spec.Limit > 0 && r.groups[spec.Group]+r.held[spec.Group] >= spec.Limit:
+		return nil, ErrHeld
 	}
 	if h := r.seams.admitDecided; h != nil {
 		h(spec.ID)
@@ -289,16 +296,61 @@ func (r *Registry[S]) finish(e *Entry[S]) {
 }
 
 // remove releases e's id and its place in its group, and then the registry's count of live
-// entries, which is what Close waits for.
+// entries, which is what Close waits for. A retained entry's place already became a hold when it was retained, and the hold's
+// release is what frees it.
 func (r *Registry[S]) remove(e *Entry[S]) {
 	r.mu.Lock()
 	delete(r.entries, e.id)
-	if r.groups[e.group] <= 1 {
-		delete(r.groups, e.group)
-	} else {
-		r.groups[e.group]--
+	if !e.retained {
+		r.dropPlace(e.group)
 	}
 	r.mu.Unlock()
 	close(e.gone) // the id and the place in the group are free: a start that was refused can be tried again
 	r.live.Done()
+}
+
+// dropPlace takes one live entry out of the count of group. The caller holds mu.
+func (r *Registry[S]) dropPlace(group string) {
+	if r.groups[group] <= 1 {
+		delete(r.groups, group)
+	} else {
+		r.groups[group]--
+	}
+}
+
+// retain moves e's place in its group to a hold: the group's count does not change at that moment, and it does not change
+// when the entry is removed, only when the hold is released. See [Entry.Retain].
+func (r *Registry[S]) retain(e *Entry[S]) (release func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if e.retained {
+		return e.releaseRetain
+	}
+	e.retained = true
+	if r.entries[e.id] == e {
+		// The entry still has its place: it is the hold's now. A place that was released already (the entry was removed)
+		// is not given back, and the hold is a new one: a fact that is true whatever the entry did.
+		r.dropPlace(e.group)
+	}
+	r.held[e.group]++
+	var once sync.Once
+	e.releaseRetain = func() {
+		once.Do(func() {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if r.held[e.group] <= 1 {
+				delete(r.held, e.group)
+			} else {
+				r.held[e.group]--
+			}
+		})
+	}
+	return e.releaseRetain
+}
+
+// Held returns the number of holds of group.
+func (r *Registry[S]) Held(group string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.held[group]
 }

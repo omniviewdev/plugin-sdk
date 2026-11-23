@@ -39,7 +39,7 @@ func TestATerminalMayBe1024CellsASideByDefaultAndNoMore(t *testing.T) {
 	}
 	for _, size := range [][2]uint32{{1025, 24}, {80, 1025}, {1025, 1025}} {
 		_, refusal := admitStart(start(size[0], size[1]), target, rqtServed())
-		if refusal == nil || refusal.Class != ClassInvalidRequest || refusal.Err == nil ||
+		if refusal == nil || refusal.Class != ErrorClassInvalidRequest || refusal.Err == nil ||
 			refusal.Err.Error() != "a size dimension is above the target's limit of 1024" {
 			t.Errorf("a terminal of %d x %d: refusal = %+v, want INVALID_REQUEST, \"a size dimension is above the target's limit of 1024\"", size[0], size[1], refusal)
 		}

@@ -172,10 +172,10 @@ func TestTheNamesAnAuthorWritesAreTheWireNamesWithoutTheirPrefix(t *testing.T) {
 	if FactModeNone.String() != "NONE" || SurvivalNone.String() != "NONE" || IntegrationOff.String() != "NONE" {
 		t.Errorf("none is spelled %q, %q, %q", FactModeNone, SurvivalNone, IntegrationOff)
 	}
-	if ReasonTargetDenied.String() != "TARGET_DENIED" || ReasonInputBacklog.String() != "INPUT_BACKLOG" {
-		t.Errorf("reasons are spelled %q, %q", ReasonTargetDenied, ReasonInputBacklog)
+	if ErrorReasonTargetDenied.String() != "TARGET_DENIED" || ErrorReasonInputBacklog.String() != "INPUT_BACKLOG" {
+		t.Errorf("reasons are spelled %q, %q", ErrorReasonTargetDenied, ErrorReasonInputBacklog)
 	}
-	if ClassInvalidRequest.String() != "INVALID_REQUEST" {
-		t.Errorf("a class is spelled %q", ClassInvalidRequest)
+	if ErrorClassInvalidRequest.String() != "INVALID_REQUEST" {
+		t.Errorf("a class is spelled %q", ErrorClassInvalidRequest)
 	}
 }

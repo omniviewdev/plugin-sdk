@@ -33,7 +33,7 @@ func newClientV2(rpc execv2.ExecClient, log logging.Logger) *clientV2 {
 }
 
 // V2 returns the exec v2 client of the plugin. Its calls on a plugin that does not serve the lane (every plugin
-// built before the lane existed) fail with an *Error whose class is ClassUnsupported, and the host stays on the
+// built before the lane existed) fail with an *Error whose class is ErrorClassUnsupported, and the host stays on the
 // legacy lane.
 func (c *PluginClient) V2() Client { return c.v2 }
 
@@ -105,5 +105,5 @@ func optionsRequestToProto(ref TargetRef) (*execv2.OptionsRequest, error) {
 // logged locally.
 func (c *clientV2) badResponse(ctx context.Context, method string, cause error) error {
 	c.log.Warnw(ctx, "exec v2 plugin answered outside the contract", "method", method, "cause", cause.Error())
-	return &Error{Class: ClassInternal, Err: cause}
+	return &Error{Class: ErrorClassInternal, Err: cause}
 }

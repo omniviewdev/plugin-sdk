@@ -18,7 +18,7 @@ package exec_test
 // It requires the four transcripts (every request, response and stream frame of the legacy service, normalized, see
 // scenario.Transcript) to be equal, and T1 to be equal to the golden file testdata/compat-v0.21.0/exec/legacy_transcript.json,
 // which TestCompatFramesReplay replays against this tree on every run. T3 and T4 also probe the v2 lane: the new
-// client gets a typed exec.ClassUnsupported from the v0.21.0 plugin, which answers Unimplemented, and reads
+// client gets a typed exec.ErrorClassUnsupported from the v0.21.0 plugin, which answers Unimplemented, and reads
 // compat/echo from newplugin's Describe. Every plugin process is stopped and must be gone when its host is done.
 //
 // The test is off by default: it builds SDK v0.21.0 and needs the Go module proxy or a warm module cache. A
@@ -682,14 +682,14 @@ func compatOptionsContext(ctx context.Context) context.Context {
 func assertCompatUnsupported(t *testing.T, method string, err error) {
 	t.Helper()
 	var execErr *exec.Error
-	if !errors.As(err, &execErr) || execErr.Class != exec.ClassUnsupported {
-		t.Fatalf("%s of a v0.21.0 plugin = %v (%T), want an *exec.Error of class %s", method, err, err, exec.ClassUnsupported)
+	if !errors.As(err, &execErr) || execErr.Class != exec.ErrorClassUnsupported {
+		t.Fatalf("%s of a v0.21.0 plugin = %v (%T), want an *exec.Error of class %s", method, err, err, exec.ErrorClassUnsupported)
 	}
 }
 
 // assertCompatMissingProvider requires err to be the resource lane's own refusal, with the given code, of a call a
 // plugin that serves the exec lane cannot admit because it has no resource provider. It rejects success, the exec
-// lane's classified errors (ClassUnsupported is the answer of a plugin that does not serve the lane, ClassInternal
+// lane's classified errors (ErrorClassUnsupported is the answer of a plugin that does not serve the lane, ErrorClassInternal
 // a broken contract) and every error that did not come from the resource lane's admission.
 func assertCompatMissingProvider(t *testing.T, what string, err error, code string) {
 	t.Helper()

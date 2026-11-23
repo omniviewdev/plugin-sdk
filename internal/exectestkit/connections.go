@@ -8,7 +8,6 @@ package exectestkit
 import (
 	"context"
 	"sync"
-	"testing"
 
 	"github.com/omniviewdev/plugin-sdk/internal/producers"
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -80,7 +79,7 @@ func (c *Connections) TargetRef(resourceType, id string) exec.TargetRef {
 // WireTarget returns the wire form of the target that addresses the thing with the given id through the connection,
 // with the given selection, for a test that sends a request the SDK's own client refuses to build (a selection, an
 // unknown field) through the generated client. A nil selection is none.
-func (c *Connections) WireTarget(t testing.TB, resourceType, id string, selection ...*execv2.NameValue) *execv2.TargetRef {
+func (c *Connections) WireTarget(t TB, resourceType, id string, selection ...*execv2.NameValue) *execv2.TargetRef {
 	t.Helper()
 	reference, err := resourcev2.ToProtoResourceReference(c.Reference(resourceType, id))
 	if err != nil {
@@ -188,7 +187,7 @@ func (c *Connections) Catalog(_ context.Context, req resourcev2.CatalogRequest) 
 
 // NewConnectionsT is NewConnections for a test; the retirement of every lease is awaited at cleanup so that no
 // callback outlives the test.
-func NewConnectionsT(t testing.TB, provider string) *Connections {
+func NewConnectionsT(t TB, provider string) *Connections {
 	t.Helper()
 	c := NewConnections(provider)
 	t.Cleanup(c.Retire)

@@ -9,10 +9,13 @@ import (
 	execv2 "github.com/omniviewdev/plugin-sdk/proto/exec/v2"
 )
 
-// servedFeatures lists the features this SDK build serves, in a stable order. This build serves Describe and
-// Options only; each later part of the contract (sessions, runs, session management, marks, modes, integration) is
-// listed by the step that implements it, so that a host never offers what the plugin cannot do.
-func servedFeatures() []execv2.Feature { return nil }
+// servedFeatures lists the features this SDK build serves, in a stable order. This build serves Describe, Options and Open
+// (a session on one stream: FEATURE_SESSION, with the environment and the working directory of its start); each later
+// part of the contract (runs, session management, stdin EOF, marks, modes, integration) is listed by the step that
+// implements it, so that a host never offers what the plugin cannot do.
+func servedFeatures() []execv2.Feature {
+	return []execv2.Feature{execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD}
+}
 
 // description builds the answer to Describe for a registry: static, the same for the life of the process.
 func (r *targetRegistry) description() *execv2.DescribeResponse {

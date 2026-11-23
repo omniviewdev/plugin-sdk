@@ -2,6 +2,7 @@ package exec
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -81,12 +82,15 @@ func TestDescriptionSurvivesTheWireAndStatesWhatIsAbsent(t *testing.T) {
 	}
 }
 
-func TestThisBuildListsNoFeatureYet(t *testing.T) {
-	// Sessions, runs, session management, marks, modes and integration are served by later steps; each lists its
-	// feature when it lands, so that a host never offers what the plugin cannot do.
+// The features this build lists are the ones whose frames it serves and whose conformance cases are written: sessions on one
+// stream, with the environment and the working directory of a start. Runs, session management, stdin EOF, marks, modes and
+// integration are served by later steps; each lists its feature when it lands, so that a host never offers what the plugin
+// cannot do.
+func TestThisBuildListsTheFeaturesItServes(t *testing.T) {
 	r, _ := newTargetRegistry([]Target{validTarget()})
-	if got := r.description().GetFeatures(); len(got) != 0 {
-		t.Errorf("this build lists features %v", got)
+	want := []execv2.Feature{execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD}
+	if got := r.description().GetFeatures(); !slices.Equal(got, want) {
+		t.Errorf("this build lists features %v, want %v", got, want)
 	}
 }
 

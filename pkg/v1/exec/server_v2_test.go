@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -120,8 +121,8 @@ func TestDescribeOverTheWire(t *testing.T) {
 	if got.GetContractVersion() != exec.ContractVersion {
 		t.Errorf("contract version = %d", got.GetContractVersion())
 	}
-	if len(got.GetFeatures()) != 0 {
-		t.Errorf("this build serves only Describe and Options; it lists %v", got.GetFeatures())
+	if want := []execv2.Feature{execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD}; !slices.Equal(got.GetFeatures(), want) {
+		t.Errorf("this build serves Describe, Options and Open; it lists %v, want %v", got.GetFeatures(), want)
 	}
 	if len(got.GetTargets()) != 1 {
 		t.Fatalf("targets = %v", got.GetTargets())
@@ -340,7 +341,7 @@ func TestOptionsRefusesWhatIsNotAnExecRequest(t *testing.T) {
 	t.Run("a target kind that is not registered", func(t *testing.T) {
 		other := f.connections.TargetRef("nodes", "n1")
 		_, err := f.client.Options(f.ctx(t), other)
-		if got := asExecError(t, err); got.Class != exec.ClassUnsupported {
+		if got := asExecError(t, err); got.Class != exec.ErrorClassUnsupported {
 			t.Errorf("class = %s", got.Class)
 		}
 	})
@@ -348,7 +349,7 @@ func TestOptionsRefusesWhatIsNotAnExecRequest(t *testing.T) {
 		bad := good
 		bad.Reference.Address.ID = ""
 		_, err := f.client.Options(f.ctx(t), bad)
-		if got := asExecError(t, err); got.Class != exec.ClassInvalidRequest {
+		if got := asExecError(t, err); got.Class != exec.ErrorClassInvalidRequest {
 			t.Errorf("class = %s", got.Class)
 		}
 	})
@@ -356,7 +357,7 @@ func TestOptionsRefusesWhatIsNotAnExecRequest(t *testing.T) {
 		bad := good
 		bad.Route = resourcev2.AccessRoute{}
 		_, err := f.client.Options(f.ctx(t), bad)
-		if got := asExecError(t, err); got.Class != exec.ClassInvalidRequest {
+		if got := asExecError(t, err); got.Class != exec.ErrorClassInvalidRequest {
 			t.Errorf("class = %s", got.Class)
 		}
 	})
@@ -473,7 +474,7 @@ func TestAnErrorOfTheCallbackIsClassifiedAndItsCauseNeverLeaves(t *testing.T) {
 		}),
 		exectest.FakeClassify(func(err error) (*exec.Error, bool) {
 			if strings.Contains(err.Error(), "the pod is gone") {
-				return &exec.Error{Class: exec.ClassNotFound, Reason: exec.ReasonTargetGone}, true
+				return &exec.Error{Class: exec.ErrorClassNotFound, Reason: exec.ErrorReasonTargetGone}, true
 			}
 			return nil, false
 		}),
@@ -489,17 +490,17 @@ func TestAnErrorOfTheCallbackIsClassifiedAndItsCauseNeverLeaves(t *testing.T) {
 		{
 			"the author's own typed error",
 			&exec.Error{
-				Class: exec.ClassForbidden, Reason: exec.ReasonTargetDenied, Message: "you may not exec in this pod",
+				Class: exec.ErrorClassForbidden, Reason: exec.ErrorReasonTargetDenied, Message: "you may not exec in this pod",
 				Facts: exec.ErrorFacts{SelectionName: "container", SelectionValue: "app", RetryAfter: 3 * time.Second},
 				Err:   errors.New(secretCause),
 			},
-			exec.ClassForbidden, exec.ReasonTargetDenied, exec.ErrorFacts{SelectionName: "container", SelectionValue: "app", RetryAfter: 3 * time.Second}, "you may not exec in this pod",
+			exec.ErrorClassForbidden, exec.ErrorReasonTargetDenied, exec.ErrorFacts{SelectionName: "container", SelectionValue: "app", RetryAfter: 3 * time.Second}, "you may not exec in this pod",
 		},
-		{"an error the target's Classify recognises", fmt.Errorf("%s: %s", "the pod is gone", secretCause), exec.ClassNotFound, exec.ReasonTargetGone, exec.ErrorFacts{}, ""},
-		{"an error nobody classifies is internal and says nothing", errors.New(secretCause), exec.ClassInternal, exec.ReasonUnspecified, exec.ErrorFacts{}, ""},
-		{"an internal error cannot carry a message", &exec.Error{Class: exec.ClassInternal, Message: "details", Err: errors.New(secretCause)}, exec.ClassInternal, exec.ReasonUnspecified, exec.ErrorFacts{}, ""},
-		{"a resource-lane error the author returns is mapped", resourcev2.NewError("NOT_FOUND", secretCause), exec.ClassNotFound, exec.ReasonUnspecified, exec.ErrorFacts{}, ""},
-		{"a reason that does not pair with its class is a broken contract", &exec.Error{Class: exec.ClassNotFound, Reason: exec.ReasonTargetDenied}, exec.ClassInternal, exec.ReasonUnspecified, exec.ErrorFacts{}, ""},
+		{"an error the target's Classify recognises", fmt.Errorf("%s: %s", "the pod is gone", secretCause), exec.ErrorClassNotFound, exec.ErrorReasonTargetGone, exec.ErrorFacts{}, ""},
+		{"an error nobody classifies is internal and says nothing", errors.New(secretCause), exec.ErrorClassInternal, exec.ErrorReasonUnspecified, exec.ErrorFacts{}, ""},
+		{"an internal error cannot carry a message", &exec.Error{Class: exec.ErrorClassInternal, Message: "details", Err: errors.New(secretCause)}, exec.ErrorClassInternal, exec.ErrorReasonUnspecified, exec.ErrorFacts{}, ""},
+		{"a resource-lane error the author returns is mapped", resourcev2.NewError("NOT_FOUND", secretCause), exec.ErrorClassNotFound, exec.ErrorReasonUnspecified, exec.ErrorFacts{}, ""},
+		{"a reason that does not pair with its class is a broken contract", &exec.Error{Class: exec.ErrorClassNotFound, Reason: exec.ErrorReasonTargetDenied}, exec.ErrorClassInternal, exec.ErrorReasonUnspecified, exec.ErrorFacts{}, ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -555,7 +556,7 @@ func TestACallbackThatBreaksTheContractIsAnInternalErrorNotAnAnswer(t *testing.T
 			if result != nil {
 				t.Fatalf("an answer that breaks the contract reached the host: %+v", result)
 			}
-			if got := asExecError(t, err); got.Class != exec.ClassInternal {
+			if got := asExecError(t, err); got.Class != exec.ErrorClassInternal {
 				t.Errorf("class = %s", got.Class)
 			}
 		})
@@ -585,7 +586,7 @@ func TestAPanickingCallbackIsAnInternalErrorAndThePluginKeepsServing(t *testing.
 		return podContainers(), nil
 	}))
 	_, err := f.client.Options(f.ctx(t), f.ref("pod-1"))
-	if got := asExecError(t, err); got.Class != exec.ClassInternal || strings.Contains(err.Error(), secretCause) {
+	if got := asExecError(t, err); got.Class != exec.ErrorClassInternal || strings.Contains(err.Error(), secretCause) {
 		t.Fatalf("a panic reached the host as %v", err)
 	}
 	panics.Store(false)
@@ -634,7 +635,7 @@ func TestACallbackSeesTheCallersCancellation(t *testing.T) {
 		t.Fatal("the callback never saw the cancellation")
 	}
 	err := <-done
-	if got := asExecError(t, err); got.Class != exec.ClassCancelled || !errors.Is(err, context.Canceled) {
+	if got := asExecError(t, err); got.Class != exec.ErrorClassCancelled || !errors.Is(err, context.Canceled) {
 		t.Errorf("the caller got %v, want a cancelled error wrapping context.Canceled", err)
 	}
 }
@@ -657,7 +658,7 @@ func TestRetiringTheConnectionEndsTheCallbackAndSaysSo(t *testing.T) {
 	f.connections.Retire()
 	err := <-done
 	got := asExecError(t, err)
-	if got.Class != exec.ClassConnection || got.Reason != exec.ReasonConnectionRetired {
+	if got.Class != exec.ErrorClassConnection || got.Reason != exec.ErrorReasonConnectionRetired {
 		t.Errorf("got %+v, want CONNECTION/CONNECTION_RETIRED", got)
 	}
 	// A call after the retirement is refused by the lease itself.
@@ -694,7 +695,7 @@ func TestRetiringTheConnectionUnderACallbackThatReturnsNilSaysSo(t *testing.T) {
 		t.Fatal("a call whose lease was retired under it succeeded")
 	}
 	got := asExecError(t, err)
-	if got.Class != exec.ClassConnection || got.Reason != exec.ReasonConnectionRetired {
+	if got.Class != exec.ErrorClassConnection || got.Reason != exec.ErrorReasonConnectionRetired {
 		t.Errorf("got %+v, want CONNECTION/CONNECTION_RETIRED", got)
 	}
 }
@@ -893,7 +894,7 @@ func TestRetiringTheConnectionDuringACatalogCheckSaysSo(t *testing.T) {
 						t.Fatal("a call whose lease was retired under it succeeded")
 					}
 					got := asExecError(t, err)
-					if got.Class != exec.ClassConnection || got.Reason != exec.ReasonConnectionRetired {
+					if got.Class != exec.ErrorClassConnection || got.Reason != exec.ErrorReasonConnectionRetired {
 						t.Errorf("got %+v, want CONNECTION/CONNECTION_RETIRED", got)
 					}
 				})
@@ -939,7 +940,7 @@ func TestACallerThatCancelsDuringTheFinalCatalogCheckIsNotToldTheConnectionWasRe
 				t.Errorf("the answer is the typed exec refusal %s, but the cancellation was the caller's own", info.GetReason())
 			}
 			err := <-done
-			if got := asExecError(t, err); got.Class != exec.ClassCancelled || !errors.Is(err, context.Canceled) {
+			if got := asExecError(t, err); got.Class != exec.ErrorClassCancelled || !errors.Is(err, context.Canceled) {
 				t.Errorf("the caller got %v, want a cancelled error wrapping context.Canceled", err)
 			}
 		})
@@ -1005,22 +1006,13 @@ func TestConcurrentCallsAreIndependentAndLeaveNoLeaseBehind(t *testing.T) {
 	}
 }
 
-// Open, Run, RunStream, ListSessions, ReadOutput and EndSession exist in the service and answer Unimplemented with a
-// typed refusal (UNSUPPORTED) in this build; Describe lists no feature for them.
+// Run, RunStream, ListSessions, ReadOutput and EndSession exist in the service and answer Unimplemented with a typed refusal
+// (UNSUPPORTED) in this build; Describe lists no feature for them. (Open is served: open_wire_test.go.)
 func TestTheMethodsThisBuildDoesNotServeAnswerATypedUnimplemented(t *testing.T) {
 	f := newFixture(t)
 	raw := f.server.Raw()
 	ctx := f.ctx(t)
 	calls := map[string]func() error{
-		"Open": func() error {
-			stream, err := raw.Open(ctx)
-			if err != nil {
-				return err
-			}
-			_ = stream.Send(&execv2.ClientFrame{Frame: &execv2.ClientFrame_Open{Open: &execv2.OpenRequest{SessionId: "s"}}})
-			_, err = stream.Recv()
-			return err
-		},
 		"Run": func() error { _, err := raw.Run(ctx, &execv2.RunRequest{}); return err },
 		"RunStream": func() error {
 			stream, err := raw.RunStream(ctx, &execv2.RunRequest{})

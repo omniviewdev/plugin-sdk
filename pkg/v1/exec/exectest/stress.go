@@ -172,6 +172,9 @@ type stressRound struct {
 	// closing is set before the first Close is called, closed once one has returned: a start that finds closing set may be
 	// refused as UNAVAILABLE, and one that began after closed was set must be.
 	closing atomic.Bool
+	// mayHold is set once a function may have been given up on (one that ignores its context, or one that was killed): until it
+	// returns the engine holds its place, and a start on its target is refused as UNAVAILABLE.
+	mayHold atomic.Bool
 	closed  atomic.Bool
 	// lateAdmits counts the starts admitted after a Close had returned, and firstLate names the first.
 	lateAdmits atomic.Int64

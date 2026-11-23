@@ -45,7 +45,7 @@ const (
 // is at most 256 bytes of UTF-8 without control characters; a fact that breaks the bound is dropped, never
 // truncated. A zero field means the fact does not apply.
 type ErrorFacts struct {
-	// Program is the program that was not found (ReasonNoSuchExecutable).
+	// Program is the program that was not found (ErrorReasonNoSuchExecutable).
 	Program string
 	// SelectionName is the name of the selection the failure concerns ("container").
 	SelectionName string
@@ -59,7 +59,7 @@ type ErrorFacts struct {
 // closed class and reason and the bounded facts, which are what crosses to the host; the host writes the words.
 //
 // Message is an optional public-safe sentence (at most 512 bytes of UTF-8, no control characters): it crosses only
-// for a class other than ClassInternal, and never carries credentials, paths or raw diagnostics. Err is the local
+// for a class other than ErrorClassInternal, and never carries credentials, paths or raw diagnostics. Err is the local
 // cause: it is logged by the SDK and never sent. Error() does not print it.
 type Error struct {
 	Class   ErrorClass
@@ -80,7 +80,7 @@ func (e *Error) Error() string {
 		return "exec: <nil>"
 	}
 	text := "exec: " + e.Class.String()
-	if e.Reason != ReasonUnspecified {
+	if e.Reason != ErrorReasonUnspecified {
 		text += "/" + e.Reason.String()
 	}
 	if e.Message != "" {
@@ -100,20 +100,20 @@ func (e *Error) Unwrap() error {
 // reasonClasses is the closed set of classes each reason may be paired with (ERROR_REASON_UNSPECIFIED pairs with every
 // class). The pairing is part of the contract (proto/exec/v2/exec.proto, enum ErrorReason).
 var reasonClasses = map[ErrorReason][]ErrorClass{
-	ReasonTargetDenied:      {ClassForbidden},
-	ReasonTargetGone:        {ClassNotFound},
-	ReasonTargetReplaced:    {ClassConflict},
-	ReasonNotRunning:        {ClassUnavailable},
-	ReasonNoSuchExecutable:  {ClassNotFound},
-	ReasonTTYUnsupported:    {ClassUnsupported},
-	ReasonTooManySessions:   {ClassLimit},
-	ReasonTooManyRuns:       {ClassLimit},
-	ReasonInputTooLarge:     {ClassLimit},
-	ReasonConnectionRetired: {ClassConnection},
-	ReasonSessionExists:     {ClassConflict},
-	ReasonSessionUnknown:    {ClassNotFound},
-	ReasonConsentRequired:   {ClassInvalidRequest},
-	ReasonInputBacklog:      {ClassLimit},
+	ErrorReasonTargetDenied:      {ErrorClassForbidden},
+	ErrorReasonTargetGone:        {ErrorClassNotFound},
+	ErrorReasonTargetReplaced:    {ErrorClassConflict},
+	ErrorReasonNotRunning:        {ErrorClassUnavailable},
+	ErrorReasonNoSuchExecutable:  {ErrorClassNotFound},
+	ErrorReasonTTYUnsupported:    {ErrorClassUnsupported},
+	ErrorReasonTooManySessions:   {ErrorClassLimit},
+	ErrorReasonTooManyRuns:       {ErrorClassLimit},
+	ErrorReasonInputTooLarge:     {ErrorClassLimit},
+	ErrorReasonConnectionRetired: {ErrorClassConnection},
+	ErrorReasonSessionExists:     {ErrorClassConflict},
+	ErrorReasonSessionUnknown:    {ErrorClassNotFound},
+	ErrorReasonConsentRequired:   {ErrorClassInvalidRequest},
+	ErrorReasonInputBacklog:      {ErrorClassLimit},
 }
 
 // validPair reports whether class and reason may be sent together.
@@ -121,7 +121,7 @@ func validPair(class ErrorClass, reason ErrorReason) bool {
 	if class.toProto() == execv2.ErrorClass_ERROR_CLASS_UNSPECIFIED {
 		return false
 	}
-	if reason == ReasonUnspecified {
+	if reason == ErrorReasonUnspecified {
 		return true
 	}
 	for _, c := range reasonClasses[reason] {
@@ -154,19 +154,19 @@ func validText(s string) bool {
 	return true
 }
 
-// normalized returns the error as it may cross the wire: an unknown class reads as ClassInternal, a pairing the
-// contract does not allow is replaced by ClassInternal (the producer broke the contract), facts and the message are
-// dropped when they break their bounds, and Message is dropped for ClassInternal. The receiver is not modified.
+// normalized returns the error as it may cross the wire: an unknown class reads as ErrorClassInternal, a pairing the
+// contract does not allow is replaced by ErrorClassInternal (the producer broke the contract), facts and the message are
+// dropped when they break their bounds, and Message is dropped for ErrorClassInternal. The receiver is not modified.
 func (e *Error) normalized() *Error {
 	if e == nil {
-		return &Error{Class: ClassInternal}
+		return &Error{Class: ErrorClassInternal}
 	}
 	out := &Error{Class: e.Class, Reason: e.Reason, Err: e.Err}
 	if out.Class.toProto() == execv2.ErrorClass_ERROR_CLASS_UNSPECIFIED {
-		out.Class = ClassInternal
+		out.Class = ErrorClassInternal
 	}
 	if !validPair(out.Class, out.Reason) {
-		out.Class, out.Reason = ClassInternal, ReasonUnspecified
+		out.Class, out.Reason = ErrorClassInternal, ErrorReasonUnspecified
 		return out
 	}
 	out.Facts = ErrorFacts{
@@ -177,7 +177,7 @@ func (e *Error) normalized() *Error {
 	if e.Facts.RetryAfter > 0 && e.Facts.RetryAfter/time.Millisecond <= time.Duration(^uint32(0)) {
 		out.Facts.RetryAfter = e.Facts.RetryAfter.Truncate(time.Millisecond)
 	}
-	if out.Class != ClassInternal && len(e.Message) <= maxPublicMessage && validText(e.Message) {
+	if out.Class != ErrorClassInternal && len(e.Message) <= maxPublicMessage && validText(e.Message) {
 		out.Message = e.Message
 	}
 	return out
@@ -186,27 +186,27 @@ func (e *Error) normalized() *Error {
 // grpcCode maps a class to the gRPC status code of a refusal.
 func (c ErrorClass) grpcCode() codes.Code {
 	switch c {
-	case ClassForbidden:
+	case ErrorClassForbidden:
 		return codes.PermissionDenied
-	case ClassUnauthorized:
+	case ErrorClassUnauthorized:
 		return codes.Unauthenticated
-	case ClassNotFound:
+	case ErrorClassNotFound:
 		return codes.NotFound
-	case ClassConflict:
+	case ErrorClassConflict:
 		return codes.Aborted
-	case ClassUnavailable, ClassConnection:
+	case ErrorClassUnavailable, ErrorClassConnection:
 		return codes.Unavailable
-	case ClassTimeout:
+	case ErrorClassTimeout:
 		return codes.DeadlineExceeded
-	case ClassInvalidRequest:
+	case ErrorClassInvalidRequest:
 		return codes.InvalidArgument
-	case ClassUnsupported:
+	case ErrorClassUnsupported:
 		return codes.Unimplemented
-	case ClassLimit:
+	case ErrorClassLimit:
 		return codes.ResourceExhausted
-	case ClassCancelled:
+	case ErrorClassCancelled:
 		return codes.Canceled
-	case ClassUnspecified, ClassInternal:
+	case ErrorClassUnspecified, ErrorClassInternal:
 		return codes.Internal
 	}
 	return codes.Internal
@@ -217,7 +217,7 @@ func (c ErrorClass) grpcCode() codes.Code {
 func (e *Error) status() error {
 	n := e.normalized()
 	metadata := map[string]string{}
-	if n.Reason != ReasonUnspecified {
+	if n.Reason != ErrorReasonUnspecified {
 		metadata[metadataReason] = n.Reason.String()
 	}
 	if n.Facts.Program != "" {
@@ -249,7 +249,7 @@ func (e *Error) status() error {
 }
 
 // unsupportedError is the typed refusal of a method this SDK build does not serve.
-func unsupportedError() *Error { return &Error{Class: ClassUnsupported} }
+func unsupportedError() *Error { return &Error{Class: ErrorClassUnsupported} }
 
 // errorFromStatus decodes the error of a call to an exec v2 service. The status the call returned is decoded first, and
 // the caller's context is read only when the status itself says the context ended the call. An exec refusal is an
@@ -257,7 +257,7 @@ func unsupportedError() *Error { return &Error{Class: ClassUnsupported} }
 // was sent as. Both are the answer of the call and keep their own class and code however the caller's context fared
 // after the call returned: the host acts on them (RESET_REQUIRED asks for a reset). Any other failure is classified by
 // its gRPC code alone, and never carries the server's status text: Unimplemented (the plugin does not serve the
-// service) is ClassUnsupported. A status of Canceled or DeadlineExceeded with no exec or resource detail, or a plain
+// service) is ErrorClassUnsupported. A status of Canceled or DeadlineExceeded with no exec or resource detail, or a plain
 // context error, from a call whose caller's context is over is that context's own: it reads as cancelled or timed out and
 // wraps the context error, so that errors.Is finds it. A status keeps its own class: a Canceled status is never a timeout
 // because the caller's deadline passed after the call returned, so the context error is wrapped only when it says the same.
@@ -272,7 +272,7 @@ func errorFromStatus(ctx context.Context, err error) error {
 				return contextError(ctxErr)
 			}
 		}
-		return &Error{Class: ClassInternal}
+		return &Error{Class: ErrorClassInternal}
 	}
 	details := st.Details()
 	resourceLayer := false
@@ -296,7 +296,7 @@ func errorFromStatus(ctx context.Context, err error) error {
 	class := classFromCode(st.Code())
 	if code := st.Code(); code == codes.Canceled || code == codes.DeadlineExceeded {
 		// The class is the status's own. The caller's context error is wrapped only when it says the same as the status:
-		// a Canceled status stays ClassCancelled and a DeadlineExceeded one stays ClassTimeout, whatever ended the caller's
+		// a Canceled status stays ErrorClassCancelled and a DeadlineExceeded one stays ErrorClassTimeout, whatever ended the caller's
 		// context after the call returned.
 		if ctxErr := ctx.Err(); ctxErr != nil && contextError(ctxErr).Class == class {
 			return contextError(ctxErr)
@@ -305,12 +305,12 @@ func errorFromStatus(ctx context.Context, err error) error {
 	return &Error{Class: class}
 }
 
-// contextError is the error of the caller's own context as the SDK reports it: ClassCancelled, or ClassTimeout when the
+// contextError is the error of the caller's own context as the SDK reports it: ErrorClassCancelled, or ErrorClassTimeout when the
 // context passed its deadline. It wraps ctxErr so that errors.Is finds it.
 func contextError(ctxErr error) *Error {
-	class := ClassCancelled
+	class := ErrorClassCancelled
 	if errors.Is(ctxErr, context.DeadlineExceeded) {
-		class = ClassTimeout
+		class = ErrorClassTimeout
 	}
 	return &Error{Class: class, Err: ctxErr}
 }
@@ -329,11 +329,11 @@ func execErrorFromInfo(info *errdetails.ErrorInfo, details []any) *Error {
 		out.Facts.RetryAfter = time.Duration(ms) * time.Millisecond
 	}
 	if !validPair(out.Class, out.Reason) {
-		out.Reason = ReasonUnspecified
+		out.Reason = ErrorReasonUnspecified
 	}
 	for _, d := range details {
 		if localized, ok := d.(*errdetails.LocalizedMessage); ok && localized.GetLocale() == localizedLocale {
-			if m := localized.GetMessage(); out.Class != ClassInternal && len(m) <= maxPublicMessage && validText(m) {
+			if m := localized.GetMessage(); out.Class != ErrorClassInternal && len(m) <= maxPublicMessage && validText(m) {
 				out.Message = m
 			}
 			break
@@ -342,89 +342,89 @@ func execErrorFromInfo(info *errdetails.ErrorInfo, details []any) *Error {
 	return out
 }
 
-// classFromName reads a class from its wire name without the prefix; an unknown name reads as ClassInternal.
+// classFromName reads a class from its wire name without the prefix; an unknown name reads as ErrorClassInternal.
 func classFromName(name string) ErrorClass {
 	for _, p := range errorClassPairs {
 		if p.g.String() == name {
 			return p.g
 		}
 	}
-	return ClassInternal
+	return ErrorClassInternal
 }
 
 // reasonFromName reads a reason from its wire name without the prefix; an unknown name reads as
-// ReasonUnspecified.
+// ErrorReasonUnspecified.
 func reasonFromName(name string) ErrorReason {
 	for _, p := range errorReasonPairs {
 		if p.g.String() == name {
 			return p.g
 		}
 	}
-	return ReasonUnspecified
+	return ErrorReasonUnspecified
 }
 
 // classFromCode classifies a status that carries no exec or resource detail by its code alone.
 func classFromCode(code codes.Code) ErrorClass {
 	switch code {
 	case codes.PermissionDenied:
-		return ClassForbidden
+		return ErrorClassForbidden
 	case codes.Unauthenticated:
-		return ClassUnauthorized
+		return ErrorClassUnauthorized
 	case codes.NotFound:
-		return ClassNotFound
+		return ErrorClassNotFound
 	case codes.AlreadyExists, codes.Aborted:
-		return ClassConflict
+		return ErrorClassConflict
 	case codes.Unavailable:
-		return ClassConnection
+		return ErrorClassConnection
 	case codes.DeadlineExceeded:
-		return ClassTimeout
+		return ErrorClassTimeout
 	case codes.InvalidArgument, codes.OutOfRange, codes.FailedPrecondition:
-		return ClassInvalidRequest
+		return ErrorClassInvalidRequest
 	case codes.Unimplemented:
-		return ClassUnsupported
+		return ErrorClassUnsupported
 	case codes.ResourceExhausted:
-		return ClassLimit
+		return ErrorClassLimit
 	case codes.Canceled:
-		return ClassCancelled
+		return ErrorClassCancelled
 	case codes.OK, codes.Unknown, codes.Internal, codes.DataLoss:
-		return ClassInternal
+		return ErrorClassInternal
 	}
-	return ClassInternal
+	return ErrorClassInternal
 }
 
 // classFromResourceCode maps a resource-lane error code onto the exec classes.
 func classFromResourceCode(code string) ErrorClass {
 	switch code {
 	case "INVALID_REQUEST", "INVALID_INPUT", "FILTER_UNKNOWN_FIELD", "FILTER_INVALID_OPERATOR":
-		return ClassInvalidRequest
+		return ErrorClassInvalidRequest
 	case "UNSUPPORTED":
-		return ClassUnsupported
+		return ErrorClassUnsupported
 	case "RESOURCE_LIMIT":
-		return ClassLimit
+		return ErrorClassLimit
 	case "NOT_FOUND":
-		return ClassNotFound
+		return ErrorClassNotFound
 	case "ALREADY_EXISTS", "CONFLICT":
-		return ClassConflict
+		return ErrorClassConflict
 	case "UNAUTHORIZED":
-		return ClassUnauthorized
+		return ErrorClassUnauthorized
 	case "FORBIDDEN", "PERMISSION_DENIED", "GRANT_DENIED":
-		return ClassForbidden
+		return ErrorClassForbidden
 	case "UNAVAILABLE", "OWNER_UNAVAILABLE", "DELEGATION_NOT_ACTIVE":
-		return ClassUnavailable
+		return ErrorClassUnavailable
 	case "CONNECTION_ERROR", "CERTIFICATE_ERROR", "CONNECTION_NOT_STARTED":
-		return ClassConnection
+		return ErrorClassConnection
 	case "TIMEOUT":
-		return ClassTimeout
+		return ErrorClassTimeout
 	case "CANCELLED":
-		return ClassCancelled
+		return ErrorClassCancelled
 	default:
-		return ClassInternal
+		return ErrorClassInternal
 	}
 }
 
 // classifyError turns an error an author's callback returned into the *Error that may cross the wire. In order: an
 // *Error the author built; the target's own Classify; the SDK's classification of context, resource-lane, gRPC and
-// network errors; ClassInternal. The local cause is kept in Err and never sent.
+// network errors; ErrorClassInternal. The local cause is kept in Err and never sent.
 func classifyError(classify ClassifyFunc, err error) *Error {
 	if err == nil {
 		return nil
@@ -454,9 +454,9 @@ func sdkClass(err error) ErrorClass {
 	var resourceErr *resourcev2.ResourceOperationError
 	switch {
 	case errors.Is(err, context.Canceled):
-		return ClassCancelled
+		return ErrorClassCancelled
 	case errors.Is(err, context.DeadlineExceeded):
-		return ClassTimeout
+		return ErrorClassTimeout
 	case errors.As(err, &resourceErr) && resourceErr != nil:
 		return classFromResourceCode(resourcev2.ErrorCode(err))
 	}
@@ -466,9 +466,9 @@ func sdkClass(err error) ErrorClass {
 	var netErr net.Error
 	if errors.As(err, &netErr) {
 		if netErr.Timeout() {
-			return ClassTimeout
+			return ErrorClassTimeout
 		}
-		return ClassConnection
+		return ErrorClassConnection
 	}
-	return ClassInternal
+	return ErrorClassInternal
 }

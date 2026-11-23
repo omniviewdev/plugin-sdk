@@ -112,7 +112,7 @@ func caseOptionsAnswer(t *testing.T, client exec.Client, opts ClientSuiteOptions
 		result, err := client.Options(opts.context(context.Background()), ref)
 		if err != nil {
 			var refusal *exec.Error
-			if errors.As(err, &refusal) && refusal.Class == exec.ClassUnsupported {
+			if errors.As(err, &refusal) && refusal.Class == exec.ErrorClassUnsupported {
 				t.Errorf("target %s/%s is described but Options is refused as unsupported: %v", info.GetProvider(), info.GetType(), err)
 				continue
 			}

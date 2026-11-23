@@ -104,6 +104,18 @@ func (p *Plugin) BindConnectionContextProvider(provider resourcev2.ConnectionCon
 	p.v2.mu.Unlock()
 }
 
+// Shutdown stops the v2 lane: it refuses every later start, ends every session the plugin holds with the cause "plugin
+// shutdown" (each attached stream receives its Ended with Closed by PLUGIN_SHUTDOWN, and each author's function is
+// cancelled and given its grace), and waits until every session has ended and been removed, or until ctx ends, and then
+// returns ctx's error. The SDK calls it when the plugin's server has stopped; it may be called more than once and from many
+// goroutines. A plugin with no targets has nothing to stop. The legacy lane is not touched.
+func (p *Plugin) Shutdown(ctx context.Context) error {
+	if p == nil || p.v2 == nil {
+		return nil
+	}
+	return p.v2.server.engine.close(ctx)
+}
+
 // GRPCServer registers the exec RPCs on s: the legacy service backed by Impl (unless the plugin serves only
 // targets) and the v2 service backed by the targets (when there are any).
 func (p *Plugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) error {

@@ -56,10 +56,10 @@ func TestTheCasesThatRunInProcessAreTheOnesTheEngineSatisfiesAndNoOther(t *testi
 	if !slices.Equal(got, want) {
 		t.Errorf("the cases with a body are %q, want %q", got, want)
 	}
-	// What is left of each is gated on the wire: a step and a feature the SDK names.
+	// What is left of each (the wire part, or the stress's detach and attach) has a step that writes it.
 	for _, c := range engineCases() {
-		if c.inProcess != nil && (c.step == "" || c.requires == execv2.Feature_FEATURE_UNSPECIFIED) {
-			t.Errorf("case %d (%q) runs in process and has no step or feature for what is left of it", c.number, c.name)
+		if c.inProcess != nil && c.step == "" {
+			t.Errorf("case %d (%q) runs in process and has no step for what is left of it", c.number, c.name)
 		}
 	}
 }
@@ -79,7 +79,7 @@ func TestAnInProcessBodyRunsFirstInItsOwnSubtestAndTheWirePartStillConcludes(t *
 		{caseRow: caseRow{number: 4, name: "a case that is only listed", step: "X9", requires: session}},
 	}
 	t.Run("engine", func(t *testing.T) {
-		listCases(t, cases, exec.Target{}, &inProcessEnv{}, func(t testing.TB) *execv2.DescribeResponse {
+		listCases(t, cases, exec.Target{}, &inProcessEnv{}, &wireEnv{}, func(t testing.TB) *execv2.DescribeResponse {
 			order = append(order, "describe")
 			return &execv2.DescribeResponse{}
 		})

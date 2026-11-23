@@ -14,9 +14,9 @@ import (
 // reach an author's code. The checks of a request run in a fixed order, so that a request that breaks two rules is
 // always refused by the same one. Each function says its order; the shape of it is the same everywhere:
 //
-//  1. the message itself: nil, a list longer than any request may carry (ClassInvalidRequest: it is not read), a field
-//     this build does not know (ClassUnsupported);
-//  2. the ids, the target reference and the registered target (absent: ClassUnsupported);
+//  1. the message itself: nil, a list longer than any request may carry (ErrorClassInvalidRequest: it is not read), a field
+//     this build does not know (ErrorClassUnsupported);
+//  2. the ids, the target reference and the registered target (absent: ErrorClassUnsupported);
 //  3. the bounds of the request alone, which every target shares (the validators of transport_v2_request.go);
 //  4. what this target and this build serve, in the order the functions list.
 //
@@ -25,7 +25,7 @@ import (
 // defaults.
 //
 // A request carries its environment, labels and selection as lists of NameValue, and the admitted request holds
-// them as Go maps: a name that appears twice is refused (ClassInvalidRequest), never resolved.
+// them as Go maps: a name that appears twice is refused (ErrorClassInvalidRequest), never resolved.
 
 // The terminal size a Start without one gets, when it asks for a terminal.
 const (
@@ -140,7 +140,7 @@ func ownedBytes(b []byte) []byte {
 }
 
 // lookupRequestTarget returns the target registered for the resource a reference names; no registry or no target
-// for the provider and type is ClassUnsupported.
+// for the provider and type is ErrorClassUnsupported.
 func lookupRequestTarget(reg *targetRegistry, ref TargetRef) (*registeredTarget, *Error) {
 	address := ref.Reference.Address
 	if reg != nil {
@@ -277,7 +277,7 @@ func checkStartTarget(p *execv2.Start, size Size, features []execv2.Feature, int
 	case len(p.GetArgv()) == 0 && len(info.DefaultArgv) == 0:
 		return invalidRequest("argv is required: the target has no default")
 	case p.GetTty() && !caps.TTY:
-		return NewError(ClassUnsupported, ReasonTTYUnsupported, errors.New("the target cannot give a command a terminal"))
+		return NewError(ErrorClassUnsupported, ErrorReasonTTYUnsupported, errors.New("the target cannot give a command a terminal"))
 	case !size.IsZero() && !p.GetTty():
 		return invalidRequest("a size needs a terminal")
 	case int(size.Cols) > info.Session.MaxDimension || int(size.Rows) > info.Session.MaxDimension:
@@ -310,7 +310,7 @@ func checkStartTarget(p *execv2.Start, size Size, features []execv2.Feature, int
 
 // admitOpenRequest is the admission of the first frame of an Open. Order of the checks, the first violation decides:
 // the message (nil, a list too long, unknown fields anywhere in the tree), the session id, exactly one of a start and
-// an attach, and for a start the target reference, the registered target (absent: ClassUnsupported) and then
+// an attach, and for a start the target reference, the registered target (absent: ErrorClassUnsupported) and then
 // admitStart's checks. An attach names no target, so nothing of the registry is asked: the engine finds the session.
 // The build is asked: an attach is a part of FEATURE_SESSION_MANAGEMENT, which needs FEATURE_SESSION.
 func admitOpenRequest(p *execv2.OpenRequest, reg *targetRegistry, served featureSet) (openRequest, *registeredTarget, *Error) {
@@ -353,10 +353,10 @@ func admitOpenRequest(p *execv2.OpenRequest, reg *targetRegistry, served feature
 
 // admitRunRequest is the admission of a RunRequest. It returns the request as it was sent, deep-copied, and the
 // registered target it runs in. Order of the checks, the first violation decides: the message (nil, a list too long,
-// unknown fields); the request id; the target reference; the registered target (absent: ClassUnsupported); the
+// unknown fields); the request id; the target reference; the registered target (absent: ErrorClassUnsupported); the
 // request's own bounds (argv required, env, cwd, labels, the output policy: a value this build does not know is
-// ClassUnsupported); then the target and the build: the target serves runs, the build serves runs, the argv total,
-// stdin (ClassLimit), the env total, env and cwd honored by the target, env and cwd served by the build, the timeout
+// ErrorClassUnsupported); then the target and the build: the target serves runs, the build serves runs, the argv total,
+// stdin (ErrorClassLimit), the env total, env and cwd honored by the target, env and cwd served by the build, the timeout
 // and the output caps. The timeout and the caps are never clamped.
 func admitRunRequest(p *execv2.RunRequest, reg *targetRegistry, served featureSet) (runRequest, *registeredTarget, *Error) {
 	if p == nil {
@@ -437,7 +437,7 @@ func checkRunTarget(p *execv2.RunRequest, argvTotal, envTotal int, t *registered
 	case argvTotal > run.MaxArgvBytes:
 		return invalidRequest("argv is more than the target's limit of %d bytes", run.MaxArgvBytes)
 	case len(p.GetStdin()) > run.MaxStdinBytes:
-		return NewError(ClassLimit, ReasonInputTooLarge, errors.New("stdin is more than the target's limit"))
+		return NewError(ErrorClassLimit, ErrorReasonInputTooLarge, errors.New("stdin is more than the target's limit"))
 	case envTotal > run.MaxEnvBytes:
 		return invalidRequest("env is more than the target's limit of %d bytes", run.MaxEnvBytes)
 	case len(p.GetEnv()) > 0 && !caps.Env:

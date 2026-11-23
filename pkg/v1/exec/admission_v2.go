@@ -15,14 +15,14 @@ import (
 // reach an author's code. Their errors are *Error values whose class and reason are the refusal the host sees; the
 // detail is local text in Err and never crosses the wire.
 
-// invalidRequest is a ClassInvalidRequest refusal with local detail.
+// invalidRequest is an ErrorClassInvalidRequest refusal with local detail.
 func invalidRequest(format string, args ...any) *Error {
-	return &Error{Class: ClassInvalidRequest, Err: fmt.Errorf(format, args...)}
+	return &Error{Class: ErrorClassInvalidRequest, Err: fmt.Errorf(format, args...)}
 }
 
-// unsupportedRequest is a ClassUnsupported refusal with local detail.
+// unsupportedRequest is an ErrorClassUnsupported refusal with local detail.
 func unsupportedRequest(format string, args ...any) *Error {
-	return &Error{Class: ClassUnsupported, Err: fmt.Errorf(format, args...)}
+	return &Error{Class: ErrorClassUnsupported, Err: fmt.Errorf(format, args...)}
 }
 
 // refusalFromResource classifies an error of the resource lane's own validators as an exec refusal.
@@ -45,9 +45,9 @@ func isResourceLaneField(fd protoreflect.FieldDescriptor) bool {
 	return fd.ContainingMessage().ParentFile().Package() == resourceLanePackage
 }
 
-// rejectUnknownFields enforces the strict side of the wire for a decoded request. It refuses (ClassInvalidRequest) a
+// rejectUnknownFields enforces the strict side of the wire for a decoded request. It refuses (ErrorClassInvalidRequest) a
 // request that holds a list longer than any request may carry, without reading that list, so that what a request
-// costs does not depend on how long its lists are. Then it refuses (ClassUnsupported) a request in which m, or any
+// costs does not depend on how long its lists are. Then it refuses (ErrorClassUnsupported) a request in which m, or any
 // message nested in it (a field, an element of a list), carries a field this build's descriptor does not know.
 // Protobuf keeps such a field as an unknown field when it decodes; a plugin that ignored it would run a command whose
 // request asked for something it did not understand, which is why requests are strict and frames are lenient.
@@ -241,7 +241,7 @@ func validateSelection(selection map[string]string) *Error {
 }
 
 // targetRefToProto validates a target reference and encodes it: the reference must be canonical and the route must
-// name a connection. The error is an *Error with ClassInvalidRequest.
+// name a connection. The error is an *Error with ErrorClassInvalidRequest.
 func targetRefToProto(ref TargetRef) (*execv2.TargetRef, error) {
 	reference, err := resourcev2.ToProtoResourceReference(ref.Reference)
 	if err != nil {
