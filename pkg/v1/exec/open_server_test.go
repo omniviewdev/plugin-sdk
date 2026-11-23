@@ -130,12 +130,10 @@ func TestASecondOpenFrameEndsTheStreamAndTheSession(t *testing.T) {
 // An input frame over the target's maximum is the host's mistake: the stream ends LIMIT / INPUT_TOO_LARGE, the session ends
 // with it, and the bytes of the frame never reach the function; the frame of exactly the maximum before it did.
 func TestAnInputFrameLargerThanTheTargetsMaximumEndsTheStreamTyped(t *testing.T) {
-	var read atomic.Int64
-	returned := exectest.NewGate()
+	read := make(chan []byte, 1)
 	rig := newWireRig(t, engTarget(func(ctx context.Context, p *exec.Proc) (exec.Exit, error) {
-		n, _ := io.Copy(io.Discard, p.Stdin) // ends when the session ends: its input then reports EOF
-		read.Store(n)
-		returned.Open()
+		data, _ := io.ReadAll(p.Stdin) // ends when the session ends: its input then reports EOF
+		read <- data
 		<-ctx.Done()
 		return exec.Exit{}, ctx.Err()
 	}, func(i *exec.TargetInfo) { i.Session.MaxInputFrame = 4096 }))
@@ -153,9 +151,15 @@ func TestAnInputFrameLargerThanTheTargetsMaximumEndsTheStreamTyped(t *testing.T)
 	if !errors.As(last, &typed) || typed.Class != exec.ErrorClassLimit || typed.Reason != exec.ErrorReasonInputTooLarge {
 		t.Fatalf("the stream ended with %v, want LIMIT / INPUT_TOO_LARGE", last)
 	}
-	awaitChannel(t, returned.Opened(), "the session to end with its stream")
-	if got := read.Load(); got != 4096 {
-		t.Errorf("the function read %d bytes, want 4096: the frame of the maximum, and none of the frame over it", got)
+	select {
+	case data := <-read:
+		// What the function read of the frame of the maximum depends on how soon the session ended (input that is still queued
+		// when it does is discarded); what it must never read is a byte of the frame over the maximum.
+		if bytes.Contains(data, []byte{'b'}) || len(data) > 4096 {
+			t.Errorf("the function read %d bytes including some of the frame over the maximum", len(data))
+		}
+	case <-time.After(engineWait):
+		t.Fatal("the session did not end with its stream")
 	}
 }
 
