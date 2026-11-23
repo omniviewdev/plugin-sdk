@@ -137,10 +137,10 @@ func TestStressEveryOperationAgainstClose(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	baseline := runtime.NumGoroutine()
 
-	// A stream that ends cancels every session, so half of the rounds do without it: they
-	// are the ones in which the sessions are alive when Close arrives.
+	// A stream that ends cancels every session, by either of its exits, so half of the rounds do without
+	// the two operations that end one: they are the ones in which the sessions are alive when Close arrives.
 	shapes := []round{
-		{ops: without(allOperations(), "Close", "StreamEnd"), callers: 6, closers: 1, maxDelay: 3 * time.Millisecond, aftermath: 2 * time.Millisecond},
+		{ops: without(allOperations(), "Close", "Stream", "StreamEnd"), callers: 6, closers: 1, maxDelay: 3 * time.Millisecond, aftermath: 2 * time.Millisecond},
 		{ops: without(allOperations(), "Close"), callers: 6, closers: 3, maxDelay: 3 * time.Millisecond, aftermath: 2 * time.Millisecond},
 		{ops: only(allOperations(), "Create", "CreateResource", "CloseSession", "Attach"), callers: 8, closers: 2, maxDelay: time.Millisecond, aftermath: time.Millisecond},
 	}

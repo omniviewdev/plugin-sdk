@@ -4,7 +4,44 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 )
+
+// A mark written to the terminal comes out of the master after the output injected before it, as it does from
+// a real terminal: it is how the manager learns that everything a process wrote has been read.
+func TestFakeTerminal_MarkEndComesOutOfTheMasterAfterWhatWasInjected(t *testing.T) {
+	terminal, err := NewFakeTerminal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = terminal.Close() })
+	if _, err = terminal.InjectOutput([]byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if err = terminal.MarkEnd([]byte("MARK")); err != nil {
+		t.Fatalf("MarkEnd: %v", err)
+	}
+	var got []byte
+	buf := make([]byte, 64)
+	for len(got) < len("helloMARK") {
+		_ = terminal.MasterFd().SetReadDeadline(time.Now().Add(5 * time.Second))
+		n, readErr := terminal.MasterFd().Read(buf)
+		got = append(got, buf[:n]...)
+		if readErr != nil {
+			t.Fatalf("reading the master: %v (%q so far)", readErr, got)
+		}
+	}
+	if string(got) != "helloMARK" {
+		t.Fatalf("the master gave %q, want the output and then the mark", got)
+	}
+
+	if err = terminal.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = terminal.MarkEnd([]byte("MARK")); !errors.Is(err, os.ErrClosed) {
+		t.Fatalf("MarkEnd of a closed terminal: %v, want %v", err, os.ErrClosed)
+	}
+}
 
 func TestFakeTerminal_CloseReportsErrorsAndClosesRemainingEnds(t *testing.T) {
 	terminal, err := NewFakeTerminal()

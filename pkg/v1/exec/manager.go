@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
 	"slices"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/omniviewdev/plugin-sdk/internal/producers"
@@ -33,6 +35,15 @@ const (
 	ResizeTimeout       = 500 * time.Millisecond
 	sessionCloseTimeout = 10 * time.Second
 	sessionWorkerCount  = 2
+
+	// terminalDrainTimeout bounds the wait, when the process behind a session is over, for the
+	// terminal's output to be read: the kernel keeps what the process wrote last, and the end of
+	// the session waits for it to be read, no longer than this.
+	terminalDrainTimeout = 500 * time.Millisecond
+	// retainedOutputLimit and retainedOutputTTL bound the output kept for the first attach to a
+	// session that ended before anyone attached: how many sessions it is kept for, and for how long.
+	retainedOutputLimit = 32
+	retainedOutputTTL   = time.Minute
 )
 
 // ---------------------------------------------------------------------------
@@ -44,7 +55,7 @@ type ManagerConfig struct {
 	Logger          logging.Logger
 	Settings        settings.Provider
 	Handlers        map[string]Handler
-	Sink            OutputSink      // nil → ChannelSink created by Stream()
+	Sink            OutputSink      // nil → a ChannelSink for each stream, made by Stream()
 	TerminalFactory TerminalFactory // nil → NewRealTerminalFactory()
 	Clock           timeutil.Clock  // nil → timeutil.RealClock
 }
@@ -65,9 +76,19 @@ type Manager struct {
 
 	mu       sync.RWMutex
 	sessions map[string]*sessionState
-	closed   bool              // set by Close: no session is admitted from then on
-	out      chan StreamOutput // nil when Sink provided via config
+	closed   bool // set by Close: no session is admitted from then on
 	resize   chan StreamResize
+
+	// stream is the stream the manager delivers to: the one opened last, while it lasts. A stream that
+	// has been replaced, or has ended, serves nothing, and its end ends nothing. streamSink is the sink
+	// the manager made for it, which is m.sink as long as nobody has put another there.
+	stream     *streamState
+	streamSink *ChannelSink
+
+	// retained holds the output of sessions that ended while nobody was attached, for the first attach
+	// to each (see retainedOutput). retainedSeq numbers them in the order they were kept.
+	retained    map[string]*retainedOutput
+	retainedSeq uint64
 
 	// admitted counts the sessions that were admitted and have not finished: one producer
 	// per session, started by registerSession under mu with the check of closed, and done
@@ -107,6 +128,7 @@ func NewManager(cfg ManagerConfig) *Manager {
 		terminalFactory:  tf,
 		clock:            clk,
 		sessions:         make(map[string]*sessionState),
+		retained:         make(map[string]*retainedOutput),
 		resize:           make(chan StreamResize),
 	}
 }
@@ -120,13 +142,14 @@ func (m *Manager) BindConnectionContextProvider(provider resourcev2.ConnectionCo
 // goroutines to finish. A start that loses the race with Close, and one that comes after
 // it, is refused with a CONNECTION_ERROR (see [resourcev2.ErrorCode]): never admitted, and
 // never left running. Close may be called more than once, and concurrently; each call
-// returns once the sessions are gone.
+// returns once the sessions are gone. The output kept for sessions that ended is dropped.
 func (m *Manager) Close() {
 	m.mu.Lock()
 	m.closed = true
 	for _, ss := range m.sessions {
-		ss.cancel()
+		ss.stop()
 	}
+	clear(m.retained)
 	m.mu.Unlock()
 	m.admitted.Wait()
 }
@@ -143,32 +166,53 @@ func (m *Manager) GetSupportedResources(_ *types.PluginContext) []Handler {
 	return slices.Collect(maps.Values(m.handlers))
 }
 
-// Stream creates a new stream to multiplex sessions.
-func (m *Manager) Stream(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
-	m.mu.Lock()
-	if m.sink == nil {
-		m.out = make(chan StreamOutput, DefaultStreamBufferSize)
-		m.sink = NewChannelSink(ctx, m.out)
-	}
-	out := m.out
-	m.mu.Unlock()
+// streamState is one call of Stream. A stream is told from another by its pointer, so it has fields: two
+// pointers to values of no size may be equal. cancel ends the sink the manager made for the stream, if it
+// did: a send that waits for a consumer that does not read, in a stream that has been replaced or has
+// ended, must not hold up the session that makes it.
+type streamState struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+}
 
-	go m.handleStreamInput(ctx, in)
+// Stream opens a stream that multiplexes the input and the output of the sessions. The output goes to
+// the stream opened last: when the manager makes the sink itself (there is no Sink in its config), every
+// stream has a channel and a sink of its own, delivered to from the moment the stream is open, and the
+// stream it replaces is retired, with its sink: what that sink holds up is dropped.
+//
+// The end of a stream ends the sessions it served, once, whichever way it ended: its context is done,
+// or its input is closed (the host closed its side of the RPC), or both. Their output can no longer be
+// delivered, so they are not left running. The sessions of a stream that has been replaced are the
+// newer stream's, and its end ends nothing. The sessions are cancelled, and not waited for: that is Close's.
+func (m *Manager) Stream(ctx context.Context, in chan StreamInput) (chan StreamOutput, error) {
+	sinkCtx, cancel := context.WithCancel(ctx)
+	st := &streamState{ctx: ctx, cancel: cancel}
+	var out chan StreamOutput
+
+	m.mu.Lock()
+	if m.sink == nil || (m.streamSink != nil && m.sink == OutputSink(m.streamSink)) {
+		out = make(chan StreamOutput, DefaultStreamBufferSize)
+		m.streamSink = NewChannelSink(sinkCtx, out)
+		m.sink = m.streamSink
+	}
+	retired := m.stream
+	m.stream = st
+	m.mu.Unlock()
+	if retired != nil {
+		retired.cancel()
+	}
+
+	m.log.Debugw(ctx, "stream opened")
+	go m.handleStreamInput(ctx, in, st)
 
 	return out, nil
 }
 
-func (m *Manager) handleStreamInput(ctx context.Context, in chan StreamInput) {
+func (m *Manager) handleStreamInput(ctx context.Context, in chan StreamInput, st *streamState) {
+	defer m.endStream(st)
 	for {
 		select {
 		case <-ctx.Done():
-			// Stream ended — cancel all sessions (they can no longer deliver output)
-			// but don't wait for cleanup (that's the caller's job via m.Close()).
-			m.mu.RLock()
-			for _, ss := range m.sessions {
-				ss.cancel()
-			}
-			m.mu.RUnlock()
 			return
 
 		case input, ok := <-in:
@@ -194,6 +238,29 @@ func (m *Manager) handleStreamInput(ctx context.Context, in chan StreamInput) {
 			m.handleResize(ctx, resize)
 		}
 	}
+}
+
+// endStream is where every end of a stream comes: it is the last thing the stream's input loop does, so it
+// runs once for each stream, however many ways the stream ended in at once. If the stream is the one the
+// manager delivers to, the sessions it served are ended and the manager has no stream, and no sink of its
+// own, until the next Stream: there is nowhere to deliver to. Otherwise a newer stream serves them.
+func (m *Manager) endStream(st *streamState) {
+	ended := 0
+	m.mu.Lock()
+	if m.stream == st {
+		m.stream = nil
+		if m.streamSink != nil && m.sink == OutputSink(m.streamSink) {
+			m.sink = nil
+		}
+		m.streamSink = nil
+		for _, ss := range m.sessions {
+			ss.stop()
+			ended++
+		}
+	}
+	m.mu.Unlock()
+	st.cancel()
+	m.log.Debugw(st.ctx, "stream ended", "sessions_ended", ended)
 }
 
 func (m *Manager) handleResize(ctx context.Context, resize StreamResize) {
@@ -393,14 +460,15 @@ func (m *Manager) createSession(
 			Attached:  false,
 			CreatedAt: m.clock.Now(),
 		},
-		ctx:       ctx,
-		cancel:    cancel,
-		terminal:  terminal,
-		buffer:    NewOutputBuffer(DefaultOutputBufferSize),
-		ttyResize: !handler.HandlesResize,
-		resize:    resizeChan,
-		stopChan:  stopChan,
-		done:      make(chan struct{}),
+		ctx:        ctx,
+		cancel:     cancel,
+		terminal:   terminal,
+		buffer:     NewOutputBuffer(DefaultOutputBufferSize),
+		ttyResize:  !handler.HandlesResize,
+		resize:     resizeChan,
+		stopChan:   stopChan,
+		done:       make(chan struct{}),
+		readerDone: make(chan struct{}),
 	}
 
 	if err = m.registerSession(baseCtx, ss, resource, admission, stopAdmission); err != nil {
@@ -509,6 +577,7 @@ func (m *Manager) registerSession(
 		// above, under the lock that admits.
 		return managerClosedError()
 	}
+	delete(m.retained, ss.session.ID) // a session of this ID is live: what an earlier one left is not its output
 	m.sessions[ss.session.ID] = ss
 	return nil
 }
@@ -527,70 +596,133 @@ func (m *Manager) handleSignals(ss *sessionState) {
 	select {
 	case err := <-ss.stopChan:
 		logger.Debug(ss.ctx, "stop channel received, stopping read stream handling")
-		m.cleanupSession(ss, err)
+		m.cleanupSession(ss, err, true)
 
 	case <-ss.ctx.Done():
 		logger.Debug(ss.ctx, "context cancelled, stopping read stream handling")
-		m.cleanupSession(ss, nil)
+		m.cleanupSession(ss, nil, false)
 	}
 }
 
+// handleStream reads the terminal's output until the terminal has nothing more to say: it keeps the output in the
+// session's buffer, and delivers it while someone is attached. It returns when the terminal's output ends
+// (EOF, or EIO as Linux says it when the other side is gone), when the terminal is closed, or when it has read
+// the end mark of the session (see drainTerminal). It ends the session, if nothing else did, when the output ends.
 func (m *Manager) handleStream(ss *sessionState) {
 	defer ss.wg.Done()
+	defer close(ss.readerDone) // runs before the wg is done: whoever waits for the session finds the reader done
 
 	logger := m.log.With(logging.String("session", ss.session.ID))
 	masterFd := ss.terminal.MasterFd()
+	readBuf := make([]byte, DefaultStreamBufferSize)
+	var marks markScanner
 
 	for {
-		buf := make([]byte, DefaultStreamBufferSize)
-		read, err := masterFd.Read(buf)
+		read, err := masterFd.Read(readBuf)
+		if read > 0 {
+			data, reachedMark := marks.feed(ss.endMark(), readBuf[:read])
+			m.deliver(ss, data)
+			if reachedMark {
+				logger.Debug(ss.ctx, "end mark reached on terminal")
+				return
+			}
+		}
 		if err != nil {
-			if err != io.EOF {
-				logger.Errorw(ss.ctx, "error reading from terminal", "error", err)
+			// What the scanner holds back is dropped (see markScanner): the terminal was closed in the middle of the mark.
+			if isEndOfOutput(err) {
+				logger.Debug(ss.ctx, "end of terminal output")
 			} else {
-				logger.Debug(ss.ctx, "EOF reached on terminal")
+				logger.Errorw(ss.ctx, "error reading from terminal", "error", err)
 			}
 			// On read error or EOF, cancel so handleSignals fires cleanup.
 			ss.cancel()
 			return
 		}
-
-		if read > 0 {
-			data := buf[:read]
-			// Buffer first, then check attached — under the same lock that
-			// AttachSession uses to set attached + read the buffer. This
-			// eliminates the race where data is appended after the attach
-			// reads the buffer but before handleStream emits it.
-			ss.mu.Lock()
-			ss.buffer.Append(data)
-			attached := ss.session.Attached
-			seq := ss.nextSeq
-			ss.nextSeq++
-			ss.mu.Unlock()
-			if attached {
-				m.emitData(ss, StreamOutput{
-					SessionID: ss.session.ID,
-					Target:    StreamTargetStdOut,
-					Data:      data,
-					Seq:       seq,
-				})
-			}
-		}
 	}
 }
 
-// cleanupSession removes a session from the map, closes the terminal, and
-// emits the appropriate signals via the sink.
-func (m *Manager) cleanupSession(ss *sessionState, handlerErr error) {
+// deliver keeps output in the session's buffer, and hands it to the sink while someone is attached.
+func (m *Manager) deliver(ss *sessionState, data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	// Buffer first, then check attached — under the same lock that
+	// AttachSession uses to set attached + read the buffer. This
+	// eliminates the race where data is appended after the attach
+	// reads the buffer but before handleStream emits it.
+	ss.mu.Lock()
+	ss.buffer.Append(data)
+	attached := ss.session.Attached
+	seq := ss.nextSeq
+	ss.nextSeq++
+	ss.mu.Unlock()
+	if attached {
+		// A frame outlives the read that made it, and the next read overwrites the buffer it was read into: the
+		// frame gets a copy of exactly the bytes it carries, and not a buffer of four kilobytes.
+		m.emitData(ss, StreamOutput{
+			SessionID: ss.session.ID,
+			Target:    StreamTargetStdOut,
+			Data:      slices.Clone(data),
+			Seq:       seq,
+		})
+	}
+}
+
+// isEndOfOutput reports whether err is how a read of a terminal says that there is nothing more to read: EOF, EIO
+// (Linux, when every holder of the other side has closed it), or a terminal that was closed.
+func isEndOfOutput(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, syscall.EIO) || errors.Is(err, os.ErrClosed)
+}
+
+// drainTerminal gives the reader of a session whose process is over the time to take what the process wrote
+// last. Output the reader has not taken stays in the kernel's queue, and closing the terminal throws it away; the
+// kernel is no help in telling when the reader has everything (macOS and the BSDs drop the queue when the slave
+// is closed, and Linux can drop part of it when the slave is closed under load). So the end of the session writes a
+// mark to the terminal after that output, which the reader meets when it has read all that came before it (see
+// markScanner), and waits for the reader to be done.
+//
+// The wait is bounded, by terminalDrainTimeout on the manager's clock, so that a consumer that does not take
+// output cannot keep a session from ending, and it gives way to the session being cancelled: the host that closes
+// a session, or a manager that closes, is not waiting for its output. What the reader has not taken by then is
+// lost, and the Close signal is still the last thing the session says. A terminal that cannot take a mark is not waited for.
+func (m *Manager) drainTerminal(ss *sessionState) {
+	terminal, ok := ss.terminal.(EndMarker)
+	if !ok || ss.ctx.Err() != nil {
+		return
+	}
+	select {
+	case <-ss.readerDone:
+		return
+	default:
+	}
+
+	mark := newEndMark()
+	ss.mark.Store(&mark) // before the write: from now on the reader looks for the mark
+	timeout := m.clock.After(terminalDrainTimeout)
+	// The kernel queues little for a master that is not read, so the write can wait for the reader: it is done
+	// where the wait can be given up, and the close of the terminal sets it free. If it fails the output ends
+	// by itself (the slave is closed), and the reader says so.
+	go func() { _ = terminal.MarkEnd(mark) }()
+	select {
+	case <-ss.readerDone:
+	case <-ss.ctx.Done():
+	case <-timeout:
+	}
+}
+
+// cleanupSession ends a session: it closes the terminal, takes the session out of the manager,
+// and says goodbye through the sink. byProcess is true when the end is the handler's own, the process behind
+// the session being over: its output is complete only once the reader has taken it (see drainTerminal), and a
+// session that the host or the manager ended has no output to wait for.
+func (m *Manager) cleanupSession(ss *sessionState, handlerErr error, byProcess bool) {
 	sessionID := ss.session.ID
 
-	// Close terminal
+	if byProcess {
+		m.drainTerminal(ss)
+	}
 	m.closeTerminal(ss.ctx, ss.terminal)
 
-	// Remove from map
-	m.mu.Lock()
-	delete(m.sessions, sessionID)
-	m.mu.Unlock()
+	m.leave(ss)
 
 	// Cancel the context to unblock handleStream if it hasn't returned yet.
 	ss.cancel()
@@ -638,6 +770,74 @@ func (m *Manager) cleanupSession(ss *sessionState, handlerErr error) {
 	ss.ended = true
 }
 
+// leave takes an ended session out of the manager. A session that ended by itself while nobody was attached
+// leaves its output for the next attach, which comes too late to find the session: the short command
+// that is over before the host has attached. The session leaves the map and its output is kept in
+// one step, under the lock an attach takes to look for the session, so that an attach finds the session
+// or its output and never neither. What the host closed, or the manager did, or a stream's end did, is
+// not kept: nobody is waiting for it.
+func (m *Manager) leave(ss *sessionState) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ss.mu.Lock()
+	ss.gone = true
+	var kept *retainedOutput
+	if !ss.session.Attached && !ss.requested.Load() {
+		kept = &retainedOutput{owner: ss.waitDone(), session: ss.snapshotLocked(), output: ss.getBufferData()}
+	}
+	ss.mu.Unlock()
+
+	delete(m.sessions, ss.session.ID)
+	if kept != nil {
+		m.retain(ss.session.ID, kept)
+	}
+}
+
+// retain keeps what a session left, to the bounds of retainedOutputLimit and retainedOutputTTL: what is
+// past its time is dropped first, and then the oldest, to make room. The caller holds m.mu.
+func (m *Manager) retain(id string, kept *retainedOutput) {
+	now := m.clock.Now()
+	kept.at, kept.seq = now, m.retainedSeq
+	m.retainedSeq++
+
+	delete(m.retained, id)
+	for key, other := range m.retained {
+		if now.Sub(other.at) > retainedOutputTTL {
+			delete(m.retained, key)
+		}
+	}
+	for len(m.retained) >= retainedOutputLimit {
+		var oldest string
+		var oldestSeq uint64
+		for key, other := range m.retained {
+			if oldest == "" || other.seq < oldestSeq {
+				oldest, oldestSeq = key, other.seq
+			}
+		}
+		delete(m.retained, oldest)
+	}
+	m.retained[id] = kept
+}
+
+// takeRetained gives the first attach to a session that ended the output it left, if it is still kept. An
+// attach that found a session of its own (owner is the session's done channel) takes only what that session left:
+// what a session that took its ID in the meantime left is not its output, and stays for the attach that asks for
+// that one. An attach that found no session (owner nil) takes what the latest session with the ID left.
+func (m *Manager) takeRetained(id string, owner <-chan struct{}) (*retainedOutput, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	kept, ok := m.retained[id]
+	if !ok || (owner != nil && kept.owner != owner) {
+		return nil, false
+	}
+	delete(m.retained, id)
+	if m.clock.Now().Sub(kept.at) > retainedOutputTTL {
+		return nil, false
+	}
+	return kept, true
+}
+
 // emitData delivers a chunk of the session's output unless the session has said goodbye: the
 // Close signal is the last thing a session sends, so a chunk still on its way when the session
 // ends is delivered before it, and one that comes after it is dropped.
@@ -664,6 +864,12 @@ func (m *Manager) writeToSession(ss *sessionState, data []byte) error {
 }
 
 // AttachSession marks a session as attached and returns its current output buffer.
+//
+// A session that ended while nobody was attached (the short command that is over before the host comes
+// to attach) has left its output for the first attach: that call returns what the session wrote and the
+// session as it was, though no other call finds it any more, and then the output is gone. What is kept
+// is bounded, in the number of sessions and in time, and a session that the host or the manager ended
+// leaves nothing.
 func (m *Manager) AttachSession(
 	pluginctx *types.PluginContext,
 	sessionID string,
@@ -671,22 +877,40 @@ func (m *Manager) AttachSession(
 	m.mu.RLock()
 	ss, exists := m.sessions[sessionID]
 	m.mu.RUnlock()
+	var lost <-chan struct{} // the done channel of the session this call found and lost to its end
 
-	if !exists {
-		return nil, nil, NewSessionNotFoundError(sessionID)
+	if exists {
+		// The session is found, and not yet attached to: it may end before this call has it. A test stops here,
+		// by the logger, to have the session end between the two steps.
+		m.log.Debugw(pluginContextOr(ss.ctx, pluginctx), "attach found the session", "session", sessionID)
+
+		// Set attached and snapshot the buffer under the same lock that
+		// handleStream uses for append+attached-check, so no data is orphaned.
+		ss.mu.Lock()
+		if !ss.gone {
+			ss.session.Attached = true
+			bufData := ss.getBufferData()
+			ss.mu.Unlock()
+
+			m.log.Debugw(pluginContextOr(ss.ctx, pluginctx), "session attached", "session", sessionID)
+
+			snap := ss.snapshot()
+			return &snap, bufData, nil
+		}
+		ss.mu.Unlock()
+		lost = ss.waitDone()
+		// The session ended while this call was on its way to it. It left its output in the step in
+		// which it left the manager (see leave), so it is found where the ended sessions are.
 	}
 
-	// Set attached and snapshot the buffer under the same lock that
-	// handleStream uses for append+attached-check, so no data is orphaned.
-	ss.mu.Lock()
-	ss.session.Attached = true
-	bufData := ss.getBufferData()
-	ss.mu.Unlock()
-
-	m.log.Debugw(pluginContextOr(ss.ctx, pluginctx), "session attached", "session", sessionID)
-
-	snap := ss.snapshot()
-	return &snap, bufData, nil
+	if kept, ok := m.takeRetained(sessionID, lost); ok {
+		m.log.Debugw(pluginContextOr(context.Background(), pluginctx),
+			"output of an ended session attached", "session", sessionID)
+		session := kept.session
+		session.Attached = true
+		return &session, kept.output, nil
+	}
+	return nil, nil, NewSessionNotFoundError(sessionID)
 }
 
 // DetachSession marks a session as not attached, stopping output broadcast.
@@ -706,7 +930,8 @@ func (m *Manager) DetachSession(pluginctx *types.PluginContext, sessionID string
 	return &snap, nil
 }
 
-// CloseSession cancels the session's context, triggering cleanup.
+// CloseSession ends the session at the host's request: it cancels the session's context, triggering
+// cleanup, and waits for the session's goroutines. A session ended this way keeps no output for an attach.
 func (m *Manager) CloseSession(pluginctx *types.PluginContext, sessionID string) error {
 	m.mu.RLock()
 	ss, exists := m.sessions[sessionID]
@@ -716,8 +941,14 @@ func (m *Manager) CloseSession(pluginctx *types.PluginContext, sessionID string)
 		return NewSessionNotFoundError(sessionID)
 	}
 
-	ss.cancel()
 	ctx := pluginContextOr(ss.ctx, pluginctx)
+	// The session is found, and not yet stopped: it may end before this call stops it. A test stops here, by the
+	// logger, to have the session end between the two steps.
+	m.log.Debugw(ctx, "close found the session", "session", sessionID)
+	if !ss.stopUnlessGone() {
+		// It ended by itself in between, and left its output as such: there is no session to close.
+		return NewSessionNotFoundError(sessionID)
+	}
 	m.log.Debugw(ctx, "session terminated", "session", sessionID)
 
 	// Wait for session goroutines to complete with a safety timeout.
