@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -80,6 +81,20 @@ type sessionState struct {
 	done     chan struct{}  // closed when wg reaches zero
 	wg       sync.WaitGroup // tracks handleStream + handleSignals
 
+	// readerDone is closed when handleStream has returned: the terminal's output has been read to its end,
+	// or the terminal was closed under it.
+	readerDone chan struct{}
+	// requested is set when the host (CloseSession), the manager (Close) or the end of the stream
+	// the session was served by ended the session, and not the session itself: nobody waits for
+	// what such a session has written.
+	requested atomic.Bool
+	// mark is the end mark of the session once its process is over (see Manager.drainTerminal): from the moment it
+	// is set the reader looks for it in the terminal's output.
+	mark atomic.Pointer[[]byte]
+	// gone is set, under mu, when the session left the manager's map; an attach that found the
+	// session in the map and takes mu afterwards sees it, and looks for what the session left.
+	gone bool
+
 	ttyResize bool // if true, manager calls terminal.Resize(); else sends to resize chan
 	nextSeq   uint64
 
@@ -94,12 +109,32 @@ type sessionState struct {
 // snapshot returns a deep copy of the session for safe external reads.
 func (ss *sessionState) snapshot() Session {
 	ss.mu.RLock()
+	defer ss.mu.RUnlock()
+	return ss.snapshotLocked()
+}
+
+// snapshotLocked is snapshot for a caller that holds mu.
+func (ss *sessionState) snapshotLocked() Session {
 	cp := ss.session
 	cp.Labels = maps.Clone(ss.session.Labels)
 	cp.Params = maps.Clone(ss.session.Params)
 	cp.Command = slices.Clone(ss.session.Command)
-	ss.mu.RUnlock()
 	return cp
+}
+
+// stop ends the session at the request of whoever manages it, and not of its own: it cancels the
+// session's context after noting that it was asked to.
+func (ss *sessionState) stop() {
+	ss.requested.Store(true)
+	ss.cancel()
+}
+
+// endMark returns the end mark of the session, or nil while its process is not over.
+func (ss *sessionState) endMark() []byte {
+	if mark := ss.mark.Load(); mark != nil {
+		return *mark
+	}
+	return nil
 }
 
 func (ss *sessionState) setAttached(v bool) {
@@ -118,6 +153,16 @@ func (ss *sessionState) getBufferData() []byte {
 // waitDone blocks until all goroutines for this session have finished.
 func (ss *sessionState) waitDone() <-chan struct{} {
 	return ss.done
+}
+
+// retainedOutput is what a session leaves when it ends by itself while nobody is attached: the
+// session as it was, and the output it wrote, for the first attach that comes for it. The manager keeps
+// a bounded number of them, for a bounded time.
+type retainedOutput struct {
+	session Session
+	output  []byte
+	at      time.Time // when the session ended, by the manager's clock
+	seq     uint64    // the order in which the manager kept them, to drop the oldest first
 }
 
 // ---------------------------------------------------------------------------

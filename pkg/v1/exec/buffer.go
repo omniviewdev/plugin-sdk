@@ -2,16 +2,18 @@
 // and bounded output history for reconnecting clients.
 package exec
 
-import (
-	"slices"
-	"sync"
-)
+import "sync"
 
-// OutputBuffer stores terminal output bytes, providing a fixed-size cyclic buffer.
+// OutputBuffer keeps the last bytes a terminal wrote, up to a fixed capacity, in a ring: one array,
+// allocated when the buffer is made, in which Append overwrites the oldest bytes. Appending
+// costs the size of the chunk and allocates nothing, however long the terminal has been talking.
 type OutputBuffer struct {
-	buf      []byte
-	capacity int
 	lock     sync.Mutex
+	buf      []byte // the ring: len(buf) == capacity
+	capacity int
+	start    int    // where the oldest byte kept is in buf
+	size     int    // the number of bytes kept
+	total    uint64 // the number of bytes appended, kept or not
 }
 
 // NewOutputBuffer initializes an OutputBuffer with a specified capacity.
@@ -21,7 +23,7 @@ func NewOutputBuffer(capacity int) *OutputBuffer {
 		capacity = 0
 	}
 	return &OutputBuffer{
-		buf:      make([]byte, 0, capacity),
+		buf:      make([]byte, capacity),
 		capacity: capacity,
 	}
 }
@@ -32,48 +34,64 @@ func NewDefaultOutputBuffer() *OutputBuffer {
 }
 
 // Append adds data to the buffer, evicting the oldest bytes when capacity is exceeded.
-// The backing array never grows beyond capacity to avoid retaining oversized memory.
+// It copies data and keeps no reference to it.
 func (b *OutputBuffer) Append(data []byte) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
-	if b.capacity == 0 {
-		b.buf = nil
+	b.total += uint64(len(data))
+	if b.capacity == 0 || len(data) == 0 {
 		return
 	}
 
 	if len(data) >= b.capacity {
-		// Data alone exceeds capacity — keep only the last capacity bytes.
-		newBuf := make([]byte, b.capacity)
-		copy(newBuf, data[len(data)-b.capacity:])
-		b.buf = newBuf
+		// Data alone fills the buffer: keep only its last capacity bytes.
+		copy(b.buf, data[len(data)-b.capacity:])
+		b.start, b.size = 0, b.capacity
 		return
 	}
 
-	total := len(b.buf) + len(data)
-	if total <= b.capacity {
-		b.buf = append(b.buf, data...)
-		return
+	// Write after the newest byte, to the end of the array and on from its beginning. What the write
+	// covers beyond the free room is the oldest bytes, which it replaces.
+	end := b.start + b.size
+	if end >= b.capacity {
+		end -= b.capacity
 	}
+	n := copy(b.buf[end:], data)
+	copy(b.buf, data[n:])
 
-	// Total exceeds capacity — allocate a new slice and copy the tail of old + new data.
-	newBuf := make([]byte, b.capacity)
-	keep := b.capacity - len(data)
-	copy(newBuf, b.buf[len(b.buf)-keep:])
-	copy(newBuf[keep:], data)
-	b.buf = newBuf
+	b.size += len(data)
+	if b.size > b.capacity {
+		b.start += b.size - b.capacity
+		if b.start >= b.capacity {
+			b.start -= b.capacity
+		}
+		b.size = b.capacity
+	}
 }
 
-// GetAll retrieves a copy of all stored bytes in the buffer.
+// GetAll retrieves a copy of all stored bytes in the buffer, oldest first.
 func (b *OutputBuffer) GetAll() []byte {
 	b.lock.Lock()
 	defer b.lock.Unlock()
-	return slices.Clone(b.buf)
+
+	out := make([]byte, b.size)
+	n := copy(out, b.buf[b.start:min(b.start+b.size, b.capacity)])
+	copy(out[n:], b.buf)
+	return out
 }
 
 // Len returns the current number of bytes in the buffer.
 func (b *OutputBuffer) Len() int {
 	b.lock.Lock()
 	defer b.lock.Unlock()
-	return len(b.buf)
+	return b.size
+}
+
+// Total returns the number of bytes appended since the buffer was made, whether it kept them or
+// evicted them since: the position, in the terminal's output, of the byte that the next Append adds.
+func (b *OutputBuffer) Total() uint64 {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+	return b.total
 }

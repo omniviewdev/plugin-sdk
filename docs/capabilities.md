@@ -94,6 +94,30 @@ Cancellation and deadline failures retain transport error semantics rather than
 becoming successful RPCs containing tool failures. Reviewed unavailable and
 permission-denied handler errors retain their safe classification.
 
+## Exec sessions: how they end
+
+These rules hold for sessions made by a `TTYHandler`, for a plugin built with an SDK that has them.
+
+- **The end of the process.** A handler reports that its process is over by sending on `stopCh`. The
+  manager then lets its reader take what the handler wrote to the terminal last, and only then closes
+  the terminal and sends the Close signal: the output a process wrote before it ended comes before its
+  Close signal, which is the last thing a session sends. The wait is bounded (500 ms on the manager's
+  clock), so a consumer that does not take output cannot keep a session from ending; what was not read
+  by then is lost. Only the terminals the SDK opens (`NewRealTerminalFactory`, the default) are waited
+  for; a terminal from a custom `TerminalFactory` is closed at once. A session ended by `CloseSession`,
+  by `Manager.Close` or by the end of its stream is not waited for.
+- **A session that ended before the host attached.** If a session ends by itself while no host is
+  attached, its output is kept for the first `AttachSession` to it, which returns the output and
+  the session as it was; no other call finds a session that has ended, and the output is gone after
+  that attach. At most 32 sessions are kept, for one minute each, oldest first. A session that the host
+  or the manager ended keeps nothing.
+- **The end of a stream.** `Manager.Stream` serves the sessions with the stream opened last. When a stream
+  ends, by its context or by the host closing its side of the RPC, the sessions it served are ended: their
+  output can no longer be delivered. A stream that a newer one replaced ends nothing.
+- **Output history.** Each session keeps the last `DefaultOutputBufferSize` bytes of its output in an
+  `OutputBuffer`, a ring that allocates once and never again; `OutputBuffer.Total` counts every byte
+  appended, kept or evicted.
+
 ## Native exec command planning
 
 Exec handlers can optionally set `NativeCommandHandler` to plan a **fresh**

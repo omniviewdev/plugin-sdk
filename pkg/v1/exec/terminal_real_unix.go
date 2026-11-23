@@ -48,6 +48,20 @@ func (t *realTerminal) Close() error {
 	return firstErr
 }
 
+// markEnd writes mark to the slave: it comes out of the master after everything that was written to the
+// slave before it, which is what the manager waits for when the process behind a session is over (see
+// Manager.drainTerminal). The kernel can lose the end of a pty's output when the slave is closed with
+// output the master has not read (macOS and the BSDs flush it; Linux can drop a chunk of it under load),
+// so the end of the output is not left to the kernel: a mark travels with the output, and the terminal
+// stays open until the reader has seen it.
+//
+// The write waits for room in the kernel's queue, which only comes if the master is read; the caller
+// gives up on it, and Close of the terminal sets it free.
+func (t *realTerminal) markEnd(mark []byte) error {
+	_, err := t.slave.Write(mark)
+	return err
+}
+
 // NewRealTerminalFactory returns a TerminalFactory that creates real PTY terminals.
 // The slave is set to raw mode and the terminal is sized to the given initial dimensions.
 func NewRealTerminalFactory() TerminalFactory {
