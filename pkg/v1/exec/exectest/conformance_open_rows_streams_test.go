@@ -78,7 +78,8 @@ func TestTheStreamGrammarAcceptsEndedOrDetachedAsTheLastFrameAndHoldsNothingAfte
 // a code that only the transport relayed (whose start is observed and whose survival is not known), a signal where the kind reports one, a
 // stream that ended with no status, a link that died, a failure, a close by the host, a retired connection, the plugin's shutdown and,
 // for a session with no stream, the lease that ran out, once for the Kill of the kind and once for each narrower Kill a session of it may
-// report. A kind of end that is not in the table is one that no host reads from the tombstone.
+// report; and a session that its host left for a lease that it asked for, which it reads and ends. A kind of end that is not in the table
+// is one that no host reads from the tombstone.
 func TestCaseNineEndsASessionEveryWayItCanEndWithNoStreamAttached(t *testing.T) {
 	for _, s := range openShapes() {
 		info := s.info()
@@ -89,6 +90,7 @@ func TestCaseNineEndsASessionEveryWayItCanEndWithNoStreamAttached(t *testing.T) 
 		t.Run(s.name, func(t *testing.T) {
 			seen := map[string]endScenario{}
 			var leases []*execv2.End
+			asked := 0
 			for _, sc := range endScenarios(caps) {
 				if sc.detached == nil {
 					if sc.detachedOnly {
@@ -104,14 +106,25 @@ func TestCaseNineEndsASessionEveryWayItCanEndWithNoStreamAttached(t *testing.T) 
 				if _, again := seen[key]; !again {
 					seen[key] = sc
 				}
-				if sc.end.GetClosed().GetBy() == execv2.ClosedBy_CLOSED_BY_DETACH_TIMEOUT {
-					if !sc.detachedOnly || sc.detached.leaseMs == 0 || !sc.detached.runs {
+				switch lapses := sc.detached.lease == leaseRunsOut; {
+				case sc.end.GetClosed().GetBy() == execv2.ClosedBy_CLOSED_BY_DETACH_TIMEOUT:
+					if !sc.detachedOnly || !lapses || !sc.detached.runs {
 						t.Errorf("%s ends by its lease and has to run only with the host gone, with a lease that runs out, for a function that runs: only a lease ends it, and nothing else may", sc.name)
 					}
 					leases = append(leases, sc.end)
-				} else if sc.detachedOnly {
-					t.Errorf("%s runs only with the host gone, and it is not the lease", sc.name)
+				case lapses:
+					t.Errorf("%s leaves its session with a lease that runs out and ends it another way: the lease is the end of that session", sc.name)
+				case sc.detachedOnly && sc.detached.lease == leaseAsked:
+					asked++
+					if !sc.detached.runs || sc.detached.end == nil {
+						t.Errorf("%s leaves its session for a lease that the host asked for, which outlives the case: the function has to run, and the host has to end the session", sc.name)
+					}
+				case sc.detachedOnly:
+					t.Errorf("%s runs only with the host gone, and its lease is neither the one that runs out nor one that the host asked for", sc.name)
 				}
+			}
+			if asked != 1 {
+				t.Errorf("%d scenarios leave a session for a lease that the host asked for, want one: the lease of a Detach and of a stream that broke is read for a lease that outlives the case", asked)
 			}
 			wantKinds := []string{
 				"exited", "failed", "lost", "closed by CLOSED_BY_REQUEST", "closed by CLOSED_BY_DETACH_TIMEOUT",
@@ -155,6 +168,14 @@ func TestCaseNineEndsASessionEveryWayItCanEndWithNoStreamAttached(t *testing.T) 
 	}
 }
 
+// The lease that a host asks for, and reads while the session lives with no stream, outlives a case by far: no pace of the machine runs it
+// out, so what the host reads of it is the same for every pace. The shortest lease is the one that the pace decides.
+func TestTheLeaseThatTheHostAsksForAndReadsOutlivesACaseByFar(t *testing.T) {
+	if got := time.Duration(askedLeaseMs) * time.Millisecond; got < 5*caseBound {
+		t.Errorf("the lease the host asks for and reads is %v, want one that outlives the bound of a case, %v, by far", got, caseBound)
+	}
+}
+
 func scenarioNamed(scenarios []endScenario, name string) (endScenario, bool) {
 	for _, sc := range scenarios {
 		if sc.name == name {
@@ -167,6 +188,8 @@ func scenarioNamed(scenarios []endScenario, name string) (endScenario, bool) {
 // A lease that the plugin says ends at some moment is held to the window the host's own clock gives it: applied between the host's two
 // readings of the clock, it ends that many milliseconds after one of them and before that many after the other, and a lease that ends a
 // millisecond outside of the window is wrong. The plugin and the host share the clock, so the host holds the plugin to what it asked for.
+// The window is arithmetic on the host's two readings and holds at any pace, so the host reads it of the lease a Detach is answered with
+// whatever its length; what a listing says of a lease depends on the pace, and the host reads it only of a lease that outlives the case.
 func TestTheLeaseWindowIsTheMillisecondsAskedForAfterTheHostsReadingsOfItsClock(t *testing.T) {
 	before := time.UnixMilli(1_000_000)
 	after := time.UnixMilli(1_000_040)
@@ -184,6 +207,9 @@ func TestTheLeaseWindowIsTheMillisecondsAskedForAfterTheHostsReadingsOfItsClock(
 		{"a lease that was not applied", 0, 300, false},
 		{"an hour too long", 1_000_020 + 300 + 3_600_000, 300, false},
 		{"a lease of the millisecond that was asked for", 1_000_020 + 1, 1, true},
+		{"a lease of a minute that the host asked for", 1_000_020 + 60_000, 60_000, true},
+		{"a lease of a minute that was applied as the default of five", 1_000_020 + 300_000, 60_000, false},
+		{"a lease of a minute that was applied as a millisecond", 1_000_020 + 1, 60_000, false},
 	} {
 		if got := leaseWindow(tc.expires, before, after, tc.ms); got != tc.want {
 			t.Errorf("%s: a lease of %d ms that ends at %d is in the window: %v, want %v", tc.name, tc.ms, tc.expires, got, tc.want)

@@ -21,6 +21,12 @@ import (
 // The host leaves the session, and then the session ends. The order is the case's, and it is a barrier and not a delay: a function that
 // ends by itself waits at a gate until the host has left, a session that is ended by the host is ended with EndSession, which needs a
 // session with no stream, and the lease runs on the clock of the plugin (one millisecond, awaited as an event that has to happen).
+//
+// What a host reads of a session while it has no stream is read of a lease that outlives the case: the session's own, which is the
+// target's default, or one that the host asks for, which is a minute. A lease of a millisecond is over before a host that is not
+// hurried has asked, and for as long as the plugin takes to end the session its listing says that it has no stream, no lease and no
+// end, whatever the pace of the machine decides. What the host holds such a plugin to is the end alone, read from the tombstone that
+// the host awaits, and it reads nothing of the session before.
 
 // leaving is how a host leaves a session that runs.
 type leaving int
@@ -40,15 +46,31 @@ func (l leaving) String() string {
 	return "breaks its stream"
 }
 
+// leaseKind is the lease a host leaves a session with.
+type leaseKind int
+
+const (
+	// leaseOwn asks for none: the session's own, which is the target's default and never above its maximum, minutes that outlive the case.
+	leaseOwn leaseKind = iota
+	// leaseAsked is a lease that the host asks for, and that outlives the case as well: a minute, or the target's maximum when that is
+	// shorter. It is Detach.lease_ms for a stream that leaves, and Start.detach_timeout_ms, the session's own, for one that breaks.
+	leaseAsked
+	// leaseRunsOut is the shortest lease that the wire carries, a millisecond: the scenario is the end of its lease. The lease is over
+	// before a host can be counted on to have read the session, so the scenario holds the plugin to the end alone.
+	leaseRunsOut
+)
+
+// askedLeaseMs is how long a lease that the host asks for and that outlives the case is, in milliseconds.
+const askedLeaseMs = 60_000
+
 // detachment is the form of a scenario that runs with the host gone.
 type detachment struct {
 	// runs says that the function writes "up" and then waits to be ended: the host reads "up" before it leaves, so that the start was
 	// observed when the session ends. A function that does not is one that ends by itself, and it waits at a gate until the host has
 	// left, so that it ends with nobody attached.
 	runs bool
-	// leaseMs is the lease the host leaves the session with, in milliseconds; zero is the session's own, which outlives the case. A
-	// scenario that ends because its lease ran out asks for one millisecond.
-	leaseMs uint32
+	// lease is the lease the host leaves the session with.
+	lease leaseKind
 	// end ends the session once nobody is attached; nil leaves it to the function (released from its gate), or to the lease.
 	end func(r *wireRig, s *wireSession)
 }
@@ -120,6 +142,22 @@ func (r *wireRig) ownLease() uint32 {
 	return lease
 }
 
+// leaseAskedFor is the lease, in milliseconds, that a host asks for when it leaves a session with a lease of the kind: none for the session's
+// own (zero), a millisecond for the lease that runs out, and for the one that the host asks for a minute, or the target's maximum when that
+// is shorter (a Start that asks for more is refused, and a Detach that asks for more is clamped).
+func (r *wireRig) leaseAskedFor(kind leaseKind) uint32 {
+	switch kind {
+	case leaseRunsOut:
+		return 1
+	case leaseAsked:
+		if most := r.described().GetSession().GetMaxDetachTimeoutMs(); most > 0 {
+			return min(askedLeaseMs, most)
+		}
+		return askedLeaseMs
+	}
+	return 0
+}
+
 // leaseWindow says whether a lease of ms milliseconds that the plugin says ends at expires (Unix milliseconds) is one that the host's own
 // clock allows: a lease applied at some moment between before and after ends between before and after, ms later. The plugin and the host
 // share the clock here, and the host holds the plugin to what it asked for.
@@ -129,12 +167,14 @@ func leaseWindow(expires int64, before, after time.Time, ms uint32) bool {
 
 // leave has the host leave a session that runs, and holds what the host reads of leaving to the contract: a Detach is answered by a
 // stream that ends with Detached{REQUESTED} carrying the lease that was applied, and a stream that broke is followed by a listing that
-// says nobody is attached. Either way the session lives, for its lease, with no stream: unless the lease is so short that it has run
-// out already, which only the scenario that waits for that asks for.
-func (r *wireRig) leave(s *wireSession, how leaving, leaseMs uint32, name string) {
+// says nobody is attached. Either way the session lives, for its lease, with no stream. A lease that runs out is over before the host can
+// be counted on to have read the session, so of it the host reads what its stream was told, which is the same whatever the pace, and
+// nothing of the listing, which is not: the end is read from the tombstone, which the scenario awaits.
+func (r *wireRig) leave(s *wireSession, how leaving, lease leaseKind, name string) {
 	t := r.t
 	t.Helper()
-	applied := leaseMs
+	asked := r.leaseAskedFor(lease)
+	applied := asked
 	if applied == 0 {
 		applied = r.ownLease()
 	}
@@ -142,13 +182,14 @@ func (r *wireRig) leave(s *wireSession, how leaving, leaseMs uint32, name string
 	var expires int64 // when the lease ends, Unix milliseconds, as the plugin says
 	switch how {
 	case leavesByDetach:
-		s.mustSend(&execv2.ClientFrame{Frame: &execv2.ClientFrame_Detach{Detach: &execv2.Detach{LeaseMs: leaseMs}}})
+		s.mustSend(&execv2.ClientFrame{Frame: &execv2.ClientFrame_Detach{Detach: &execv2.Detach{LeaseMs: asked}}})
 		last := s.last()
 		after := time.Now()
 		detached := s.wantDetached(name, last, execv2.DetachReason_DETACH_REASON_REQUESTED)
 		if detached == nil {
 			return
 		}
+		// The plugin applied the lease at some moment between the host's two readings of the clock, which is so for a lease that has run out as well.
 		expires = detached.GetLeaseExpiresUnixMs()
 		if !leaseWindow(expires, before, after, applied) {
 			t.Errorf("%s: session %q: Detached says the lease ends at %d, want it %d ms after the Detach, between %d and %d", name, s.id, expires,
@@ -157,6 +198,9 @@ func (r *wireRig) leave(s *wireSession, how leaving, leaseMs uint32, name string
 	case leavesByBreak:
 		_ = s.conn.Close()
 	}
+	if lease == leaseRunsOut {
+		return
+	}
 	var entry *execv2.SessionInfo
 	r.await(name+": the session to have no stream attached after its host left it", func() bool {
 		entry = r.sessionEntry(s.id)
@@ -164,7 +208,13 @@ func (r *wireRig) leave(s *wireSession, how leaving, leaseMs uint32, name string
 	})
 	after := time.Now()
 	if entry.GetEndedWith() != nil {
-		return // the lease has run out already
+		// A lease that the host's own clock says cannot have run out has not: the session ended when its host left it, for no reason a lease
+		// gives. (A target that declares a lease of a few milliseconds of its own may have run out of it already, which is no failure.)
+		if after.UnixMilli() < before.UnixMilli()+int64(applied) {
+			t.Errorf("%s: session %q: the listing says the session ended (%s) before the %d ms of its lease had passed: it lives with no stream, for its lease",
+				name, s.id, endedText(entry.GetEndedWith()), applied)
+		}
+		return
 	}
 	if how == leavesByBreak {
 		// The session's own lease runs from the moment its stream broke, which is between the close and the moment the listing says so.
@@ -198,8 +248,8 @@ func (r *wireRig) playEndDetached(sc endScenario, how leaving) *execv2.Ended {
 	script := r.newID("script")
 	r.script(script, steps...)
 	mods := slices.Clone(sc.mods)
-	if how == leavesByBreak && d.leaseMs > 0 {
-		mods = append(mods, func(st *execv2.Start) { st.DetachTimeoutMs = d.leaseMs })
+	if asked := r.leaseAskedFor(d.lease); how == leavesByBreak && asked > 0 {
+		mods = append(mods, func(st *execv2.Start) { st.DetachTimeoutMs = asked })
 	}
 	// The place of the session before is free once it has ended, which is a moment after its tombstone is readable.
 	s := r.mustOpenEventually(r.newID("tombstone"), script, mods...)
@@ -210,7 +260,7 @@ func (r *wireRig) playEndDetached(sc endScenario, how leaving) *execv2.Ended {
 		s.readBytes(len(sc.output))
 	}
 	s.applied() // a stream that breaks takes its frames with it: the input has to have reached the function first
-	r.leave(s, how, d.leaseMs, name)
+	r.leave(s, how, d.lease, name)
 	switch {
 	case held != nil:
 		held.Open()

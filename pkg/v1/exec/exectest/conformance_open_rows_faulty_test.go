@@ -421,6 +421,23 @@ func TestEveryOpenRowBodyFailsWhenThePluginIsWrong(t *testing.T) {
 				info.LeaseExpiresUnixMs += 3_600_000
 			}
 		}), nil, "the listing says the lease of a session whose stream broke"},
+		// A session that its host leaves for a lease that it asks for (a minute) is read while it has no stream: the lease it was given is the one that
+		// the host asked for, and not the target's default (five minutes), whichever way the host left, and the session outlives its leaving.
+		{"a Detach that asks for a lease of a minute, which is answered with the target's default", "case 09", shell, detachedFault(func(d *execv2.Detached) {
+			if until := d.GetLeaseExpiresUnixMs() - time.Now().UnixMilli(); d.GetReason() == execv2.DetachReason_DETACH_REASON_REQUESTED && until > 30_000 && until < 90_000 {
+				d.LeaseExpiresUnixMs = time.Now().Add(5 * time.Minute).UnixMilli()
+			}
+		}), nil, "Detached says the lease ends at"},
+		{"a session started with a lease of a minute whose stream broke, and whose listing says the target's default", "case 09", shell, listingFault(func(info *execv2.SessionInfo) {
+			if until := info.GetLeaseExpiresUnixMs() - time.Now().UnixMilli(); info.GetEndedWith() == nil && !info.GetAttached() && until > 30_000 && until < 90_000 {
+				info.LeaseExpiresUnixMs = time.Now().Add(5 * time.Minute).UnixMilli()
+			}
+		}), nil, "the listing says the lease of a session whose stream broke"},
+		{"a session that the listing says ended when its host left it, with minutes of its lease to run", "case 09", shell, listingFault(func(info *execv2.SessionInfo) {
+			if info.GetEndedWith() == nil && !info.GetAttached() && info.GetLeaseExpiresUnixMs() != 0 {
+				info.EndedWith, info.LeaseExpiresUnixMs = &execv2.Ended{End: endClosed(execv2.ClosedBy_CLOSED_BY_DETACH_TIMEOUT, exec.KillTerminates)}, 0
+			}
+		}), nil, "of its lease had passed"},
 
 		// case 12
 		{"a refusal for too many sessions that is INTERNAL", "case 12", shell, refusalFault(func(e *exec.Error) {

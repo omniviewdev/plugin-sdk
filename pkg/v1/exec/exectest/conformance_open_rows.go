@@ -57,7 +57,8 @@ type endScenario struct {
 	mods []func(*execv2.Start)
 	// detached is how the same scenario runs when the host leaves the session before it ends, so that no stream is attached when it does
 	// and the end is read from the tombstone; nil is a scenario that only runs with the stream attached. detachedOnly is a scenario
-	// that cannot run attached: the lease that runs out ends a session that nobody holds, and no Ended frame can carry it.
+	// that cannot run attached: the lease that runs out ends a session that nobody holds, and no Ended frame can carry it, and the lease
+	// that the host asks for is the one that a stream leaves with.
 	detached     *detachment
 	detachedOnly bool
 }
@@ -133,17 +134,21 @@ func (r *wireRig) playSession(sc endScenario) (*wireSession, *execv2.Ended) {
 // follows the input the host sent), a code that only the transport relayed, a stream that ended with no status, a link that died, a
 // failure before and after the start, a close by the host, graceful and kill, a signal where the kind reports signals, and, on a rig of
 // their own, a retired connection and the plugin's shutdown; and, for a session that has no stream, the lease that runs out, for the Kill
-// of the kind and for each narrower Kill that a session of it may report in Started. Each also runs with the host gone: the host leaves
-// the session, and it ends with nobody attached.
+// of the kind and for each narrower Kill that a session of it may report in Started, and a lease that the host asks for, which the host
+// reads for as long as it needs and then ends. Each also runs with the host gone: the host leaves the session, and it ends with nobody
+// attached.
 func endScenarios(caps exec.Capabilities) []endScenario {
 	exit0, end0 := processExit(caps, 0)
 	exit3, end3 := processExit(caps, 3)
 	closed := func(by execv2.ClosedBy) *execv2.End { return endClosed(by, caps.Kill) }
 	running := []Step{WriteOut("up"), Block()}
 	graceful, kill, unnamed := execv2.CloseMode_CLOSE_MODE_GRACEFUL, execv2.CloseMode_CLOSE_MODE_KILL, execv2.CloseMode_CLOSE_MODE_UNSPECIFIED
-	// With the host gone, a function that ends by itself is held until it has left, and a function that runs is ended by what ends it.
-	itself := &detachment{}
-	then := func(end func(*wireRig, *wireSession)) *detachment { return &detachment{runs: true, end: end} }
+	// With the host gone, a function that ends by itself is held until it has left, and a function that runs is ended by what ends it. The
+	// host leaves it for the session's own lease, which outlives the case, and reads the session while it lives with no stream.
+	itself := &detachment{lease: leaseOwn}
+	then := func(end func(*wireRig, *wireSession)) *detachment {
+		return &detachment{runs: true, lease: leaseOwn, end: end}
+	}
 	scenarios := []endScenario{
 		{name: "exit 0", steps: []Step{EndWith(exit0)}, end: end0, started: true, detached: itself},
 		{name: "exit n with output", steps: []Step{WriteOut("out"), EndWith(exit3)}, end: end3, started: true, output: "out", detached: itself},
@@ -168,9 +173,14 @@ func endScenarios(caps exec.Capabilities) []endScenario {
 			end: closed(execv2.ClosedBy_CLOSED_BY_CONNECTION_RETIRED), started: true, output: "up", detached: then(retires)},
 		{name: "the plugin's shutdown", fresh: true, steps: running, drive: afterUp(shutsDown),
 			end: closed(execv2.ClosedBy_CLOSED_BY_PLUGIN_SHUTDOWN), started: true, output: "up", detached: then(shutsDown)},
-		// The lease ends a session that nobody holds, so it has no stream to carry an Ended: its end is only the tombstone's.
+		// The lease ends a session that nobody holds, so it has no stream to carry an Ended: its end is only the tombstone's. It is a
+		// millisecond, over before a host can be counted on to read the session, so the scenario reads nothing of it but its end.
 		{name: "a lease that ran out", steps: running, end: closed(execv2.ClosedBy_CLOSED_BY_DETACH_TIMEOUT), started: true, output: "up",
-			detachedOnly: true, detached: &detachment{runs: true, leaseMs: 1}},
+			detachedOnly: true, detached: &detachment{runs: true, lease: leaseRunsOut}},
+		// A lease that the host asks for outlives the case: the host reads the session, which lives with no stream for its lease, for as
+		// long as it needs, and ends it.
+		{name: "a session left for the lease that the host asked for", steps: running, end: closed(execv2.ClosedBy_CLOSED_BY_REQUEST), started: true, output: "up",
+			detachedOnly: true, detached: &detachment{runs: true, lease: leaseAsked, end: endsSession(graceful)}},
 	}
 	// A session that ran out of lease says whether the process may survive as its own Kill says, which the session may have narrowed in
 	// Started: a kind that terminates a session's process on a close, and a session of it that reports it only closes its stream.
@@ -184,7 +194,7 @@ func endScenarios(caps exec.Capabilities) []endScenario {
 			name:  fmt.Sprintf("a lease that ran out, on a session of the Kill %s", k),
 			steps: []Step{ReportStarted(exec.SessionFacts{Capabilities: &narrowed}), WriteOut("up"), Block()},
 			end:   endClosed(execv2.ClosedBy_CLOSED_BY_DETACH_TIMEOUT, k), started: true, output: "up", reports: true,
-			detachedOnly: true, detached: &detachment{runs: true, leaseMs: 1},
+			detachedOnly: true, detached: &detachment{runs: true, lease: leaseRunsOut},
 		})
 	}
 	if reportsSignals(caps) {
@@ -219,9 +229,12 @@ func runEnds(t checkT, env *wireEnv, target exec.Target, scenarios []endScenario
 // the host sent, a code that only the transport relayed, a stream that ended with no status, a link that died, a failure before the start
 // was observed and one after, a close by the host (graceful, kill, and one that names no mode; for a session with no stream, EndSession),
 // a signal for a kind that reports signals, a retired connection, the plugin's shutdown and, for a session with no stream only, a lease
-// that ran out. The counts are exact (bytes_out is what the function wrote, bytes_in what the host sent, last_offset is bytes_out), the
-// completeness is the one the end allows, start_observed is the contract's, remote_may_survive is what the declared Kill makes of the end
-// whoever ended the session, and the bytes are exactly the function's.
+// that ran out, which is read by its end alone (a lease of a millisecond is over before a host can be counted on to have listed the
+// session, and what the listing says of a session between the end of its lease and its tombstone is not the same for every pace). The
+// counts are exact (bytes_out is what the function wrote, bytes_in what the host sent, last_offset is bytes_out), the completeness is the
+// one the end allows, start_observed is the contract's, remote_may_survive is what the declared Kill makes of the end whoever ended the
+// session, and the bytes are exactly the function's. What a host reads of a session that lives with no stream, the lease that it was left
+// with and that it is listed alive, is read of a lease that outlives the case: the session's own, or one that the host asked for.
 func caseWireEnds(t checkT, target exec.Target, env *wireEnv) {
 	t.Helper()
 	if target.Info.Session.IsZero() {
