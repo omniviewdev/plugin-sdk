@@ -431,7 +431,8 @@ func (p *outputPipe) Stats() pipeStats {
 }
 
 // inputPipe carries what the host sends to the function's Proc.Stdin. The host's side blocks when the queue is full
-// (stdioQueueBytes), which is the backpressure the host sees, and the function's side blocks when it is empty.
+// (stdioQueueBytes), which is the backpressure the host sees, and the function's side blocks when it is empty. What the host sent is
+// never discarded by the SDK, the end of the session included: the function reads every byte that was queued, and io.EOF after it.
 type inputPipe struct {
 	mu      sync.Mutex
 	cond    *sync.Cond
@@ -439,7 +440,7 @@ type inputPipe struct {
 
 	ring     byteRing
 	eof      bool // the host closed the input: the reader drains what is queued and then gets io.EOF
-	closed   bool // the session ended: the reader gets io.EOF at once and what was queued is gone
+	closed   bool // the session ended: no byte is taken any more, and the reader drains what is queued and then gets io.EOF
 	accepted uint64
 }
 
@@ -462,8 +463,8 @@ func (p *inputPipe) wake() {
 	}
 }
 
-// Read is the function's Proc.Stdin. It waits for input, and returns io.EOF when the host closed the input and
-// everything it sent was read, and at once when the session has ended.
+// Read is the function's Proc.Stdin. It waits for input, and returns io.EOF when the host closed the input or the session ended
+// and everything the host sent was read.
 func (p *inputPipe) Read(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
@@ -472,13 +473,11 @@ func (p *inputPipe) Read(b []byte) (int, error) {
 	defer p.mu.Unlock()
 	for {
 		switch {
-		case p.closed:
-			return 0, io.EOF
 		case p.ring.n > 0:
 			n := p.ring.read(b)
 			p.wake()
 			return n, nil
-		case p.eof:
+		case p.closed, p.eof:
 			return 0, io.EOF
 		}
 		p.wait()
@@ -535,11 +534,12 @@ func (p *inputPipe) CloseWrite() {
 	p.mu.Unlock()
 }
 
-// Close ends the pipe with the session: queued input is discarded, every reader gets io.EOF and every writer fails.
+// Close ends the pipe with the session: every writer fails and a reader that waits for input gets io.EOF. What was queued is kept, and
+// the reader reads it before io.EOF: the bytes the host sent before the end are accepted, and are never discarded by the SDK. The queue
+// is as bounded at the end as it was before it (stdioQueueBytes). It may be called again.
 func (p *inputPipe) Close() {
 	p.mu.Lock()
 	p.closed = true
-	p.ring.discard(p.ring.n)
 	p.cond.Broadcast()
 	p.mu.Unlock()
 }
@@ -577,15 +577,19 @@ type resizeOwner interface {
 // first value of Proc.Resize is Request.Size). It tells the engine when the function took a size that a host sent, and
 // once when a size has waited unreadAfter for a function that does not read the channel.
 //
-// run is the one goroutine of the resizer. It ends when stop is called, and closes the channel as it ends, which is
-// what "closed when the command ends" means to the function.
+// run is the one goroutine of the resizer. It closes the channel as it ends, which is what "closed when the session ends" means to
+// the function, and it ends in one of two ways. The end of the session (end) stops it taking sizes from the host and lets it go on until
+// the sizes it holds were taken: a size the host sent before the end is never discarded by the SDK, and a goroutine of the function that
+// ranges over the channel finds it and then returns with the rest. The end of the function (stop: it returned, or the SDK gave up on it
+// after its grace) ends it at once, with what it held: nobody is waited for.
 type resizer struct {
 	mu      sync.Mutex
 	initial Size
 	pending resizeRequest
 	has     bool
+	ending  bool // the session ended: no size is taken from the host, and run ends once it holds none
 	stopped bool
-	wakeup  chan struct{} // capacity 1: a size is pending
+	wakeup  chan struct{} // capacity 1: a size is pending, or the session ended
 	quit    chan struct{}
 	out     chan Size
 
@@ -606,10 +610,11 @@ func newResizer(initial Size, applied func(uint32, Size), unreadAfter time.Durat
 func (r *resizer) channel() <-chan Size { return r.out }
 
 // submit makes size the one to deliver next, replacing a size that has not been taken, and tells owner (when there is one) that it
-// was accepted, before the function can take it. It never blocks, and reports false once the resizer has stopped.
+// was accepted, before the function can take it. It never blocks, and reports false once the session has ended or the resizer has
+// stopped: a size that comes after the end is refused, and nobody is told it was accepted.
 func (r *resizer) submit(seq uint32, size Size, owner resizeOwner) bool {
 	r.mu.Lock()
-	if r.stopped {
+	if r.stopped || r.ending {
 		r.mu.Unlock()
 		return false
 	}
@@ -618,14 +623,19 @@ func (r *resizer) submit(seq uint32, size Size, owner resizeOwner) bool {
 	}
 	r.pending, r.has = resizeRequest{seq: seq, size: size, owner: owner}, true
 	r.mu.Unlock()
+	r.wake()
+	return true
+}
+
+// wake tells run that a size is pending or that the session ended. A wake that finds one waiting adds nothing.
+func (r *resizer) wake() {
 	select {
 	case r.wakeup <- struct{}{}:
 	default:
 	}
-	return true
 }
 
-// stop ends run: the pending size is dropped and the channel closes. It may be called again.
+// stop ends run at once: the pending size is dropped and the channel closes. It may be called again.
 func (r *resizer) stop() {
 	r.mu.Lock()
 	if !r.stopped {
@@ -635,25 +645,38 @@ func (r *resizer) stop() {
 	r.mu.Unlock()
 }
 
-// take returns the pending size and clears it.
-func (r *resizer) take() (resizeRequest, bool) {
+// end is the end of the session: submit refuses every size from now on, and run closes the channel once the sizes it holds (the size
+// the command was opened with, if the function has not read it, the one in flight, and the newest the host sent) were taken, or when
+// stop says the function is gone. It never blocks, and it may be called again.
+func (r *resizer) end() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if !r.has {
-		return resizeRequest{}, false
-	}
-	r.has = false
-	return r.pending, true
+	r.ending = true
+	r.mu.Unlock()
+	r.wake()
 }
 
-// run delivers the initial size and then the sizes of the host until stop.
+// take returns the pending size and clears it, and reports done when the session ended and no size is left to hand over.
+func (r *resizer) take() (req resizeRequest, ok, done bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.has {
+		r.has = false
+		return r.pending, true, false
+	}
+	return resizeRequest{}, false, r.ending
+}
+
+// run delivers the initial size and then the sizes of the host, until the end of the session has left it nothing to deliver, or stop.
 func (r *resizer) run() {
 	defer close(r.out)
 	if !r.initial.IsZero() && !r.deliver(resizeRequest{size: r.initial, initial: true}) {
 		return
 	}
 	for {
-		req, ok := r.take()
+		req, ok, done := r.take()
+		if done {
+			return
+		}
 		if !ok {
 			select {
 			case <-r.wakeup:

@@ -53,7 +53,9 @@ func (p *procControl) init(c *command, opened Capabilities) (signals <-chan Sign
 }
 
 // close ends the control with the command: Proc.Signals and Proc.Queries close, so that a goroutine of the function that ranges over
-// them returns with the rest, and nothing is handed to the function after it. It may be called again.
+// them returns with the rest, and nothing is handed to the function after it. What they hold is kept: a closed channel hands over
+// every value it holds before it reports closed, so the signals and the queries that were accepted before the end are never discarded
+// by the SDK, and nothing here may drain them (open_control_end_test.go holds this). It may be called again.
 func (p *procControl) close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()

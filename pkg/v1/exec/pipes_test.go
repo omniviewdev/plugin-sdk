@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand/v2"
 	"runtime"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -752,15 +753,19 @@ func TestAnInputPipeReaderWaitsForInputAndIsEndedByTheClose(t *testing.T) {
 			t.Fatalf("read %d %q", n, buf[:n])
 		}
 	})
-	t.Run("the end of the session gives it EOF at once and drops what was queued", func(t *testing.T) {
+	t.Run("the end of the session keeps what was queued, which is read before EOF, and refuses what comes after it", func(t *testing.T) {
 		p := newInputPipe(100)
 		p.Write(context.Background(), []byte("unread")) //nolint:errcheck // fits
 		p.Close()
-		if n, err := p.Read(make([]byte, 10)); n != 0 || !errors.Is(err, io.EOF) {
-			t.Fatalf("read after the end: %d, %v", n, err)
+		got, err := io.ReadAll(p)
+		if err != nil || string(got) != "unread" {
+			t.Fatalf("read after the end: %q, %v, want what was queued and then io.EOF", got, err)
 		}
 		if n, err := p.Write(context.Background(), []byte("x")); n != 0 || !errors.Is(err, io.ErrClosedPipe) {
 			t.Fatalf("write after the end: %d, %v", n, err)
+		}
+		if n, err := p.Read(make([]byte, 10)); n != 0 || !errors.Is(err, io.EOF) {
+			t.Fatalf("read at the end of what was queued: %d, %v, want io.EOF", n, err)
 		}
 	})
 	t.Run("the end of the session wakes a waiting reader", func(t *testing.T) {
@@ -780,6 +785,35 @@ func TestAnInputPipeReaderWaitsForInputAndIsEndedByTheClose(t *testing.T) {
 			t.Fatalf("read into nothing: %d, %v", n, err)
 		}
 	})
+}
+
+// What the host sent is never discarded by the end of the session: every byte that was queued, a full queue included, is read before
+// EOF, whether the host closed its input before the end, after it, or not at all.
+func TestAnInputPipeThatEndedKeepsEveryQueuedByteBeforeEOFWhateverTheOrderOfTheHostsEOFAndTheEnd(t *testing.T) {
+	const bound = 1000
+	rng := rand.New(rand.NewPCG(15, 16))
+	for _, tc := range []struct {
+		name  string
+		steps func(p *inputPipe)
+	}{
+		{"the session ends", func(p *inputPipe) { p.Close() }},
+		{"the host closes the input and then the session ends", func(p *inputPipe) { p.CloseWrite(); p.Close() }},
+		{"the session ends and then the host closes the input", func(p *inputPipe) { p.Close(); p.CloseWrite() }},
+		{"the session ends twice", func(p *inputPipe) { p.Close(); p.Close() }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := randomBytes(rng, bound)
+			p := newInputPipe(bound)
+			if n, err := p.Write(context.Background(), data); n != bound || err != nil {
+				t.Fatalf("write: %d, %v", n, err)
+			}
+			tc.steps(p)
+			got, err := io.ReadAll(p)
+			if err != nil || !bytes.Equal(got, data) {
+				t.Fatalf("the reader found %d of the %d bytes queued before the end (error %v), want all of them in order and then io.EOF", len(got), len(data), err)
+			}
+		})
+	}
 }
 
 // The host's Write waits at the bound: the backpressure the host sees. It is released by the reader, by the end of the
@@ -812,7 +846,7 @@ func TestAnInputPipeHoldsTheHostsWriteAtItsBound(t *testing.T) {
 			t.Fatalf("write returned %d, %v; the bytes match: %v", wrote, werr, bytes.Equal(got, data))
 		}
 	})
-	t.Run("the end of the session fails it with what it placed", func(t *testing.T) {
+	t.Run("the end of the session fails it with what it placed, which stays readable", func(t *testing.T) {
 		p := newInputPipe(100)
 		var wrote int
 		var werr error
@@ -822,6 +856,9 @@ func TestAnInputPipeHoldsTheHostsWriteAtItsBound(t *testing.T) {
 		awaitClosed(t, done, "the write to return")
 		if wrote != 100 || !errors.Is(werr, io.ErrClosedPipe) {
 			t.Fatalf("write returned %d, %v, want 100, io.ErrClosedPipe", wrote, werr)
+		}
+		if got, err := io.ReadAll(p); len(got) != wrote || err != nil {
+			t.Fatalf("the reader found %d bytes and %v after the end, want the %d the write placed and then io.EOF", len(got), err, wrote)
 		}
 	})
 	t.Run("the host's context fails it with what it placed", func(t *testing.T) {
@@ -1001,6 +1038,92 @@ func TestAResizerClosesTheChannelWhenItStopsAndRefusesLaterSizes(t *testing.T) {
 	}
 	if r.submit(1, Size{Cols: 1, Rows: 1}, nil) {
 		t.Fatal("a stopped resizer took a size")
+	}
+}
+
+// The end of the session is not the end of the function: a size the host sent last, which the function has not taken, is still handed to
+// it, and the channel closes once it has been, so that a goroutine that ranges over Proc.Resize returns with the rest. No size is taken
+// from the host after the end.
+func TestAResizerThatEndsHandsOverTheSizesItHoldsAndThenClosesTheChannelAndTakesNoMore(t *testing.T) {
+	r := newResizer(Size{Cols: 80, Rows: 24}, nil, 0, nil)
+	stop := startResizer(r)
+	defer stop()
+	r.submit(1, Size{Cols: 100, Rows: 30}, nil)
+	r.submit(2, Size{Cols: 120, Rows: 40}, nil) // replaces the one before it
+	r.end()
+	r.end() // again: harmless
+	if r.submit(3, Size{Cols: 150, Rows: 50}, nil) {
+		t.Fatal("a resizer whose session ended took a size from the host")
+	}
+	var got []Size
+	done := started(func() {
+		for size := range r.channel() {
+			got = append(got, size)
+		}
+	})
+	awaitClosed(t, done, "the channel to close once the sizes it held were taken")
+	if want := []Size{{Cols: 80, Rows: 24}, {Cols: 120, Rows: 40}}; !slices.Equal(got, want) {
+		t.Fatalf("the function was handed %v, want the size the command was opened with and the newest the host sent before the end, %v", got, want)
+	}
+}
+
+func TestAResizerThatEndsWithNothingLeftToHandOverClosesTheChannelAtOnce(t *testing.T) {
+	t.Run("it never held a size", func(t *testing.T) {
+		r := newResizer(Size{}, nil, 0, nil)
+		stop := startResizer(r)
+		defer stop()
+		r.end()
+		var open bool
+		done := started(func() { _, open = <-r.channel() })
+		awaitClosed(t, done, "the channel to close")
+		if open {
+			t.Fatal("a size arrived from a resizer that held none")
+		}
+	})
+	t.Run("the function took what it held", func(t *testing.T) {
+		r := newResizer(Size{Cols: 80, Rows: 24}, nil, 0, nil)
+		stop := startResizer(r)
+		defer stop()
+		if got := <-r.channel(); got != (Size{Cols: 80, Rows: 24}) {
+			t.Fatalf("the first size is %v", got)
+		}
+		r.end()
+		var open bool
+		done := started(func() { _, open = <-r.channel() })
+		awaitClosed(t, done, "the channel to close")
+		if open {
+			t.Fatal("a size arrived after the function took every size the resizer held")
+		}
+	})
+	t.Run("it ended before it ran", func(t *testing.T) {
+		r := newResizer(Size{Cols: 80, Rows: 24}, nil, 0, nil)
+		r.end()
+		stop := startResizer(r)
+		defer stop()
+		var got []Size
+		done := started(func() {
+			for size := range r.channel() {
+				got = append(got, size)
+			}
+		})
+		awaitClosed(t, done, "the channel to close")
+		if !slices.Equal(got, []Size{{Cols: 80, Rows: 24}}) {
+			t.Fatalf("the function was handed %v, want the size the command was opened with", got)
+		}
+	})
+}
+
+// A function that returned, or that the SDK gave up on, is not waited for: the stop that follows the end closes the channel at once, and
+// the size it held is not handed over.
+func TestAResizerThatEndedAndIsStoppedClosesTheChannelWithoutTheSizeItHeld(t *testing.T) {
+	r := newResizer(Size{Cols: 80, Rows: 24}, nil, 0, nil)
+	done := started(r.run)
+	r.submit(1, Size{Cols: 100, Rows: 30}, nil)
+	r.end()
+	r.stop()
+	awaitClosed(t, done, "the resizer to stop")
+	if size, open := <-r.channel(); open {
+		t.Fatalf("a stopped resizer handed over %v", size)
 	}
 }
 

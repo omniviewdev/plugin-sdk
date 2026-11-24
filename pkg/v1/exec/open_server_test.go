@@ -128,11 +128,18 @@ func TestASecondOpenFrameEndsTheStreamAndTheSession(t *testing.T) {
 }
 
 // An input frame over the target's maximum is the host's mistake: the stream ends LIMIT / INPUT_TOO_LARGE, the session ends
-// with it, and the bytes of the frame never reach the function; the frame of exactly the maximum before it did.
+// with it, and the bytes of the frame never reach the function; the frame of exactly the maximum before it was accepted, and is
+// never discarded by the end: the function reads all of it, and then io.EOF.
 func TestAnInputFrameLargerThanTheTargetsMaximumEndsTheStreamTyped(t *testing.T) {
 	read := make(chan []byte, 1)
 	rig := newWireRig(t, engTarget(func(ctx context.Context, p *exec.Proc) (exec.Exit, error) {
-		data, _ := io.ReadAll(p.Stdin) // ends when the session ends: its input then reports EOF
+		// It reads only after the SDK has ended the session's input and closed Proc.Signals and Proc.Resize, which it does one after
+		// the other when a session ends, so that what it finds is what the SDK kept of the input, and not what it was quick to read.
+		for range p.Signals {
+		}
+		for range p.Resize {
+		}
+		data, _ := io.ReadAll(p.Stdin) // ends at once: the input then reports EOF
 		read <- data
 		<-ctx.Done()
 		return exec.Exit{}, ctx.Err()
@@ -153,10 +160,10 @@ func TestAnInputFrameLargerThanTheTargetsMaximumEndsTheStreamTyped(t *testing.T)
 	}
 	select {
 	case data := <-read:
-		// What the function read of the frame of the maximum depends on how soon the session ended (input that is still queued
-		// when it does is discarded); what it must never read is a byte of the frame over the maximum.
-		if bytes.Contains(data, []byte{'b'}) || len(data) > 4096 {
-			t.Errorf("the function read %d bytes including some of the frame over the maximum", len(data))
+		// The frame of exactly the maximum was accepted before the session ended, and what the SDK accepted is still there to read
+		// after it, so the function reads all of it; and not one byte of the frame over the maximum, which was refused.
+		if want := bytes.Repeat([]byte{'a'}, 4096); !bytes.Equal(data, want) {
+			t.Errorf("the function read %d bytes, want the %d of the frame of the maximum and none of the frame over it", len(data), len(want))
 		}
 	case <-time.After(engineWait):
 		t.Fatal("the session did not end with its stream")

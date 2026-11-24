@@ -19,21 +19,19 @@ import (
 // Opened (and in Started, when it narrowed them). Another is the host breaking that contract: UNSUPPORTED, ending the stream and the
 // session. Ctrl+C in a terminal is the byte 0x03 as input and is none of this.
 
-// signalReader is a function that hands every signal of Proc.Signals to got until its session ends.
+// signalReader is a function that hands every signal of Proc.Signals to got until its session ends. It reads until the channel is
+// closed, which is the end of the session, and not until its context ends: what the SDK accepted before the end is in the closed channel
+// to the last signal, and a select over the channel and the context chooses at random when both are ready, so that a function that has
+// not reached its select yet when a signal and the end of the session come (the scheduler ran the host's frames first, as it did on
+// Windows) loses the signal to its context half of the time. That loss is the function's choice and never the SDK's, and this reader
+// makes the other (see open_control_end_test.go, which holds the function before its first read to force that order).
 func signalReader(got chan<- exec.Signal) exec.ExecFunc {
 	return func(ctx context.Context, p *exec.Proc) (exec.Exit, error) {
-		for {
-			select {
-			case sig, ok := <-p.Signals:
-				if !ok {
-					<-ctx.Done()
-					return exec.Exit{}, ctx.Err()
-				}
-				got <- sig
-			case <-ctx.Done():
-				return exec.Exit{}, ctx.Err()
-			}
+		for sig := range p.Signals {
+			got <- sig
 		}
+		<-ctx.Done()
+		return exec.Exit{}, ctx.Err()
 	}
 }
 
@@ -128,8 +126,10 @@ func TestASignalSentAfterInputWaitsBehindItAsEveryFrameDoes(t *testing.T) {
 }
 
 // A signal the session does not declare is the host breaking what Opened told it: UNSUPPORTED, the stream ends, the session with it, and
-// the signal reaches nobody; a declared signal sent before it was delivered. An unspecified signal and a number this build does not
-// know are not declared either, and a target that declares no signals declares none.
+// the signal reaches nobody; a declared signal sent before it was accepted, and is delivered: it is in the function's queue before the
+// session ends and stays there, and the function reads until its channel is closed (signalReader), so that it finds the signal whether it
+// had reached its read when the frames came or not. An unspecified signal and a number this build does not know are not declared either,
+// and a target that declares no signals declares none.
 func TestASignalTheSessionDoesNotDeclareEndsTheStreamUnsupportedAndTheSession(t *testing.T) {
 	cases := []struct {
 		name  string

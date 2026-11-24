@@ -40,7 +40,9 @@ import (
 //     session, a shutdown or a connection for ever, so the engine gives it a grace and then gives up on it, loudly;
 //   - the connection: the command holds the lease of its connection for as long as it runs, so a retired connection ends
 //     the command with a typed cause (Closed, connection-retired) instead of leaving it on a dead client;
-//   - the stdio: bounded queues between the host and the function (pipes.go) with the stated blocking and dropping rules;
+//   - the stdio: bounded queues between the host and the function (pipes.go) with the stated blocking and dropping rules, and
+//     one rule for the end of a session: it discards nothing the host sent (the signals, the queries, the unread input and the
+//     size the function has not taken stay readable, and a frame that comes after the end is refused: see drain);
 //   - the facts: the capabilities the command was opened with (the kind's, narrowed by the mode its selection names),
 //     the single Started that precedes the first output (start_gate.go), the link state;
 //   - the end: classify.go.
@@ -829,22 +831,27 @@ func (c *command) await(lease context.Context, returned <-chan functionOutcome, 
 }
 
 // drain is the wait for a function whose session the SDK has ended: it cancels the function's context, releases a function
-// that a full queue holds in Write, and waits for it to return. How long is decided by the bounds that apply (graceWait). A
-// graceful end waits for the grace. A kill waits for the kill wait, counted from the kill, and never for the grace: a function
-// that honors its cancelled context returns within it, is not abandoned, and holds no place when the command's end is
-// delivered, so that a host that kills a session and starts another at once is not refused for the first. A kill that comes
-// while the grace runs leaves the grace running and adds the kill wait, so the wait ends at the first of the two. An engine that
-// is closing gives each function the shutdown grace instead of the grace. A function that has not returned when the first bound
-// runs out is abandoned: the command ends without it, the engine says so in the log and records the violation, and the place
-// of the command stays taken until the function returns.
+// that a full queue holds in Write, and waits for it to return. What the host sent before the end is not discarded here: the
+// signals, the queries, the unread input and the size the function has not taken are in its queues, in the order the host sent
+// them, before its context is cancelled and before its channels close, and a function that reads them to the end finds them all.
+//
+// How long the wait lasts is decided by the bounds that apply (graceWait). A graceful end waits for the grace. A kill waits for
+// the kill wait, counted from the kill, and never for the grace: a function that honors its cancelled context returns within
+// it, is not abandoned, and holds no place when the command's end is delivered, so that a host that kills a session and starts
+// another at once is not refused for the first. A kill that comes while the grace runs leaves the grace running and adds the
+// kill wait, so the wait ends at the first of the two. An engine that is closing gives each function the shutdown grace instead
+// of the grace. A function that has not returned when the first bound runs out is abandoned: the command ends without it, the
+// engine says so in the log and records the violation, and the place of the command stays taken until the function returns.
 func (c *command) drain(returned <-chan functionOutcome, call *authorCall, cancelAuthor func()) (functionOutcome, bool) {
 	c.out.beginEnding()
 	if c.in != nil {
 		// The session has ended: the host can send no more, and a goroutine of the function blocked reading Stdin returns
-		// with io.EOF, as the contract says. Output stays open for the function to flush until it returns.
+		// with io.EOF, as the contract says, once it has read what the host sent before the end. Output stays open for the
+		// function to flush until it returns.
 		c.in.Close()
 	}
 	c.ctl.close() // the host can send no more signals or queries: a goroutine of the function that ranges over them returns
+	c.rz.end()    // no more sizes either: Proc.Resize closes once the function has taken the one it holds
 	cancelAuthor()
 	wait := c.e.newGraceWait(c.e.cfg.closeGrace, c.killed())
 	defer wait.stop()
@@ -893,8 +900,11 @@ func (c *command) killed() bool {
 }
 
 // closeStdio closes the pipes between the function and the host: further output is refused, the function's input ends
-// (a goroutine of the function that reads Stdin returns), and Proc.Resize, Proc.Signals and Proc.Queries close. It may be called
-// again.
+// (a goroutine of the function that reads Stdin returns), and Proc.Resize, Proc.Signals and Proc.Queries close. It is the end of
+// the function, which returned or was given up on, and it runs after the end of the session (drain), so that what the host sent
+// before that is kept for as long as the function runs: the queues of Stdin, Signals and Queries keep it for ever (a closed queue
+// is read to its end first), and only the size that the function never took is dropped here, by a resizer that is not waited for. It
+// may be called again.
 func (c *command) closeStdio() {
 	c.out.CloseWrite()
 	if c.in != nil {

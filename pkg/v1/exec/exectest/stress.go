@@ -486,7 +486,8 @@ func (r *stressRound) checkAbandoned() {
 }
 
 // checkLateWriters holds the goroutines that outlived their function to what the contract says of them: once the gate opened
-// each one wrote, and its write was refused, its read of the input returned io.EOF, and none of that became output.
+// each one wrote, and its write was refused, its reads of the input ended in io.EOF (after what the host sent before the end, which
+// the SDK does not discard), and none of that became output.
 func (r *stressRound) checkLateWriters() {
 	records := r.gates.lates.all()
 	r.tally.addN("late writers", len(records))
@@ -506,7 +507,7 @@ func (r *stressRound) checkLateWriters() {
 			r.rest.add("late writer #%d: a write to stderr after the function returned took %d bytes and returned %v, want 0 and io.ErrClosedPipe", i, n, err)
 		}
 		if err := record.Stdin(); !errors.Is(err, io.EOF) {
-			r.rest.add("late writer #%d: a read of stdin after the function returned gave %v, want io.EOF", i, err)
+			r.rest.add("late writer #%d: the reads of stdin after the function returned ended with %v, want io.EOF after what the host sent before the end", i, err)
 		}
 	}
 }

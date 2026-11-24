@@ -238,7 +238,8 @@ func (l *LateWrites) Stderr() (int, error) {
 	return l.nErr, l.stderr
 }
 
-// Stdin returns the error the late read of stdin got: io.EOF once the session has ended.
+// Stdin returns the error the late reads of stdin ended with: io.EOF once they had read what the host sent before the end, which
+// the SDK does not discard.
 func (l *LateWrites) Stdin() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -246,8 +247,8 @@ func (l *LateWrites) Stdin() error {
 }
 
 // OutliveWith starts a goroutine that keeps the command's stdio and, when the gate opens, writes data to stdout and to
-// stderr and reads stdin once, recording what each returned in late. The step goes on at once, so that the steps after it
-// end the command and the goroutine outlives its function: a function that returns before its process ends, and a
+// stderr and reads stdin to its end, recording what each returned in late. The step goes on at once, so that the steps after
+// it end the command and the goroutine outlives its function: a function that returns before its process ends, and a
 // goroutine that writes after the return.
 func OutliveWith(g *Gate, data string, late *LateWrites) Step {
 	return stepFunc(func(_ context.Context, p *exec.Proc) (bool, exec.Exit, error) {
@@ -265,7 +266,12 @@ func OutliveWith(g *Gate, data string, late *LateWrites) Step {
 				late.mu.Unlock()
 			}
 			if p.Stdin != nil {
-				_, err = p.Stdin.Read(make([]byte, 1))
+				// What the host sent before the end is still there to read, and then comes io.EOF: a late reader is not held, and
+				// it reads no more than the queue held, which is bounded.
+				buf := make([]byte, 4096)
+				for err = nil; err == nil; {
+					_, err = p.Stdin.Read(buf)
+				}
 				late.mu.Lock()
 				late.stdin = err
 				late.mu.Unlock()
