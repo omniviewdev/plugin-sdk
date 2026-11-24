@@ -361,3 +361,119 @@ func TestRawRetiredCatalogAuthorityHintRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestActualGRPCCatalogEnvironmentIsPerType(t *testing.T) {
+	cluster := []resourcev2.EnvironmentIdentity{
+		{Scheme: "kubernetes.namespace-uid.v1", ID: "cluster-uid", Strength: resourcev2.EnvironmentStrong, Exclusive: true},
+		{Scheme: "kubernetes.root-ca.v1", ID: "ca-1", Strength: resourcev2.EnvironmentStrong},
+		{Scheme: "aws.eks-cluster-arn.v1", ID: "arn:aws:eks:us-east-1:111122223333:cluster/c", Strength: resourcev2.EnvironmentWeak},
+	}
+	descriptor := func(name string, environment []resourcev2.EnvironmentIdentity) resourcev2.ResourceType {
+		return resourcev2.ResourceType{
+			Type: name, IdentityDimensions: []resourcev2.Dimension{}, QueryDimensions: []resourcev2.Dimension{},
+			Representations: []resourcev2.Representation{testRepresentation()}, Capabilities: []resourcev2.Capability{},
+			Environment: environment,
+		}
+	}
+	want := resourcev2.Catalog{
+		Provider: "mixed", Revision: "mixed-1", Coverage: resourcev2.Coverage{Kind: "complete", Paths: []string{}},
+		Types: []resourcev2.ResourceType{descriptor("cluster/pod", cluster), descriptor("localHelm/chart", nil), descriptor("cluster/service", cluster)},
+	}
+	s := grpc.NewServer()
+	RegisterServer(s, &mixedAuthorityProvider{catalog: want})
+	client := NewClient(pipe(t, s))
+	got, err := client.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "route"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("catalog changed across gRPC:\ngot %#v\nwant %#v", got, want)
+	}
+	if got.Types[1].Environment != nil {
+		t.Fatal("a type without a declared environment inherited its neighbours'")
+	}
+	got.Types[0].Environment[0].ID = "changed"
+	if got.Types[2].Environment[0].ID != "cluster-uid" || cluster[0].ID != "cluster-uid" {
+		t.Fatal("decoded environments share storage")
+	}
+}
+
+// rawCatalogWithType wraps one encoded ResourceType in an otherwise valid
+// catalog response, so a test controls exactly the bytes of that type.
+func rawCatalogWithType(resourceType []byte) []byte {
+	coverage := bytesField(1, []byte("complete"))
+	catalog := bytesField(1, []byte("p"))
+	catalog = append(catalog, bytesField(2, resourceType)...)
+	catalog = append(catalog, bytesField(3, []byte("r"))...)
+	catalog = append(catalog, bytesField(5, coverage)...)
+	return append([]byte{8, byte(resourcev2.WireVersion)}, bytesField(2, catalog)...)
+}
+
+// rawEnvironment encodes one EnvironmentIdentity message, so a test controls its exact bytes.
+func rawEnvironment(scheme, id, strength string, exclusive bool, extra ...[]byte) []byte {
+	entry := append(bytesField(1, []byte(scheme)), bytesField(2, []byte(id))...)
+	if strength != "" {
+		entry = append(entry, bytesField(3, []byte(strength))...)
+	}
+	if exclusive {
+		entry = protowire.AppendVarint(protowire.AppendTag(entry, 4, protowire.VarintType), 1)
+	}
+	for _, field := range extra {
+		entry = append(entry, field...)
+	}
+	return entry
+}
+
+func TestRawCatalogEnvironmentFieldAdmission(t *testing.T) {
+	uid := rawEnvironment("kubernetes.namespace-uid.v1", "cluster-uid", "strong", true)
+	ca := rawEnvironment("kubernetes.root-ca.v1", "ca-1", "strong", false)
+	base := bytesField(1, []byte("cluster/pod"))
+	typeWith := func(entries ...[]byte) []byte {
+		out := append([]byte(nil), base...)
+		for _, entry := range entries {
+			out = append(out, bytesField(13, entry)...)
+		}
+		return out
+	}
+	many := make([][]byte, resourcev2.MaxEnvironmentIdentities+1)
+	for i := range many {
+		many[i] = rawEnvironment("s.v1", string(rune('a'+i)), "strong", false)
+	}
+	// The strict admission that rejects an unknown field is what makes a provider
+	// that declares an environment unreadable to a receiver built before it
+	// existed: that receiver sees field 13 exactly as this one sees field 99.
+	cases := []struct {
+		name         string
+		resourceType []byte
+		class        string
+		count        int
+	}{
+		{"declared set", typeWith(uid, ca), "", 2},
+		{"absent", base, "", 0},
+		{"same fingerprint twice", typeWith(ca, ca), "INVALID_REQUEST", 0},
+		{"unknown outer field", append(append([]byte(nil), base...), bytesField(99, ca)...), "UNSUPPORTED", 0},
+		{"empty entry", typeWith(nil), "INVALID_REQUEST", 0},
+		{"missing strength", typeWith(rawEnvironment("s.v1", "x", "", false)), "INVALID_REQUEST", 0},
+		{"unknown strength", typeWith(rawEnvironment("s.v1", "x", "medium", false)), "INVALID_REQUEST", 0},
+		{"weak and exclusive", typeWith(rawEnvironment("s.v1", "x", "weak", true)), "INVALID_REQUEST", 0},
+		{"two values of an exclusive scheme", typeWith(rawEnvironment("s.v1", "a", "strong", true), rawEnvironment("s.v1", "b", "strong", true)), "INVALID_REQUEST", 0},
+		{"unknown inner field", typeWith(rawEnvironment("s.v1", "x", "strong", false, bytesField(9, []byte("x")))), "UNSUPPORTED", 0},
+		{"repeated singular field", typeWith(rawEnvironment("s.v1", "x", "strong", false, bytesField(2, []byte("y")))), "INVALID_REQUEST", 0},
+		{"too many fingerprints", typeWith(many...), "RESOURCE_LIMIT", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{data: rawCatalogWithType(tc.resourceType)}))
+			RegisterServer(s, &countProvider{})
+			client := NewClient(pipe(t, s))
+			client.featureMode.Store(1) // This fixture supplies raw responses, not a feature RPC.
+			catalog, err := client.Catalog(context.Background(), resourcev2.CatalogRequest{Route: resourcev2.AccessRoute{Connection: "c"}})
+			if got := resourcev2.ErrorCode(err); got != tc.class {
+				t.Fatalf("class %q, want %q: %v", got, tc.class, err)
+			}
+			if err == nil && len(catalog.Types[0].Environment) != tc.count {
+				t.Fatalf("decoded %d fingerprints, want %d", len(catalog.Types[0].Environment), tc.count)
+			}
+		})
+	}
+}

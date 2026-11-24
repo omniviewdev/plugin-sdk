@@ -107,6 +107,8 @@ Identity and access are separate:
 | `ResourceReference` | `Address`; optional `Incarnation` observation | A source revision |
 | `AccessRoute` | Explicit `Connection` | Identity, permission, or an implicit default |
 | `ReadTarget` | `Route`, `Provider`, `Authority`, `Type`, query `Scope`, `Representation` | A host query plan |
+| `EnvironmentIdentity` | `Scheme`, `ID`, `Strength`, optional `Exclusive`; a list is declared per `ResourceType` | Authority, permission, or a profile or endpoint name |
+| `DurableReference` | `Environment` fingerprints, `DurableAddress` (`Provider`, `Type`, `Scope`, `ID`); optional `Incarnation` | An authorization identity |
 
 `NativeAuthorityHint` is metadata only. Equal hints do not grant authority or establish sharing.
 
@@ -137,6 +139,36 @@ work and rejects late results after cancellation or retirement. An advertised
 catalog/descriptor observation is not replaced with a fresh one to make a stale
 request succeed. These fences are not rollback guarantees: a native side effect
 may have begun before cancellation or retirement is observed.
+
+### Durable identity
+
+`Authority` is host-issued and connection-local. The host retires it when a connection stops, when its endpoint or credentials change, and on the first catalog observation after a restart, so it cannot name a resource across those events. Use it, and `ResourceAddress`, for authorization, consent, call binding and reference currency, exactly as before.
+
+History and correlation need an identity that survives those events. A provider declares fingerprints of the target per `ResourceType` as `Environment`, a list of `EnvironmentIdentity{Scheme, ID, Strength, Exclusive}`. Each is a fact about the target itself, and a connection declares only what its caller can read, so connections to one target with different permissions declare different fingerprints:
+
+| Field | Meaning |
+| --- | --- |
+| `Scheme` | Kind of fact with its version, such as `kubernetes.root-ca.v1`; unique within one provider |
+| `ID` | The value; at most `MaxEnvironmentIDBytes`, no control characters |
+| `Strength` | `strong` identifies the environment, so a provider emits it only when the value is unique to one environment in practice. `weak` is a correlation hint that unrelated environments may share or that comes from local configuration; it never identifies |
+| `Exclusive` | A strong fingerprint of which one environment has exactly one value at a time, such as a namespace UID, unlike a CA bundle that rotates |
+
+`SameEnvironment(a, b)` is true when the declarations share a strong fingerprint and no exclusive scheme carries different values. The exclusive veto matters because strong fingerprints can be shared by different environments: minikube profiles on one machine share a root CA, so the CA alone would join them unless their namespace UIDs, which are exclusive, differ. The relation is not transitive across partial declarations, so a store resolves environments by merging every record that shares a fingerprint with a declaration, applying the same veto, and never by comparing declarations pairwise. Fingerprints cannot tell apart two clusters restored from one backup; a store must split them once their objects diverge, which shows as the same object observed concurrently with conflicting incarnations.
+
+| Provider | `Scheme` | `ID` | Strength |
+| --- | --- | --- | --- |
+| Kubernetes | `kubernetes.namespace-uid.v1` | UID of the `kube-system` namespace | strong, exclusive |
+| Kubernetes | `kubernetes.root-ca.v1` | SHA-256 of the SubjectPublicKeyInfo of one root CA certificate; one entry per certificate | strong |
+| AWS | `aws.account-region.v1` | `<partition>:<account ID>:<region or global>` | strong |
+| Database server | `postgres.system-identifier.v1` | Value of `pg_control_system().system_identifier` | strong |
+
+Never derive a fingerprint from a local path, a profile or connection name, an endpoint URL, or a credential; an identifier read only from local configuration may be a weak hint at most. A provider that cannot establish a fact omits it, and a type with no strong fingerprint has no durable identity. A provider that changes what an `ID` means must issue a new `Scheme`. `Environment` is limited to `MaxEnvironmentIdentities` entries.
+
+`NewDurableReference(environment, reference)` drops the authority and returns the `DurableReference` of a `ResourceReference`: the declared fingerprints, a `DurableAddress` (provider, type, scope ordered by dimension, native ID) and the optional `Incarnation`. It requires a strong fingerprint. `DurableAddress.Key` returns the canonical, version-tagged key of the object inside its environment; the store resolves the environment, so it is not part of the key. The incarnation is outside the key: deleting and recreating an object keeps its identity and changes its incarnation.
+
+Equal durable identities are correlation evidence only. They never permit sharing a body, cache, grant or projection between routes, and they never grant access: a reader may see history for an (environment, type, scope) population only if the reader's own current route is permitted to read that type and scope now. An open source session keeps one environment for its whole life: `EnvironmentContinuous` is true while a declaration gains, loses or changes fingerprints but still refers to the same environment, and a session whose declaration stops being continuous is retired like one whose `NativeAuthorityHint` changed.
+
+`environment` is an optional repeated protobuf field (13) of `ResourceType`; `WireVersion` is unchanged. Older SDK receivers with strict unknown-field admission require a compatible SDK upgrade before providers declare an environment, so release hosts before the providers that declare one.
 
 ### Scope lookup
 

@@ -14,6 +14,7 @@ func SourceOperationalContractEqual(previous, current ResourceType, request Sour
 		!sameSourceDimensions(previous.IdentityDimensions, current.IdentityDimensions) ||
 		!sameSourceDimensions(previous.QueryDimensions, current.QueryDimensions) ||
 		!sameSourceAuthorityHint(previous.NativeAuthorityHint, current.NativeAuthorityHint) ||
+		!EnvironmentContinuous(previous.Environment, current.Environment) ||
 		!sourceDeclaresBinding(previous, request.Binding.Representation) ||
 		!sourceDeclaresBinding(current, request.Binding.Representation) {
 		return false
@@ -67,7 +68,8 @@ func CheckSourceCatalog(ctx context.Context, catalog Catalog, request SourceOpen
 		}
 		if !sameSourceDimensions(admitted.IdentityDimensions, current.IdentityDimensions) ||
 			!sameSourceDimensions(admitted.QueryDimensions, current.QueryDimensions) ||
-			current.NativeAuthorityHint != nil && !sameSourceAuthorityHint(admitted.NativeAuthorityHint, current.NativeAuthorityHint) {
+			current.NativeAuthorityHint != nil && !sameSourceAuthorityHint(admitted.NativeAuthorityHint, current.NativeAuthorityHint) ||
+			HasStrongEnvironment(current.Environment) && !EnvironmentContinuous(admitted.Environment, current.Environment) {
 			return NewError("RESET_REQUIRED", "Selected source identity changed.")
 		}
 		for _, format := range current.Representations {
