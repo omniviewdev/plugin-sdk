@@ -65,18 +65,32 @@ func TestTheGuideDoesNotTeachReportingTheModeOrGatingTheFirstByte(t *testing.T) 
 	}
 }
 
-// The guide points at the page that keeps the conditions of the review, and the page exists.
+// The guide points at the gate that must be cleared before any tag that ships exec.v2 and at the hand-over status of the lane. Both
+// pages exist and say what they were written to say (the gate: where its conditions come from, that it is not cleared, its first item
+// and how it is cleared; the status: the branch rule, the tag rule and the Kubernetes spike), and the docs index links both. Whoever
+// clears the gate changes its state sentence and this test together.
 func TestTheGuidePointsAtTheConditionsBeforeAnyTag(t *testing.T) {
-	if !strings.Contains(lf(readFile(t, "../../docs/exec.md")), "(exec-before-any-tag.md)") {
-		t.Error("docs/exec.md does not link docs/exec-before-any-tag.md")
-	}
-	page := lf(readFile(t, "../../docs/exec-before-any-tag.md"))
-	for _, phrase := range []string{"ed6f26f8445c2e756de5506882c3927e9f228b47", "ReviewSdk87", "verbatim", "**C3, process.**", "#### B6. The open follow-up"} {
-		if !strings.Contains(page, phrase) {
-			t.Errorf("docs/exec-before-any-tag.md does not say %q", phrase)
+	guide := lf(readFile(t, "../../docs/exec.md"))
+	for _, link := range []string{"(exec-before-any-tag.md)", "(exec-status.md)"} {
+		if !strings.Contains(guide, link) {
+			t.Errorf("docs/exec.md does not link %s", link)
 		}
 	}
-	if !strings.Contains(lf(readFile(t, "../../docs/README.md")), "(exec-before-any-tag.md)") {
-		t.Error("docs/README.md has no row for docs/exec-before-any-tag.md")
+	for page, phrases := range map[string][]string{
+		"docs/exec-before-any-tag.md": {"ed6f26f8445c2e756de5506882c3927e9f228b47", "the tag gate is NOT cleared", "### C3. Process: what a stable tag freezes", "## Clearing the gate"},
+		"docs/exec-status.md":         {"`feature/exec-v2` carries the lane", "Never tag from `main`", "wip/spike/exec-v2-provider"},
+	} {
+		text := lf(readFile(t, "../../"+page))
+		for _, phrase := range phrases {
+			if !strings.Contains(text, phrase) {
+				t.Errorf("%s does not say %q", page, phrase)
+			}
+		}
+	}
+	index := lf(readFile(t, "../../docs/README.md"))
+	for _, link := range []string{"(exec-before-any-tag.md)", "(exec-status.md)"} {
+		if !strings.Contains(index, link) {
+			t.Errorf("docs/README.md has no row for %s", link)
+		}
 	}
 }

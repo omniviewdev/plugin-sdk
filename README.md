@@ -16,7 +16,7 @@ Run a command in a Pod, container, host or VM. The legacy `exec.Handler` lane ke
 the `Target` it runs in. The SDK serves `Describe`, `Options`, `Open` (interactive sessions that outlive their stream, with
 replay, detach and a lease), `Run` and `RunStream` (bounded runs), `ListSessions`, `ReadOutput` and `EndSession`, and runs `ExecFunc` for each.
 
-See [docs/exec.md](docs/exec.md).
+See [docs/exec.md](docs/exec.md). The lane is not released: [docs/exec-status.md](docs/exec-status.md) says what is built, what remains and the branch rules, and [docs/exec-before-any-tag.md](docs/exec-before-any-tag.md) is the gate that must be cleared before any tag ships it.
 
 ## Internal Logging
 
