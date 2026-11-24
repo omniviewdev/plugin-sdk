@@ -240,13 +240,18 @@ func TestTheStressFindsWhatAWrongEngineGetsWrongAboutSessionsThatOutliveTheirStr
 		t.Run(tc.name, func(t *testing.T) {
 			rec := &recordT{}
 			keeps := regimeKeeps
-			runStress(rec, StressConfig{Workers: 4, Duration: 600 * time.Millisecond, Seed: 7}, stressHooks{
-				engine: sessionFaultFactory(t, tc.fault), regime: &keeps,
-				closeBound: 300 * time.Millisecond, settle: 300 * time.Millisecond, abandonBound: 300 * time.Millisecond,
-			})
+			// The stress goes on, round after round, until it has said what the fault is: a window of a fixed length is filled by a slow machine with too
+			// little to meet a stream that left and a session that ends before it is read. The bounds are the harness's own, which only a real hang
+			// exceeds, so that a busy machine cannot make a canary's wait for an echo run out and cut the flow that meets the fault; a goroutine that is
+			// leaked for good is the one fault that is a bound, and a shorter Settle only makes the stress say it sooner.
+			hooks := stressHooks{engine: sessionFaultFactory(t, tc.fault), regime: &keeps, until: func() bool { return rec.saidAny(tc.alternatives...) }}
+			if tc.fault == sfLeakedFollower {
+				hooks.settle = 300 * time.Millisecond
+			}
+			totals := runStress(rec, StressConfig{Workers: 4, Duration: 600 * time.Millisecond, Seed: 7}, hooks)
 			rec.finish()
 			if !rec.saidAny(tc.alternatives...) {
-				t.Errorf("the stress did not say any of %q of an engine with the fault %q; it said %q", tc.alternatives, tc.name, rec.failed())
+				t.Errorf("the stress did not say any of %q of an engine with the fault %q in %d rounds; it said %q", tc.alternatives, tc.name, totals.get("rounds"), rec.failed())
 			}
 		})
 	}

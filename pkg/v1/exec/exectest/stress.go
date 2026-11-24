@@ -107,6 +107,19 @@ type stressHooks struct {
 	finishLooked func(w *window)
 	// finishCompleting runs when the check owns the window and is about to complete its transcript from the tombstone.
 	finishCompleting func(w *window)
+	// until, when set, makes the stress go on, round after round, until it returns true, and never for fewer rounds than its duration holds: each
+	// round is the length that Duration gives a round, on a fresh engine and with the seed its number gives, and a round that found a violation does
+	// not end the run (the shipped run ends at the first). It is asked once after each round from the last that the duration holds. A test that holds
+	// the stress to a fault sets it to "the stress has said what the fault is", and a test that holds the stress to what it exercises sets it to "the
+	// stress has counted it": the harness decides when it has found what the test waits for, and not a window of a length that the machine decides,
+	// which a busy one fills with too little to meet it.
+	until func() bool
+	// untilBound is the most the stress goes on for when until is set (stressUntilBound when zero). What the stress said by then is what it says of
+	// the fault, and the test reports it.
+	untilBound time.Duration
+	// totals, when set, is the tally that the run merges its rounds into, and returns: an until that reads what the stress counted reads it there, between
+	// rounds. Nil is a tally of the run's own.
+	totals *tally
 }
 
 const (
@@ -114,6 +127,9 @@ const (
 	stressGrace = 20 * time.Millisecond
 	// minRound is the shortest round: long enough for the commands to pile up and for the Close to land among them.
 	minRound = 50 * time.Millisecond
+	// stressUntilBound is the most a stress that a test waits on goes on for (stressHooks.until): a bound for a fault that the stress never says, and
+	// never the time that finding one takes, which is as many rounds as it takes.
+	stressUntilBound = 60 * time.Second
 )
 
 // stressDefaultDuration is how long the stress runs when its config says nothing: two seconds, which holds two rounds (the one that keeps every
@@ -132,7 +148,10 @@ func stressDefaultDuration(fromEnv time.Duration, short bool) time.Duration {
 // runStress is Stress for any t, with the engine and the bounds hooks name. It returns what it counted.
 func runStress(t stressT, cfg StressConfig, hooks stressHooks) *tally {
 	t.Helper()
-	totals := newTally()
+	totals := hooks.totals
+	if totals == nil {
+		totals = newTally()
+	}
 	if env, err := lifecycletest.DurationFromEnv(); err != nil {
 		t.Errorf("exectest.Stress: %v", err)
 		return totals
@@ -151,14 +170,25 @@ func runStress(t stressT, cfg StressConfig, hooks stressHooks) *tally {
 	rounds := max(1, int((lc.Duration+time.Second/2)/time.Second))
 	span := max(lc.Duration/time.Duration(rounds), minRound)
 
+	if hooks.untilBound <= 0 {
+		hooks.untilBound = stressUntilBound
+	}
 	baseline := lifecycletest.TakeBaseline()
 	began := time.Now()
-	for n := range rounds {
+	for n := 0; ; n++ {
 		r := newStressRound(t, hooks, lc, n, span)
 		failed := r.execute(baseline)
 		totals.merge(r.tally)
 		totals.add("rounds")
-		if failed {
+		if hooks.until != nil {
+			// A test is waiting for the stress to say something: the rounds are as many as it takes, and never fewer than the duration holds, and the bound
+			// ends them if the stress never says it.
+			if (n+1 >= rounds && hooks.until()) || time.Since(began) >= hooks.untilBound {
+				break
+			}
+			continue
+		}
+		if failed || n+1 >= rounds {
 			break
 		}
 	}

@@ -130,8 +130,9 @@ func (r *wireRig) checkInputTooLarge() {
 		r.t.Errorf("%s", problem)
 	}
 	r.await("the function of the session whose host broke the protocol to return", func() bool { return r.started.Load() == r.returned.Load() })
-	// Its place is free, and nothing of it is left to disturb the next session.
-	again := r.mustOpen(r.newID("input"), "echo")
+	// Its place is free once the session has been removed, which is a moment after its function has returned (and after the host read its status): a
+	// target that serves one session at a time refuses the next open with LIMIT until then. Nothing of it is left to disturb the next session.
+	again := r.mustOpenEventually(r.newID("input"), "echo")
 	again.roundTrip([]byte("again"))
 	r.closeAll([]*wireSession{again})
 }

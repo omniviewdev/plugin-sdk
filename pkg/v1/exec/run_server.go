@@ -46,6 +46,10 @@ type runConfig struct {
 	// progressTicks makes the ticks that pace RunProgress, and the function that stops them; nil is a ticker of
 	// defaultRunProgressEvery. It is a seam so that a test drives the pace by hand.
 	progressTicks func() (<-chan time.Time, func())
+	// tickHandled runs on the handler's goroutine after each tick of progress was handled, whether the tick queued progress or found nothing
+	// new. It is a seam so that a test that drives the ticks by hand knows that a tick is over before it lets the output advance: a tick
+	// that is taken is not a tick that is handled, and the output that advances in between is read by the tick that was meant to find none.
+	tickHandled func()
 	// beforeRead runs on the goroutine that reads a run's output, before each read of the queue. ctx ends when the reader is
 	// to stop. It is a seam so that a test can hold the reader.
 	beforeRead func(ctx context.Context)
@@ -481,6 +485,9 @@ func (c *runCall) serveStream(stream execv2.Exec_RunStreamServer) error {
 			// leaves the progress for the next.
 			if seen := c.reader.seen.Load(); seen != lastProgress && st.offer(streamItem{kind: itemProgress, bytesOut: seen}) {
 				lastProgress = seen
+			}
+			if handled := c.s.run.tickHandled; handled != nil {
+				handled()
 			}
 		},
 		failed:  st.failed,

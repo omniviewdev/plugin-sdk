@@ -420,10 +420,17 @@ func TestServedRunStreamReportsProgressOnATickOnlyWhileTheOutputAdvanced(t *test
 		t.Cleanup(g.Open)
 	}
 	ticks := make(chan time.Time)
+	handled := make(chan struct{}, 1)
 	var stopped atomic.Bool
-	exec.SetRunSeams(rig.server.Plugin, exec.RunSeams{ProgressTicks: func() (<-chan time.Time, func()) {
-		return ticks, func() { stopped.Store(true) }
-	}})
+	exec.SetRunSeams(rig.server.Plugin, exec.RunSeams{
+		ProgressTicks: func() (<-chan time.Time, func()) { return ticks, func() { stopped.Store(true) } },
+		TickHandled: func() {
+			select {
+			case handled <- struct{}{}:
+			default:
+			}
+		},
+	})
 
 	events := make(chan *execv2.RunEvent, 64)
 	returned := rig.serveStream(context.Background(), rig.request(), func(e *execv2.RunEvent) error {
@@ -443,12 +450,20 @@ func TestServedRunStreamReportsProgressOnATickOnlyWhileTheOutputAdvanced(t *test
 			return nil
 		}
 	}
+	// A tick is over when the handler has handled it, and not when it has taken it: the handler that has taken a tick reads how far the output has
+	// got when it gets to it, and on a busy machine that is after the author that the test let write has written. Only a tick that is over finds
+	// what the test says it finds.
 	tick := func() {
 		t.Helper()
 		select {
 		case ticks <- time.Time{}:
 		case <-time.After(engineWait):
 			t.Fatal("the handler took no tick of progress")
+		}
+		select {
+		case <-handled:
+		case <-time.After(engineWait):
+			t.Fatal("the handler took a tick of progress and did not finish with it")
 		}
 	}
 

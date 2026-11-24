@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
+
 	"github.com/omniviewdev/plugin-sdk/internal/lifecycletest"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/exec"
 	execv2 "github.com/omniviewdev/plugin-sdk/proto/exec/v2"
@@ -544,16 +546,23 @@ func TestSixtyFourConcurrentSessionsOnOneConnectionKeepTheNumbersOfOne(t *testin
 	// ---- 32 sessions flood to hosts that read nothing while 32 others are typed into.
 	t.Run("thirty-two floods held by absent hosts and thirty-two echoes", func(t *testing.T) {
 		half := concurrentSessions / 2
-		perFlood := uint64(proofScaled(8<<20, 4<<20)) // several times what the queue and the windows of a stream hold (0.6 to 1.6 MiB measured)
+		// What a host that reads nothing leaves in transit is what its window takes, so the window is the test's and not the machine's: the floods and
+		// the echoes beside them share a connection of this case whose window is fixed (a window that is not below the default turns off gRPC's dynamic
+		// one, transitWindow). The window of the rig's connection is the dynamic one, which grows with how long the pings that size it take to come
+		// back: an author was held after 0.8 MiB or after 8 MiB, by how busy the machine was, and a flood of 8 MiB that was not held at all failed this
+		// case once in 40 runs in a container under load.
+		client, _ := secondConnection(t, rig, grpc.WithInitialWindowSize(transitWindow), grpc.WithInitialConnWindowSize(transitWindow))
+		fixed := rig.via(client)
+		perFlood := uint64(proofScaled(8<<20, 4<<20)) // several times what the queue and the fixed window of a stream hold (under 1.5 MiB)
 		// What 32 sessions cost when they are typed into at once and nothing floods: what the same cost beside the held floods is held to.
-		_, quiet := worstEcho(typedInto(t, rig, "quiet-", half, rounds))
+		_, quiet := worstEcho(typedInto(t, fixed, "quiet-", half, rounds))
 
 		// The sessions that are typed into beside the floods are open before the floods start: what is measured is the echo, and not
 		// an Open that has to wait behind them.
 		done := make(chan *echoResult, half)
 		gate := make(chan struct{})
 		for i := range half {
-			go echoHost(rig.mustOpenKind("echo", "beside-"+strconv.Itoa(i), proofTTY), rounds, i, gate, done)
+			go echoHost(fixed.mustOpenKind("echo", "beside-"+strconv.Itoa(i), proofTTY), rounds, i, gate, done)
 		}
 		floods := make(chan *hostResult, half)
 		started := make(chan struct{}, half)
@@ -568,7 +577,7 @@ func TestSixtyFourConcurrentSessionsOnOneConnectionKeepTheNumbersOfOne(t *testin
 			}
 		})
 		for i := range half {
-			go floodHost(rig, "held", "held-"+strconv.Itoa(i), perFlood, 0, started, release, floods, i)
+			go floodHost(fixed, "held", "held-"+strconv.Itoa(i), perFlood, 0, started, release, floods, i)
 		}
 		for got := range half {
 			select {

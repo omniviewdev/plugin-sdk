@@ -347,13 +347,40 @@ func TestCancellingTheCallersContextReachesThePluginAndEndsTheCall(t *testing.T)
 // A call whose deadline passes before the plugin answers ends with TIMEOUT, with the context's own error inside; it says nothing
 // about whether the command ran, and it is no outcome.
 func TestADeadlineThatPassesBeforeTheResultIsATimeoutAndNeverAnOutcome(t *testing.T) {
-	client, _ := serveScripted(t, &scriptedRunServer{run: func(ctx context.Context, _ *execv2.RunRequest) (*execv2.RunResult, error) {
-		<-ctx.Done()
-		return nil, ctx.Err()
+	// The plugin does not answer, so that only the caller's own deadline can end the call. A handler that waited for its own context would answer, at
+	// the deadline that the call carries to it, with a DeadlineExceeded of its own, and a caller on a busy machine can read that before its own timer
+	// has fired: it has no error of its context to put inside yet, and that answer is a timeout that the plugin reported, which wraps none (a status
+	// that says DeadlineExceeded with a caller whose context is alive). Nor is the caller's deadline read from the timer of its context alone: the
+	// transport reads the clock too, which is what the next test holds.
+	unanswered := make(chan struct{})
+	client, _ := serveScripted(t, &scriptedRunServer{run: func(context.Context, *execv2.RunRequest) (*execv2.RunResult, error) {
+		<-unanswered
+		return nil, errors.New("the call is over")
 	}})
+	t.Cleanup(func() { close(unanswered) }) // runs before the server stops, so that its handler returns
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	result, err := client.Run(ctx, &execv2.RunRequest{Argv: []string{"x"}})
+	var typed *exec.Error
+	if result != nil || !errors.As(err, &typed) || typed.Class != exec.ErrorClassTimeout || !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("got %v and %#v, want no result and TIMEOUT wrapping context.DeadlineExceeded", result, err)
+	}
+}
+
+// lateContext is a context whose deadline is behind the clock and whose timer has not run it out: its Err is nil and its Done never closes.
+type lateContext struct{ context.Context }
+
+func (lateContext) Deadline() (time.Time, bool) { return time.Now().Add(-time.Second), true }
+
+// A call whose deadline has passed by the clock is a timeout with the context's own error inside, whether or not the timer of the context has run:
+// gRPC refuses a call whose deadline has passed with DeadlineExceeded as it is made, and reads the cancellation of a stream after its deadline as the
+// deadline, before the context says that it is over. The context here is in that moment for good; a real one is in it for as long as the goroutine
+// that runs its timer takes to be scheduled, which a busy machine makes long enough to meet. The plugin is never reached.
+func TestACallWhoseDeadlinePassedByTheClockIsATimeoutWithTheContextsErrorInsideWhateverItsTimerDid(t *testing.T) {
+	client, _ := serveScripted(t, &scriptedRunServer{run: func(context.Context, *execv2.RunRequest) (*execv2.RunResult, error) {
+		return &execv2.RunResult{Outcome: execv2.Outcome_OUTCOME_EXITED}, nil // a plugin that is reached answers, and the test then has a result
+	}})
+	result, err := client.Run(lateContext{context.Background()}, &execv2.RunRequest{Argv: []string{"x"}})
 	var typed *exec.Error
 	if result != nil || !errors.As(err, &typed) || typed.Class != exec.ErrorClassTimeout || !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("got %v and %#v, want no result and TIMEOUT wrapping context.DeadlineExceeded", result, err)

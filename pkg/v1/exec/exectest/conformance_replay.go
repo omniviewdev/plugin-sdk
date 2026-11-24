@@ -222,9 +222,11 @@ func caseWireLease(t checkT, target exec.Target, env *wireEnv) {
 	if _, err := rig.attach(id, 0); err == nil {
 		t.Fatalf("an attach to a session whose lease ran out was accepted, want NOT_FOUND / SESSION_UNKNOWN: a tombstone is not a session")
 	}
-	// A lease runs from the moment of the detach, and an attach before it ends it keeps the session.
+	// A lease runs from the moment of the detach, and an attach before it ends it keeps the session. The tombstone of the first session is made
+	// before its place is freed, so a target that serves one session at a time may refuse the next open with LIMIT for a moment after the host
+	// has read the tombstone: the second session is opened once the place is free.
 	again := rig.newID("lease")
-	rig.mustOpen(again, "idle", func(st *execv2.Start) { st.DetachTimeoutMs = 60_000 }).detach(0)
+	rig.mustOpenEventually(again, "idle", func(st *execv2.Start) { st.DetachTimeoutMs = 60_000 }).detach(0)
 	live := rig.mustAttach(again, 0)
 	live.detach(0)
 	if entry := rig.sessionEntry(again); entry == nil || entry.GetEndedWith() != nil || entry.GetLeaseExpiresUnixMs() == 0 {
@@ -341,6 +343,10 @@ func casePairReplay(t checkT, target exec.Target, env *wireEnv) {
 		}
 		var sum [32]byte
 		copy(sum[:], digest.Sum(nil))
+		// The session ends before the next one opens, and its place is free by the time the host has its Ended: a target that serves one
+		// session at a time admits the next, where a session that was left running would refuse it with LIMIT / TOO_MANY_SESSIONS.
+		_ = s.closeSession(execv2.CloseMode_CLOSE_MODE_GRACEFUL)
+		s.finish()
 		return sum
 	}
 	whole := run("whole", func(_ int, s *wireSession, _ uint64) *wireSession { return s })

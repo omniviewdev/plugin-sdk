@@ -268,3 +268,14 @@ func (r *recordT) said(phrases ...string) bool {
 	}
 	return false
 }
+
+// saidEach reports whether every one of the lists of phrases is held by a failure: what a test that names several things the stress must say of a
+// fault waits for.
+func (r *recordT) saidEach(lists [][]string) bool {
+	for _, phrases := range lists {
+		if !r.said(phrases...) {
+			return false
+		}
+	}
+	return true
+}

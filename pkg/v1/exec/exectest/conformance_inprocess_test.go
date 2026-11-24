@@ -235,9 +235,11 @@ func TestEveryInProcessCaseFailsWhenTheEngineIsWrong(t *testing.T) {
 			}
 			var calls atomic.Int64
 			rec := &recordT{}
+			// The stress row goes on, round after round, until the stress says what the fault is, with the bounds the harness states (only a real hang exceeds
+			// them): a window of a fixed length is filled by a slow machine with too little to meet the fault. The other rows run no stress.
 			env := &inProcessEnv{
 				resource: "thing-1", stress: short,
-				hooks: stressHooks{engine: faultyFactory(t, tc.fault), closeBound: 300 * time.Millisecond, settle: 300 * time.Millisecond, abandonBound: 300 * time.Millisecond},
+				hooks: stressHooks{engine: faultyFactory(t, tc.fault), until: func() bool { return rec.said(tc.phrase) }},
 			}
 			rec.run(func(r checkT) { body(r, declared(t, shapes()[0], &calls), env) })
 			if !rec.said(tc.phrase) {

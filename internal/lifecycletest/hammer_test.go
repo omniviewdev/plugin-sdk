@@ -294,24 +294,40 @@ func (ls *lanes) total(count func(*testLane) int64) int64 {
 func TestHammerPassesACorrectLaneOnTheRegistry(t *testing.T) {
 	t.Setenv(envName, "")
 	var ls lanes
-	f := hammerIn(t, ls.newLane, lifecycletest.Config{Workers: 8, Duration: 2 * time.Second, CloseBound: 5 * time.Second, Settle: 2 * time.Second})
+	cfg := lifecycletest.Config{Workers: 8, Duration: 2 * time.Second, CloseBound: 5 * time.Second, Settle: 2 * time.Second}
+	f := hammerIn(t, ls.newLane, cfg)
+	rounds := int64(len(ls.made))
+	reports := f.reports()
+	refusedCreates := func() int64 { return ls.total(func(l *testLane) int64 { return l.refused.Load() }) }
+	// The workers go on creating while Close runs and after it: far more creates are refused than the one a round makes at
+	// rest. Whether the Close of a round lands while its workers still run is for the scheduler to say: the callers of Close
+	// arrive after a few yields, and where the workers fill every processor (GOMAXPROCS 1, or a busy machine) each yield waits
+	// for a turn of each of them, so that most rounds Close after their workers have stopped and a few do what this test waits
+	// for. The hammer goes on, one more round at a time with a seed of its own, until the refusals say that it happened, or
+	// for a minute, which only a hammer whose workers stop creating once Close begins reaches.
+	began := time.Now()
+	for seed := uint64(100); refusedCreates() < 2*int64(len(ls.made)) && time.Since(began) < time.Minute; seed++ {
+		more := cfg
+		more.Seed, more.Duration = seed, 250*time.Millisecond // one round, of the longest phase the workers get
+		reports = append(reports, hammerIn(t, ls.newLane, more).reports()...)
+	}
 	ls.shutdown(t)
-	if reports := f.reports(); len(reports) != 0 {
+	if len(reports) != 0 {
 		t.Fatalf("the hammer failed a correct lane: %q", reports)
 	}
-	rounds := int64(len(ls.made))
 	if rounds < 2 {
 		t.Fatalf("the hammer ran %d rounds in 2 s, want several", rounds)
 	}
 	if !strings.Contains(f.logged(), "rounds") {
 		t.Errorf("the hammer logged %q, want a summary", f.logged())
 	}
+	rounds = int64(len(ls.made))
 	for name, n := range map[string]int64{
 		"creates":  ls.total(func(l *testLane) int64 { return l.creates.Load() }),
 		"updates":  ls.total(func(l *testLane) int64 { return l.updates.Load() }),
 		"ends":     ls.total(func(l *testLane) int64 { return l.ends.Load() }),
 		"closes":   ls.total(func(l *testLane) int64 { return l.closes.Load() }),
-		"refusals": ls.total(func(l *testLane) int64 { return l.refused.Load() }),
+		"refusals": refusedCreates(),
 	} {
 		if n == 0 {
 			t.Errorf("the hammer made no %s", name)
@@ -320,10 +336,8 @@ func TestHammerPassesACorrectLaneOnTheRegistry(t *testing.T) {
 	if closes := ls.total(func(l *testLane) int64 { return l.closes.Load() }); closes < rounds || closes > 3*rounds {
 		t.Errorf("%d Close calls in %d rounds, want one to three a round", closes, rounds)
 	}
-	// The workers go on creating while Close runs and after it: far more creates are refused
-	// than the one a round makes at rest.
-	if refused := ls.total(func(l *testLane) int64 { return l.refused.Load() }); refused < 2*rounds {
-		t.Errorf("%d creates were refused over %d rounds: the workers did not go on creating once Close began", refused, rounds)
+	if refused := refusedCreates(); refused < 2*rounds {
+		t.Errorf("%d creates were refused over %d rounds in %v: the workers did not go on creating once Close began", refused, rounds, time.Since(began).Round(time.Millisecond))
 	}
 }
 

@@ -165,9 +165,10 @@ func TestTheCheckOfAFinishedSessionLeavesAWindowThatSawTheEndAlone(t *testing.T)
 // A violation of the stress is said with what a rerun needs: the seed, the workers and the duration of the run, and what a rerun cannot promise (the
 // choices of a round are its seed's, how its goroutines interleave is not), so that a failure that shows up on a busy machine is not a mystery.
 func TestAFailureOfTheStressSaysHowToRunItAgain(t *testing.T) {
-	rec := stressWithFault(t, faultLive)
-	if !rec.said("round 0", "found", "violations", "StressConfig{Seed: 7, Workers: 4, Duration: 100ms}", "go test -race -count", "how its goroutines interleave is not") {
-		t.Fatalf("the stress said %q of an engine that leaves a ghost behind, want a line that says how to run the round again", rec.failed())
+	line := [][]string{{"round 0", "found", "violations", "StressConfig{Seed: 7, Workers: 4, Duration: 100ms}", "go test -race -count", "how its goroutines interleave is not"}}
+	rec, rounds := stressWithFault(t, faultLive, line)
+	if !rec.saidEach(line) {
+		t.Fatalf("the stress said %q in %d rounds of an engine that leaves a ghost behind, want a line that says how to run the round again", rec.failed(), rounds)
 	}
 }
 

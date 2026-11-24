@@ -133,11 +133,12 @@ func TestOpenConstructionShortCommandOf2KiBLosesNoByteWhateverTheHostDoesFirst(t
 	}
 }
 
-// secondConnection dials the served plugin again, as a second host connection, and returns its client and the connection.
-func secondConnection(t *testing.T, rig *proofRig) (exec.Client, *grpc.ClientConn) {
+// secondConnection dials the served plugin again, as a second host connection, and returns its client and the connection. The options that are
+// given are added to the dial options, and one that sets the same thing replaces it.
+func secondConnection(t *testing.T, rig *proofRig, extra ...grpc.DialOption) (exec.Client, *grpc.ClientConn) {
 	t.Helper()
 	options := append(sdk.GRPCDialOptionsWithLogger(logging.NewNop()), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	conn, err := grpc.NewClient(rig.server.Conn().Target(), options...)
+	conn, err := grpc.NewClient(rig.server.Conn().Target(), append(options, extra...)...)
 	if err != nil {
 		t.Fatalf("dial the second connection: %v", err)
 	}

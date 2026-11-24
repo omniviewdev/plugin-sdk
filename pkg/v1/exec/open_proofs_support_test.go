@@ -89,6 +89,13 @@ func newProofRig(t testing.TB, targets ...exec.Target) *proofRig {
 	return &proofRig{wireRig: rig, refs: refs}
 }
 
+// via is the rig whose host is the client given: the sessions that it opens run on that client's connection, to the same plugin.
+func (r *proofRig) via(client exec.Client) *proofRig {
+	wire := *r.wireRig
+	wire.client = client
+	return &proofRig{wireRig: &wire, refs: r.refs}
+}
+
 // openOn opens a session of a kind through a client, which is the rig's or another connection's. It is safe to call from any
 // goroutine.
 func (r *proofRig) openOn(ctx context.Context, client exec.Client, kind, id string, mods ...func(*execv2.Start)) (exec.Conn, error) {

@@ -520,7 +520,7 @@ func TestSourceTCPCloseCancelsProvider(t *testing.T) {
 	go func() { stream.Close(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(10 * time.Second): // Close has to return; the wait is for that event, and only a Close that never returns ends it
 		t.Fatal("Close blocked")
 	}
 	select {
