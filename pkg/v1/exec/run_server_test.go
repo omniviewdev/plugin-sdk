@@ -643,7 +643,10 @@ func TestServedRunWithNoTimeoutUsesTheTargetsDefault(t *testing.T) {
 }
 
 // The call returns at its timeout whether or not the function does: a function that ignores its context is given up on, and it
-// holds its place until it returns.
+// holds its place until it returns. A timeout is a kill, which waits for the function for the kill wait (tens of milliseconds) and never
+// for the grace (5 s) that a function that honors its context is given. The engine's waits for a function that was told to stop are the
+// test's here: the timer that the kill arms is read (a grace would be seen at once, by its length) and runs out when the test says, so
+// that nothing decides by how long the call took, which on a slow runner is no measure of anything.
 func TestServedRunReturnsAtItsTimeoutEvenIfTheFunctionNeverReturns(t *testing.T) {
 	gate := exectest.NewGate()
 	var runs atomic.Int32
@@ -654,14 +657,29 @@ func TestServedRunReturnsAtItsTimeoutEvenIfTheFunctionNeverReturns(t *testing.T)
 		return exec.ExitCode(0), nil
 	}, runSrvLimits(exec.RunLimits{MaxConcurrent: 1})))
 	t.Cleanup(gate.Open) // registered after the rig: it runs before the rig waits for the functions that ignore their context
+	timers := newFakeTimers()
+	exec.SetPluginEngineSeams(rig.server.Plugin, exec.EngineSeams{NewTimer: timers.New})
 
-	started := time.Now()
-	res := rig.mustRun(rig.request(runSrvTimeout(30)))
-	// An upper bound, never a measure: a timeout is a kill, which does not wait out the grace (5 s) that a function that honors its
-	// context is given, so the call returns long before it. A bound well under the grace tells the two apart.
-	if took := time.Since(started); took > 3*time.Second {
-		t.Errorf("the call took %v for a timeout of 30 ms: a timeout kills, and does not wait for a function that ignores its context", took)
+	type answer struct {
+		res *execv2.RunResult
+		err error
 	}
+	ctx, req := rig.ctx(), rig.request(runSrvTimeout(30))
+	answered := make(chan answer, 1)
+	go func() {
+		res, err := rig.raw.Run(ctx, req)
+		answered <- answer{res, err}
+	}()
+	timer := timers.next(t)
+	if timer.d >= time.Second {
+		t.Fatalf("the engine armed a timer of %v for the end of a run whose timeout had passed, want the kill wait (tens of milliseconds): a timeout kills, and does not wait out the grace for a function that ignores its context", timer.d)
+	}
+	timer.fire()
+	got := awaitValue(t, answered, "the call to return at its timeout, whether or not its function does")
+	if got.err != nil {
+		t.Fatalf("Run: %v", got.err)
+	}
+	res := got.res
 	if res.GetOutcome() != execv2.Outcome_OUTCOME_TIMED_OUT || string(res.GetStdout()) != "stuck" || res.GetExitSource() != execv2.ExitSource_EXIT_SOURCE_HOST {
 		t.Fatalf("result %v, want TIMED_OUT from the host with the output so far", res)
 	}

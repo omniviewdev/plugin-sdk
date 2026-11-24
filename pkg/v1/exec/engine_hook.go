@@ -210,7 +210,7 @@ func (h hookCommand) Stream() exechook.Stream {
 
 // Attach attaches a stream to a session that lives: the request is admitted as the served Open admits it, and the attach is the engine's
 // (engine.attach), the one the served Open makes.
-func (h *hookEngine) Attach(_ context.Context, wire *execv2.OpenRequest) (exechook.Stream, error) {
+func (h *hookEngine) Attach(ctx context.Context, wire *execv2.OpenRequest) (exechook.Stream, error) {
 	open, _, refusal := admitOpenRequest(wire, h.server.reg, inProcessFeatures())
 	if refusal != nil {
 		return nil, refusal
@@ -218,7 +218,7 @@ func (h *hookEngine) Attach(_ context.Context, wire *execv2.OpenRequest) (execho
 	if open.Attach == nil {
 		return nil, invalidRequest("an attach request attaches: this one starts a session")
 	}
-	cmd, att, opened, refusal := h.server.engine.attach(open.SessionID, open.Attach.FromOffset)
+	cmd, att, opened, refusal := h.server.engine.attach(ctx, open.SessionID, open.Attach.FromOffset)
 	if refusal != nil {
 		return nil, refusal
 	}

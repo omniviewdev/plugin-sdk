@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"sync"
@@ -26,7 +27,7 @@ func TestAFrameTakesEffectBeforeTheSessionChangesHandsOrNeverAndTheMoveWaitsForI
 		move func(tr *testRing, old *attachment)
 	}{
 		{"an attach", func(tr *testRing, _ *attachment) {
-			if _, _, err := tr.attach(0); err != nil {
+			if _, _, err := tr.attach(context.Background(), 0); err != nil {
 				t.Error(err)
 			}
 		}},
@@ -81,11 +82,11 @@ func TestAFrameTakesEffectBeforeTheSessionChangesHandsOrNeverAndTheMoveWaitsForI
 	t.Run("the stream that holds the session applies its frames, however many times the session changed hands", func(t *testing.T) {
 		tr := newTestRing(1<<20, false, false)
 		first := tr.creator
-		second, _, err := tr.attach(0)
+		second, _, err := tr.attach(context.Background(), 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		third, _, err := tr.attach(0)
+		third, _, err := tr.attach(context.Background(), 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -204,14 +205,14 @@ func TestAStreamThatBrokeTheProtocolEndsTheSessionItHoldsOrLeftOnlyBecauseItEnde
 		{"the stream was released and another stream attached", func(tr *testRing) *attachment {
 			old := tr.creator
 			tr.release(old, time.Minute, now)
-			if _, _, err := tr.attach(0); err != nil {
+			if _, _, err := tr.attach(context.Background(), 0); err != nil {
 				t.Fatal(err)
 			}
 			return old
 		}, false},
 		{"the stream was superseded", func(tr *testRing) *attachment {
 			old := tr.creator
-			if _, _, err := tr.attach(0); err != nil {
+			if _, _, err := tr.attach(context.Background(), 0); err != nil {
 				t.Fatal(err)
 			}
 			return old

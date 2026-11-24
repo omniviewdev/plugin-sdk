@@ -4,13 +4,16 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/omniviewdev/plugin-sdk/internal/exechook"
 	"github.com/omniviewdev/plugin-sdk/pkg/v1/exec"
 	execv2 "github.com/omniviewdev/plugin-sdk/proto/exec/v2"
 )
+
+// leaseSpinSink is what the spin of the lease race adds to, so that the loop is not optimised away.
+var leaseSpinSink atomic.Int64
 
 // A lease that runs out and an attach, at the same moment: an attach cancels the lease and a lease that has run out ends only a session
 // that nobody attached to, both decided under one lock, so exactly one of them wins. The lease timer is made by hand, so that it runs
@@ -26,6 +29,12 @@ func TestALeaseThatRunsOutAndAnAttachAtTheSameMomentHaveExactlyOneWinner(t *test
 		i.Session.MaxSessions = 8
 	}))
 	attachWon, leaseWon := 0, 0
+	// How long the lease waits, after the attach starts, before it runs out is a number of iterations of a spin that does nothing, and it is steered by
+	// what happened last: more when the lease won (it ran out before the attach had done anything), less when the attach won. It converges on the
+	// point where the two meet, wherever that is on the machine in hand, and stays around it. It is not a span of time, which a clock that ticks every
+	// 1 to 15.6 ms (a Windows runner's) would turn into one delay for every iteration, and nothing is asserted about it.
+	const maxSpins = 1 << 21
+	spins := 0
 	for i := range iterations {
 		id := fmt.Sprintf("lease-%d", i)
 		first := rig.mustOpen(id, withoutTTY)
@@ -44,13 +53,14 @@ func TestALeaseThatRunsOutAndAnAttachAtTheSameMomentHaveExactlyOneWinner(t *test
 			conn, err := rig.attach(context.Background(), id, 0)
 			got <- attached{conn, err}
 		}()
-		// The lease runs out a little after the attach starts, a little more each time: the delay is a sweep across the time an attach
-		// takes (a stream, a frame, a lock), so that the two meet at every point of it. Nothing is asserted about the delay.
-		delay := time.Duration(i%40) * 10 * time.Microsecond
+		wait := spins
 		go func() {
 			<-gate
-			for end := time.Now().Add(delay); time.Now().Before(end); {
-				runtime.Gosched() // a processor is given to the attach meanwhile, which a spin would not do on one
+			for k := range wait {
+				if k%16 == 15 {
+					runtime.Gosched() // a processor is given to the attach meanwhile, which a spin would not do on one
+				}
+				leaseSpinSink.Add(1)
 			}
 			timer.fire()
 		}()
@@ -59,6 +69,7 @@ func TestALeaseThatRunsOutAndAnAttachAtTheSameMomentHaveExactlyOneWinner(t *test
 
 		if res.err == nil {
 			attachWon++
+			spins = spins * 3 / 4
 			t.Cleanup(func() { _ = res.conn.Close() })
 			// The session lives and is attached to the stream: it ends only when the host says so.
 			sendClose(t, res.conn, execv2.CloseMode_CLOSE_MODE_GRACEFUL)
@@ -70,6 +81,7 @@ func TestALeaseThatRunsOutAndAnAttachAtTheSameMomentHaveExactlyOneWinner(t *test
 			continue
 		}
 		leaseWon++
+		spins = min(spins*5/4+16, maxSpins)
 		if !isRefusalOf(res.err, exec.ErrorClassNotFound, exec.ErrorReasonSessionUnknown) {
 			t.Fatalf("iteration %d: the attach was refused with %v, want NOT_FOUND / SESSION_UNKNOWN: the lease had ended the session", i, res.err)
 		}

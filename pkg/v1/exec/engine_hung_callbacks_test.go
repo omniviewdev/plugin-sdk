@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
@@ -165,31 +166,35 @@ func TestARetirementDoesNotWaitForAnOptionsCallbackThatHangs(t *testing.T) {
 	}
 }
 
-// A callback that honors its context returns at the deadline by itself: nothing is abandoned and no place is held.
+// A callback that honors its context returns at the deadline by itself: nothing is abandoned and no place is held. The engine's timings
+// run on the clock of a synctest bubble: the deadline of 20 ms and the grace of a second are only ever reached when every goroutine waits, so
+// the second start, whose callback returns at once, cannot be cut by a deadline that a slow scheduler let run out.
 func TestAnOptionsCallbackThatHonorsItsContextIsNotAbandoned(t *testing.T) {
-	var first atomic.Bool
-	target := engTarget(blockUntilCancelled, func(i *exec.TargetInfo) { i.Session.MaxSessions = 1 })
-	target.Options = func(pc *types.PluginContext, _ resourcev2.ResourceReference) ([]exec.Option, error) {
-		if first.CompareAndSwap(false, true) {
-			<-pc.Context.Done() // the deadline of the engine ends it
-			return nil, pc.Context.Err()
+	synctest.Test(t, func(t *testing.T) {
+		var first atomic.Bool
+		target := engTarget(blockUntilCancelled, func(i *exec.TargetInfo) { i.Session.MaxSessions = 1 })
+		target.Options = func(pc *types.PluginContext, _ resourcev2.ResourceReference) ([]exec.Option, error) {
+			if first.CompareAndSwap(false, true) {
+				<-pc.Context.Done() // the deadline of the engine ends it
+				return nil, pc.Context.Err()
+			}
+			return nil, nil
 		}
-		return nil, nil
-	}
-	rig := newEngineRig(t, engineRigConfig{optionsDeadline: 20 * time.Millisecond, grace: time.Second}, target)
-	_, err := rig.open("s1", withoutTTY)
-	if refusal := refusalOf(t, err); refusal.Class != exec.ErrorClassTimeout {
-		t.Fatalf("a callback that returned the deadline's error: %v, want TIMEOUT", refusal.Class)
-	}
-	if got := rig.eng.Abandoned(); got != 0 {
-		t.Errorf("the engine counts %d abandoned callbacks for one that returned, want 0", got)
-	}
-	cmd, err := rig.open("s2", withoutTTY) // the one place is free
-	if err != nil {
-		t.Fatalf("the place of a callback that returned is held: %v", err)
-	}
-	cmd.Close(true)
-	awaitDone(t, cmd)
+		rig := newEngineRig(t, engineRigConfig{optionsDeadline: 20 * time.Millisecond, grace: time.Second}, target)
+		_, err := rig.open("s1", withoutTTY)
+		if refusal := refusalOf(t, err); refusal.Class != exec.ErrorClassTimeout {
+			t.Fatalf("a callback that returned the deadline's error: %v, want TIMEOUT", refusal.Class)
+		}
+		if got := rig.eng.Abandoned(); got != 0 {
+			t.Errorf("the engine counts %d abandoned callbacks for one that returned, want 0", got)
+		}
+		cmd, err := rig.open("s2", withoutTTY) // the one place is free
+		if err != nil {
+			t.Fatalf("the place of a callback that returned is held: %v", err)
+		}
+		cmd.Close(true)
+		awaitDone(t, cmd)
+	})
 }
 
 // A callback given up on that panics when it returns is the author's bug and not the plugin's end.

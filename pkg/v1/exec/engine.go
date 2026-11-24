@@ -202,6 +202,12 @@ type engine struct {
 	// session: the window in which the stream is over and the engine has not yet been told, which a test holds open.
 	beforeStreamLeaves func()
 
+	// beforeAttach is a test seam, nil in production: it runs when an attach is on its way to its session (the served handler has read the
+	// open frame, or the in-process caller made its request) and before the engine looks for the session and registers the stream: the
+	// window in which an attach has taken nothing yet and its stream may end, which a test holds open. It is given the context of the
+	// attach, whose metadata tells a test which attach it holds.
+	beforeAttach func(ctx context.Context, id string, from uint64)
+
 	// tombs holds the sessions that ended (tombstone.go).
 	tombs *tombstones
 }

@@ -38,7 +38,11 @@ type isolationAuthor struct {
 }
 
 // flood writes the pattern until the session ends. The lossy variant gives the scheduler back after each write, as an author
-// that reads its stream between two writes does; the blocking one is held by its queue.
+// that reads its stream between two writes does; the blocking one is held by its queue. On one processor a Gosched is not enough: the
+// author goes to the tail of the global queue, which is never empty while it loops, and the scheduler reaches the network only when
+// that queue is empty, so a socket that is ready waits for the 10 ms poll of sysmon and each echo of the other session takes that
+// long (the proof did not finish in a minute at -cpu 1): there the author sleeps for an instant, which leaves the processor idle
+// and has the network polled.
 func (a *isolationAuthor) flood(yield bool) exec.ExecFunc {
 	return func(ctx context.Context, p *exec.Proc) (exec.Exit, error) {
 		for offset := uint64(0); ; offset += floodChunk {
@@ -51,6 +55,9 @@ func (a *isolationAuthor) flood(yield bool) exec.ExecFunc {
 			a.written.Store(offset + floodChunk)
 			if yield {
 				runtime.Gosched()
+				if runtime.GOMAXPROCS(0) == 1 {
+					time.Sleep(time.Microsecond)
+				}
 			}
 		}
 	}
@@ -117,6 +124,7 @@ func isolationCaseWith(t *testing.T, name string, configure func(*exec.Plugin), 
 			// take turns: what is measured is the scheduler's slice and not the lane.
 			floor = 5 * isolationFloor
 		}
+		floor = proofBar(floor) // a clock whose tick is longer than the floor cannot tell a p95 below it
 		t.Logf("echo of B alone:  %v", baseline)
 		t.Logf("echo of B while A %s: %v (the plan's bar: p95 <= %v; floor %v)", name, under, isolationBar, floor)
 		if under.P95 > floor {

@@ -249,7 +249,14 @@ var (
 // superseded, and a lease that runs is cancelled. All of it is one step under the ring's lock, so that the replay and the live
 // stream that begins where it ends lose no byte and repeat none, and it waits for the frames of the older stream that are taking
 // effect (see whileCurrent): none takes effect after it.
-func (r *ring) attach(from uint64) (*attachment, replayInfo, error) {
+//
+// A stream whose context has ended registers nothing: its host gave it up (it cancelled it, or lost its connection), and an attach that
+// was abandoned takes the session from no one. It is decided here, in the step that registers, and not before it: the handler of an
+// attach runs on its own goroutine, and the handler of one that the host cancelled can reach this step after the handler of the attach
+// that the host made next, which is alive, and take the session from it. On one connection the cancel reaches the plugin before the
+// stream that the host makes next, so a handler that is late finds its context ended here; attaches that arrive on different connections
+// have no order, and the one that registers last has the session.
+func (r *ring) attach(ctx context.Context, from uint64) (*attachment, replayInfo, error) {
 	r.att.frames.Lock()
 	defer r.att.frames.Unlock()
 	r.mu.Lock()
@@ -259,6 +266,9 @@ func (r *ring) attach(from uint64) (*attachment, replayInfo, error) {
 	}
 	if from > r.endOff {
 		return nil, replayInfo{}, errBeyondOutput
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, replayInfo{}, err
 	}
 	start := max(from, r.start())
 	a := r.newAttachment(r.endOff)
@@ -466,9 +476,10 @@ func (c *command) sessionFacts() (*execv2.SessionFacts, bool) {
 
 // attach registers a new stream on the session and returns its attachment and the Opened it sends: the session's own latest facts
 // and the description of the replay that follows (see ring.attach). The older stream, if any, is superseded. It is refused with
-// errSessionGone for a session that has ended or is ending, and with errBeyondOutput for an offset the session has not reached.
-func (c *command) attach(from uint64) (*attachment, *execv2.Opened, error) {
-	a, info, err := c.ring.attach(from)
+// errSessionGone for a session that has ended or is ending, with errBeyondOutput for an offset the session has not reached, and with
+// ctx's error for a stream that has ended: such a stream registers nothing.
+func (c *command) attach(ctx context.Context, from uint64) (*attachment, *execv2.Opened, error) {
+	a, info, err := c.ring.attach(ctx, from)
 	if err != nil {
 		return nil, nil, err
 	}

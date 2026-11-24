@@ -101,9 +101,10 @@ func (s *serverV2) Open(stream execv2.Exec_OpenServer) error {
 
 // attachSession serves an Open that attaches to a session that lives. The older stream of the session, if there is one, is
 // superseded. A session that does not exist, one that has ended (its tombstone is not a session to attach to) and one whose end is
-// under way are the same refusal, NOT_FOUND / SESSION_UNKNOWN; an offset the session has not reached is INVALID_REQUEST.
+// under way are the same refusal, NOT_FOUND / SESSION_UNKNOWN; an offset the session has not reached is INVALID_REQUEST. A stream that
+// has ended when the engine would register it (the host cancelled it) is refused as cancelled and registers nothing: it supersedes no one.
 func (s *serverV2) attachSession(ctx context.Context, stream execv2.Exec_OpenServer, open openRequest) error {
-	cmd, att, opened, refusal := s.engine.attach(open.SessionID, open.Attach.FromOffset)
+	cmd, att, opened, refusal := s.engine.attach(ctx, open.SessionID, open.Attach.FromOffset)
 	if refusal != nil {
 		return s.refuse(ctx, "Open", refusal)
 	}
@@ -114,8 +115,12 @@ func (s *serverV2) attachSession(ctx context.Context, stream execv2.Exec_OpenSer
 
 // attach is the engine's side of an attach: it finds the session that lives, attaches a stream to it from the offset (the older stream, if
 // there is one, is superseded) and says what the stream is opened with, or why it is refused. The served Open and the in-process engine
-// both attach here, so that what a test drives is what a host's stream gets.
-func (e *engine) attach(id string, from uint64) (*command, *attachment, *execv2.Opened, *Error) {
+// both attach here, so that what a test drives is what a host's stream gets. ctx is the stream's: an attach whose stream has ended when it
+// would be registered is refused as a cancelled (or timed out) call and registers nothing (see ring.attach).
+func (e *engine) attach(ctx context.Context, id string, from uint64) (*command, *attachment, *execv2.Opened, *Error) {
+	if hook := e.beforeAttach; hook != nil {
+		hook(ctx, id, from)
+	}
 	if _, ended := e.tombs.get(id); ended {
 		return nil, nil, nil, unknownSession()
 	}
@@ -123,12 +128,14 @@ func (e *engine) attach(id string, from uint64) (*command, *attachment, *execv2.
 	if !ok {
 		return nil, nil, nil, unknownSession()
 	}
-	att, opened, err := cmd.attach(from)
+	att, opened, err := cmd.attach(ctx, from)
 	switch {
 	case errors.Is(err, errSessionGone):
 		return nil, nil, nil, unknownSession()
 	case errors.Is(err, errBeyondOutput):
 		return nil, nil, nil, invalidRequest("from_offset %d is beyond the end of the session's output", from)
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return nil, nil, nil, contextRefusal(err)
 	case err != nil:
 		return nil, nil, nil, &Error{Class: ErrorClassInternal, Err: err}
 	}

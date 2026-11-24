@@ -510,8 +510,11 @@ func TestAnOptionsCallbackThatPanicsAfterTheEngineGaveUpOnItIsContainedOnTheRPC(
 	panics.Store(false)
 	gate.Open()
 	eventually(t, "the callback to panic and be accounted for", rig.gaugeIs(0))
-	if _, err := rig.options(context.Background(), "thing-2"); err != nil {
-		t.Errorf("the plugin did not serve on after the panic of a callback it had given up on: %v", err)
+	// The plugin serves on. The call is made until it is answered and not once: its callback answers at once, but the engine's deadline here is
+	// 10 ms, which a scheduler that is slow to run the callback's goroutine can use up, and the call is then refused TIMEOUT, rightly.
+	var last error
+	if !proofPoll(engineWait, func() bool { _, last = rig.options(context.Background(), "thing-2"); return last == nil }) {
+		t.Errorf("the plugin did not serve on after the panic of a callback it had given up on: %v", last)
 	}
 }
 

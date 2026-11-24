@@ -20,12 +20,16 @@ import (
 // 64 sessions on one connection (plan, X3c): every session is its own stream with its own cursor into its own ring, and the plan
 // asks that this is MEASURED, with the numbers of one session (open_flood_test.go, open_latency_test.go, open_isolation_test.go):
 //
-//   - 64 sessions flood at once: the connection carries at least what one flood does (300 MB/s), the frames stay large (an average of 16 KiB
-//     or more, so that the host's event count stays low), each session's bytes are the pattern and every one arrives, the process
-//     allocates no more for a byte than it does for one session, and no session is starved (the slowest finishes within a small
+//   - 64 sessions flood at once: the floods run at the same time (the last session to deliver its first frame does so before the first to
+//     end has ended, which sessions served one after the other do not), the connection delivers a tenth of what one session's flood
+//     delivered through it in the same run (just before the 64 and just after them) or more (no bar is a number of MB/s: it is a ratio
+//     against those floods), the frames stay large (an average of 16 KiB or more, so that the host's event count stays low), each
+//     session's bytes are the pattern and every one arrives, the process allocates no more for a byte than it does for one session and
+//     costs no more than a small multiple of its CPU for a byte, and no session is starved (the slowest finishes within a small
 //     multiple of the median);
-//   - 64 sessions are typed into at once: the echo of each stays under the floor of the isolation proofs;
-//   - 32 sessions flood to hosts that spend 100us on a frame while 32 others are typed into: the echoes of the quiet ones still do;
+//   - 64 sessions are typed into at once: the echo of each stays under a floor that a shared runner cannot break (50 ms, five times the
+//     floor of the isolation proofs);
+//   - 32 sessions flood to hosts that spend 100us on a frame while 32 others are typed into: the echoes of the quiet ones stay under it too;
 //   - 32 sessions flood to hosts that read nothing while 32 others are typed into: the floods are held (an author whose host reads
 //     nothing is stopped by the queue and the windows of its stream, as in open_isolation_test.go), the echoes of the quiet sessions
 //     finish, their p95 is within a small multiple of the p95 of the same number of sessions typed into when nothing floods, and when
@@ -33,7 +37,7 @@ import (
 //     streams that are independent: the lock is held across the send that waits for the first absent host, and no other send of the
 //     connection goes out until that host reads. The slow hosts of the case before do not tell it: a send waits for one of them for the
 //     microseconds it spends on a frame, so the p95 of the echoes beside them is 3 to 5 ms under such a lock and 1 to 3 ms without (the
-//     floor is 10 ms), and no multiple of the p95 of the echo alone separates the two at every processor count (the echo alone takes
+//     floor is 50 ms), and no multiple of the p95 of the echo alone separates the two at every processor count (the echo alone takes
 //     9us on one processor and 60us on eighteen, and the one beside the floods 1.2 to 2.8 ms). Nor does the shape of what they
 //     measure: the median of those echoes is the lower under the lock, which serializes the floods that load the processors.
 //
@@ -215,15 +219,13 @@ func worstEcho(results []*echoResult) (worst proofLatency, all proofLatency) {
 	return worst, proofSummarize(every)
 }
 
-// echoFloor is what a p95 may not exceed: the floor of the isolation proofs, with the slack the race detector and a single processor
-// need.
-func echoFloor() time.Duration {
-	floor := isolationFloor
-	if proofRace || runtime.GOMAXPROCS(0) < 4 {
-		floor = 5 * isolationFloor
-	}
-	return floor
-}
+// echoFloor is what a p95 may not exceed: five times the floor of the isolation proofs on every machine, and no less than the clock can
+// tell. The echoes of this proof are measured while 64 sessions are typed into at once, and beside 32 hosts that each spend 100us of CPU
+// on a frame: they take turns with the transport and with each other for the processors, so what they measure is the scheduler's slice
+// as much as the lane (1.2 to 2.4 ms on one to eighteen fast processors, which a runner of two to four slow ones that it shares
+// multiplies). What a floor of this size tells is a lock or a consumer that the sessions share: the legacy lane's shared consumer put
+// the echo at 431 to 469 ms.
+func echoFloor() time.Duration { return proofBar(5 * isolationFloor) }
 
 // typedInto types into n sessions of the echo target at once, rounds bytes into each, and returns what each found. Every session is
 // closed by its host when it is done.
@@ -276,13 +278,96 @@ func (a *heldAuthor) total() uint64 {
 const (
 	// heldEchoRatio is how many times the p95 of 32 sessions typed into when nothing floods the p95 of the same number of sessions
 	// may be beside 32 floods that their hosts hold: a held flood uses no processor and sends nothing, so the echo has no reason to
-	// move at all.
+	// move at all (0.4 to 1.2 times, measured on one to eighteen processors).
 	heldEchoRatio = 10
+	// heldEchoQuiet is the least that the p95 of the echoes with nothing flooding is taken to be, which the ratio divides by: it is 60 to
+	// 400us on a fast machine, and ten times that is a bar of a millisecond or less, which a runner that is slow for the second the held
+	// case lasts breaks, whatever the floods do. The bar is ten times this or ten times the p95 of the quiet echoes, the larger, and no
+	// less than the clock can tell.
+	heldEchoQuiet = 500 * time.Microsecond
 	// heldWait bounds the waits of the case that a lock which every stream's send shares turns into a hang: the first held flood
 	// keeps the lock for as long as its host reads nothing, and nothing else is sent meanwhile. Without such a lock they take a few
 	// hundred milliseconds, and this is how long the test waits to find out that they never will.
 	heldWait = 20 * time.Second
 )
+
+const (
+	// concurrentFlood is what each of the 64 sessions writes, and concurrentFloodReduced what it writes under the race detector or with
+	// -short (proofScaled).
+	concurrentFlood        = 8 << 20
+	concurrentFloodReduced = 1 << 20
+
+	// concurrentFloodShare is the share of one session's flood rate that 64 floods at once must deliver together, on the same
+	// connection and in the same run: a ratio, because what a runner delivers is not a number that a test can know. One session's flood
+	// already fills the connection, so 64 deliver about what one does: 0.42 to 1.27 times the floods of one session that were run just
+	// before them and just after them, in 244 runs on one, two, three, four and eighteen processors, alone on the machine and with
+	// five more copies of the test on it. (The floods before them alone gave as little as 0.11 on a machine whose load moved by seconds,
+	// and the CI's macOS runner delivered 270 MB/s for the 64, its one flood being unknown: hence the floods on both sides.) A tenth is
+	// under a quarter of the lowest ratio that was measured with them. What the bar tells is a
+	// collapse of the connection under concurrency (a cost for each frame that grows with the number of sessions, a lock that they
+	// queue behind and that has a slow path); it cannot tell sessions that are served one after the other, because one flood fills the
+	// connection as well as 64 do. The overlap of the floods does.
+	concurrentFloodShare = 0.1
+	// concurrentCPUFactor is how many times the CPU for a MB of one session's flood the 64 floods together may cost: 0.9 to 1.9 times
+	// measured, on every processor count and loaded or not, and the CPU time of a process does not move with the load of the machine.
+	concurrentCPUFactor = 4
+	// floodBaselines is how many floods of one session are run before the 64, and as many after them: the baseline is their bytes over
+	// their wall times, which is what the connection delivers in the stretch of time that holds the 64.
+	floodBaselines = 3
+)
+
+// floodBaseline is what floods of one session delivered through the connection of the rig, one after the other, in the conditions of the
+// run: the rate of each, their bytes over their wall times, and what they cost in CPU.
+type floodBaseline struct {
+	rates     []float64     // MB/s of each flood
+	delivered uint64        // bytes of all of them
+	wall      time.Duration // their wall times together
+	cpu       time.Duration // the CPU time of the process meanwhile
+	cpuOK     bool          // the platform can say what it was
+}
+
+// mbps is the rate of all the floods together, in MB/s; zero when the clock read no time at all.
+func (b floodBaseline) mbps() float64 {
+	if b.wall <= 0 {
+		return 0
+	}
+	return float64(b.delivered) / 1e6 / b.wall.Seconds()
+}
+
+// cpuPerMB is the ms of CPU for each MB; zero when the platform cannot say.
+func (b floodBaseline) cpuPerMB() float64 {
+	if !b.cpuOK || b.delivered == 0 {
+		return 0
+	}
+	return float64(b.cpu.Microseconds()) / 1e3 / (float64(b.delivered) / 1e6)
+}
+
+// plus is the baseline of the floods of b and those of o.
+func (b floodBaseline) plus(o floodBaseline) floodBaseline {
+	return floodBaseline{rates: slices.Concat(b.rates, o.rates), delivered: b.delivered + o.delivered, wall: b.wall + o.wall, cpu: b.cpu + o.cpu, cpuOK: b.cpuOK && o.cpuOK}
+}
+
+// aloneFloods runs floods of one session through the connection of the rig, one after the other.
+func aloneFloods(t *testing.T, rig *proofRig, total uint64, runs int, tag string) floodBaseline {
+	t.Helper()
+	var base floodBaseline
+	cpuBefore, cpuOK := proofCPUTime()
+	for i := range runs {
+		done := make(chan *hostResult, 1)
+		floodHost(rig, "flood", "alone-"+tag+strconv.Itoa(i), total, 0, nil, nil, done, 0)
+		r := <-done
+		r.checkFlood(t, total)
+		base.delivered += r.audit.read
+		base.wall += r.wall
+		if r.wall > 0 {
+			base.rates = append(base.rates, float64(r.audit.read)/1e6/r.wall.Seconds())
+		}
+	}
+	if cpuAfter, ok := proofCPUTime(); ok && cpuOK {
+		base.cpu, base.cpuOK = cpuAfter-cpuBefore, true
+	}
+	return base
+}
 
 func TestSixtyFourConcurrentSessionsOnOneConnectionKeepTheNumbersOfOne(t *testing.T) {
 	var author floodAuthor
@@ -310,8 +395,13 @@ func TestSixtyFourConcurrentSessionsOnOneConnectionKeepTheNumbersOfOne(t *testin
 	fds, fdsOK := proofOpenFDs()
 
 	// ---- 64 sessions flood at once, on one connection.
-	perSession := uint64(proofScaled(8<<20, 1<<20))
+	perSession := uint64(proofScaled(concurrentFlood, concurrentFloodReduced))
 	t.Run("sixty-four floods at once", func(t *testing.T) {
+		// The baseline: what one session's flood delivers through this connection, in the conditions of this run: floods of one session
+		// just before the 64 and just after them, so that a runner whose load moves by the second has moved about as much for the one as
+		// for the other. It is not stated as a number.
+		baseSize := uint64(proofScaled(floodTotal, 8<<20))
+		beforeBase := aloneFloods(t, rig, baseSize, floodBaselines, "before-")
 		done := make(chan *hostResult, concurrentSessions)
 		var before, after runtime.MemStats
 		runtime.GC()
@@ -325,14 +415,23 @@ func TestSixtyFourConcurrentSessionsOnOneConnectionKeepTheNumbersOfOne(t *testin
 		wall := time.Since(start)
 		runtime.ReadMemStats(&after)
 		cpuAfter, ok := proofCPUTime()
+		afterBase := aloneFloods(t, rig, baseSize, floodBaselines, "after-")
+		alone := beforeBase.plus(afterBase)
 		var delivered uint64
 		var frames int
+		var lastFirst, firstEnd time.Time
 		for _, r := range results {
 			r.checkFlood(t, perSession)
 			delivered += r.audit.read
 			frames += r.audit.frames
 			if limit := floodMaxFrames(perSession); r.audit.frames > limit {
 				t.Errorf("session %d: %d Output frames for %d bytes, the bar of one flood is %d (an average of %d KiB)", r.n, r.audit.frames, perSession, limit, floodMinFrameBytes>>10)
+			}
+			if r.first.After(lastFirst) {
+				lastFirst = r.first
+			}
+			if end := r.audit.endedAt; !end.IsZero() && (firstEnd.IsZero() || end.Before(firstEnd)) {
+				firstEnd = end
 			}
 		}
 		mbps := float64(delivered) / 1e6 / wall.Seconds()
@@ -347,17 +446,30 @@ func TestSixtyFourConcurrentSessionsOnOneConnectionKeepTheNumbersOfOne(t *testin
 		}
 		t.Logf("64 floods of %d MiB on one connection: %.0f MB/s delivered (%d MiB in %v), %d Output frames (average %.1f KiB), %.2f B allocated per byte, %.2f ms CPU/MB; each session's wall time: %v",
 			perSession>>20, mbps, delivered>>20, wall.Round(time.Millisecond), frames, float64(delivered)/float64(frames)/1024, perByte, cpuPerMB, walls)
-		if !proofRace && mbps < floodMinMBps {
-			t.Errorf("%.0f MB/s delivered by 64 sessions together, the bar of one flood is %d: the connection carries what one session does", mbps, floodMinMBps)
+		t.Logf("one session's flood through the same connection, just before and just after the 64: %.0f MB/s before, %.0f after, %.0f together (%.0f each), %.2f ms CPU/MB; the 64 together deliver %.2f times it (bar %.2f) at %.2f times its CPU/MB (bar %d); the last session's first frame came at %v and the first session to end ended at %v, of %v in all",
+			beforeBase.mbps(), afterBase.mbps(), alone.mbps(), alone.rates, alone.cpuPerMB(), mbps/max(alone.mbps(), 1e-9), concurrentFloodShare, cpuPerMB/max(alone.cpuPerMB(), 1e-9), concurrentCPUFactor,
+			lastFirst.Sub(start).Round(time.Microsecond), firstEnd.Sub(start).Round(time.Microsecond), wall.Round(time.Microsecond))
+		if !proofRace && alone.mbps() > 0 && mbps < concurrentFloodShare*alone.mbps() {
+			t.Errorf("%.0f MB/s delivered by 64 sessions together, %.2f times the %.0f MB/s that one session's flood delivered through the same connection just before and after, the bar is %.2f times it: the connection collapses under concurrent sessions",
+				mbps, mbps/alone.mbps(), alone.mbps(), concurrentFloodShare)
 		}
 		if perByte > floodBytesPerByteBar() {
 			t.Errorf("%.2f bytes allocated for each byte delivered, the bar is %.0f", perByte, floodBytesPerByteBar())
 		}
-		if !proofRace && cpuOK && ok && cpuPerMB > floodMaxCPUMsPerMB {
-			t.Errorf("%.2f ms of CPU for each MB, the bar is %.0f", cpuPerMB, floodMaxCPUMsPerMB)
+		if !proofRace && alone.cpuPerMB() > 0 && cpuPerMB > concurrentCPUFactor*alone.cpuPerMB() {
+			t.Errorf("%.2f ms of CPU for each MB with 64 sessions flooding, %.2f times the %.2f ms of one session's flood just before and after, the bar is %d times it",
+				cpuPerMB, cpuPerMB/alone.cpuPerMB(), alone.cpuPerMB(), concurrentCPUFactor)
 		}
 		if starved {
 			t.Errorf("the slowest session took %v and the median %v: a session was starved by the others", walls.Max, walls.P50)
+		}
+		// The floods ran at the same time: each starts at once and none waits for another to end, so by the time the first of them has
+		// ended every one of them has delivered output. A connection that served them one after the other, or a few at a time, has the
+		// last session deliver its first byte after the first has delivered all of its own. The reduced floods (under the race
+		// detector, or with -short) are not asserted: one of them ends in the time that the 64 opens take, which is the skew of the
+		// opens and not the connection.
+		if perSession >= concurrentFlood && lastFirst.After(firstEnd) {
+			t.Errorf("the last session delivered its first frame %v after the first session ended: the floods ran one after the other", lastFirst.Sub(firstEnd).Round(time.Microsecond))
 		}
 	})
 
@@ -479,16 +591,17 @@ func TestSixtyFourConcurrentSessionsOnOneConnectionKeepTheNumbersOfOne(t *testin
 		if got := held.total(); got != stopped {
 			t.Errorf("the floods wrote %d more bytes while the echoes were measured: a target that propagates a stalled host must be held", got-stopped)
 		}
-		ratio := float64(all.P95) / float64(max(quiet.P95, time.Microsecond))
+		quietP95 := proofBaseline(max(quiet.P95, heldEchoQuiet)) // never zero, and never a bar that a slow second of the runner breaks
+		ratio := float64(all.P95) / float64(quietP95)
 		floor := echoFloor()
-		t.Logf("32 floods of %d MiB held by hosts that read nothing (%d KiB written by all of them, %d KiB by each) while 32 sessions are typed into: every echo %v; the worst session's p95 %v (floor %v); the same 32 echo with no flood: %v; the p95 is %.2f times it (bar %d)",
-			perFlood>>20, stopped>>10, stopped>>10/uint64(half), all, worst, floor, quiet, ratio, heldEchoRatio)
+		t.Logf("32 floods of %d MiB held by hosts that read nothing (%d KiB written by all of them, %d KiB by each) while 32 sessions are typed into: every echo %v; the worst session's p95 %v (floor %v); the same 32 echo with no flood: %v; the p95 is %.2f times %v (bar %d)",
+			perFlood>>20, stopped>>10, stopped>>10/uint64(half), all, worst, floor, quiet, ratio, quietP95.Round(time.Microsecond), heldEchoRatio)
 		if worst.P95 > floor {
 			t.Errorf("the p95 of the worst echo is %v while 32 floods are held by hosts that read nothing, the floor is %v", worst.P95.Round(time.Microsecond), floor)
 		}
 		if ratio > heldEchoRatio {
-			t.Errorf("the p95 of the echoes is %v beside 32 held floods and %v with none, %.1f times it, the bar is %d: held floods use no processor, so an echo that waits for them waits behind a send of another session",
-				all.P95.Round(time.Microsecond), quiet.P95.Round(time.Microsecond), ratio, heldEchoRatio)
+			t.Errorf("the p95 of the echoes is %v beside 32 held floods, %.1f times the %v that the same echoes take with none (%v at least), the bar is %d: held floods use no processor, so an echo that waits for them waits behind a send of another session",
+				all.P95.Round(time.Microsecond), ratio, quiet.P95.Round(time.Microsecond), quietP95.Round(time.Microsecond), heldEchoRatio)
 		}
 		// The hosts read again: what they were held for is not lost.
 		close(release)

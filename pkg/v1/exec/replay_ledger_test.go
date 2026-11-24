@@ -9,6 +9,7 @@ import (
 	"math/rand/v2"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,6 +37,16 @@ import (
 // overflows its host's reading: every loss has to be announced (a Dropped frame or a replay that starts after the offset asked for),
 // every byte that arrives has to be right and exactly once, what arrives and what was announced has to tile the output with no hole,
 // and a target that propagates a stalled reader never drops a byte to a stream that is attached.
+//
+// Every last frame of every stream has a cause in what the host did before it came, and the host keeps the record of it
+// (replay_ledger_events_test.go): Ended after a Close that it sent on the stream, Detached{REQUESTED} after a Detach, Detached{SUPERSEDED} when
+// an attach that it made can have registered after the stream's own, and Detached with no reason after it cancelled the stream. A last frame
+// that none of them explains fails the run, with the record. A cancelled attach is one that the host gives up on at once: it is made while
+// the host is away, before the attach that the host holds, and while the host holds a stream, before the attach that supersedes it. The
+// plugin may never register it (its stream had ended), or register it and find its stream over: then it took the session from the stream that
+// held it, and its leaving left the session detached for its lease. The host cannot tell which, holds nothing of what it did not read, and
+// attaches from what it has. The engine of a run has a clock that stands still and leases that nobody runs out, so that the lease of a Detach
+// is held to the millisecond and the pace of the machine decides nothing.
 
 // ledgerVariant is one kind of run.
 type ledgerVariant struct {
@@ -75,6 +86,13 @@ type ledgerStream struct {
 	quit    chan struct{}
 	timer   *time.Timer
 	retired sync.Once
+
+	// attach is the attach that made the stream. The numbers are the events of the host's record at which the host sent Detach on the
+	// stream, sent Close on it and cancelled it, and at which its last frame came: zero for not at all. A last frame is put down to what
+	// the host did before it came (ledgerHost.attribution).
+	attach                            *ledgerAttach
+	ev                                *ledgerEvents
+	detachAt, closeAt, leftAt, lastAt atomic.Int64
 }
 
 type ledgerRecv struct {
@@ -82,12 +100,34 @@ type ledgerRecv struct {
 	err   error
 }
 
+// newLedgerStream makes the stream of a host that keeps no record of what it does (the tests that use the ledger's streams for what they
+// read, and not for what the host did).
 func newLedgerStream(conn exec.Conn, n int, asked uint64) *ledgerStream {
-	s := &ledgerStream{conn: conn, n: n, opened: conn.Opened(), asked: asked, out: make(chan ledgerRecv, 1), quit: make(chan struct{}), timer: time.NewTimer(time.Hour)}
+	return newRecordedStream(conn, n, asked, nil, nil)
+}
+
+// newRecordedStream makes the stream of the host of the ledger's run, which keeps the record of the attaches it made and of what its streams
+// told it. attach is the attach that made the stream.
+func newRecordedStream(conn exec.Conn, n int, asked uint64, attach *ledgerAttach, ev *ledgerEvents) *ledgerStream {
+	s := &ledgerStream{
+		conn: conn, n: n, opened: conn.Opened(), asked: asked, out: make(chan ledgerRecv, 1), quit: make(chan struct{}),
+		timer: time.NewTimer(time.Hour), attach: attach, ev: ev,
+	}
 	s.timer.Stop()
+	if ev != nil {
+		replay := s.opened.GetReplay()
+		ev.add("stream %d: Opened by attach #%d (%s), asked from %d, replay [%d, %d)", n, attach.n, attach.kind, asked, replay.GetStart(), replay.GetEnd())
+	}
 	go func() {
 		for {
 			frame, err := conn.Recv()
+			switch {
+			case ev == nil:
+			case err != nil:
+				ev.add("stream %d: the receive came back with %v", n, err)
+			case isLast(frame):
+				s.lastAt.Store(int64(ev.add("stream %d: last frame %s", n, ledgerLast(frame))))
+			}
 			select {
 			case s.out <- ledgerRecv{frame, err}:
 			case <-s.quit:
@@ -104,7 +144,12 @@ func newLedgerStream(conn exec.Conn, n int, asked uint64) *ledgerStream {
 // retire leaves the stream: its reader stops and the transport stream is cancelled. A stream that has not ended is an implicit detach.
 // It may be called more than once and from any goroutine (two operations of a race may both break the stream).
 func (s *ledgerStream) retire() {
-	s.retired.Do(func() { close(s.quit) })
+	s.retired.Do(func() {
+		if s.ev != nil {
+			s.leftAt.Store(int64(s.ev.add("stream %d: the host cancels it", s.n)))
+		}
+		close(s.quit)
+	})
 	_ = s.conn.Close()
 }
 
@@ -124,6 +169,12 @@ type ledgerHost struct {
 	trace   []string
 	tally   map[string]int
 	frames  int
+	ev      *ledgerEvents
+	// late holds the cancelled attaches that the host made late on purpose (ledgerLate); pendingLate are the tags of the ones that it has
+	// not let go yet, and lateMade counts the ones it made.
+	late        *ledgerLate
+	pendingLate []string
+	lateMade    int
 }
 
 func (h *ledgerHost) where() string { return ledgerWhere(h.seed, h.v.name, h.moment) }
@@ -132,18 +183,26 @@ func ledgerWhere(seed uint64, variant string, moment int) string {
 	return fmt.Sprintf("seed %d, variant %s, moment %d", seed, variant, moment)
 }
 
-// fatalf fails the run, with where it was and the moves that led there.
+// ledgerRecordShown is how many events of the host's record a failure prints.
+const ledgerRecordShown = 40
+
+// fatalf fails the run, with where it was, the moves that led there and the end of the host's record of what it did and was told.
 func (h *ledgerHost) fatalf(format string, args ...any) {
 	h.t.Helper()
 	trace := h.trace
 	if len(trace) > 16 {
 		trace = trace[len(trace)-16:]
 	}
-	h.t.Fatalf("%s: %s\nthe last moves: %s\nreplay it with the seed: go test -run 'TestDetachAndReattachUnderAFloodIsByteExactByOffset/%s/seed-%d'",
-		h.where(), fmt.Sprintf(format, args...), strings.Join(trace, " > "), h.v.name, h.seed)
+	events := "the host kept none"
+	if h.ev != nil {
+		events = strings.Join(h.ev.tail(ledgerRecordShown), "\n\t")
+	}
+	h.t.Fatalf("%s: %s\nthe last moves: %s\nthe order of events, the last %d of the host's record:\n\t%s\nreplay it with the seed: go test -run 'TestDetachAndReattachUnderAFloodIsByteExactByOffset/%s/seed-%d'",
+		h.where(), fmt.Sprintf(format, args...), strings.Join(trace, " > "), ledgerRecordShown, events, h.v.name, h.seed)
 }
 
 func (h *ledgerHost) note(move string) {
+	h.ev.add("moment %d: %s", h.moment, move)
 	h.tally[move]++
 	h.trace = append(h.trace, move)
 }
@@ -156,8 +215,8 @@ func (h *ledgerHost) check() {
 	}
 }
 
-func (h *ledgerHost) newStream(conn exec.Conn, asked uint64) *ledgerStream {
-	s := newLedgerStream(conn, len(h.streams)+1, asked)
+func (h *ledgerHost) newStream(conn exec.Conn, asked uint64, a *ledgerAttach) *ledgerStream {
+	s := newRecordedStream(conn, len(h.streams)+1, asked, a, h.ev)
 	h.streams = append(h.streams, s)
 	return s
 }
@@ -174,6 +233,30 @@ func (h *ledgerHost) recv(s *ledgerStream) (*execv2.ServerFrame, error) {
 		h.fatalf("stream %d: no frame within %v", s.n, engineWait)
 	}
 	return nil, nil
+}
+
+// send sends a frame of the host on a stream. A stream that has ended cannot take one, and what ended it is what the failure is about.
+func (h *ledgerHost) send(s *ledgerStream, f *execv2.ClientFrame, what string) {
+	h.t.Helper()
+	if err := s.conn.Send(f); err != nil {
+		h.sendFailed(s, what, err)
+	}
+}
+
+// sendFailed reads the stream that a send found ended to the frame that ended it, which is on its way to the reader or is there, and
+// fails the run with what that frame is the answer to.
+func (h *ledgerHost) sendFailed(s *ledgerStream, what string, err error) {
+	h.t.Helper()
+	for {
+		frame, rerr := h.recv(s)
+		if rerr != nil {
+			h.fatalf("send %s on stream %d: %v: the stream had ended with %v", what, s.n, err, rerr)
+		}
+		if isLast(frame) {
+			cause, _ := h.attribution(s, frame)
+			h.fatalf("send %s on stream %d: %v: the stream had ended with %s already: %s", what, s.n, err, ledgerLast(frame), cause)
+		}
+	}
 }
 
 // isLast reports whether a frame is the last of its stream.
@@ -197,7 +280,8 @@ func (h *ledgerHost) read(s *ledgerStream, k int) {
 			h.fatalf("stream %d broke while it was read: %v", s.n, err)
 		}
 		if isLast(frame) {
-			h.fatalf("stream %d ended with %s before the host asked it to leave", s.n, frameKind(frame))
+			cause, _ := h.attribution(s, frame)
+			h.fatalf("stream %d ended with %s before the host asked it to leave: %s", s.n, ledgerLast(frame), cause)
 		}
 		h.apply(frame)
 		h.check()
@@ -229,6 +313,7 @@ func (h *ledgerHost) finish(s *ledgerStream, shadow *ledger) *execv2.ServerFrame
 	if _, err := h.recv(s); !errors.Is(err, io.EOF) {
 		h.fatalf("stream %d: after its last frame (%s) the stream ended with %v, want io.EOF", s.n, frameKind(last), err)
 	}
+	h.attribute(s, last)
 	if shadow != nil && len(shadow.problems) > 0 {
 		h.fatalf("stream %d, which was superseded: %s", s.n, strings.Join(shadow.problems, "\n\t"))
 	}
@@ -263,14 +348,70 @@ func (h *ledgerHost) expectSuperseded(s *ledgerStream, last *execv2.ServerFrame)
 	}
 }
 
-// attachConn attaches a stream from an offset.
-func (h *ledgerHost) attachConn(asked uint64) *ledgerStream {
+// attribution says what the last frame of a stream is the answer to among the things the host did, and whether it is one: a stream is told
+// Ended after the host sent Close on it, Detached{REQUESTED} after the host sent Detach on it, Detached{SUPERSEDED} (with no lease) when an
+// attach of the host can have registered after the stream's own, and Detached with no reason after the host cancelled it. Nothing else ends
+// a stream.
+func (h *ledgerHost) attribution(s *ledgerStream, last *execv2.ServerFrame) (string, bool) {
+	if s.ev == nil {
+		return "the host kept no record of this stream", true
+	}
+	at := int(s.lastAt.Load())
+	did := func(when *atomic.Int64) bool {
+		n := int(when.Load())
+		return n != 0 && n < at
+	}
+	d := last.GetDetached()
+	switch {
+	case last.GetEnded() != nil:
+		if did(&s.closeAt) {
+			return "the host sent Close on it", true
+		}
+		return "the host sent no Close on this stream, and nothing but a Close ends the session of a run", false
+	case d == nil:
+		return fmt.Sprintf("a %s frame is not the last frame of a stream", frameKind(last)), false
+	case d.GetReason() == execv2.DetachReason_DETACH_REASON_REQUESTED:
+		if did(&s.detachAt) {
+			return "the host sent Detach on it", true
+		}
+		return "the host sent no Detach on this stream", false
+	case d.GetReason() == execv2.DetachReason_DETACH_REASON_SUPERSEDED:
+		if d.GetLeaseExpiresUnixMs() != 0 {
+			return "a superseded stream has no lease, and this one is told one", false
+		}
+		if x := h.ev.supersessor(s.attach, at); x != nil {
+			return "it can be the answer to " + h.ev.describe(x), true
+		}
+		return fmt.Sprintf("no attach of the host can have taken the session from it: every attach but its own (%s) was over before the host made its own, or was made after this frame came",
+			h.ev.describe(s.attach)), false
+	default:
+		if did(&s.leftAt) {
+			return "the host cancelled the stream", true
+		}
+		return "the host neither half-closed nor cancelled this stream", false
+	}
+}
+
+// attribute fails the run when the last frame of a stream is not the answer to anything that the host did.
+func (h *ledgerHost) attribute(s *ledgerStream, last *execv2.ServerFrame) {
 	h.t.Helper()
-	conn, err := h.rig.attach(context.Background(), h.id, asked)
+	if cause, ok := h.attribution(s, last); !ok {
+		h.fatalf("stream %d ended with %s, which is the answer to nothing that the host did: %s", s.n, ledgerLast(last), cause)
+	}
+}
+
+// attachConn attaches a stream from an offset, as the kind of attach that the host's record calls it. The attaches that the host made late
+// on purpose are let go once this one has been answered: they come after it.
+func (h *ledgerHost) attachConn(asked uint64, kind string) *ledgerStream {
+	h.t.Helper()
+	a := h.ev.issue(kind, asked)
+	conn, err := h.attachCall(context.Background(), asked, "")
+	h.ev.answer(a, err)
 	if err != nil {
 		h.fatalf("attach from %d: %v", asked, err)
 	}
-	return h.newStream(conn, asked)
+	h.letLate()
+	return h.newStream(conn, asked, a)
 }
 
 // adopt makes the stream the host's: its Opened starts the ledger's stream.
@@ -300,19 +441,71 @@ func (h *ledgerHost) attach() {
 		h.concurrentAttach()
 		return
 	}
-	h.adopt(h.attachConn(h.lg.have))
+	h.adopt(h.attachConn(h.lg.have, "real"))
 }
 
 // cancelledAttach is an attach whose host gives up at once: the stream may die before the plugin answers, or right after. Either way
-// the host has learned nothing and still asks from what it had; the session sees a stream come and go.
+// the host has learned nothing and still asks from what it had. The plugin may never register it (its stream had ended), or register it
+// and find the stream over: it then took the session from the stream that held it, and its leaving left the session detached for its lease.
+// The host cannot tell which, and holds nothing of it. Half of them are late on purpose (lateAttach).
 func (h *ledgerHost) cancelledAttach() {
+	if h.rng.IntN(2) == 0 {
+		h.lateAttach()
+		return
+	}
+	a := h.ev.issue("cancelled", h.lg.have)
 	ctx, cancel := context.WithCancel(context.Background())
 	go cancel()
-	conn, err := h.rig.attach(ctx, h.id, h.lg.have)
+	conn, err := h.attachCall(ctx, h.lg.have, "")
+	h.ev.answer(a, err)
 	if err == nil {
 		_ = conn.Close()
 	}
 	cancel()
+}
+
+// lateAttach is a cancelled attach whose handler is late on purpose (ledgerLate): the host waits until the plugin holds the handler with the
+// open frame read and nothing registered, and then cancels the stream. The attach that the host makes next is registered, answered and
+// held while the handler is held, and the handler goes on afterwards, with the stream's context ended: the order that a runner with few
+// processors once reached by chance. The engine registers a stream only while its stream has not ended, so the handler takes the session
+// from no one, and the host's stream keeps it.
+func (h *ledgerHost) lateAttach() {
+	h.t.Helper()
+	a := h.ev.issue("cancelled, held late", h.lg.have)
+	tag := fmt.Sprintf("late-%d", a.n)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	type answer struct {
+		conn exec.Conn
+		err  error
+	}
+	done := make(chan answer, 1)
+	go func() {
+		conn, err := h.attachCall(ctx, a.from, tag)
+		done <- answer{conn, err}
+	}()
+	arrived, _ := h.late.chans(tag)
+	select {
+	case <-arrived:
+	case r := <-done:
+		h.fatalf("the attach that was to be held came back with %v before its handler reached the plugin's seam", r.err)
+	case <-time.After(engineWait):
+		h.fatalf("the handler of the attach that was to be held did not reach the plugin's seam within %v", engineWait)
+	}
+	h.pendingLate = append(h.pendingLate, tag)
+	h.lateMade++
+	h.ev.add("attach #%d: its handler is held, the open frame read and nothing registered: the host cancels the stream", a.n)
+	cancel()
+	select {
+	case r := <-done:
+		h.ev.answer(a, r.err)
+		if r.err == nil {
+			_ = r.conn.Close()
+			h.fatalf("the attach whose handler is held was answered with its Opened")
+		}
+	case <-time.After(engineWait):
+		h.fatalf("the cancelled attach did not come back within %v", engineWait)
+	}
 }
 
 // concurrentAttach attaches from two goroutines at the same time, as two windows would. One of them is the session's stream and the
@@ -321,24 +514,28 @@ func (h *ledgerHost) concurrentAttach() {
 	h.t.Helper()
 	asked := h.lg.have
 	type attachAnswer struct {
+		i    int
 		conn exec.Conn
 		err  error
 	}
+	made := [2]*ledgerAttach{h.ev.issue("concurrent", asked), h.ev.issue("concurrent", asked)}
 	answers := make(chan attachAnswer, 2)
-	for range 2 {
+	for i := range made {
 		go func() {
-			conn, err := h.rig.attach(context.Background(), h.id, asked)
-			answers <- attachAnswer{conn, err}
+			conn, err := h.attachCall(context.Background(), asked, "")
+			h.ev.answer(made[i], err)
+			answers <- attachAnswer{i, conn, err}
 		}()
 	}
 	var two [2]*ledgerStream
-	for i := range two {
+	for k := range two {
 		a := <-answers
 		if a.err != nil {
 			h.fatalf("a concurrent attach from %d: %v", asked, a.err)
 		}
-		two[i] = h.newStream(a.conn, asked)
+		two[k] = h.newStream(a.conn, asked, made[a.i])
 	}
+	h.letLate()
 	// Read both, a frame at a time from whichever has one, until one of them has its last frame: that one is the loser.
 	var frames [2][]*execv2.ServerFrame
 	loser := -1
@@ -368,6 +565,7 @@ func (h *ledgerHost) concurrentAttach() {
 	for _, f := range frames[loser][:len(frames[loser])-1] {
 		shadow.frame(f)
 	}
+	h.attribute(two[loser], last)
 	h.expectSuperseded(two[loser], last)
 	if _, err := h.recv(two[loser]); !errors.Is(err, io.EOF) {
 		h.fatalf("stream %d: after Detached the stream ended with %v, want io.EOF", two[loser].n, err)
@@ -378,7 +576,8 @@ func (h *ledgerHost) concurrentAttach() {
 	h.adopt(two[winner])
 	for _, f := range frames[winner] {
 		if isLast(f) {
-			h.fatalf("both streams of a concurrent attach ended: a session has one stream at a time")
+			cause, _ := h.attribution(two[winner], f)
+			h.fatalf("both streams of a concurrent attach ended (stream %d with %s): a session has one stream at a time; %s", two[winner].n, ledgerLast(f), cause)
 		}
 		h.apply(f)
 		h.check()
@@ -417,21 +616,20 @@ func (h *ledgerHost) detach(twice bool) {
 	case lease > 0:
 		want = time.Duration(lease) * time.Millisecond
 	}
-	before := time.Now()
-	if err := h.cur.conn.Send(detachFrame(lease)); err != nil {
-		h.fatalf("send Detach: %v", err)
-	}
+	h.cur.detachAt.Store(int64(h.ev.add("stream %d: the host sends Detach (lease %d ms)", h.cur.n, lease)))
+	h.send(h.cur, detachFrame(lease), "Detach")
 	if twice {
 		_ = h.cur.conn.Send(detachFrame(lease)) // never applied: the stream has left
 	}
 	last := h.finish(h.cur, nil)
-	after := time.Now()
 	d := last.GetDetached()
 	if d == nil || d.GetReason() != execv2.DetachReason_DETACH_REASON_REQUESTED {
 		h.fatalf("the answer to Detach is %v, want Detached{REQUESTED}", last)
 	}
-	if got := time.UnixMilli(d.GetLeaseExpiresUnixMs()); got.Before(before.Add(want).Add(-2*time.Millisecond)) || got.After(after.Add(want).Add(2*time.Millisecond)) {
-		h.fatalf("a Detach with a lease of %d ms ended its stream with a lease that runs out at %v, want %v from now (between %v and %v)", lease, got, want, before.Add(want), after.Add(want))
+	// The engine's clock stands still: the lease is the one that was asked for, clamped to the target's maximum, to the millisecond.
+	if got, wantMs := d.GetLeaseExpiresUnixMs(), ledgerEpoch.UnixMilli()+want.Milliseconds(); got != wantMs {
+		h.fatalf("a Detach with a lease of %d ms ended its stream with a lease that runs out at %d (unix ms), want %d: %v after the engine's clock, which stands still at %d",
+			lease, got, wantMs, want, ledgerEpoch.UnixMilli())
 	}
 	h.cur.retire()
 	h.cur = nil
@@ -443,16 +641,22 @@ func (h *ledgerHost) kill() {
 	h.cur = nil
 }
 
-// supersede attaches again while the stream is attached and flooding, once or twice in a row, without reading the older one. The
-// streams that were superseded are read to their end and held to the contract; none of their frames is applied.
-func (h *ledgerHost) supersede(times int) {
+// supersede attaches again while the stream is attached and flooding, once or twice in a row, without reading the older one, after
+// attaches that the host gives up on at once (cancels of them): one can register before the host's own, take the session from the stream and
+// leave it detached for its lease, or be refused, and the host's own attach finds the session either way. The streams that were superseded are
+// read to their end and held to the contract; none of their frames is applied.
+func (h *ledgerHost) supersede(times, cancels int) {
 	h.t.Helper()
 	old := h.cur
 	oldShadow := h.shadowOf(h.lg)
+	for range cancels {
+		h.note("cancelled-attach")
+		h.cancelledAttach()
+	}
 	var retired []*ledgerStream
 	var shadows []*ledger
 	for i := range times {
-		s := h.attachConn(h.lg.have)
+		s := h.attachConn(h.lg.have, "real")
 		if i < times-1 {
 			retired = append(retired, s)
 			shadows = append(shadows, h.shadowFor(s))
@@ -468,6 +672,7 @@ func (h *ledgerHost) supersede(times int) {
 
 // detachAndKill sends Detach and cancels the stream at the same moment: the session is detached whichever the plugin sees first.
 func (h *ledgerHost) detachAndKill() {
+	h.cur.detachAt.Store(int64(h.ev.add("stream %d: the host sends Detach and cancels the stream", h.cur.n)))
 	_ = h.cur.conn.Send(detachFrame(0))
 	h.kill()
 }
@@ -515,8 +720,9 @@ var ledgerMoves = []ledgerMove{
 	{"detach-twice", 1, func(h *ledgerHost) { h.detach(true); h.away(); h.attach() }},
 	{"kill", 4, func(h *ledgerHost) { h.kill(); h.away(); h.attach() }},
 	{"detach-and-kill", 1, func(h *ledgerHost) { h.detachAndKill(); h.away(); h.attach() }},
-	{"supersede", 4, func(h *ledgerHost) { h.supersede(1) }},
-	{"supersede-twice", 1, func(h *ledgerHost) { h.supersede(2) }},
+	{"supersede", 4, func(h *ledgerHost) { h.supersede(1, 0) }},
+	{"supersede-twice", 1, func(h *ledgerHost) { h.supersede(2, 0) }},
+	{"supersede-after-cancelled", 2, func(h *ledgerHost) { h.supersede(1, 1+h.rng.IntN(2)) }},
 }
 
 // away is what happens while the host has no stream: the author goes on, and the host may read the ring.
@@ -564,6 +770,9 @@ func ledgerRun(t *testing.T, v ledgerVariant, seed uint64, moments int) {
 		}),
 		proofTarget("warm", proofEchoFunction),
 	)
+	late := newLedgerLate()
+	exec.SetPluginEngineSeams(rig.server.Plugin, exec.EngineSeams{Now: ledgerNow, NewLeaseTimer: ledgerLeaseTimer})
+	exec.SetPluginBeforeAttach(rig.server.Plugin, late.hold)
 	// The connection and its goroutines exist before the baseline: a session that is echoed and ended.
 	warm := rig.mustOpenKind("warm", "warm", proofTTY)
 	if _, err := newProofEchoer(warm).measure(3); err != nil {
@@ -575,9 +784,11 @@ func ledgerRun(t *testing.T, v ledgerVariant, seed uint64, moments int) {
 
 	h := &ledgerHost{
 		t: t, v: v, seed: seed, rig: rig, author: author, id: fmt.Sprintf("ledger-%d", seed),
-		lg: newLedger(v.exact, v.lossy, v.tty, ledgerRing), rng: rand.New(rand.NewPCG(seed, 0x1ED6)), tally: map[string]int{},
+		lg: newLedger(v.exact, v.lossy, v.tty, ledgerRing), rng: rand.New(rand.NewPCG(seed, 0x1ED6)), tally: map[string]int{}, ev: newLedgerEvents(),
+		late: late,
 	}
 	defer func() {
+		h.letLate() // a handler that is held when the run fails is let go, or the plugin would wait for it
 		for _, s := range h.streams {
 			s.retire()
 		}
@@ -588,11 +799,13 @@ func ledgerRun(t *testing.T, v ledgerVariant, seed uint64, moments int) {
 	if v.tty {
 		mods = append(mods, proofTTY)
 	}
+	first := h.ev.issue("start", 0)
 	conn, err := rig.openKind(context.Background(), "ledger", h.id, mods...)
+	h.ev.answer(first, err)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	h.cur = h.newStream(conn, 0)
+	h.cur = h.newStream(conn, 0, first)
 	h.lg.begin(h.cur.opened, 0)
 	h.check()
 
@@ -600,8 +813,8 @@ func ledgerRun(t *testing.T, v ledgerVariant, seed uint64, moments int) {
 		h.step()
 	}
 	h.finishRun(baseline)
-	t.Logf("%s: %d moments in %v: %d streams, %d frames and reads, %d bytes received, %d announced lost in %d Dropped frames; the author wrote %d bytes; moves %v",
-		h.where(), h.moment, time.Since(began).Round(time.Millisecond), h.lg.streams, h.frames, h.lg.bytesIn, h.lg.bytesLo, h.lg.dropFrames, author.written.Load(), h.tally)
+	t.Logf("%s: %d moments in %v: %d streams, %d frames and reads, %d bytes received, %d announced lost in %d Dropped frames; the author wrote %d bytes; %d attaches made late and held; moves %v",
+		h.where(), h.moment, time.Since(began).Round(time.Millisecond), h.lg.streams, h.frames, h.lg.bytesIn, h.lg.bytesLo, h.lg.dropFrames, author.written.Load(), h.lateMade, h.tally)
 }
 
 // finishRun ends the session, one way or the other, reads the rest, and holds the end to the invariants.
@@ -613,9 +826,8 @@ func (h *ledgerHost) finishRun(baseline lifecycletest.GoroutineBaseline) {
 	if h.rng.IntN(2) == 0 {
 		// Close on the stream, and every frame to the Ended.
 		h.note("final: Close on the stream")
-		if err := h.cur.conn.Send(&execv2.ClientFrame{Frame: &execv2.ClientFrame_Close{Close: &execv2.Close{Mode: execv2.CloseMode_CLOSE_MODE_GRACEFUL}}}); err != nil {
-			h.fatalf("send Close: %v", err)
-		}
+		h.cur.closeAt.Store(int64(h.ev.add("stream %d: the host sends Close", h.cur.n)))
+		h.send(h.cur, &execv2.ClientFrame{Frame: &execv2.ClientFrame_Close{Close: &execv2.Close{Mode: execv2.CloseMode_CLOSE_MODE_GRACEFUL}}}, "Close")
 		ended = h.finish(h.cur, nil).GetEnded()
 		if ended == nil {
 			h.fatalf("the stream that closed the session ended with Detached, want Ended")
@@ -702,7 +914,7 @@ func (h *ledgerHost) finishRun(baseline lifecycletest.GoroutineBaseline) {
 	for _, s := range h.streams {
 		s.retire()
 	}
-	if err := baseline.Check(10 * time.Second); err != nil {
+	if err := baseline.Check(engineWait); err != nil {
 		h.fatalf("goroutines at rest: %v", err)
 	}
 }

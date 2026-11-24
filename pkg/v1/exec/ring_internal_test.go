@@ -175,50 +175,65 @@ func TestADetachedRingNeverHoldsItsWriterAndCountsWhatNobodyRead(t *testing.T) {
 	}
 }
 
-// A reader that may not lose a byte holds the writer when it has left stdioQueueBytes unread, and the ring then loses nothing, however
-// many times it wraps. The writer is held at exactly the bound and never past it.
+// A reader that may not lose a byte holds the writer when it has left the unread bound unread, and the ring then loses nothing, however
+// many times it wraps. The writer is held at exactly the bound and never past it. The bound is stdioQueueBytes (256 KiB), and for a ring
+// that cannot hold that and still keep a chunk the reader has read, the ring less one chunk: for every size of ring that a host can ask for.
 func TestAReaderThatMayNotLoseAByteHoldsTheWriterAtTheUnreadBoundAndTheRingLosesNothing(t *testing.T) {
-	tr := newTestRing(1<<20, false, false)
-	const total, piece = 6 << 20, 32 << 10
-	done := make(chan error, 1)
-	go func() {
-		for off := 0; off < total; off += piece {
-			if _, err := tr.Write(execv2.Stream_STREAM_TTY, ringPattern(uint64(off), piece)); err != nil {
-				done <- err
-				return
+	for _, tc := range []struct {
+		name     string
+		capacity int
+		bound    uint64
+	}{
+		{"1 KiB: 4 chunks of 256 bytes, three of them unread", 1 << 10, 3 * 256},
+		{"64 KiB: 4 chunks of 16 KiB, three of them unread", 64 << 10, 3 * (16 << 10)},
+		{"256 KiB: 4 chunks of 64 KiB, three of them unread", 256 << 10, 3 * (64 << 10)},
+		{"1 MiB: 256 KiB unread", 1 << 20, 256 << 10},
+		{"4 MiB, the largest: 256 KiB unread", 4 << 20, 256 << 10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr := newTestRing(tc.capacity, false, false)
+			const total, piece = 6 << 20, 32 << 10
+			done := make(chan error, 1)
+			go func() {
+				for off := 0; off < total; off += piece {
+					if _, err := tr.Write(execv2.Stream_STREAM_TTY, ringPattern(uint64(off), piece)); err != nil {
+						done <- err
+						return
+					}
+				}
+				done <- nil
+			}()
+			// Nobody has read: the writer is held when the unread bytes reach the bound, to the byte.
+			await(t, "the writer to be held", func() bool { return tr.Stats().Stalls > 0 })
+			if stats := tr.Stats(); stats.Queued != tc.bound || stats.Written != tc.bound {
+				t.Fatalf("the writer was held with %d unread and %d written, want %d: the bound", stats.Queued, stats.Written, tc.bound)
 			}
-		}
-		done <- nil
-	}()
-	// Nobody has read: the writer is held when the unread bytes reach the bound, to the byte.
-	await(t, "the writer to be held", func() bool { return tr.Stats().Stalls > 0 })
-	if stats := tr.Stats(); stats.Queued != stdioQueueBytes || stats.Written != stdioQueueBytes {
-		t.Fatalf("the writer was held with %d unread and %d written, want %d: the bound", stats.Queued, stats.Written, stdioQueueBytes)
-	}
-	// Reading releases it, and the reader takes every byte in order, with the writer held again and again.
-	buf := make([]byte, 20_000)
-	var at uint64
-	for at < total {
-		chunk, err := tr.creator.Read(context.Background(), buf)
-		if err != nil {
-			t.Fatalf("read at %d: %v", at, err)
-		}
-		if len(chunk.Dropped) != 0 || chunk.Offset != at {
-			t.Fatalf("a chunk at %d with %d lost ranges, the reader is at %d: a blocking ring loses nothing", chunk.Offset, len(chunk.Dropped), at)
-		}
-		if !bytes.Equal(buf[:chunk.N], ringPattern(at, chunk.N)) {
-			t.Fatalf("the bytes at %d are not the bytes written there", at)
-		}
-		at += uint64(chunk.N)
-		if queued := tr.Stats().Queued; queued > stdioQueueBytes {
-			t.Fatalf("%d bytes unread, the bound is %d", queued, stdioQueueBytes)
-		}
-	}
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	if stats := tr.Stats(); stats.Dropped != 0 || stats.Stalls == 0 || stats.Written != total {
-		t.Fatalf("stats %+v: want nothing dropped, the writer held, %d written", stats, total)
+			// Reading releases it, and the reader takes every byte in order, with the writer held again and again.
+			buf := make([]byte, 20_000)
+			var at uint64
+			for at < total {
+				chunk, err := tr.creator.Read(context.Background(), buf)
+				if err != nil {
+					t.Fatalf("read at %d: %v", at, err)
+				}
+				if len(chunk.Dropped) != 0 || chunk.Offset != at {
+					t.Fatalf("a chunk at %d with %d lost ranges, the reader is at %d: a blocking ring loses nothing", chunk.Offset, len(chunk.Dropped), at)
+				}
+				if !bytes.Equal(buf[:chunk.N], ringPattern(at, chunk.N)) {
+					t.Fatalf("the bytes at %d are not the bytes written there", at)
+				}
+				at += uint64(chunk.N)
+				if queued := tr.Stats().Queued; queued > tc.bound {
+					t.Fatalf("%d bytes unread, the bound is %d", queued, tc.bound)
+				}
+			}
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			if stats := tr.Stats(); stats.Dropped != 0 || stats.Stalls == 0 || stats.Written != total {
+				t.Fatalf("stats %+v: want nothing dropped, the writer held, %d written", stats, total)
+			}
+		})
 	}
 }
 
@@ -378,7 +393,7 @@ func TestRunsOfTwoStreamsAreReadBackWithTheirStreamsThroughEveryPath(t *testing.
 			}
 			// A replay: the attach of a stream from the middle of the ring.
 			from := start + (end-start)/3
-			a, info, err := tr.attach(from)
+			a, info, err := tr.attach(context.Background(), from)
 			if err != nil || info.Start != from || info.End != end {
 				t.Fatalf("attach: %+v, %v, want a replay of [%d, %d)", info, err, from, end)
 			}
@@ -727,7 +742,7 @@ func hostEnds(h *fakeHost) (causes []session.Cause, kills []bool) {
 func TestACloseFromAStreamThatIsNoLongerTheSessionsIsNotAppliedAndTheSessionsOwnIs(t *testing.T) {
 	tr := newTestRing(1<<20, false, false)
 	old := tr.creator
-	next, _, err := tr.attach(0) // takes the session over from old
+	next, _, err := tr.attach(context.Background(), 0) // takes the session over from old
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -750,7 +765,7 @@ func TestAStaleLeaseNeverEndsASessionAndTheCurrentOneEndsOnlyADetachedSession(t 
 	if !ok {
 		t.Fatal("the stream could not detach")
 	}
-	next, _, err := tr.attach(0) // cancels the lease
+	next, _, err := tr.attach(context.Background(), 0) // cancels the lease
 	if err != nil {
 		t.Fatal(err)
 	}
