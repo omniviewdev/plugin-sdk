@@ -16,6 +16,14 @@ func (s Size) IsZero() bool { return s == Size{} }
 // Proc is the command's world, owned by the SDK: the validated request and the stdio the author copies between
 // the target and the host. An ExecFunc receives one per command.
 //
+// The end of a session discards nothing the host sent. What the SDK accepted before the end (the bytes of input, the signals, the
+// queries and the size the function has not read) is in the queues of Stdin, Signals, Queries and Resize in the order the host sent
+// it, before the function's context is cancelled and before a channel is closed, and it stays there: a function that reads Signals
+// and Queries until they close, Stdin until io.EOF and Resize until it closes finds all of it, however the session ended. A frame
+// that comes once the end is decided is refused. A function that stops reading when its context ends may not read what is left,
+// which is its choice and not the SDK's. The one limit is a function the SDK gave up on (it ignored its cancelled context for the
+// grace or the kill wait): Resize is closed at once for it, and the other queues keep what they held.
+//
 // The SDK runs the function once, on a goroutine of its own. A panic in the function is recovered: the command ends as a
 // failure of the target and the panic value stays in the plugin's log. The goroutines the function starts are its own:
 // a panic in one of them is not recovered. Started and Link may be called from any goroutine of the function while it
@@ -35,7 +43,9 @@ type Proc struct {
 	// value is taken as it is, a wider one is replaced by the value this set holds.
 	Capabilities Capabilities
 	// Stdin is the command's input. It is nil only for a run whose request carries no stdin; a session always has
-	// one. It reports io.EOF after the host closed the input or when the session ends.
+	// one. It reports io.EOF after the host closed the input (ClientFrame.close_input, for a target that declared
+	// Capabilities.StdinEOF) and the function has read what the host sent before it, and when the session ends, once the function has
+	// read what the host sent before the end: the queue holds at most 256 KiB, and the end does not discard any of it.
 	Stdin io.Reader
 	// Stdout is the command's output; the only output of a command that runs with a terminal. For a target whose
 	// Capabilities.Stall is StallPropagates, Write blocks while the host is slow, so that the pace of the host
@@ -45,9 +55,29 @@ type Proc struct {
 	Stdout io.Writer
 	// Stderr is the command's error output. It is nil for a command that runs with a terminal.
 	Stderr io.Writer
-	// Resize delivers terminal sizes, latest wins, and never blocks the SDK. For a terminal its first value is
-	// Request.Size. It is closed when the command ends.
+	// Resize delivers terminal sizes, latest wins, and never blocks the SDK: a storm of resizes costs the function the size
+	// it was reading and the newest. For a terminal its first value is Request.Size. It is closed when the session ends, once the
+	// function has taken the sizes it holds (the one it has not read yet, which the end does not discard); a size that comes after the
+	// end is refused.
+	// Taking a size from it is what the host is told in Resized (APPLIED); a function that declared Capabilities.Resize
+	// and does not read it is told to the host as FAILED after 5 seconds and logged, and never blocks the SDK or the stream.
 	Resize <-chan Size
+	// Signals delivers the signals the host asks for (ClientFrame.signal), in the order it sent them, each one a signal that
+	// the session's effective Capabilities.Signals lists: the SDK ends a stream that sends another with UNSUPPORTED. Never
+	// nil; closed when the session ends, after the signals it holds. The queue is small (eight signals) and delivery never
+	// blocks the SDK: a function that does not read it loses the oldest signal for each new one, which is counted and logged.
+	// A signal is not an end: the session goes on until the function returns, and what a signal does to the target's process
+	// is the function's.
+	Signals <-chan Signal
+	// Queries delivers the host's queries for a fact (ClientFrame.query) that the session's target provides, and is nil when
+	// the target's capabilities declare neither Capabilities.CwdFact nor Capabilities.ForegroundFact as PULL or PUSH. The
+	// function answers each Query with Query.Answer. It is closed when the session ends, after the queries it holds. See Fact.
+	Queries <-chan Query
+	// Fact reports a fact that changed, for a kind whose capability is FactModePush, and sends it to the host as a Fact frame
+	// with query_id zero. Never nil, and it never blocks: it is a no-op, logged as the author's bug, for a kind that is not
+	// FactModePush. The SDK sends the newest value of each kind at most ten times a second and never a value the host already
+	// has.
+	Fact func(Fact)
 	// Started reports what the target knows once the command is running: the program that was resolved, a pid, the
 	// terminal and size the target really granted and, if the run showed something narrower than Opened carried, this
 	// session's capabilities. The mode is not reported here: it is declared on Choice.Capabilities. Never nil.
@@ -58,6 +88,12 @@ type Proc struct {
 	// Proc.Capabilities), sent before that output: it is how a command whose start can only be observed in its output
 	// is reported. A call after the first output, or a second one, is refused: it changes nothing and is logged as the
 	// author's bug. A function that neither writes nor calls it has no Started.
+	//
+	// A command's start is observed in three honest ways, and a quiet command that has none of them is not reported started: its
+	// first byte (the SDK's own Started above), the status it ends with (the end says its start was observed, and there is still
+	// no Started frame), and, over a client library that reports nothing else, the first Read the executor makes of the stdin the
+	// function handed it, which client-go does once its streams exist: OnFirstRead calls Started there. A call before the stream
+	// exists makes a refusal (a 403, a container that is not running) a failure at the RUN stage for a command that never ran.
 	Started func(SessionFacts)
 	// Link reports a change of the transport's health. Never nil; the SDK sends a Link frame on a change, and only
 	// for a target whose Capabilities.LinkHealth is set.
@@ -69,9 +105,13 @@ type Request struct {
 	// Ref is the canonical reference of the target thing: provider, type, route and connection match the
 	// registered target and the caller's connection, and the incarnation is present when the host sent one.
 	Ref resourcev2.ResourceReference
-	// Selection holds exactly the choices the target's Options declared, keyed by option name.
+	// Selection holds the choice of every option of the target's Options that the request resolved to, keyed by option name: the
+	// one the host selected, or the default choice (IsDefault) of an option it omitted, which the SDK used to narrow the
+	// capabilities and which the function therefore need not read the resource again to find. An option with neither is absent.
+	// Opened carries the selection as the host sent it.
 	Selection map[string]string
-	// Argv is the command. It is never empty: the target's DefaultArgv is filled in when the host sent none.
+	// Argv is the command. It is never empty: the target's DefaultArgv is filled in when the host sent none. It is empty for a
+	// session whose choice runs no program (Choice.NoProgram), which refuses an argv of its own.
 	Argv []string
 	// TTY says the command runs with a terminal.
 	TTY bool

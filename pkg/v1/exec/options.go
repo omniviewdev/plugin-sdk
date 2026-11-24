@@ -50,6 +50,14 @@ type Choice struct {
 	// nothing declares that a session can do nothing, except for Kill, ExitReport and Stall, which keep the kind's
 	// value when left unset.
 	Capabilities *Capabilities
+	// NoProgram says that a session which selects this choice runs no program: it joins one that already runs (a Kubernetes
+	// attach joins the container's own process). The SDK then reports no program in Opened and in Started (an absent program,
+	// never the target's DefaultArgv), hands the function an empty Request.Argv, and refuses what would run one: a request that
+	// names an argv of its own and a bounded run, both UNSUPPORTED. An argv that equals the target's DefaultArgv is what a
+	// request with none gets, so it is not told apart from one and is dropped; a target with such a choice declares DefaultArgv,
+	// so that a request with no argv is admitted. A host reads the flag with the options, before it opens anything. False, the
+	// zero value, is a choice whose session runs the program the request names.
+	NoProgram bool
 }
 
 // closedCode reports whether s is a closed code: 1 to 40 bytes of [a-z0-9_.-].
@@ -137,6 +145,7 @@ func optionsToProto(options []Option) []*execv2.Option {
 				Detail:      c.Detail,
 				IsDefault:   c.IsDefault,
 				Kind:        c.Kind,
+				NoProgram:   c.NoProgram,
 			}
 			if c.Capabilities != nil {
 				wireChoice.Capabilities = capabilitiesToProto(*c.Capabilities)
@@ -170,6 +179,7 @@ func optionsFromProto(wire []*execv2.Option) ([]Option, error) {
 				Detail:      c.GetDetail(),
 				IsDefault:   c.GetIsDefault(),
 				Kind:        c.GetKind(),
+				NoProgram:   c.GetNoProgram(),
 			}
 			if wireCaps := c.GetCapabilities(); wireCaps != nil {
 				caps, err := capabilitiesFromProto(wireCaps)

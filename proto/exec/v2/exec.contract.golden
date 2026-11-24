@@ -278,6 +278,7 @@ message Choice
   5 is_default bool
   6 kind string
   7 capabilities message Capabilities
+  8 no_program bool
 
 message ClientFrame
   1 open message OpenRequest oneof frame

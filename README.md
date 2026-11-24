@@ -13,8 +13,8 @@ and the [migration guide](docs/sdk-v1-v2-overview.md) when moving from resource 
 
 Run a command in a Pod, container, host or VM. The legacy `exec.Handler` lane keeps working; the exec v2 lane
 (`pkg/v1/exec`, `proto/exec/v2`) is a contract in which a plugin author writes one function, `ExecFunc`, and declares
-the `Target` it runs in. This build serves `Describe` and `Options`; every other v2 RPC answers a typed
-`UNSUPPORTED`, and the SDK does not call `ExecFunc` yet.
+the `Target` it runs in. The SDK serves `Describe`, `Options`, `Open` (interactive sessions that outlive their stream, with
+replay, detach and a lease), `Run` and `RunStream` (bounded runs), `ListSessions`, `ReadOutput` and `EndSession`, and runs `ExecFunc` for each.
 
 See [docs/exec.md](docs/exec.md).
 

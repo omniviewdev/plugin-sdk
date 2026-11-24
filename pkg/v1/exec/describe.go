@@ -10,14 +10,17 @@ import (
 )
 
 // servedFeatures lists the features this SDK build serves, in a stable order. This build serves Describe, Options, Open (a
-// session on one stream: FEATURE_SESSION), Run and RunStream (a bounded run, as one result or as events: FEATURE_RUN and
-// FEATURE_RUN_STREAM), with the environment and the working directory of a start or a run (FEATURE_ENV, FEATURE_CWD); each later
-// part of the contract (session management, stdin EOF, marks, modes, integration) is listed by the step that implements it, so
-// that a host never offers what the plugin cannot do.
+// session, on a stream it may outlive: FEATURE_SESSION), Run and RunStream (a bounded run, as one result or as events: FEATURE_RUN
+// and FEATURE_RUN_STREAM), with the environment and the working directory of a start or a run (FEATURE_ENV, FEATURE_CWD), the
+// stdin EOF of a session (FEATURE_STDIN_EOF: close_input) and the sessions that outlive their stream, with their replay ring,
+// lease and tombstone: an attach, Detach, ListSessions, ReadOutput and EndSession (FEATURE_SESSION_MANAGEMENT); each later part of
+// the contract (marks, modes, integration) is listed by the step that implements it, so that a host never offers what the plugin
+// cannot do.
 func servedFeatures() []execv2.Feature {
 	return []execv2.Feature{
 		execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN, execv2.Feature_FEATURE_RUN_STREAM,
-		execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD,
+		execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD, execv2.Feature_FEATURE_STDIN_EOF,
+		execv2.Feature_FEATURE_SESSION_MANAGEMENT,
 	}
 }
 

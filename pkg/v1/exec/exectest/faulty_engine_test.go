@@ -43,6 +43,8 @@ const (
 	faultLeak                                     // Close leaves a goroutine behind
 	faultRefuseWrongClass                         // a start after Close is refused as INTERNAL and not UNAVAILABLE
 	faultNeverDone                                // Done is never closed
+	faultNoViolations                             // the result hides the ways the function broke the contract
+	faultInventedViolation                        // the result reports an exit violation that the function did not make
 )
 
 // faultyEngine is the real engine with one fault.
@@ -174,6 +176,10 @@ func (c *faultyCommand) Result() exechook.Result {
 		res.End = &execv2.End{}
 	case faultBytesOut:
 		res.BytesOut++
+	case faultNoViolations:
+		res.Violations = nil
+	case faultInventedViolation:
+		res.Violations = append(append([]string(nil), res.Violations...), "exit_shape: a violation the function did not make")
 	}
 	return res
 }
@@ -261,4 +267,15 @@ func (r *recordT) said(phrases ...string) bool {
 		}
 	}
 	return false
+}
+
+// saidEach reports whether every one of the lists of phrases is held by a failure: what a test that names several things the stress must say of a
+// fault waits for.
+func (r *recordT) saidEach(lists [][]string) bool {
+	for _, phrases := range lists {
+		if !r.said(phrases...) {
+			return false
+		}
+	}
+	return true
 }

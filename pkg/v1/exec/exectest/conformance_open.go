@@ -54,6 +54,10 @@ type wireEnv struct {
 	// serve serves the targets of a case as a plugin over a transport; nil serves the real plugin. The tests of the suite give a
 	// server that is wrong, to see each case fail.
 	serve serveFunc
+	// stdinBound is how long the runs of the cases that send a command its stdin are given; zero is stdinBound, which is the one an
+	// author's run uses. The tests of the suite give a shorter one, so that a plugin that never ends the input fails each of their cases
+	// in a moment: the run is the wait for something that has to happen and decides no outcome.
+	stdinBound time.Duration
 }
 
 // serveFunc serves targets as a plugin behind a connection registry, and returns the host's side of it.
@@ -471,14 +475,17 @@ func frameName(f *execv2.ServerFrame) string {
 // ---------------------------------------------------------------------------------------------------------------
 
 // streamGrammar holds the frames of one stream to the order the contract states: Opened first (the client takes it before it returns
-// the stream), then Notice, Started (at most one, before the first output), Output, Dropped and Link frames, and Ended last, once, with
-// nothing after it. This build keeps no session past its stream, so a Detached has no place on one.
+// the stream), then Notice, Started (at most one, before the first output), Output, Dropped, Link, Resized and Fact frames, and then one
+// last frame, which is Ended (the session is over) or Detached (this stream left, and the session lives on), exactly one of the two,
+// with nothing after it. A stream whose host broke it has neither, and the case that breaks a stream does not read it to its end.
 type streamGrammar struct {
-	frames   int
-	output   bool // an Output or a Dropped frame has come
-	started  int
-	ended    bool
-	problems []string
+	frames  int
+	output  bool // an Output or a Dropped frame has come
+	started int
+	// endeds and detacheds count the Ended and the Detached frames that came: a stream that is read to its end has one of them, and a
+	// session has at most one Ended frame across all its streams, which the case that holds several streams of one session adds up.
+	endeds, detacheds int
+	problems          []string
 }
 
 func (g *streamGrammar) problem(format string, args ...any) {
@@ -487,11 +494,15 @@ func (g *streamGrammar) problem(format string, args ...any) {
 	}
 }
 
-// take checks one frame of the stream.
+// over says that the last frame of the stream has come.
+func (g *streamGrammar) over() bool { return g.endeds+g.detacheds > 0 }
+
+// take checks one frame of the stream. Ended and Detached are each the last frame, and nothing follows either: not an Output, not the
+// other of the two, not the same again.
 func (g *streamGrammar) take(f *execv2.ServerFrame) {
 	g.frames++
-	if g.ended {
-		g.problem("%s came after Ended: nothing follows Ended", frameName(f))
+	if g.over() {
+		g.problem("%s came after Ended or Detached: nothing follows the last frame", frameName(f))
 	}
 	switch f.GetFrame().(type) {
 	case *execv2.ServerFrame_Opened:
@@ -510,9 +521,9 @@ func (g *streamGrammar) take(f *execv2.ServerFrame) {
 			g.problem("a Notice after the first output: a Notice comes before it")
 		}
 	case *execv2.ServerFrame_Ended:
-		g.ended = true
+		g.endeds++
 	case *execv2.ServerFrame_Detached:
-		g.problem("a Detached frame: this build keeps no session past its stream, and the host sent no Detach")
+		g.detacheds++
 	}
 }
 

@@ -186,7 +186,7 @@ func TestADroppedByteIsCountedUnderTheReasonThatCausedIt(t *testing.T) {
 			}
 			filled.Open()
 			<-more.Opened()
-			_, err := p.Stdout.Write(chunk)
+			_, err := p.Stdout.Write(make([]byte, 2<<20)) // more than the ring holds: what it loses is counted
 			return exec.Exit{}, err
 		}, func(i *exec.TargetInfo) { i.Capabilities.Stall = exec.StallPropagates }))
 		cmd := rig.mustOpen("s1")
@@ -196,8 +196,8 @@ func TestADroppedByteIsCountedUnderTheReasonThatCausedIt(t *testing.T) {
 		res := awaitDone(t, cmd)
 		wantMetric(t, rig, metricDropped, map[string]string{"reason": "replay_full"}, float64(res.DroppedBytes))
 	})
-	t.Run("a blocking target whose function has more to write than the queue holds is stalled", func(t *testing.T) {
-		// 300 KiB cannot be queued at once (the queue holds 256 KiB): the write waits for a reader that has not started,
+	t.Run("a blocking target whose function has more to write than its reader may leave unread is stalled", func(t *testing.T) {
+		// 300 KiB cannot be left unread at once (the bound is 256 KiB): the write waits for a reader that has not started,
 		// and the wait is published while the session runs, before anything reads.
 		rig := newEngineRig(t, engineRigConfig{metricsEvery: time.Millisecond}, engTarget(writePattern(300<<10), func(i *exec.TargetInfo) { i.Capabilities.Stall = exec.StallPropagates }))
 		cmd := rig.mustOpen("s1")

@@ -559,6 +559,11 @@ enum ChoiceState {
 // omits), and a host can show "attach: no exit status, survives a host restart" before it opens anything. Absent
 // means the choice does not narrow. A field wider than the kind's is a violation: the SDK clamps it to the bound
 // and names the field. Started may narrow further what is learned only at run time; it never carries the mode.
+//
+// no_program says that a session which selects this choice runs no program: it joins one that already runs (a Kubernetes attach joins
+// the container's own process). Opened and Started then carry no program (absent, never the target's default argv), a request that
+// names an argv of its own is refused (UNSUPPORTED) and so is a Run, which is a program to run. False, the common case, is a choice
+// whose session runs the program the request names. A host reads it with the options, before it opens anything.
 message Choice {
   string value = 1;
   string display_name = 2;
@@ -567,6 +572,7 @@ message Choice {
   bool is_default = 5;
   string kind = 6;
   Capabilities capabilities = 7;
+  bool no_program = 8;
 }
 
 // Option is one dimension a user chooses along ("container") and its choices.
@@ -1184,8 +1190,10 @@ enum ExitSource {
   EXIT_SOURCE_PROCESS = 1;
   // A death by signal the target folded into 128+n: the code is 128+n and the SDK claims no signal.
   EXIT_SOURCE_SIGNAL_FOLDED = 2;
-  // The transport said the stream ended (OK or failed) and the process's own status was not relayed (Kubernetes
-  // attach, or exec with an empty error channel). A code, if any, is not the command's.
+  // The transport said the stream ended and the process's own status was not relayed. Kubernetes: the API server's Success status (the
+  // exec stream ended normally) means "ended normally" and nothing more, because the API server sends the same Success for a command
+  // that did not exit 0 (after a kubelet or containerd restart): a code from this source, 0 included, is never the command's, and a
+  // consumer shows "ended normally", never "exit 0". remote_may_survive stays absent.
   EXIT_SOURCE_TRANSPORT = 3;
   // A bounded run that the SDK ended (timeout, cancel). A code, if any, is the aftermath of that kill.
   EXIT_SOURCE_HOST = 4;
@@ -1224,8 +1232,10 @@ enum OutputCompleteness {
 // uint32. Docker's ExecInspect and kubectl's error-channel Status relay an int. A signal is never a code: it is
 // Signaled, or an Exited with EXIT_SOURCE_SIGNAL_FOLDED when the target folded it into 128+n.
 //
-// The arm exists only with a status: a stream that ended with none is Lost, never Exited with code 0. exit_code is
-// not optional because the arm itself says it is known.
+// The arm exists only with a status that a target or a transport relayed. From the process (PROCESS, SIGNAL_FOLDED) the code is the
+// command's own; from the transport (TRANSPORT) it is "the stream ended normally" (Kubernetes' Success status, code 0) and says nothing
+// about what the command did. A stream that ended with nothing relayed (an empty status channel, a break) is Lost, never Exited with
+// code 0. exit_code is not optional because the arm itself says it is known.
 message Exited {
   sint64 exit_code = 1;
   ExitSource source = 2;

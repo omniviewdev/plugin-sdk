@@ -70,7 +70,7 @@ func podOptions(ctx *types.PluginContext, ref resourcev2.ResourceReference) ([]e
 
 	mode := exec.Option{Name: "mode", Choices: []exec.Choice{ // the "mode" podExec reads from the selection
 		{Value: "exec", State: exec.ChoiceStateReady, IsDefault: true, Capabilities: &execMode},
-		{Value: "attach", State: exec.ChoiceStateReady, Capabilities: &attachMode},
+		{Value: "attach", State: exec.ChoiceStateReady, Capabilities: &attachMode, NoProgram: true}, // joins a process that runs: no program
 	}}
 	return []exec.Option{containers, mode}, nil
 }
@@ -143,4 +143,25 @@ func TestTheSDKServesTheModesOfThePodWithTheirChoices(t *testing.T) {
 // The guide prints the snippet as it is in this file.
 func TestTheGuideShowsTheOptionsSnippet(t *testing.T) {
 	assertGuideShows(t, "options_snippet_test.go", "podOptions")
+}
+
+// The attach of the snippet declares that it runs no program: a session in it has none in Opened and no argv, and a request that names
+// a command for it is refused.
+func TestThePodSnippetsAttachRunsNoProgram(t *testing.T) {
+	options, err := podOptions(nil, resourcev2.ResourceReference{Address: resourcev2.ResourceAddress{ID: "web-0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	flags := map[string]bool{}
+	for _, o := range options {
+		if o.Name != "mode" {
+			continue
+		}
+		for _, c := range o.Choices {
+			flags[c.Value] = c.NoProgram
+		}
+	}
+	if !reflect.DeepEqual(flags, map[string]bool{"exec": false, "attach": true}) {
+		t.Errorf("the snippet's modes declare NoProgram %v, want the attach only", flags)
+	}
 }

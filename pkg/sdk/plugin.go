@@ -220,24 +220,44 @@ func (p *Plugin) GetPluginID() string {
 	return p.meta.ID
 }
 
-// GRPCServerFactory builds a server with SDK middleware and the default logger.
+// GRPCServerFactory builds a server with SDK middleware and the default logger. See GRPCServerFactoryWithLogger.
 func GRPCServerFactory(opts []grpc.ServerOption) *grpc.Server {
 	return GRPCServerFactoryWithLogger(logging.Default(), opts)
 }
 
-// GRPCServerFactoryWithLogger builds a server with resource wire limits and SDK middleware.
+// GRPCServerFactoryWithLogger builds a server with resource wire limits, SDK middleware and the keepalive of a plugin's server
+// (utils.ServerKeepaliveOptions: pings of a host are allowed every 5 s, with or without a stream, and a host that does not answer
+// the plugin's ping within 15 s of its last word is dropped, which ends every stream on its connection). The options in opts come
+// after the keepalive, so a plugin that needs other times passes grpc.KeepaliveParams or grpc.KeepaliveEnforcementPolicy and its own
+// are kept.
 func GRPCServerFactoryWithLogger(log logging.Logger, opts []grpc.ServerOption) *grpc.Server {
 	return grpc.NewServer(utils.RegisterServerOpts(append(opts, rp.ServerOptions()...), log)...)
 }
 
-// GRPCDialOptions returns SDK context propagation and tracing options using the default logger.
+// GRPCDialOptions returns SDK context propagation and tracing options using the default logger. It sets no keepalive: see
+// HostKeepaliveDialOption.
 func GRPCDialOptions() []grpc.DialOption {
 	return withClientOpts(nil, logging.Default())
 }
 
-// GRPCDialOptionsWithLogger returns SDK context propagation and tracing options using log.
+// GRPCDialOptionsWithLogger returns SDK context propagation and tracing options using log. It sets no keepalive: see
+// HostKeepaliveDialOption.
 func GRPCDialOptionsWithLogger(log logging.Logger) []grpc.DialOption {
 	return withClientOpts(nil, log)
+}
+
+// HostKeepaliveDialOption returns the dial option that sets the keepalive a host uses on its connection to a plugin (utils.HostKeepalive:
+// ping after 30 s of silence, with or without a stream, give up after 10 s), so that a plugin that stopped answering without closing
+// the connection is found, and every stream of the connection fails at once. A host adds it to go-plugin's ClientConfig.GRPCDialOptions,
+// next to the SDK's other options:
+//
+//	GRPCDialOptions: append(sdk.GRPCDialOptions(), sdk.HostKeepaliveDialOption()),
+//
+// for the plugins that were built with an SDK that serves the matching policy (every plugin from the release that added it, see
+// utils.ServerKeepaliveOptions). A plugin that was built before answers a host that pings every 30 s with a GOAWAY and closes the
+// connection, which is why GRPCDialOptions does not carry it.
+func HostKeepaliveDialOption() grpc.DialOption {
+	return grpc.WithKeepaliveParams(utils.HostKeepalive())
 }
 
 // effectiveProtocolVersion returns the SDK protocol version to use.

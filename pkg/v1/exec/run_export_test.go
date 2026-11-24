@@ -11,13 +11,15 @@ import (
 type RunSeams struct {
 	// ProgressTicks makes the ticks that pace RunProgress, and the function that stops them. The SDK's own pace is a ticker.
 	ProgressTicks func() (<-chan time.Time, func())
+	// TickHandled runs on the goroutine that handles the ticks, after each one: when it returns the tick has queued its progress or found none to queue.
+	TickHandled func()
 	// BeforeRead runs on the goroutine that reads the output of a run, before each read; ctx ends when the reader is to stop.
 	BeforeRead func(ctx context.Context)
 }
 
 // SetRunSeams sets the seams of the runs a plugin serves. A test calls it before it starts a run.
 func SetRunSeams(p *Plugin, s RunSeams) {
-	p.v2.server.run = runConfig{progressTicks: s.ProgressTicks, beforeRead: s.BeforeRead}
+	p.v2.server.run = runConfig{progressTicks: s.ProgressTicks, tickHandled: s.TickHandled, beforeRead: s.BeforeRead}
 }
 
 // RunEngineLive returns the ids of the commands the engine of a plugin holds, sorted.

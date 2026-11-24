@@ -249,9 +249,6 @@ func (e *Error) status() error {
 	return detailed.Err()
 }
 
-// unsupportedError is the typed refusal of a method this SDK build does not serve.
-func unsupportedError() *Error { return &Error{Class: ErrorClassUnsupported} }
-
 // errorFromStatus decodes the error of a call to an exec v2 service. The status the call returned is decoded first, and
 // the caller's context is read only when the status itself says the context ended the call. An exec refusal is an
 // *Error. A resource-layer refusal (the connection lease, the catalog pin) is the *resourcev2.ResourceOperationError it
@@ -261,7 +258,8 @@ func unsupportedError() *Error { return &Error{Class: ErrorClassUnsupported} }
 // service) is ErrorClassUnsupported. A status of Canceled or DeadlineExceeded with no exec or resource detail, or a plain
 // context error, from a call whose caller's context is over is that context's own: it reads as cancelled or timed out and
 // wraps the context error, so that errors.Is finds it. A status keeps its own class: a Canceled status is never a timeout
-// because the caller's deadline passed after the call returned, so the context error is wrapped only when it says the same.
+// because the caller's deadline passed after the call returned, so the context error is wrapped only when it says the same. A
+// context is over when its deadline has passed, and its Err says so a moment later (contextOver).
 func errorFromStatus(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
@@ -269,7 +267,7 @@ func errorFromStatus(ctx context.Context, err error) error {
 	st, ok := status.FromError(err)
 	if !ok {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			if ctxErr := ctx.Err(); ctxErr != nil {
+			if ctxErr := contextOver(ctx); ctxErr != nil {
 				return contextError(ctxErr)
 			}
 		}
@@ -299,11 +297,27 @@ func errorFromStatus(ctx context.Context, err error) error {
 		// The class is the status's own. The caller's context error is wrapped only when it says the same as the status:
 		// a Canceled status stays ErrorClassCancelled and a DeadlineExceeded one stays ErrorClassTimeout, whatever ended the caller's
 		// context after the call returned.
-		if ctxErr := ctx.Err(); ctxErr != nil && contextError(ctxErr).Class == class {
+		if ctxErr := contextOver(ctx); ctxErr != nil && contextError(ctxErr).Class == class {
 			return contextError(ctxErr)
 		}
 	}
 	return &Error{Class: class}
+}
+
+// contextOver is the error of the caller's context as far as a call that has returned can tell: its Err, or, for a context whose deadline has
+// passed and whose timer has not run it out yet, the error of the deadline. A context is over when its deadline passes, and its Err says so when
+// the goroutine that runs the timer is scheduled, which on a busy machine is not at once. A transport that reads the clock, as gRPC's does (it
+// refuses a call whose deadline has passed, and it reads the cancellation of a stream after the deadline as the deadline), returns a status of
+// DeadlineExceeded in that moment, and the error that is made of it must not read the context as alive: a call whose deadline passed before the
+// plugin answered is a timeout with the context's error inside, however late the context says it.
+func contextOver(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return context.DeadlineExceeded
+	}
+	return nil
 }
 
 // contextError is the error of the caller's own context as the SDK reports it: ErrorClassCancelled, or ErrorClassTimeout when the
@@ -425,7 +439,8 @@ func classFromResourceCode(code string) ErrorClass {
 
 // classifyError turns an error an author's callback returned into the *Error that may cross the wire. In order: an
 // *Error the author built; the target's own Classify; the SDK's classification of context, resource-lane, gRPC and
-// network errors; ErrorClassInternal. The local cause is kept in Err and never sent.
+// network errors, and of an error that carries an HTTP status (HTTPStatus or StatusCode, see ErrorFromHTTPStatus);
+// ErrorClassInternal. The local cause is kept in Err and never sent.
 func classifyError(classify ClassifyFunc, err error) *Error {
 	if err == nil {
 		return nil
@@ -447,7 +462,19 @@ func classifyError(classify ClassifyFunc, err error) *Error {
 			return out
 		}
 	}
-	return &Error{Class: sdkClass(err), Err: err}
+	return sdkError(err)
+}
+
+// sdkError is the *Error the SDK makes of an error nobody else classified: what sdkClass knows, and then the status of an error that
+// carries an HTTP one, before ErrorClassInternal.
+func sdkError(err error) *Error {
+	if class := sdkClass(err); class != ErrorClassInternal {
+		return &Error{Class: class, Err: err}
+	}
+	if status, ok := httpStatusOf(err); ok {
+		return ErrorFromHTTPStatus(status, err)
+	}
+	return &Error{Class: ErrorClassInternal, Err: err}
 }
 
 // sdkClass is the SDK's own classification of the errors every plugin shares.

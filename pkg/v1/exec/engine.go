@@ -40,7 +40,9 @@ import (
 //     session, a shutdown or a connection for ever, so the engine gives it a grace and then gives up on it, loudly;
 //   - the connection: the command holds the lease of its connection for as long as it runs, so a retired connection ends
 //     the command with a typed cause (Closed, connection-retired) instead of leaving it on a dead client;
-//   - the stdio: bounded queues between the host and the function (pipes.go) with the stated blocking and dropping rules;
+//   - the stdio: bounded queues between the host and the function (pipes.go) with the stated blocking and dropping rules, and
+//     one rule for the end of a session: it discards nothing the host sent (the signals, the queries, the unread input and the
+//     size the function has not taken stay readable, and a frame that comes after the end is refused: see drain);
 //   - the facts: the capabilities the command was opened with (the kind's, narrowed by the mode its selection names),
 //     the single Started that precedes the first output (start_gate.go), the link state;
 //   - the end: classify.go.
@@ -82,6 +84,10 @@ const (
 	// engine gave up on and that have not returned included. A call that would be one more is refused UNAVAILABLE: a unary
 	// call has no session to hold a place with, so this is what bounds the callbacks that never return.
 	defaultOptionsInFlight = 32
+	// defaultQueryDeadline is how long a host's query for a fact may wait for the function's answer before the SDK answers it
+	// unknown (QUERY_FAILED): a query is a question a person is waiting on, and a function that never answers must not leave the
+	// host waiting for ever.
+	defaultQueryDeadline = 5 * time.Second
 )
 
 // commandKind is the shape a command was started for.
@@ -123,6 +129,19 @@ type engineConfig struct {
 	killWait        time.Duration
 	shutdownGrace   time.Duration
 	optionsInFlight int
+	// queryDeadline is how long a query for a fact waits for the function's answer; zero is the default.
+	queryDeadline time.Duration
+	// optionsCacheTTL is how long the admission of a start reuses the result of an Options callback for the same request (the
+	// provider and type, the resource with its incarnation, the connection and the route); zero or less turns the cache off,
+	// and the server sets the default. optionsCacheMax is the most results it keeps; zero is the default.
+	optionsCacheTTL time.Duration
+	optionsCacheMax int
+	// tombstoneTTL is how long an ended session stays listed and readable and keeps its id, maxTombstones how many ended sessions
+	// the engine remembers, and tombstoneBytes how many bytes of their output it keeps in all. Zero is the default. They are
+	// fields so that a test can shorten them.
+	tombstoneTTL   time.Duration
+	maxTombstones  int
+	tombstoneBytes int
 }
 
 // engine runs the commands of one plugin.
@@ -159,6 +178,9 @@ type engine struct {
 	flightMu sync.Mutex
 	flights  map[*registeredTarget]*optionsFlight
 
+	// optionsCache holds the results of the Options callbacks that the admission of a start may reuse (options_cache.go).
+	optionsCache optionsCache
+
 	// now and newTimer are test seams, nil in production. now is the clock of the log limits, and newTimer makes the timers of
 	// the waits for author code (the grace, the kill wait, the shutdown grace), so that a test decides when each runs out.
 	now      func() time.Time
@@ -167,6 +189,29 @@ type engine struct {
 	// afterEndEmitted is a test seam, nil in production: it runs on the registry's finisher goroutine right after a command's
 	// Done is closed and before its id is released, which is the window between Done and Gone that a test holds open.
 	afterEndEmitted func()
+
+	// newLeaseTimer is a test seam, nil in production: it makes the timer of the lease of a detached session, so that a test
+	// decides when one runs out. The timers of the waits for author code are newTimer's, and a lease is not one of them.
+	newLeaseTimer func(d time.Duration) (c <-chan time.Time, stop func())
+
+	// betweenStoreReads is a test seam, nil in production: it runs in a call that reads two of the engine's stores under two locks
+	// (the registry's and the tombstones'), after the first was read and before the second is: in listSessions after the live
+	// sessions, and in readOutput after the tombstone lookup. It is the window in which a session can end between the two.
+	betweenStoreReads func()
+
+	// beforeStreamLeaves is a test seam, nil in production: it runs on the goroutine of a served stream's handler when it has
+	// noticed that its stream is over (the host half-closed it, cancelled it or lost its connection), and before it releases the
+	// session: the window in which the stream is over and the engine has not yet been told, which a test holds open.
+	beforeStreamLeaves func()
+
+	// beforeAttach is a test seam, nil in production: it runs when an attach is on its way to its session (the served handler has read the
+	// open frame, or the in-process caller made its request) and before the engine looks for the session and registers the stream: the
+	// window in which an attach has taken nothing yet and its stream may end, which a test holds open. It is given the context of the
+	// attach, whose metadata tells a test which attach it holds.
+	beforeAttach func(ctx context.Context, id string, from uint64)
+
+	// tombs holds the sessions that ended (tombstone.go).
+	tombs *tombstones
 }
 
 // newEngine returns an engine for the targets of cfg. It runs nothing until a command starts.
@@ -201,8 +246,24 @@ func newEngine(cfg engineConfig) *engine {
 	if cfg.optionsInFlight <= 0 {
 		cfg.optionsInFlight = defaultOptionsInFlight
 	}
+	if cfg.queryDeadline <= 0 {
+		cfg.queryDeadline = defaultQueryDeadline
+	}
+	if cfg.optionsCacheMax <= 0 {
+		cfg.optionsCacheMax = defaultOptionsCacheEntries
+	}
+	if cfg.tombstoneTTL <= 0 {
+		cfg.tombstoneTTL = defaultTombstoneTTL
+	}
+	if cfg.maxTombstones <= 0 {
+		cfg.maxTombstones = defaultMaxTombstones
+	}
+	if cfg.tombstoneBytes <= 0 {
+		cfg.tombstoneBytes = defaultTombstoneBytes
+	}
 	e := &engine{cfg: cfg, log: cfg.log, tel: newTelemetry(cfg.diagnostics), closingC: make(chan struct{})}
 	e.reg = session.New(session.Config[*command]{OnEnd: e.onEnd})
+	e.tombs = newTombstones(cfg.tombstoneTTL, cfg.maxTombstones, cfg.tombstoneBytes, e.clock, e.realClock)
 	return e
 }
 
@@ -220,7 +281,9 @@ func (e *engine) setLogger(log logging.Logger) {
 // goroutines. A function that is already being waited for when it is called has at most the shutdown grace left from then.
 func (e *engine) close(ctx context.Context) error {
 	e.closeOnce.Do(func() { close(e.closingC) })
-	return e.reg.Close(ctx)
+	err := e.reg.Close(ctx)
+	e.tombs.close() // the sessions have ended and what they left stays readable until it expires; nothing is armed for it
+	return err
 }
 
 // live returns the ids of the commands the engine holds, sorted.
@@ -248,6 +311,9 @@ type startParams struct {
 	Stdin bool
 	// ReplayBytes is the output queue of a session whose target stalls lossily, in bytes; zero is the target's default.
 	ReplayBytes int
+	// DetachTimeout is the lease of a session whose stream left, when the host did not ask for another; zero is the target's
+	// default.
+	DetachTimeout time.Duration
 	// Owner, when set, is the context of the call that owns the command: when it ends, so does the command (CauseCancelled).
 	// A session has none: it outlives the request that opened it.
 	Owner context.Context
@@ -274,7 +340,17 @@ func (e *engine) start(ctx context.Context, p startParams) (*command, error) {
 		parent = p.Owner
 	}
 	var c *command
+	if p.Kind == kindSession && !e.closing() && e.tombs.has(p.ID) {
+		// The id of a session that ended is held by its tombstone, so that a late reader of that id never reads another session's
+		// output as its own. This check is for the order of the refusals (the id before the limit, as for a live id); the
+		// registry decides the same again under its own lock, below, and a session that ends between the two leaves its
+		// tombstone before it releases its id.
+		return nil, admissionRefusal(errIDTombstoned, tooMany)
+	}
 	entry, err := e.reg.Admit(parent, session.Spec{ID: p.ID, Group: group, Limit: limit}, func(context.Context) (*command, error) {
+		if p.Kind == kindSession && e.tombs.has(p.ID) {
+			return nil, errIDTombstoned
+		}
 		c = e.newCommand(p)
 		return c, nil
 	})
@@ -344,7 +420,7 @@ func admissionRefusal(err error, tooMany ErrorReason) error {
 	switch {
 	case errors.Is(err, session.ErrClosed):
 		return &Error{Class: ErrorClassUnavailable, Err: err}
-	case errors.Is(err, session.ErrExists):
+	case errors.Is(err, session.ErrExists), errors.Is(err, errIDTombstoned):
 		return NewError(ErrorClassConflict, ErrorReasonSessionExists, err)
 	case errors.Is(err, session.ErrLimit):
 		return NewError(ErrorClassLimit, tooMany, err)
@@ -405,23 +481,34 @@ type command struct {
 	route   resourcev2.AccessRoute
 	request Request
 	group   string // the group the command is counted in among its target's commands (admissionGroup)
-	// replayBytes is the output queue the host asked for a lossy session; zero is the target's default.
-	replayBytes int
-	created     time.Time
-	log         logging.Logger
+	// replayBytes is the replay ring the host asked for; zero is the target's default. detachTimeout is the lease the host asked
+	// for a detached session; zero is the target's default.
+	replayBytes   int
+	detachTimeout time.Duration
+	created       time.Time
+	log           logging.Logger
 
 	// entry is set by start before any goroutine of the command exists, and read only by them and by what start hands out.
 	entry    *session.Entry[*command]
 	admitted chan error // the answer to start: nil once handed over, an error for a refusal
 
-	in  *inputPipe // nil: the command has no input
-	out *outputPipe
-	rz  *resizer
+	in *inputPipe // nil: the command has no input
+	// out is the command's output as the function writes it: the replay ring of a session, the bounded queue of a run. A session
+	// has a ring, and creator is the attachment that reads it from the first byte; a run has a pipe.
+	out     outputSide
+	ring    *ring
+	creator *attachment
+	pipe    *outputPipe
+	rz      *resizer
+	ctl     procControl // the signals, the queries and the pushed facts of the function (proc_control.go)
 
 	// opened is what Opened carries: the kind's capabilities narrowed by the mode the selection names. It and gate are set
-	// once, at the hand-over, under mu.
-	opened Capabilities
-	gate   *startGate
+	// once, at the hand-over, under mu, as are selection (the choice of every option the request resolved to, which the function
+	// sees as Request.Selection) and noProgram (the choice runs no program: the facts carry none and the function has no argv).
+	opened    Capabilities
+	gate      *startGate
+	selection map[string]string
+	noProgram bool
 
 	mu           sync.Mutex
 	phase        phase
@@ -443,7 +530,7 @@ type command struct {
 
 	span trace.Span
 	// flushed is what the traffic metrics have been told so far; only the supervisor reads or writes it.
-	flushed struct{ out, in, dropped, stalls uint64 }
+	flushed struct{ out, in, dropped, droppedDetached, stalls uint64 }
 
 	doneC  chan struct{}
 	result commandResult
@@ -480,7 +567,7 @@ type commandResult struct {
 func (e *engine) newCommand(p startParams) *command {
 	group, _, _ := admissionGroup(p)
 	c := &command{
-		e: e, id: p.ID, kind: p.Kind, group: group, target: p.Target, route: p.Route, replayBytes: p.ReplayBytes,
+		e: e, id: p.ID, kind: p.Kind, group: group, target: p.Target, route: p.Route, replayBytes: p.ReplayBytes, detachTimeout: p.DetachTimeout,
 		request:      cloneRequest(p.Request),
 		created:      time.Now(),
 		admitted:     make(chan error, 1),
@@ -577,27 +664,28 @@ func (c *command) giveUp() bool {
 
 // handOver moves the command to the function: from here on the start is no longer a refusal. It reports false when the
 // command was refused, or the SDK ended it, while the lease and the options were taken.
-func (c *command) handOver(opened Capabilities) bool {
+func (c *command) handOver(mode resolvedMode) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.phase != phaseAdmitting || c.entry.Cause() != session.CauseNone {
 		return false
 	}
 	c.phase = phaseRunning
-	c.opened = opened
-	c.gate = newStartGate(c.request, opened)
-	c.out = c.newOutput(opened)
+	c.opened, c.selection, c.noProgram = mode.opened, mode.selection, mode.noProgram
+	c.gate = newStartGate(c.functionRequestLocked(), mode.opened)
+	c.out = c.newOutput(mode.opened)
 	return true
 }
 
 // runLeased runs inside the connection's lease for as long as the command runs. It returns when the command has ended
 // (or was never handed over); the lease is released when it returns.
 func (c *command) runLeased(bound *types.PluginContext) error {
-	opened, refusal := c.resolveOptions(bound)
+	mode, refusal := c.resolveOptions(bound)
 	if refusal != nil {
 		return refusal
 	}
-	if !c.handOver(opened) {
+	opened := mode.opened
+	if !c.handOver(mode) {
 		return nil
 	}
 
@@ -607,13 +695,14 @@ func (c *command) runLeased(bound *types.PluginContext) error {
 	author.Context = authorCtx
 	proc := &Proc{
 		Context:      &author,
-		Request:      cloneRequest(c.request),
+		Request:      c.functionRequest(),
 		Capabilities: cloneCapabilities(opened),
 		Stdout:       commandWriter{c: c, stream: c.stdoutStream()},
 		Resize:       c.rz.channel(),
 		Started:      c.reportStarted,
 		Link:         c.reportLink,
 	}
+	proc.Signals, proc.Queries, proc.Fact = c.ctl.init(c, opened)
 	if c.in != nil {
 		proc.Stdin = c.in
 	}
@@ -648,21 +737,43 @@ func (c *command) stdoutStream() execv2.Stream {
 	return execv2.Stream_STREAM_STDOUT
 }
 
-// newOutput makes the output queue for the capabilities the command was opened with: a target that stalls lossily gets
-// the lossy policy and, for a session, a queue of the replay ring's size; any other gets a queue that blocks.
-func (c *command) newOutput(opened Capabilities) *outputPipe {
-	if opened.Stall != StallLossy {
-		return newOutputPipe(stdioQueueBytes, false)
-	}
-	capacity := stdioQueueBytes
-	if c.kind == kindSession {
-		capacity = c.target.info.Session.ReplayBytes
-		if c.replayBytes > 0 {
-			capacity = c.replayBytes
-		}
-	}
-	return newOutputPipe(capacity, true)
+// outputSide is what the engine asks of the output of a command, whichever structure holds it: the replay ring of a session or the
+// bounded queue of a run.
+type outputSide interface {
+	Write(stream execv2.Stream, b []byte) (int, error)
+	CloseWrite()
+	isClosed() bool
+	beginEnding()
+	makeLossy()
+	Stats() pipeStats
 }
+
+// newOutput makes the output of the command for the capabilities it was opened with. A session gets a replay ring of the size the
+// host asked for (the target's default for a host that asked for none), with its first reader attached from the first byte; a
+// target that stalls lossily gets the policy that never holds the function. A run gets a bounded queue.
+func (c *command) newOutput(opened Capabilities) outputSide {
+	if c.kind == kindRun {
+		c.pipe = newOutputPipe(stdioQueueBytes, opened.Stall == StallLossy)
+		return c.pipe
+	}
+	capacity := c.target.info.Session.ReplayBytes
+	if c.replayBytes > 0 {
+		capacity = c.replayBytes
+	}
+	c.ring = newRing(ringConfig{
+		capacity: capacity, lossy: opened.Stall == StallLossy, unreadLimit: stdioQueueBytes,
+		initialSize: c.initialSize(), now: c.e.clock,
+	})
+	c.ring.att.host = c
+	c.creator = c.ring.newAttachment(0)
+	c.ring.att.cur = c.creator
+	return c.ring
+}
+
+// ending and end are what the ring asks of the session, under its lock: see sessionHost.
+func (c *command) ending() bool { return c.entry.Cause() != session.CauseNone }
+
+func (c *command) end(cause session.Cause, kill bool) { c.Close(cause, kill) }
 
 // callFunction runs the author's function and reports how it ended. It decides who ended the session first: if the
 // function's context was cancelled before it returned, the SDK ended it (whoever asked), and what the function returned
@@ -720,21 +831,27 @@ func (c *command) await(lease context.Context, returned <-chan functionOutcome, 
 }
 
 // drain is the wait for a function whose session the SDK has ended: it cancels the function's context, releases a function
-// that a full queue holds in Write, and waits for it to return. How long is decided by the bounds that apply (graceWait). A
-// graceful end waits for the grace. A kill waits for the kill wait, counted from the kill, and never for the grace: a function
-// that honors its cancelled context returns within it, is not abandoned, and holds no place when the command's end is
-// delivered, so that a host that kills a session and starts another at once is not refused for the first. A kill that comes
-// while the grace runs leaves the grace running and adds the kill wait, so the wait ends at the first of the two. An engine that
-// is closing gives each function the shutdown grace instead of the grace. A function that has not returned when the first bound
-// runs out is abandoned: the command ends without it, the engine says so in the log and records the violation, and the place
-// of the command stays taken until the function returns.
+// that a full queue holds in Write, and waits for it to return. What the host sent before the end is not discarded here: the
+// signals, the queries, the unread input and the size the function has not taken are in its queues, in the order the host sent
+// them, before its context is cancelled and before its channels close, and a function that reads them to the end finds them all.
+//
+// How long the wait lasts is decided by the bounds that apply (graceWait). A graceful end waits for the grace. A kill waits for
+// the kill wait, counted from the kill, and never for the grace: a function that honors its cancelled context returns within
+// it, is not abandoned, and holds no place when the command's end is delivered, so that a host that kills a session and starts
+// another at once is not refused for the first. A kill that comes while the grace runs leaves the grace running and adds the
+// kill wait, so the wait ends at the first of the two. An engine that is closing gives each function the shutdown grace instead
+// of the grace. A function that has not returned when the first bound runs out is abandoned: the command ends without it, the
+// engine says so in the log and records the violation, and the place of the command stays taken until the function returns.
 func (c *command) drain(returned <-chan functionOutcome, call *authorCall, cancelAuthor func()) (functionOutcome, bool) {
 	c.out.beginEnding()
 	if c.in != nil {
 		// The session has ended: the host can send no more, and a goroutine of the function blocked reading Stdin returns
-		// with io.EOF, as the contract says. Output stays open for the function to flush until it returns.
+		// with io.EOF, as the contract says, once it has read what the host sent before the end. Output stays open for the
+		// function to flush until it returns.
 		c.in.Close()
 	}
+	c.ctl.close() // the host can send no more signals or queries: a goroutine of the function that ranges over them returns
+	c.rz.end()    // no more sizes either: Proc.Resize closes once the function has taken the one it holds
 	cancelAuthor()
 	wait := c.e.newGraceWait(c.e.cfg.closeGrace, c.killed())
 	defer wait.stop()
@@ -783,12 +900,17 @@ func (c *command) killed() bool {
 }
 
 // closeStdio closes the pipes between the function and the host: further output is refused, the function's input ends
-// (a goroutine of the function that reads Stdin returns), and Proc.Resize closes. It may be called again.
+// (a goroutine of the function that reads Stdin returns), and Proc.Resize, Proc.Signals and Proc.Queries close. It is the end of
+// the function, which returned or was given up on, and it runs after the end of the session (drain), so that what the host sent
+// before that is kept for as long as the function runs: the queues of Stdin, Signals and Queries keep it for ever (a closed queue
+// is read to its end first), and only the size that the function never took is dropped here, by a resizer that is not waited for. It
+// may be called again.
 func (c *command) closeStdio() {
 	c.out.CloseWrite()
 	if c.in != nil {
 		c.in.Close()
 	}
+	c.ctl.close()
 	c.rz.stop()
 }
 
@@ -796,6 +918,11 @@ func (c *command) closeStdio() {
 // finish, which the registry calls once every goroutine of the command has returned.
 func (c *command) conclude(outcome functionOutcome, gaveUp bool) {
 	cause := c.entry.Cause()
+	if cause == session.CauseRetired {
+		// The resource lane has no hook for a retirement: this is where a command sees it. What the connection's requests cached is
+		// stale for a connection that is started again under the same id.
+		c.e.optionsCache.dropConnection(c.route.Connection)
+	}
 	stats := c.out.Stats()
 	decision := decideEnd(endInputs{
 		outcome:  outcome,
@@ -854,6 +981,12 @@ func (e *engine) onEnd(entry *session.Entry[*command]) {
 		return
 	}
 	c.endObservation()
+	if c.ring != nil {
+		// The session's end is decided here: no stream attaches or detaches from now on, and the stream that is attached, if there
+		// is one, is the one that is told Ended. The tombstone is made before Done is closed and the id released, so a host that
+		// has read Ended finds it, and a start of the id cannot slip in between.
+		c.sealSession()
+	}
 	close(c.doneC)
 	if hook := e.afterEndEmitted; hook != nil {
 		hook()
@@ -865,42 +998,26 @@ func (e *engine) onEnd(entry *session.Entry[*command]) {
 // ---------------------------------------------------------------------------------------------------------------
 
 // resolveOptions asks the target's options for the resource (inside the lease, as the Options RPC does), checks the
-// request's selection against them, and returns the capabilities the session is opened with. A selection that names
-// something the options do not offer, or omits a required option that has no default, is a refusal: Request.Selection
-// holds exactly the choices the options declared.
+// request's selection against them, and returns the mode of the session: the capabilities it is opened with, the choice of every
+// option the request resolved to and whether it runs a program (resolveMode). A selection that names something the options do not
+// offer, or omits a required option that has no default, is a refusal. Request.Selection holds the choice of every option that the
+// request resolved to, the default choice of an option it omitted included.
 //
-// The callback is author code that runs while the start waits, so it is bounded as the callback of the Options RPC is
-// (boundedOptions): it has the engine's deadline (and its context says so), and when its context ends for any reason (the
-// deadline, a caller that gave up, a shutdown, the connection's retirement) it has the grace to return, the shutdown grace when
-// the plugin is stopping. A callback that does not is given up on: the start is refused, the lease is released, and the
-// goroutine keeps the start's place until it returns (abandon.go).
-func (c *command) resolveOptions(bound *types.PluginContext) (Capabilities, error) {
+// The answer of the callback is reused for a short time (options_cache.go): a start right after the Options RPC for the same
+// request, or after another start of it, does not run the callback again. The choices are advisory state, so a stale answer only
+// moves a refusal later: the target refuses a container that stopped, and Classify types the refusal.
+func (c *command) resolveOptions(bound *types.PluginContext) (resolvedMode, error) {
 	info := &c.target.info
 	var options []Option
 	if fn := c.target.target.Options; fn != nil {
-		answer, ok := c.e.boundedOptions(c.e.newAuthorCall(c.entry), bound, func(callPC *types.PluginContext) optionsAnswer {
-			options, err := callOptions(callPC.Context, c.e.log, fn, callPC, c.request.Ref)
-			return optionsAnswer{options: options, err: err}
-		})
-		if !ok {
-			c.violate(violation{violationOptionsHung, "the options callback did not return within its deadline and the grace after its context ended: the start is refused without it"})
-			return Capabilities{}, c.callbackRefusal(bound)
-		}
-		if err := answer.err; err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				// The callback was stopped by its context: the refusal says what stopped it, not what the callback made of it.
-				return Capabilities{}, c.callbackRefusal(bound)
+		key := optionsKeyOf(c.request.Ref, c.route)
+		var cached bool
+		if options, cached = c.e.cachedOptions(key); !cached {
+			var err error
+			if options, err = c.askOptions(bound, fn); err != nil {
+				return resolvedMode{}, err
 			}
-			failure, classifyPanic := classifyErrorSafely(c.guardedClassify(), err)
-			if classifyPanic != nil {
-				c.violate(violation{violationClassifyPanic, "the target's Classify panicked on an error of Options: the error is classified as INTERNAL"})
-			}
-			return Capabilities{}, failure
-		}
-		options = answer.options
-		if err := validateOptions(options); err != nil {
-			c.violate(violation{violationOptionsContract, "the options callback broke its contract: " + err.Error()})
-			return Capabilities{}, &Error{Class: ErrorClassInternal, Err: err}
+			c.e.cacheOptions(key, options)
 		}
 		var widened []choiceViolation
 		options, widened = clampChoiceCapabilities(info.Capabilities, options)
@@ -908,10 +1025,41 @@ func (c *command) resolveOptions(bound *types.PluginContext) (Capabilities, erro
 			c.violate(violation{violationWidened, fmt.Sprintf("option %q choice %q: %s", v.option, v.choice, v.text)})
 		}
 	}
-	if refusal := checkSelection(options, c.request.Selection); refusal != nil {
-		return Capabilities{}, refusal
+	return c.resolveMode(options)
+}
+
+// askOptions runs the target's Options callback for a start and returns what it answered, held to the contract of its bounds.
+//
+// The callback is author code that runs while the start waits, so it is bounded as the callback of the Options RPC is
+// (boundedOptions): it has the engine's deadline (and its context says so), and when its context ends for any reason (the
+// deadline, a caller that gave up, a shutdown, the connection's retirement) it has the grace to return, the shutdown grace when
+// the plugin is stopping. A callback that does not is given up on: the start is refused, the lease is released, and the
+// goroutine keeps the start's place until it returns (abandon.go).
+func (c *command) askOptions(bound *types.PluginContext, fn OptionsFunc) ([]Option, error) {
+	answer, ok := c.e.boundedOptions(c.e.newAuthorCall(c.entry), bound, func(callPC *types.PluginContext) optionsAnswer {
+		options, err := callOptions(callPC.Context, c.e.log, fn, callPC, c.request.Ref)
+		return optionsAnswer{options: options, err: err}
+	})
+	if !ok {
+		c.violate(violation{violationOptionsHung, "the options callback did not return within its deadline and the grace after its context ended: the start is refused without it"})
+		return nil, c.callbackRefusal(bound)
 	}
-	return openedCapabilities(info.Capabilities, options, c.request.Selection), nil
+	if err := answer.err; err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			// The callback was stopped by its context: the refusal says what stopped it, not what the callback made of it.
+			return nil, c.callbackRefusal(bound)
+		}
+		failure, classifyPanic := classifyErrorSafely(c.guardedClassify(), err)
+		if classifyPanic != nil {
+			c.violate(violation{violationClassifyPanic, "the target's Classify panicked on an error of Options: the error is classified as INTERNAL"})
+		}
+		return nil, failure
+	}
+	if err := validateOptions(answer.options); err != nil {
+		c.violate(violation{violationOptionsContract, "the options callback broke its contract: " + err.Error()})
+		return nil, &Error{Class: ErrorClassInternal, Err: err}
+	}
+	return answer.options, nil
 }
 
 // optionsAnswer is what an Options callback returned.
@@ -935,12 +1083,16 @@ func (e *engine) boundedOptions(call *authorCall, bound *types.PluginContext, ru
 
 // callbackRefusal is the refusal of a start whose Options callback was stopped by its context or given up on: when the SDK
 // ended the start (a shutdown, a caller that gave up) the refusal says so; when the connection's lease was cancelled under
-// the callback the connection was retired; otherwise it was the engine's own deadline.
+// the callback the connection was retired, which drops what its requests cached; otherwise it was the engine's own deadline.
 func (c *command) callbackRefusal(bound *types.PluginContext) error {
 	if cause := c.entry.Cause(); cause != session.CauseNone {
+		if cause == session.CauseRetired {
+			c.e.optionsCache.dropConnection(c.route.Connection)
+		}
 		return refusalForCause(cause, nil)
 	}
 	if bound.Context.Err() != nil {
+		c.e.optionsCache.dropConnection(c.route.Connection)
 		return NewError(ErrorClassConnection, ErrorReasonConnectionRetired, nil)
 	}
 	return &Error{Class: ErrorClassTimeout}
@@ -1056,9 +1208,18 @@ func (c *command) recordStarted(facts SessionFacts) {
 	for _, text := range dropped {
 		c.violate(violation{violationStartedFacts, text})
 	}
+	if p := bounded.Program; c.noProgram && (len(p.Argv) > 0 || p.Name != "" || p.Path != "") {
+		// A session that joins a process that already runs has no program of its own, and the facts never carry one.
+		c.violate(violation{violationStartedFacts, "Started: Program is reported for a choice that runs no program: dropped"})
+		bounded.Program = Program{}
+	}
 	c.mu.Lock()
 	c.started = &bounded
 	c.mu.Unlock()
+	if c.ring != nil {
+		// The size the target says it applied is the size of the output from its first byte: Started comes before it.
+		c.ring.noteSize(bounded.Size)
+	}
 	close(c.startedC)
 }
 
@@ -1112,6 +1273,9 @@ func (c *command) resized(seq uint32, size Size) {
 	c.mu.Lock()
 	c.applied, c.appliedSet = resizeRequest{seq: seq, size: size}, true
 	c.mu.Unlock()
+	if c.ring != nil {
+		c.ring.noteSize(size) // what the function writes from here on is laid out for it
+	}
 	select {
 	case c.appliedC <- struct{}{}:
 	default:
@@ -1262,8 +1426,10 @@ func (c *command) flushTraffic() {
 	if c.gate != nil && c.gate.effective().Stall == StallLossy {
 		reason = execv2.DropReason_DROP_REASON_EAGER_DRAIN_OVERFLOW
 	}
-	c.e.tel.traffic(stats.Written-c.flushed.out, in-c.flushed.in, stats.Dropped-c.flushed.dropped, stats.Stalls-c.flushed.stalls, reason)
-	c.flushed.out, c.flushed.in, c.flushed.dropped, c.flushed.stalls = stats.Written, in, stats.Dropped, stats.Stalls
+	// What left the ring while no stream was attached is counted under its own reason: nobody was there to read it.
+	attached, flushedAttached := stats.Dropped-stats.DroppedDetached, c.flushed.dropped-c.flushed.droppedDetached
+	c.e.tel.traffic(stats.Written-c.flushed.out, in-c.flushed.in, attached-flushedAttached, stats.DroppedDetached-c.flushed.droppedDetached, stats.Stalls-c.flushed.stalls, reason)
+	c.flushed.out, c.flushed.in, c.flushed.dropped, c.flushed.droppedDetached, c.flushed.stalls = stats.Written, in, stats.Dropped, stats.DroppedDetached, stats.Stalls
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1274,7 +1440,7 @@ func (c *command) flushTraffic() {
 func (c *command) ID() string { return c.id }
 
 // Request returns the validated request the function received. The result is the caller's own copy.
-func (c *command) Request() Request { return cloneRequest(c.request) }
+func (c *command) Request() Request { return c.functionRequest() }
 
 // Opened returns the capabilities the command was opened with: what a host reads in Opened. The result is the caller's
 // own copy.
@@ -1289,9 +1455,14 @@ func (c *command) Opened() Capabilities {
 func (c *command) Effective() Capabilities { return c.gate.effective() }
 
 // Read takes the next output of the command: the ranges its queue lost since the last Read and up to len(buf) bytes of one
-// stream. It returns io.EOF once the command has ended and its output was read, and ctx's error when ctx ends first.
+// stream. It returns io.EOF once the command has ended and its output was read, and ctx's error when ctx ends first. For a
+// session it is the read of the attachment the session was created with, which is how a consumer in this process reads it; a
+// stream of the wire reads its own attachment.
 func (c *command) Read(ctx context.Context, buf []byte) (outputChunk, error) {
-	return c.out.Read(ctx, buf)
+	if c.creator != nil {
+		return c.creator.Read(ctx, buf)
+	}
+	return c.pipe.Read(ctx, buf)
 }
 
 // WriteInput sends bytes to the function's Stdin, waiting while its queue is full: that wait is the backpressure the host
@@ -1300,7 +1471,11 @@ func (c *command) WriteInput(ctx context.Context, b []byte) (int, error) {
 	if c.in == nil {
 		return 0, io.ErrClosedPipe
 	}
-	return c.in.Write(ctx, b)
+	n, err := c.in.Write(ctx, b)
+	if n > 0 && c.ring != nil {
+		c.ring.lastActivity.Store(c.e.clock().UnixMilli())
+	}
+	return n, err
 }
 
 // CloseInput is the host's stdin EOF: the function's Stdin reports io.EOF once it has read what was sent.
@@ -1325,15 +1500,16 @@ const (
 )
 
 // Resize sends a new terminal size to the function. Latest wins and it never blocks; a command whose target cannot resize
-// ignores it, and the host is told so.
-func (c *command) Resize(seq uint32, size Size) resizeDisposition {
+// ignores it, and the host is told so. owner is the stream of the host that sent the size, which is told when it is accepted and
+// when the function takes it; the in-process consumer has none and reads AppliedResize.
+func (c *command) Resize(seq uint32, size Size, owner resizeOwner) resizeDisposition {
 	limit := c.target.info.Session.MaxDimension
 	switch {
 	case size.Cols == 0 || size.Rows == 0 || (limit > 0 && (int(size.Cols) > limit || int(size.Rows) > limit)):
 		return resizeInvalid
 	case !c.request.TTY || !c.gate.effective().Resize:
 		return resizeIgnored
-	case !c.rz.submit(seq, size):
+	case !c.rz.submit(seq, size, owner):
 		return resizeClosed
 	}
 	return resizeAccepted
@@ -1500,6 +1676,10 @@ func (e *engine) configure(cfg exechook.EngineConfig) {
 	if cfg.OptionsInFlight > 0 {
 		e.cfg.optionsInFlight = cfg.OptionsInFlight
 	}
+	if cfg.OptionsCacheTTL != 0 {
+		e.cfg.optionsCacheTTL = cfg.OptionsCacheTTL
+	}
+	e.tombs.set(cfg.TombstoneTTL, cfg.MaxTombstones, cfg.TombstoneBytes)
 }
 
 // newRunID returns an id for a run whose request gave none.

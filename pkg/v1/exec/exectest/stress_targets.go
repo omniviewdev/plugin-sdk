@@ -223,8 +223,10 @@ func lateWriter(g *stressGates) Step {
 }
 
 // check holds the end of a command of the behaviour to what its function does, on top of what must be true of the end of any
-// command (checkResult). run says the command was a run, and mode how its reader read.
-func (b *stressBehaviour) check(res exechook.Result, a outputAudit, run bool, mode readMode) []string {
+// command (checkResult). run says the command was a run, and mode how its reader read. moved says that the session was taken from its
+// stream at some moment: while nobody reads it the ring loses its oldest bytes, whatever the target's stall policy is, so a loss is no
+// breach of a policy that only holds for a reader that stays.
+func (b *stressBehaviour) check(res exechook.Result, a outputAudit, run bool, mode readMode, moved bool) []string {
 	arm, ok := endArm(res.End)
 	if !ok {
 		return nil // checkResult says so
@@ -250,7 +252,7 @@ func (b *stressBehaviour) check(res exechook.Result, a outputAudit, run bool, mo
 	if !b.unknownOut && res.BytesOut != uint64(b.wrote) {
 		found = append(found, fmt.Sprintf("the command wrote %d bytes and its function writes %d", res.BytesOut, b.wrote))
 	}
-	if b.stall == exec.StallPropagates {
+	if b.stall == exec.StallPropagates && !moved {
 		// A target whose stalled reader slows the process loses nothing: the output queue blocks the function's Write.
 		if res.DroppedBytes != 0 {
 			found = append(found, fmt.Sprintf("a command whose stalled reader slows the process finished by itself with %d bytes dropped", res.DroppedBytes))
@@ -259,7 +261,7 @@ func (b *stressBehaviour) check(res exechook.Result, a outputAudit, run bool, mo
 			found = append(found, fmt.Sprintf("the output is %s, want COMPLETE: nothing was dropped and the status is the process's own", res.Output))
 		}
 	}
-	if b.flood && b.stall == exec.StallLossy && !run && mode == readLate {
+	if b.flood && b.stall == exec.StallLossy && !run && !moved && mode == readLate {
 		// Nobody read until the command had ended, so the replay ring holds the newest lossyRing bytes and the rest, the oldest, was dropped.
 		if a.read != lossyRing || a.dropped != uint64(b.wrote-lossyRing) {
 			found = append(found, fmt.Sprintf("a lossy flood of %d bytes read after its end left %d bytes read and %d dropped, want the newest %d read and the other %d dropped",

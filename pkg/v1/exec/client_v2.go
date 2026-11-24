@@ -15,9 +15,8 @@ const defaultCallTimeout = 30 * time.Second
 
 // clientV2 is the host's gRPC client of the exec v2 service of one plugin.
 //
-// This build calls Describe and Options (this file), Open (open_client.go), and Run and RunStream (run_client.go).
-// ListSessions, ReadOutput and EndSession are not part of the Client interface yet: the engine step that serves them adds
-// them with their machinery.
+// This build calls Describe and Options (this file), Open (open_client.go), Run and RunStream (run_client.go), and ListSessions,
+// ReadOutput and EndSession (session_client.go).
 type clientV2 struct {
 	rpc execv2.ExecClient
 	log logging.Logger

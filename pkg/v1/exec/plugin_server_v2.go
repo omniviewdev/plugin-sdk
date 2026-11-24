@@ -16,10 +16,10 @@ import (
 
 // serverV2 serves the exec v2 service of a plugin: the targets it registered.
 //
-// This build serves Describe, Options, Open (one interactive session on one stream: open_server.go), Run and RunStream (one
-// bounded run, as one result or as events: run_server.go). ListSessions, ReadOutput and EndSession answer Unimplemented with a
-// typed ErrorClassUnsupported refusal, and Describe lists no feature for them (servedFeatures), so a host that asks first never
-// calls them. The server holds the engine that runs the commands (engine.go), which holds sessions and runs in one id space.
+// This build serves Describe, Options, Open (one interactive session on one stream at a time, which outlives the stream: open_server.go
+// and replay.go), Run and RunStream (one bounded run, as one result or as events: run_server.go), and ListSessions, ReadOutput and
+// EndSession (the sessions that have no stream: session_server.go). The server holds the engine that runs the commands (engine.go),
+// which holds sessions and runs in one id space, and the tombstones of the sessions that ended (tombstone.go).
 type serverV2 struct {
 	log logging.Logger
 	reg *targetRegistry
@@ -43,7 +43,7 @@ func newServerV2(log logging.Logger, reg *targetRegistry, connections func() res
 		log = logging.NewNop()
 	}
 	s := &serverV2{log: log, reg: reg, connections: connections, now: time.Now, openFirstFrameTimeout: defaultOpenFirstFrameTimeout}
-	s.engine = newEngine(engineConfig{log: log, targets: reg, connections: connections})
+	s.engine = newEngine(engineConfig{log: log, targets: reg, connections: connections, optionsCacheTTL: defaultOptionsCacheTTL})
 	return s
 }
 
@@ -144,6 +144,7 @@ func (s *serverV2) Options(ctx context.Context, req *execv2.OptionsRequest) (*ex
 		refusal := classifyError(target.target.Classify, callbackErr)
 		if leaseOver != nil && ctx.Err() == nil {
 			// The caller is still waiting and the lease was cancelled under the callback: the connection was retired.
+			s.engine.optionsCache.dropConnection(ref.Route.Connection)
 			refusal = &Error{Class: ErrorClassConnection, Reason: ErrorReasonConnectionRetired, Err: callbackErr}
 		}
 		return nil, s.refuse(ctx, "Options", refusal)
@@ -159,6 +160,7 @@ func (s *serverV2) Options(ctx context.Context, req *execv2.OptionsRequest) (*ex
 		// be misread as a retirement: that is a provider bug (it must return its own error for such a failure), and it
 		// cannot be told apart from here, because the lease's context ends on return, so the lease itself cannot say
 		// whether it was cancelled before the provider returned or by it.
+		s.engine.optionsCache.dropConnection(ref.Route.Connection)
 		return nil, s.refuse(ctx, "Options", &Error{Class: ErrorClassConnection, Reason: ErrorReasonConnectionRetired, Err: leaseErr})
 	default:
 		// The connection lease or the catalog pin refused: keep the resource lane's own classification, the host's
@@ -168,6 +170,10 @@ func (s *serverV2) Options(ctx context.Context, req *execv2.OptionsRequest) (*ex
 	}
 	if err := validateOptions(options); err != nil {
 		return nil, s.refuse(ctx, "Options", &Error{Class: ErrorClassInternal, Err: fmt.Errorf("options callback broke the contract: %w", err)})
+	}
+	if target.target.Options != nil {
+		// The callback ran for this call, and what it answered is what the admission of the next start reuses.
+		s.engine.cacheOptions(optionsKeyOf(ref.Reference, ref.Route), options)
 	}
 	// A choice declares the mode of a session, and a mode is at most what its kind can do: what a choice declares above
 	// the kind's is served as the kind's value, and the author is told which field in the log, as for a Started.
@@ -189,21 +195,6 @@ func (s *serverV2) callOptions(ctx context.Context, fn OptionsFunc, pc *types.Pl
 		}
 	}()
 	return fn(pc, ref.Reference)
-}
-
-// ListSessions is not served by this build.
-func (s *serverV2) ListSessions(context.Context, *execv2.ListSessionsRequest) (*execv2.ListSessionsResponse, error) {
-	return nil, unsupportedError().status()
-}
-
-// ReadOutput is not served by this build.
-func (s *serverV2) ReadOutput(context.Context, *execv2.ReadOutputRequest) (*execv2.ReadOutputResponse, error) {
-	return nil, unsupportedError().status()
-}
-
-// EndSession is not served by this build.
-func (s *serverV2) EndSession(context.Context, *execv2.EndSessionRequest) (*execv2.EndSessionResponse, error) {
-	return nil, unsupportedError().status()
 }
 
 var _ execv2.ExecServer = (*serverV2)(nil)

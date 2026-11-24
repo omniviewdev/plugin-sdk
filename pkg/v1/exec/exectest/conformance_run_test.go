@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -20,6 +21,11 @@ import (
 // every shape of declaration that an author may write, and fails when the plugin is wrong. The wrongness is a faulty plugin, the real
 // one served as it is with one fault added at the edge where the host reads it (a result that says something else, an event that comes
 // in the wrong order, a status that carries what must stay local), given to the body through the serve seam of the wire environment.
+
+// testStdinBound is how long the tests of the suite give the runs that send a command its stdin, in place of the seconds an author's run
+// gets: the command echoes at most 64 KiB, which takes milliseconds, and a plugin that never ends the input fails each case at this bound,
+// and not at the one an author's CI is given. It is the wait for something that has to happen, and decides no outcome.
+const testStdinBound = 500 * time.Millisecond
 
 // runBodies are the wire bodies of the bounded run, by what the tests call them.
 func runBodies() []struct {
@@ -57,7 +63,9 @@ func TestEveryRunBodyPassesOnEveryShapeAnAuthorDeclaresAndNeverCallsTheirExec(t 
 		for _, b := range runBodies() {
 			t.Run(s.name+"/"+b.name, func(t *testing.T) {
 				rec := &recordT{}
-				rec.run(func(r checkT) { b.body(r, declared(t, s, &calls), &wireEnv{resource: "thing-1"}) })
+				rec.run(func(r checkT) {
+					b.body(r, declared(t, s, &calls), &wireEnv{resource: "thing-1", stdinBound: testStdinBound})
+				})
 				servesRuns := !info.Run.IsZero()
 				needsSessions := b.name == "pair P1"
 				switch {
@@ -331,7 +339,7 @@ func TestEveryRunBodyFailsWhenThePluginIsWrong(t *testing.T) {
 		t.Run(tc.body+" with "+tc.name, func(t *testing.T) {
 			var calls atomic.Int64
 			rec := &recordT{}
-			env := &wireEnv{resource: "thing-1", serve: serveFaulty(tc.fault, tc.raw)}
+			env := &wireEnv{resource: "thing-1", serve: serveFaulty(tc.fault, tc.raw), stdinBound: testStdinBound}
 			rec.run(func(r checkT) { runBody(t, tc.body)(r, declared(t, shapes()[0], &calls), env) })
 			if !rec.said(tc.phrase) {
 				t.Errorf("the body did not fail with %q on a plugin with the fault %q: it failed with %q (skipped: %q)", tc.phrase, tc.name, rec.failed(), rec.skips)

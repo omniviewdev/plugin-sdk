@@ -26,11 +26,12 @@ import (
 
 // StressConfig tunes Stress. The zero value of every field means its default.
 type StressConfig struct {
-	// Workers is the number of goroutines that start, feed, resize and end commands. The default is 8.
+	// Workers is the number of goroutines that start, feed, resize, signal, detach, attach and end commands. The default is 8.
 	Workers int
 	// Duration is how long the stress runs, in rounds of about a second, each on a fresh engine, and at least one round. The
-	// default is one second under go test -short and five seconds otherwise, or what the environment variable
-	// OMNIVIEW_LIFECYCLE_HAMMER says (CI sets it to 30s for the long run).
+	// default is one second under go test -short and two seconds otherwise (two rounds, one of each regime of tombstones, which the
+	// conformance of every plugin pays for three times over), or what the environment variable OMNIVIEW_LIFECYCLE_HAMMER says (CI
+	// sets it to 30s for the long run).
 	Duration time.Duration
 	// Seed seeds the random source of every goroutine, so that the choices a run makes are reproducible; how they interleave is
 	// not. The default is 1.
@@ -44,24 +45,42 @@ type StressConfig struct {
 // they write is a pure function of i, so that a reader verifies every one), a command for every way a command ends (an exit
 // with a code, a signal, a lost stream, a typed failure), one that waits to be asked to end, and the ones that break the
 // contract: a function that panics, one that ignores its cancelled context and a goroutine that writes after its function
-// returned. Workers start sessions and runs on them at random, send input, close it, resize, end a command gracefully or with
-// a kill, cancel the context of a run and walk away from a command; each command has a reader that reads its output to the end
-// and checks it as it goes. At a random moment one to three goroutines call Close at once and the workers go on starting.
+// returned. Workers start sessions and runs on them at random, send input, close it, resize, signal, end a command gracefully or
+// with a kill, cancel the context of a run and walk away from a command.
+//
+// A session outlives its stream, and the workers treat it so. It is read by windows, each a host's view of the session with a
+// transcript of its own, through streams that detach, break, attach again from the offset their window has and take the session
+// over from one another, while its function writes on and a lease of a few milliseconds may run out; frames are sent on streams
+// that have left, a session with no stream is ended by EndSession, and ListSessions and ReadOutput are read while all of it goes
+// on, often by calls that are made at the same moment as the ones they meet. Every worker plays one flow first, with its answers
+// awaited (the canary), so that no flow is left to the dice. The engine's clock is the harness's: a round that holds it still
+// keeps every tombstone, and a round that moves it has a store of two dozen, so that tombstones expire and are displaced while the
+// workers run. At a random moment one to three goroutines call Close at once and the workers go on starting.
 //
 // At rest, once every Close has returned, all of these hold, and each violation is reported with the id of the command:
 //
 //   - every Close returned within ten seconds, and a start after it is refused as UNAVAILABLE and admitted nowhere;
 //   - Live is empty, and the engine gave up on no function once the harness let the ones that ignored their context go;
 //   - every command that was admitted has ended, and its result has exactly one of the five arms, a cause that is one of the
-//     engine's words and an arm that agrees with the cause, and did not change when it was asked for again;
-//   - the reader of every command read its output to the end with contiguous offsets, no byte that was not delivered and not
-//     reported dropped, and the bytes the target wrote at their offsets; what it read plus what it was told was lost is exactly
-//     what the command wrote; an output reported COMPLETE lost nothing;
+//     engine's words, an arm that agrees with the cause, and a cause that a call of the harness explains (a request, a lease of a
+//     session that had no stream, the Close of the engine), and did not change when it was asked for again;
+//   - the window of every session holds the whole output by offset: what it read at the offsets it read them, plus what it was told
+//     was lost (a range dropped in its stream, or the bytes between the offset it attached from and the replay's start), is exactly
+//     what the session wrote, no byte twice, none missing and none the target did not write, whichever streams it read through and
+//     however it was completed, from its stream or from the tombstone; a run's reader holds the same;
+//   - every stream read to its last frame, which is Ended once in the life of a session and only for the stream attached when it
+//     ended, or Detached for a reason that a call explains (a Detach, an attach, a stream released), with nothing after it and nothing
+//     sent to a stream after the call that took the session from it had returned; a frame sent on such a stream is refused and does
+//     nothing;
+//   - the tombstone of every session that ended is listed, with the end the command reported, until its time to live runs out;
+//     the store is within its bounds; the id of a session is held by its tombstone, and a start of it is admitted exactly once the
+//     tombstone is gone; and once the clock has passed the time to live of the last tombstone the store is empty;
 //   - each admission and each end was reported to a lifecycletest.Recorder exactly once, and nothing came after the end;
 //   - the goroutines are back to what they were before the first round within two seconds.
 //
 // A panic in the engine is not recovered: it ends the test binary, which is how a panic shows. Stress logs what it counted, so
-// that a run shows what it exercised: the commands admitted, the starts refused by class, the ends by kind and by cause.
+// that a run shows what it exercised: the commands admitted, the starts refused by class, the ends by kind and by cause, the last
+// frames of the streams and the tombstones read.
 func Stress(t *testing.T, cfg StressConfig) {
 	t.Helper()
 	runStress(t, cfg, stressHooks{})
@@ -79,9 +98,28 @@ type stressT interface {
 // The zero value is the real engine and the bounds the harness states.
 type stressHooks struct {
 	engine       engineFactory
-	closeBound   time.Duration // how long Close may take (default 10 s)
-	settle       time.Duration // how long the goroutines get to return to the baseline (default 2 s)
-	abandonBound time.Duration // how long the abandoned functions get to return once the gates are open (default the close bound)
+	closeBound   time.Duration    // how long Close may take (default 10 s)
+	settle       time.Duration    // how long the goroutines get to return to the baseline (default 2 s)
+	abandonBound time.Duration    // how long the abandoned functions get to return once the gates are open (default the close bound)
+	regime       *tombstoneRegime // the store of every round, instead of the two in turn
+	// finishLooked runs when the check of a finished session's window has looked at the window's state, before it decides what to do about
+	// what it saw: a test makes an attach, which the session's end refuses, take the window or give it back there.
+	finishLooked func(w *window)
+	// finishCompleting runs when the check owns the window and is about to complete its transcript from the tombstone.
+	finishCompleting func(w *window)
+	// until, when set, makes the stress go on, round after round, until it returns true, and never for fewer rounds than its duration holds: each
+	// round is the length that Duration gives a round, on a fresh engine and with the seed its number gives, and a round that found a violation does
+	// not end the run (the shipped run ends at the first). It is asked once after each round from the last that the duration holds. A test that holds
+	// the stress to a fault sets it to "the stress has said what the fault is", and a test that holds the stress to what it exercises sets it to "the
+	// stress has counted it": the harness decides when it has found what the test waits for, and not a window of a length that the machine decides,
+	// which a busy one fills with too little to meet it.
+	until func() bool
+	// untilBound is the most the stress goes on for when until is set (stressUntilBound when zero). What the stress said by then is what it says of
+	// the fault, and the test reports it.
+	untilBound time.Duration
+	// totals, when set, is the tally that the run merges its rounds into, and returns: an until that reads what the stress counted reads it there, between
+	// rounds. Nil is a tally of the run's own.
+	totals *tally
 }
 
 const (
@@ -89,15 +127,36 @@ const (
 	stressGrace = 20 * time.Millisecond
 	// minRound is the shortest round: long enough for the commands to pile up and for the Close to land among them.
 	minRound = 50 * time.Millisecond
+	// stressUntilBound is the most a stress that a test waits on goes on for (stressHooks.until): a bound for a fault that the stress never says, and
+	// never the time that finding one takes, which is as many rounds as it takes.
+	stressUntilBound = 60 * time.Second
 )
+
+// stressDefaultDuration is how long the stress runs when its config says nothing: two seconds, which holds two rounds (the one that keeps every
+// tombstone and the one that expires and displaces them) and every worker's canary, and is what the conformance of each plugin author pays three
+// times over; one second under go test -short. Zero, when the environment says how long, which the hammer's own default then reads.
+func stressDefaultDuration(fromEnv time.Duration, short bool) time.Duration {
+	switch {
+	case fromEnv > 0:
+		return 0
+	case short:
+		return time.Second
+	}
+	return 2 * time.Second
+}
 
 // runStress is Stress for any t, with the engine and the bounds hooks name. It returns what it counted.
 func runStress(t stressT, cfg StressConfig, hooks stressHooks) *tally {
 	t.Helper()
-	totals := newTally()
-	if _, err := lifecycletest.DurationFromEnv(); err != nil {
+	totals := hooks.totals
+	if totals == nil {
+		totals = newTally()
+	}
+	if env, err := lifecycletest.DurationFromEnv(); err != nil {
 		t.Errorf("exectest.Stress: %v", err)
 		return totals
+	} else if cfg.Duration == 0 {
+		cfg.Duration = stressDefaultDuration(env, testing.Short())
 	}
 	lc := lifecycletest.Config{
 		Workers: cfg.Workers, Duration: cfg.Duration, Seed: cfg.Seed, CloseBound: hooks.closeBound, Settle: hooks.settle,
@@ -111,14 +170,25 @@ func runStress(t stressT, cfg StressConfig, hooks stressHooks) *tally {
 	rounds := max(1, int((lc.Duration+time.Second/2)/time.Second))
 	span := max(lc.Duration/time.Duration(rounds), minRound)
 
+	if hooks.untilBound <= 0 {
+		hooks.untilBound = stressUntilBound
+	}
 	baseline := lifecycletest.TakeBaseline()
 	began := time.Now()
-	for n := range rounds {
+	for n := 0; ; n++ {
 		r := newStressRound(t, hooks, lc, n, span)
 		failed := r.execute(baseline)
 		totals.merge(r.tally)
 		totals.add("rounds")
-		if failed {
+		if hooks.until != nil {
+			// A test is waiting for the stress to say something: the rounds are as many as it takes, and never fewer than the duration holds, and the bound
+			// ends them if the stress never says it.
+			if (n+1 >= rounds && hooks.until()) || time.Since(began) >= hooks.untilBound {
+				break
+			}
+			continue
+		}
+		if failed || n+1 >= rounds {
 			break
 		}
 	}
@@ -169,6 +239,11 @@ type stressRound struct {
 	rest  findings // what the checks at rest found: kept apart, so that a flood of the first cannot hide the second
 	tally *tally
 
+	clock  *stressClock // the engine's clock, which moves when the harness moves it
+	regime tombstoneRegime
+	ledger ledger          // the sessions the round admitted
+	ops    producers.Group // the ops that goroutines other than the workers are making
+
 	// closing is set before the first Close is called, closed once one has returned: a start that finds closing set may be
 	// refused as UNAVAILABLE, and one that began after closed was set must be.
 	closing atomic.Bool
@@ -200,7 +275,7 @@ type stressRound struct {
 func newStressRound(t stressT, hooks stressHooks, cfg lifecycletest.Config, n int, span time.Duration) *stressRound {
 	r := &stressRound{
 		t: t, hooks: hooks, cfg: cfg, n: n, seed: cfg.Seed + uint64(n), span: span,
-		rec: lifecycletest.NewRecorder(), tally: newTally(), budgets: map[string]*atomic.Int64{},
+		rec: lifecycletest.NewRecorder(), tally: newTally(), budgets: map[string]*atomic.Int64{}, clock: newStressClock(), regime: regimeOf(n),
 	}
 	for name, budget := range stressBudget {
 		left := new(atomic.Int64)
@@ -208,6 +283,9 @@ func newStressRound(t stressT, hooks stressHooks, cfg lifecycletest.Config, n in
 		r.budgets[name] = left
 	}
 	r.readCtx, r.stopReaders = context.WithCancel(context.Background())
+	if hooks.regime != nil {
+		r.regime = *hooks.regime
+	}
 	return r
 }
 
@@ -221,6 +299,7 @@ func (r *stressRound) build() error {
 	}
 	eng, err := r.hooks.engine(targets, exechook.EngineConfig{
 		Connections: r.conns, Diagnostics: sdkdiag.NewRegistry(), CloseGrace: stressGrace,
+		Now: r.clock.Now, TombstoneTTL: r.regime.ttl, MaxTombstones: r.regime.count, TombstoneBytes: r.regime.bytes,
 	})
 	if err != nil {
 		return fmt.Errorf("build the engine: %w", err)
@@ -262,6 +341,12 @@ func (r *stressRound) execute(baseline lifecycletest.GoroutineBaseline) (failed 
 			r.n, r.cfg.CloseBound, goroutineDump(6<<10))
 		return true
 	}
+	if !within(&r.ops, r.cfg.CloseBound) {
+		r.stopReaders()
+		t.Errorf("exectest.Stress: round %d: the calls made on goroutines of their own did not return within %v of the workers stopping: a call of the engine is stuck\n%s",
+			r.n, r.cfg.CloseBound, goroutineDump(6<<10))
+		return true
+	}
 	if !closers.wait(r.cfg.CloseBound + max(r.cfg.CloseBound/2, 250*time.Millisecond)) {
 		r.stopReaders()
 		t.Errorf("exectest.Stress: round %d: Close did not return within %v: it ignores its context (bound %v)\n%s",
@@ -272,6 +357,11 @@ func (r *stressRound) execute(baseline lifecycletest.GoroutineBaseline) (failed 
 	violations := append(r.found.list(), r.rest.list()...)
 	for _, v := range violations {
 		t.Errorf("exectest.Stress: round %d: %s", r.n, v)
+	}
+	if len(violations) > 0 {
+		t.Errorf("exectest.Stress: round %d (%s regime) found violations. To run it again: StressConfig{Seed: %d, Workers: %d, Duration: %v} (or OMNIVIEW_LIFECYCLE_HAMMER=%v), under go test -race -count=10. "+
+			"The choices of a round are its seed's, but how its goroutines interleave is not, so a violation may take several runs to come back, and a machine that is busy (a second go test beside it) brings it back sooner",
+			r.n, r.regime.name, r.cfg.Seed, r.cfg.Workers, r.cfg.Duration, r.cfg.Duration)
 	}
 	return len(violations) > 0
 }
@@ -346,6 +436,7 @@ func (r *stressRound) atRest(c *closers, baseline lifecycletest.GoroutineBaselin
 	r.disposeLeft()
 	r.checkAbandoned()
 	r.checkLateWriters()
+	r.checkTombstones()
 	for _, v := range r.rec.Violations() {
 		r.rest.add("%s", v)
 	}
@@ -425,7 +516,8 @@ func (r *stressRound) checkAbandoned() {
 }
 
 // checkLateWriters holds the goroutines that outlived their function to what the contract says of them: once the gate opened
-// each one wrote, and its write was refused, its read of the input returned io.EOF, and none of that became output.
+// each one wrote, and its write was refused, its reads of the input ended in io.EOF (after what the host sent before the end, which
+// the SDK does not discard), and none of that became output.
 func (r *stressRound) checkLateWriters() {
 	records := r.gates.lates.all()
 	r.tally.addN("late writers", len(records))
@@ -445,7 +537,7 @@ func (r *stressRound) checkLateWriters() {
 			r.rest.add("late writer #%d: a write to stderr after the function returned took %d bytes and returned %v, want 0 and io.ErrClosedPipe", i, n, err)
 		}
 		if err := record.Stdin(); !errors.Is(err, io.EOF) {
-			r.rest.add("late writer #%d: a read of stdin after the function returned gave %v, want io.EOF", i, err)
+			r.rest.add("late writer #%d: the reads of stdin after the function returned ended with %v, want io.EOF after what the host sent before the end", i, err)
 		}
 	}
 }
@@ -568,11 +660,14 @@ func (t *tally) log(log stressT, cfg lifecycletest.Config, took time.Duration) {
 	output, _ := t.group("output")
 	violations, _ := t.group("contract")
 	ops, _ := t.group("op")
+	finals, _ := t.group("final")
+	tombstones, _ := t.group("tombstone")
 	log.Logf("exectest.Stress: %d rounds, %d workers, seed %d, in %v: %d commands admitted (%s), %d starts refused (%s)",
 		t.get("rounds"), cfg.Workers, cfg.Seed, took.Round(time.Millisecond), total, admitted, refusals, refused)
 	log.Logf("exectest.Stress: %d ends by kind (%s); by cause (%s); output (%s)", ends, ended, causes, output)
 	log.Logf("exectest.Stress: by behaviour (%s)", behaviours)
 	log.Logf("exectest.Stress: operations (%s)", ops)
+	log.Logf("exectest.Stress: last frames of streams (%s); tombstones (%s); %d canaries played; %d tombstones listed at rest", finals, tombstones, t.get("canary/played"), t.get("tombstones at rest"))
 	log.Logf("exectest.Stress: read %d bytes and was told %d were dropped; %d functions abandoned; %d late writers refused; what the engine says its functions broke (%s)",
 		t.get("bytes read"), t.get("bytes dropped"), t.get("abandoned"), t.get("late writers"), violations)
 }

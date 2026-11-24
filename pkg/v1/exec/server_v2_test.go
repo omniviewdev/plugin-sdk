@@ -123,10 +123,11 @@ func TestDescribeOverTheWire(t *testing.T) {
 	}
 	wantFeatures := []execv2.Feature{
 		execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN, execv2.Feature_FEATURE_RUN_STREAM,
-		execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD,
+		execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD, execv2.Feature_FEATURE_STDIN_EOF,
+		execv2.Feature_FEATURE_SESSION_MANAGEMENT,
 	}
 	if !slices.Equal(got.GetFeatures(), wantFeatures) {
-		t.Errorf("this build serves Describe, Options, Open, Run and RunStream; it lists %v, want %v", got.GetFeatures(), wantFeatures)
+		t.Errorf("this build serves Describe, Options, Open, ListSessions, ReadOutput, EndSession, Run and RunStream; it lists %v, want %v", got.GetFeatures(), wantFeatures)
 	}
 	if len(got.GetTargets()) != 1 {
 		t.Fatalf("targets = %v", got.GetTargets())
@@ -1012,23 +1013,26 @@ func TestConcurrentCallsAreIndependentAndLeaveNoLeaseBehind(t *testing.T) {
 	}
 }
 
-// ListSessions, ReadOutput and EndSession exist in the service and answer Unimplemented with a typed refusal (UNSUPPORTED) in
-// this build; Describe lists no feature for them. (Open is served: open_wire_test.go; Run and RunStream: run_server_test.go.)
-func TestTheMethodsThisBuildDoesNotServeAnswerATypedUnimplemented(t *testing.T) {
+// ListSessions, ReadOutput and EndSession are served in this build (FEATURE_SESSION_MANAGEMENT): a plugin with no session lists
+// none, and a request that names no session is refused as INVALID_REQUEST, typed, never as UNSUPPORTED. (What each does with a
+// session is pinned by replay_wire_test.go, detach_memory_test.go and tombstone_memory_test.go.)
+func TestTheSessionManagementMethodsAreServedAndRefuseARequestThatNamesNoSession(t *testing.T) {
 	f := newFixture(t)
 	raw := f.server.Raw()
 	ctx := f.ctx(t)
+	if list, err := raw.ListSessions(ctx, &execv2.ListSessionsRequest{}); err != nil || len(list.GetSessions()) != 0 {
+		t.Fatalf("ListSessions of a plugin with no session: %v, %v, want an empty list", list, err)
+	}
 	calls := map[string]func() error{
-		"ListSessions": func() error { _, err := raw.ListSessions(ctx, &execv2.ListSessionsRequest{}); return err },
-		"ReadOutput":   func() error { _, err := raw.ReadOutput(ctx, &execv2.ReadOutputRequest{}); return err },
-		"EndSession":   func() error { _, err := raw.EndSession(ctx, &execv2.EndSessionRequest{}); return err },
+		"ReadOutput": func() error { _, err := raw.ReadOutput(ctx, &execv2.ReadOutputRequest{}); return err },
+		"EndSession": func() error { _, err := raw.EndSession(ctx, &execv2.EndSessionRequest{}); return err },
 	}
 	for name, call := range calls {
 		t.Run(name, func(t *testing.T) {
 			err := call()
 			st, ok := status.FromError(err)
-			if !ok || st.Code() != codes.Unimplemented {
-				t.Fatalf("%s: %v", name, err)
+			if !ok || st.Code() != codes.InvalidArgument {
+				t.Fatalf("%s: %v, want InvalidArgument", name, err)
 			}
 			var info *errdetails.ErrorInfo
 			for _, d := range st.Details() {
@@ -1036,8 +1040,8 @@ func TestTheMethodsThisBuildDoesNotServeAnswerATypedUnimplemented(t *testing.T) 
 					info = i
 				}
 			}
-			if info == nil || info.GetDomain() != execErrorDomain || info.GetReason() != "UNSUPPORTED" {
-				t.Errorf("%s is Unimplemented without the typed refusal: %v", name, st.Details())
+			if info == nil || info.GetDomain() != execErrorDomain || info.GetReason() != "INVALID_REQUEST" {
+				t.Errorf("%s is refused without the typed INVALID_REQUEST: %v", name, st.Details())
 			}
 		})
 	}

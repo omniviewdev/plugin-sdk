@@ -40,7 +40,7 @@ func (s *openOnlyStream) Send(*execv2.ClientFrame) error { return nil }
 func (s *openOnlyStream) Recv() (*execv2.ServerFrame, error) {
 	if !s.opened && !s.silent {
 		s.opened = true
-		return openedFrame(&execv2.SessionFacts{SessionId: "x"}), nil
+		return openedFrame(&execv2.Opened{Facts: &execv2.SessionFacts{SessionId: "x"}, Replay: &execv2.Replay{}}), nil
 	}
 	<-s.ctx.Done()
 	return nil, s.ctx.Err()

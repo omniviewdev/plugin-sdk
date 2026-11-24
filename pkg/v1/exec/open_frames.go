@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	execv2 "github.com/omniviewdev/plugin-sdk/proto/exec/v2"
 )
@@ -38,7 +39,9 @@ func sizeToProto(s Size) *execv2.Size {
 
 // openedFacts are the facts of a new session as Opened carries them: what the SDK knows before the author runs. The
 // target, the requested program and size, the capabilities the session was opened with and the limits as declared. The
-// terminal, the pid, the transport and the TERM are the target's to say at Started, so they are absent here.
+// terminal, the pid, the transport and the TERM are the target's to say at Started, so they are absent here, and so is the
+// program of a session whose choice runs none (an attach): the request's argv there is the target's default, which is no
+// program that runs.
 func (c *command) openedFacts() *execv2.SessionFacts {
 	info := &c.target.info
 	facts := &execv2.SessionFacts{
@@ -50,10 +53,15 @@ func (c *command) openedFacts() *execv2.SessionFacts {
 			DisplayName: info.DisplayName,
 			Selection:   maps.Clone(c.request.Selection),
 		},
-		Program:         &execv2.Program{Argv: slices.Clone(c.request.Argv), Name: programName(c.request.Argv)},
 		Capabilities:    capabilitiesToProto(c.Opened()),
 		Limits:          sessionLimitsToProto(info.Session),
 		CreatedAtUnixMs: c.created.UnixMilli(),
+	}
+	c.mu.Lock()
+	noProgram := c.noProgram
+	c.mu.Unlock()
+	if !noProgram {
+		facts.Program = &execv2.Program{Argv: slices.Clone(c.request.Argv), Name: programName(c.request.Argv)}
 	}
 	if c.request.TTY {
 		facts.Size = sizeToProto(c.request.Size)
@@ -102,8 +110,9 @@ func (c *command) startedFacts(opened *execv2.SessionFacts) (*execv2.SessionFact
 	return facts, true
 }
 
-// dropReason is why this command's queue overwrote output: a target that is drained eagerly overflowed the host's
-// reading, any other loses output only to a session that is ending.
+// dropReason is why this command's ring overwrote output that its stream had not read: a target that is drained eagerly overflowed
+// the host's reading, any other loses output only to a session that is ending. (What the ring loses while no stream is attached is
+// DETACHED_OVERFLOW, which no stream is sent: the host learns of it from the start of the replay when it attaches.)
 func (c *command) dropReason() execv2.DropReason {
 	if c.gate != nil && c.gate.effective().Stall == StallLossy {
 		return execv2.DropReason_DROP_REASON_EAGER_DRAIN_OVERFLOW
@@ -111,10 +120,19 @@ func (c *command) dropReason() execv2.DropReason {
 	return execv2.DropReason_DROP_REASON_REPLAY_FULL
 }
 
-func openedFrame(facts *execv2.SessionFacts) *execv2.ServerFrame {
-	return &execv2.ServerFrame{Frame: &execv2.ServerFrame_Opened{Opened: &execv2.Opened{
-		Facts: facts, Replay: &execv2.Replay{}, // a new session: start = end = bytes = 0
-	}}}
+// openedFrame is the first frame of a stream: the facts and the replay that follows (for a new session, start = end = bytes = 0).
+func openedFrame(opened *execv2.Opened) *execv2.ServerFrame {
+	return &execv2.ServerFrame{Frame: &execv2.ServerFrame_Opened{Opened: opened}}
+}
+
+// detachedFrame is the last frame of a stream whose session lives on: why it left and, when a lease runs, when the session ends if
+// nobody attaches (zero when none does: a superseded stream's session is attached to another).
+func detachedFrame(reason execv2.DetachReason, lease time.Time) *execv2.ServerFrame {
+	detached := &execv2.Detached{Reason: reason}
+	if !lease.IsZero() {
+		detached.LeaseExpiresUnixMs = lease.UnixMilli()
+	}
+	return &execv2.ServerFrame{Frame: &execv2.ServerFrame_Detached{Detached: detached}}
 }
 
 func noticeFrame(kind execv2.NoticeKind) *execv2.ServerFrame {

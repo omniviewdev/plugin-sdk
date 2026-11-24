@@ -9,6 +9,7 @@ import (
 	"math"
 	"runtime"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -86,6 +87,13 @@ func newProofRig(t testing.TB, targets ...exec.Target) *proofRig {
 		refs[target.Info.Type] = rig.conns.WireTarget(t, target.Info.Type, "thing-1")
 	}
 	return &proofRig{wireRig: rig, refs: refs}
+}
+
+// via is the rig whose host is the client given: the sessions that it opens run on that client's connection, to the same plugin.
+func (r *proofRig) via(client exec.Client) *proofRig {
+	wire := *r.wireRig
+	wire.client = client
+	return &proofRig{wireRig: &wire, refs: r.refs}
 }
 
 // openOn opens a session of a kind through a client, which is the rig's or another connection's. It is safe to call from any
@@ -197,7 +205,7 @@ func (a *proofAudit) take(frame *execv2.ServerFrame) bool {
 			a.problem("Started after the first Output: it comes before it")
 		}
 		a.started = true
-	case *execv2.ServerFrame_Notice, *execv2.ServerFrame_Link:
+	case *execv2.ServerFrame_Notice, *execv2.ServerFrame_Link, *execv2.ServerFrame_Resized, *execv2.ServerFrame_Fact:
 	case *execv2.ServerFrame_Output:
 		a.output(f.Output)
 	case *execv2.ServerFrame_Dropped:
@@ -320,6 +328,30 @@ func proofSpin(d time.Duration) {
 	for end := time.Now().Add(d); time.Now().Before(end); {
 	}
 }
+
+// proofClockTick is the step of the clock that the proofs time with, time.Now: tens of nanoseconds on Linux and macOS, and the period of
+// the timer interrupt on Windows, where the monotonic clock advances with it (15.6 ms, unless some process asked for a finer timer, and
+// the Go runtime does not). A duration shorter than a tick reads as zero or as a whole tick, so a bar of a few milliseconds timed with
+// such a clock measures the clock and not what it was set to measure: a bar is no tighter than two ticks (proofBar), and the baseline
+// that a ratio divides by is no smaller than one (proofBaseline).
+var proofClockTick = sync.OnceValue(func() time.Duration {
+	tick := time.Duration(math.MaxInt64)
+	for range 3 {
+		start, next := time.Now(), time.Now()
+		for next.Equal(start) { // the readings are the clock's own: the step between two of them is a tick
+			next = time.Now()
+		}
+		tick = min(tick, next.Sub(start))
+	}
+	return tick
+})
+
+// proofBar is bar for a duration that proofs time with time.Now: no tighter than the clock can tell (two ticks).
+func proofBar(bar time.Duration) time.Duration { return max(bar, 2*proofClockTick()) }
+
+// proofBaseline is the duration that a ratio divides by, measured on the same clock: a baseline that the clock read as zero is one tick,
+// so that the ratio of a run to it cannot fail for want of a denominator.
+func proofBaseline(measured time.Duration) time.Duration { return max(measured, proofClockTick()) }
 
 // proofScaled is full, or reduced when a run is slow by design: under the race detector, or with -short.
 func proofScaled(full, reduced int) int {

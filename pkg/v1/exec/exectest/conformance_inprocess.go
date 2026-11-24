@@ -609,10 +609,12 @@ func casePairEnding(t checkT, target exec.Target, env *inProcessEnv) {
 // the stress entry
 // ---------------------------------------------------------------------------------------------------------------
 
-// caseStressEntry runs the stress harness: workers loop open, input, resize, end, run and cancel against scripted targets on the real
-// engine, Close lands at a random moment, and the end-state invariant holds at rest. It runs for what Stress runs for by default (one
-// second under go test -short, five otherwise). It does not use the author's target: the harness has the targets it needs, one of
-// each way to behave and to misbehave.
+// caseStressEntry runs the stress harness: workers loop open, input, resize, signal, detach, attach, supersede, end, close-stream, run, cancel,
+// EndSession and ListSessions against scripted targets on the real engine, read through windows that prove, by offset, that every byte of the
+// output was read once or told lost; Close lands at a random moment, and the end-state invariant holds at rest (the registry, the goroutines,
+// the last frame of every stream, the cause of every end, the tombstones and their ids). It runs for what Stress runs for by default (one
+// second under go test -short, two otherwise, or what OMNIVIEW_LIFECYCLE_HAMMER says), on every platform. It does not use the author's
+// target: the harness has the targets it needs, one of each way to behave and to misbehave.
 func caseStressEntry(t checkT, _ exec.Target, env *inProcessEnv) {
 	t.Helper()
 	runStress(t, env.stress, env.hooks)

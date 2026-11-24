@@ -2,6 +2,7 @@ package exechook
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	logging "github.com/omniviewdev/plugin-sdk/log"
@@ -40,6 +41,19 @@ type EngineConfig struct {
 	// OptionsInFlight is how many Options callbacks of one target the unary Options RPC may have in flight, those the engine
 	// gave up on included. Zero is the default.
 	OptionsInFlight int
+	// OptionsCacheTTL is how long the admission of an Open or a Run reuses the result of an Options callback for the same request
+	// (the unary Options RPC always runs the callback and refreshes the result). Zero is the default (5 s); a negative value turns
+	// the cache off.
+	OptionsCacheTTL time.Duration
+	// TombstoneTTL is how long an ended session stays listed and readable and keeps its id, MaxTombstones how many ended
+	// sessions the engine remembers, and TombstoneBytes how many bytes of their output it keeps in all. Zero is the default.
+	TombstoneTTL   time.Duration
+	MaxTombstones  int
+	TombstoneBytes int
+	// Now is the clock of the engine's lifetimes: how long an ended session's tombstone holds its id and its output, when a lease
+	// ends, the activity time of a session. Nil is the wall clock. A test that gives one moves it, and the tombstones expire as
+	// it passes: the engine's timers (the lease's, the grace's) are not the clock's and stay real.
+	Now func() time.Time
 }
 
 // Engine is the exec engine of a plugin, driven in process.
@@ -57,6 +71,18 @@ type Engine interface {
 	Live() []string
 	// Abandoned returns how many functions the engine gave up on that have not returned yet.
 	Abandoned() int64
+	// Attach attaches a stream to a session that lives, as a served Open{attach} does: the request is admitted as the served
+	// one is (strict, a session id, an attach), the session is found and its older stream, if it has one, is superseded: the
+	// engine's attach, not another. The stream it returns reads the replay of the ring from the offset, which begins no earlier
+	// than it, and then the live output; a refusal is the *exec.Error the served Open sends as a status (NOT_FOUND /
+	// SESSION_UNKNOWN for a session that does not live, INVALID_REQUEST for an offset the session has not reached).
+	Attach(ctx context.Context, req *execv2.OpenRequest) (Stream, error)
+	// ListSessions is the served ListSessions: the live sessions and the tombstones, by id.
+	ListSessions(ctx context.Context) ([]*execv2.SessionInfo, error)
+	// ReadOutput is the served ReadOutput: a cursor read of the ring of a session, live or tombstoned.
+	ReadOutput(ctx context.Context, req *execv2.ReadOutputRequest) (*execv2.ReadOutputResponse, error)
+	// EndSession is the served EndSession: it destroys a session that has no stream and returns once it has ended.
+	EndSession(ctx context.Context, req *execv2.EndSessionRequest) error
 }
 
 // Command is a running command, as its consumer sees it.
@@ -75,6 +101,11 @@ type Command interface {
 	CloseInput()
 	// Resize sends a terminal size.
 	Resize(seq uint32, cols, rows uint16) ResizeDisposition
+	// Signal sends a signal to the function, as the session's consumer: the session takes it whether or not a stream is attached.
+	Signal(sig execv2.Signal) SignalDisposition
+	// Stream is the stream that started the session, which Read reads and which carries the frames a host's stream sends
+	// (the ones that take effect only while the stream is the session's). It is nil for a run, which has no stream.
+	Stream() Stream
 	// Close ends the command with the cause "requested": graceful, or with kill without waiting for the function.
 	Close(kill bool)
 	// Done is closed when the command has ended and its Result is final. The command's id is still held at that moment: an
@@ -126,6 +157,80 @@ const (
 	ResizeInvalid
 	ResizeClosed
 )
+
+// SignalDisposition is what became of a signal.
+type SignalDisposition int
+
+// The dispositions of a signal.
+const (
+	// SignalQueued: the signal is in the function's queue.
+	SignalQueued SignalDisposition = iota
+	// SignalUndeclared: the signal is not among the signals the session declares now. Served, a stream that sends one has broken
+	// what it was told, and ends with the session.
+	SignalUndeclared
+	// SignalClosed: the command has ended and takes no signal.
+	SignalClosed
+)
+
+// ErrStreamLeft is what a read of a Stream, and a frame sent on it, returns once the stream is no longer the session's: it
+// detached, another stream took the session over, or it was released. The stream then has its last frame, Final.
+var ErrStreamLeft = errors.New("exechook: the stream left its session")
+
+// Replay is what the Opened of a stream says of the replay that follows: exactly the bytes [Start, End) of the output, and
+// then the live stream, which begins at End. Start is no earlier than the offset the stream attached from, and is later when the
+// ring no longer held it. A new session's replay is empty, at offset 0.
+type Replay struct {
+	Start, End, Bytes uint64
+}
+
+// Final is the last frame of a stream: Ended, when the session ended while the stream was attached to it, or Detached, when the
+// stream left and the session lives on.
+type Final struct {
+	// Detached is false for Ended.
+	Detached bool
+	// Reason is why a Detached stream left: the host asked, another stream took the session over, or neither (it was released).
+	Reason execv2.DetachReason
+	// Lease is when the session ends if nobody attaches, for a stream that left by itself; zero for a superseded one.
+	Lease time.Time
+}
+
+// Stream is one stream's attachment to a session: what an Open stream is, without the transport. A session has at most one
+// stream that is its own at a time. The frames a stream sends take effect only while it is (a stream that another took the
+// session from, or that left, sends frames that are ignored, and these return ErrStreamLeft); a frame is applied whole before the
+// session changes hands, or not at all.
+type Stream interface {
+	// Opened is the Opened of the stream: the session's facts as of now and the description of its replay.
+	Opened() *execv2.Opened
+	// Replay is Opened's replay.
+	Replay() Replay
+	// Read waits for what the stream is to send: first the replay, then the live output, as the ranges lost since the last Read
+	// and up to len(buf) bytes of one stream. It returns io.EOF once the session ended while the stream was attached and the
+	// output was read to its end, ErrStreamLeft once the stream is no longer the session's, and ctx's error when ctx ends first.
+	Read(ctx context.Context, buf []byte) (Chunk, error)
+	// Final is the last frame of the stream, once Read has returned io.EOF or ErrStreamLeft.
+	Final() Final
+	// Write is an input frame, which waits while the function's input queue is full.
+	Write(ctx context.Context, p []byte) (int, error)
+	// CloseInput is a close_input frame.
+	CloseInput() error
+	// Resize is a resize frame.
+	Resize(seq uint32, cols, rows uint16) (ResizeDisposition, error)
+	// Signal is a signal frame.
+	Signal(sig execv2.Signal) (SignalDisposition, error)
+	// Detach is a Detach frame: the stream leaves and the session lives for the lease (zero is the session's own, and the
+	// target's maximum is the most). It returns when the lease ends as applied, and false when the stream cannot leave: it is no
+	// longer the session's, or the session is ending, which the stream is then told in its last frame.
+	Detach(lease time.Duration) (expires time.Time, ok bool)
+	// Close is a Close frame: it ends the session, if this stream is the session's, gracefully or with a kill.
+	Close(kill bool)
+	// Release is the host closing its side of the stream, or the stream breaking: an implicit detach, for the session's own lease. The stream
+	// may still be read, and is told Detached with no reason; and when the session has ended already it is a no-op, and the stream reads
+	// the tail of the output it was given.
+	Release()
+	// Leave is the end of the stream's handler, after which the stream is no longer read: it releases the stream, as Release does, and drops
+	// what the stream still held of the replay it was given. Whoever reads the stream stops first.
+	Leave()
+}
 
 // Started is what the host receives when the command is running.
 type Started struct {

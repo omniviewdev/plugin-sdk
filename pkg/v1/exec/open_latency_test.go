@@ -30,6 +30,7 @@ func TestOpenLatencyEchoOneByteRoundTripOnAnIdleSession(t *testing.T) {
 	if proofRace {
 		floor = 10 * time.Millisecond
 	}
+	floor = proofBar(floor) // a clock whose tick is longer than the floor cannot tell a p95 below it
 	t.Logf("idle echo, one byte, %s/%s, GOMAXPROCS %d: %v (the plan's bar: p95 <= %v; this run's floor: %v)",
 		runtime.GOOS, runtime.GOARCH, runtime.GOMAXPROCS(0), stats, bar, floor)
 	if stats.P95 > floor {

@@ -288,6 +288,13 @@ func TestErrorFromStatusReadsThePeersContextAsTheCallers(t *testing.T) {
 	}
 }
 
+// laggingContext is a context whose deadline has passed and whose timer has not run it out yet: its Err is nil, its Done never closes and its deadline
+// is behind the clock. It is the moment between the two, which a transport that reads the clock sees: gRPC refuses a call whose deadline has passed
+// with DeadlineExceeded before the context says so, and reads the cancellation of a stream after its deadline as the deadline.
+type laggingContext struct{ context.Context }
+
+func (laggingContext) Deadline() (time.Time, bool) { return time.Now().Add(-time.Second), true }
+
 // A bare status keeps the class of its own code. The caller's context error is wrapped only when it says the same thing
 // the status does: a Canceled status stays ErrorClassCancelled and a DeadlineExceeded status stays ErrorClassTimeout, whichever
 // way the context ended after the call returned, and the error then wraps no context error that would contradict it.
@@ -296,6 +303,9 @@ func TestErrorFromStatusKeepsTheClassOfABareStatusWhateverTheContextSays(t *test
 	cancel()
 	expired, stop := context.WithDeadline(context.Background(), time.Unix(1, 0))
 	defer stop()
+	lagging := laggingContext{context.Background()}
+	ahead, stopAhead := context.WithTimeout(context.Background(), time.Hour)
+	defer stopAhead()
 	tests := []struct {
 		name  string
 		ctx   context.Context
@@ -307,6 +317,10 @@ func TestErrorFromStatusKeepsTheClassOfABareStatusWhateverTheContextSays(t *test
 		{"a Canceled status, the caller's deadline passed", expired, codes.Canceled, ErrorClassCancelled, nil},
 		{"a DeadlineExceeded status, the caller's deadline passed", expired, codes.DeadlineExceeded, ErrorClassTimeout, context.DeadlineExceeded},
 		{"a DeadlineExceeded status, the caller cancelled", canceled, codes.DeadlineExceeded, ErrorClassTimeout, nil},
+		{"a DeadlineExceeded status, the caller's context alive (the plugin's own timeout, or its answer at the deadline it was sent read before the caller's own timer fired)", context.Background(), codes.DeadlineExceeded, ErrorClassTimeout, nil},
+		{"a DeadlineExceeded status, the caller's deadline passed and its timer has not run it out (the transport read the clock)", lagging, codes.DeadlineExceeded, ErrorClassTimeout, context.DeadlineExceeded},
+		{"a Canceled status, the caller's deadline passed and its timer has not run it out", lagging, codes.Canceled, ErrorClassCancelled, nil},
+		{"a DeadlineExceeded status, the caller's deadline still ahead (the plugin's own timeout)", ahead, codes.DeadlineExceeded, ErrorClassTimeout, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -344,6 +358,7 @@ func TestErrorFromStatusDecodesTheStatusBeforeItReadsTheContext(t *testing.T) {
 	}{
 		{"cancelled", canceled, codes.Canceled, "CANCELLED", ErrorClassCancelled, context.Canceled},
 		{"past its deadline", expired, codes.DeadlineExceeded, "TIMEOUT", ErrorClassTimeout, context.DeadlineExceeded},
+		{"past its deadline, its timer not yet run", laggingContext{context.Background()}, codes.DeadlineExceeded, "TIMEOUT", ErrorClassTimeout, context.DeadlineExceeded},
 	}
 	for _, caller := range callers {
 		t.Run("the caller is "+caller.name, func(t *testing.T) {

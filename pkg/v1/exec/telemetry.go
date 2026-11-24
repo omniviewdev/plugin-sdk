@@ -26,6 +26,7 @@ const (
 	metricFrames           = "omniview.plugin.self.sdk.exec.frames.ignored"
 	metricAbandonedRefused = "omniview.plugin.self.sdk.exec.abandoned.refused"
 	metricOptionsRefused   = "omniview.plugin.self.sdk.exec.options.refused"
+	metricSignalsDropped   = "omniview.plugin.self.sdk.exec.signals.dropped"
 )
 
 // The closed words of the violations metric: what an author's function did that the contract forbids. Each is also the
@@ -49,6 +50,10 @@ const (
 	violationOptionsHung     = "options_hung"      // Target.Options did not return within its deadline and the grace
 	violationClassifyHung    = "classify_hung"     // Target.Classify did not return within its deadline
 	violationDidNotReturn    = "did_not_return"    // a function did not return within the kill wait after a kill
+	violationFactInvalid     = "fact_invalid"      // a Fact the wire cannot carry, or one of another kind than the one asked
+	violationFactUndeclared  = "fact_undeclared"   // Proc.Fact for a fact the target does not push
+	violationQueryUnanswered = "query_unanswered"  // the function did not answer a query within the deadline
+	violationQueryTwice      = "query_twice"       // Query.Answer called twice for one query
 )
 
 // telemetry holds the instruments of one engine. Instruments are registered once per registry: building a telemetry on a
@@ -65,6 +70,7 @@ type telemetry struct {
 	frames         *sdkdiag.Counter
 	refused        *sdkdiag.Counter
 	refusedOptions *sdkdiag.Counter
+	signalsDropped *sdkdiag.Counter
 	counts         *gaugeCounts
 	own            atomic.Int64 // the functions this engine gave up on that have not returned; the gauge counts every engine of the registry
 }
@@ -112,6 +118,7 @@ func newTelemetry(r *sdkdiag.Registry) *telemetry {
 	t.frames, _ = r.Counter(metricFrames, "1")
 	t.refused, _ = r.Counter(metricAbandonedRefused, "1")
 	t.refusedOptions, _ = r.Counter(metricOptionsRefused, "1")
+	t.signalsDropped, _ = r.Counter(metricSignalsDropped, "1")
 	return t
 }
 
@@ -174,9 +181,13 @@ func (t *telemetry) abandonedRefused() { t.refused.Add(1) }
 // allows.
 func (t *telemetry) optionsRefused() { t.refusedOptions.Add(1) }
 
+// signalDropped counts a signal of the host that was lost to a function that does not read Proc.Signals.
+func (t *telemetry) signalDropped() { t.signalsDropped.Add(1) }
+
 // traffic adds what a session moved since it last reported: the bytes its function wrote and the host sent, the bytes
-// the output queue overwrote (and why), and the writes that had to wait for a reader.
-func (t *telemetry) traffic(out, in, dropped, stalls uint64, dropReason execv2.DropReason) {
+// the output queue overwrote (and why: dropReason for what an attached reader lost, and the detached overflow for what left the
+// ring while no stream was attached), and the writes that had to wait for a reader.
+func (t *telemetry) traffic(out, in, dropped, droppedDetached, stalls uint64, dropReason execv2.DropReason) {
 	if out > 0 {
 		t.bytes.Add(out, sdkdiag.Attr{Key: sdkdiag.KeyDirection, Value: "out"})
 	}
@@ -185,6 +196,9 @@ func (t *telemetry) traffic(out, in, dropped, stalls uint64, dropReason execv2.D
 	}
 	if dropped > 0 {
 		t.dropped.Add(dropped, sdkdiag.Attr{Key: sdkdiag.KeyReason, Value: word(dropReason.String(), "DROP_REASON_")})
+	}
+	if droppedDetached > 0 {
+		t.dropped.Add(droppedDetached, sdkdiag.Attr{Key: sdkdiag.KeyReason, Value: word(execv2.DropReason_DROP_REASON_DETACHED_OVERFLOW.String(), "DROP_REASON_")})
 	}
 	if stalls > 0 {
 		t.stalls.Add(stalls, sdkdiag.Attr{Key: sdkdiag.KeyQueue, Value: "output"})

@@ -572,21 +572,31 @@ func TestServedRunGivesTheCommandItsStdinAndThenEndOfInput(t *testing.T) {
 		return exec.ExitCode(0), nil
 	}, runSrvLimits(exec.RunLimits{MaxStdinBytes: 512 << 10, MaxOutputBytes: 1 << 20})))
 
+	// Each run is given two seconds, not the 20 the others of this file get: the command echoes its stdin and returns once the input
+	// has ended, which takes milliseconds, so a timeout here is a plugin that never ended the input, and it should fail the test at once
+	// (a run that is held to its default timeout holds the test for as long).
+	const stdinBound = 2_000
 	t.Run("a small stdin is echoed and the input ends", func(t *testing.T) {
-		res := rig.mustRun(rig.request(runSrvStdin("hello\nworld\n"), runSrvTimeout(20_000)))
+		res := rig.mustRun(rig.request(runSrvStdin("hello\nworld\n"), runSrvTimeout(stdinBound)))
+		if res.GetOutcome() == execv2.Outcome_OUTCOME_TIMED_OUT {
+			t.Fatalf("the run ended at its timeout of %d ms with %d bytes echoed: the command was sent its stdin and was never told that the input had ended", stdinBound, len(res.GetStdout()))
+		}
 		if res.GetOutcome() != execv2.Outcome_OUTCOME_EXITED || string(res.GetStdout()) != "hello\nworld\n" || string(res.GetStderr()) != "12" {
 			t.Errorf("result %v: want the stdin echoed and its end seen (12 bytes)", res)
 		}
 	})
 	t.Run("a stdin larger than the input queue arrives whole", func(t *testing.T) {
 		stdin := string(runSrvText(300 << 10))
-		res := rig.mustRun(rig.request(runSrvStdin(stdin), runSrvTimeout(20_000), runSrvCaps(400<<10, 0, execv2.TruncatePolicy_TRUNCATE_POLICY_HEAD)))
+		res := rig.mustRun(rig.request(runSrvStdin(stdin), runSrvTimeout(stdinBound), runSrvCaps(400<<10, 0, execv2.TruncatePolicy_TRUNCATE_POLICY_HEAD)))
+		if res.GetOutcome() == execv2.Outcome_OUTCOME_TIMED_OUT {
+			t.Fatalf("the run ended at its timeout of %d ms with %d of %d bytes echoed: the command was sent its stdin and was never told that the input had ended", stdinBound, len(res.GetStdout()), len(stdin))
+		}
 		if res.GetOutcome() != execv2.Outcome_OUTCOME_EXITED || string(res.GetStdout()) != stdin || string(res.GetStderr()) != strconv.Itoa(len(stdin)) {
 			t.Errorf("outcome %v, %d bytes echoed, stderr %q: want all %d bytes and then the end of input", res.GetOutcome(), len(res.GetStdout()), res.GetStderr(), len(stdin))
 		}
 	})
 	t.Run("an empty stdin is no stdin", func(t *testing.T) {
-		res := rig.mustRun(rig.request(runSrvTimeout(20_000)))
+		res := rig.mustRun(rig.request(runSrvTimeout(stdinBound)))
 		if res.GetOutcome() != execv2.Outcome_OUTCOME_FAILED || res.GetFailed().GetClass() != execv2.ErrorClass_ERROR_CLASS_INTERNAL {
 			t.Errorf("result %v: the function reports an error for a run with no stdin, which is a failure of the target", res)
 		}
@@ -633,7 +643,10 @@ func TestServedRunWithNoTimeoutUsesTheTargetsDefault(t *testing.T) {
 }
 
 // The call returns at its timeout whether or not the function does: a function that ignores its context is given up on, and it
-// holds its place until it returns.
+// holds its place until it returns. A timeout is a kill, which waits for the function for the kill wait (tens of milliseconds) and never
+// for the grace (5 s) that a function that honors its context is given. The engine's waits for a function that was told to stop are the
+// test's here: the timer that the kill arms is read (a grace would be seen at once, by its length) and runs out when the test says, so
+// that nothing decides by how long the call took, which on a slow runner is no measure of anything.
 func TestServedRunReturnsAtItsTimeoutEvenIfTheFunctionNeverReturns(t *testing.T) {
 	gate := exectest.NewGate()
 	var runs atomic.Int32
@@ -644,14 +657,29 @@ func TestServedRunReturnsAtItsTimeoutEvenIfTheFunctionNeverReturns(t *testing.T)
 		return exec.ExitCode(0), nil
 	}, runSrvLimits(exec.RunLimits{MaxConcurrent: 1})))
 	t.Cleanup(gate.Open) // registered after the rig: it runs before the rig waits for the functions that ignore their context
+	timers := newFakeTimers()
+	exec.SetPluginEngineSeams(rig.server.Plugin, exec.EngineSeams{NewTimer: timers.New})
 
-	started := time.Now()
-	res := rig.mustRun(rig.request(runSrvTimeout(30)))
-	// An upper bound, never a measure: a timeout is a kill, which does not wait out the grace (5 s) that a function that honors its
-	// context is given, so the call returns long before it. A bound well under the grace tells the two apart.
-	if took := time.Since(started); took > 3*time.Second {
-		t.Errorf("the call took %v for a timeout of 30 ms: a timeout kills, and does not wait for a function that ignores its context", took)
+	type answer struct {
+		res *execv2.RunResult
+		err error
 	}
+	ctx, req := rig.ctx(), rig.request(runSrvTimeout(30))
+	answered := make(chan answer, 1)
+	go func() {
+		res, err := rig.raw.Run(ctx, req)
+		answered <- answer{res, err}
+	}()
+	timer := timers.next(t)
+	if timer.d >= time.Second {
+		t.Fatalf("the engine armed a timer of %v for the end of a run whose timeout had passed, want the kill wait (tens of milliseconds): a timeout kills, and does not wait out the grace for a function that ignores its context", timer.d)
+	}
+	timer.fire()
+	got := awaitValue(t, answered, "the call to return at its timeout, whether or not its function does")
+	if got.err != nil {
+		t.Fatalf("Run: %v", got.err)
+	}
+	res := got.res
 	if res.GetOutcome() != execv2.Outcome_OUTCOME_TIMED_OUT || string(res.GetStdout()) != "stuck" || res.GetExitSource() != execv2.ExitSource_EXIT_SOURCE_HOST {
 		t.Fatalf("result %v, want TIMED_OUT from the host with the output so far", res)
 	}

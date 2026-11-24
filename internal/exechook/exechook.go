@@ -43,6 +43,25 @@ func OpenedCapabilities[C, O any](declared C, options []O, selection map[string]
 	return rule(declared, options, selection)
 }
 
+// resolvedMode holds the registered rule, a func(options []O, selection map[string]string) (resolved map[string]string, noProgram bool).
+var resolvedMode any
+
+// SetResolvedMode registers the rule that resolves the choice of every option for a command (pkg/v1/exec's resolvedModeOf): the
+// request's selection with the default choice of each option it omits, and whether the choice that some option takes runs no program.
+func SetResolvedMode[O any](rule func(options []O, selection map[string]string) (resolved map[string]string, noProgram bool)) {
+	resolvedMode = rule
+}
+
+// ResolvedMode applies the registered rule. It panics when no rule is registered for O, which means pkg/v1/exec is not linked into
+// the program or registered another type: a bug of this module, which no author can cause.
+func ResolvedMode[O any](options []O, selection map[string]string) (resolved map[string]string, noProgram bool) {
+	rule, ok := resolvedMode.(func([]O, map[string]string) (map[string]string, bool))
+	if !ok {
+		panic("exechook: no resolved mode rule is registered for this type: pkg/v1/exec is not linked")
+	}
+	return rule(options, selection)
+}
+
 // StartGate is the rule of pkg/v1/exec for the Started of one session, as a set of functions: at most one Started, and
 // always before the first output (proto/exec/v2/exec.proto, message Started). F is what an author reports with
 // Proc.Started and C the capabilities of a session.

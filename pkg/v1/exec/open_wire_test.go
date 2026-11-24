@@ -27,7 +27,8 @@ func TestDescribeListsTheFeaturesOfTheSessionsAndRunsItServes(t *testing.T) {
 	}
 	want := []execv2.Feature{
 		execv2.Feature_FEATURE_SESSION, execv2.Feature_FEATURE_RUN, execv2.Feature_FEATURE_RUN_STREAM,
-		execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD,
+		execv2.Feature_FEATURE_ENV, execv2.Feature_FEATURE_CWD, execv2.Feature_FEATURE_STDIN_EOF,
+		execv2.Feature_FEATURE_SESSION_MANAGEMENT,
 	}
 	got := description.GetFeatures()
 	if len(got) != len(want) {

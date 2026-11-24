@@ -516,13 +516,16 @@ type runRig struct {
 	features []execv2.Feature
 	// merged says the target declares no separate standard error.
 	merged bool
+	// stdinBound is how long a run that sends its command a stdin is given: see stdinScenario. Zero is the default.
+	stdinBound time.Duration
 	// lastStream is the stream that the last call of both read.
 	lastStream *streamCall
 }
 
-// newRunRig serves a fake of the declared target. options, when it is not nil, is the Options callback of the fake: the author's
-// own is never called. A target the case gives a lowered limit has it in its Info.
-func newRunRig(t checkT, env *wireEnv, target exec.Target, options exec.OptionsFunc) *runRig {
+// newOptionsRig serves a fake of the declared target whose Options callback is options (nil: it has none): the author's own is never
+// called. It is newWireRig with the one thing that a case about the choices of a target, or about what an Options callback does to a
+// start, needs added.
+func newOptionsRig(t checkT, env *wireEnv, target exec.Target, options exec.OptionsFunc) *wireRig {
 	t.Helper()
 	serve := env.serve
 	if serve == nil {
@@ -535,8 +538,15 @@ func newRunRig(t checkT, env *wireEnv, target exec.Target, options exec.OptionsF
 		}
 		return serve(t, targets, conns)
 	}
-	base := newWireRig(t, &local, target)
-	rig := &runRig{wireRig: base, merged: !base.info.Capabilities.SeparateStderr}
+	return newWireRig(t, &local, target)
+}
+
+// newRunRig serves a fake of the declared target. options, when it is not nil, is the Options callback of the fake: the author's
+// own is never called. A target the case gives a lowered limit has it in its Info.
+func newRunRig(t checkT, env *wireEnv, target exec.Target, options exec.OptionsFunc) *runRig {
+	t.Helper()
+	base := newOptionsRig(t, env, target, options)
+	rig := &runRig{wireRig: base, merged: !base.info.Capabilities.SeparateStderr, stdinBound: env.stdinBound}
 	description, err := base.client.Describe(context.Background())
 	if err != nil {
 		t.Fatalf("describe: %v", err)
@@ -840,8 +850,19 @@ func (r *runRig) expectStream(name string, call *streamCall, want wantRun) {
 // It returns the result of Run, and keeps the stream (nil when the build does not list RunStream) in lastStream.
 func (r *runRig) both(name string, req *execv2.RunRequest, s runScript, want wantRun) *execv2.RunResult {
 	r.t.Helper()
+	return r.bothAfter(name, req, s, want, nil)
+}
+
+// bothAfter is both that calls afterRun with the call of Run once it has been held to what the run was expected to say, before RunStream
+// is called: a case that ends the body there (a run that was held to its timeout by a fault that RunStream would only be held to again)
+// does not wait for the stream as well.
+func (r *runRig) bothAfter(name string, req *execv2.RunRequest, s runScript, want wantRun, afterRun func(call *runCall)) *execv2.RunResult {
+	r.t.Helper()
 	call := r.run(req)
 	r.expect(name, call, want)
+	if afterRun != nil {
+		afterRun(call)
+	}
 	r.lastStream = nil
 	if r.lists(execv2.Feature_FEATURE_RUN_STREAM) {
 		streamReq := proto.Clone(req).(*execv2.RunRequest)
