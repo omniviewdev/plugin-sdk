@@ -30,6 +30,21 @@ message PortForwardSession {
   }
   SessionState state = 8;
   PortForwardSessionEncryption encryption = 9;
+  // The host the forwarder's listener is bound to, as the forwarder states it:
+  // an IP address ("127.0.0.1", "::1", "0.0.0.0", "::"; an IPv6 address may
+  // carry a zone of letters, digits, '.', '_' and '-') or "localhost" in any
+  // case. Empty means the forwarder did not say. It is never guessed or
+  // defaulted.
+  //
+  // A reader takes the forward as reachable only from this computer if and only
+  // if the value is not empty and is "localhost" (ASCII, any case) or an IP
+  // address that is loopback once an IPv4-mapped IPv6 address is unmapped:
+  // 127.0.0.0/8, ::1 or ::ffff:127.x.y.z. Any other value (0.0.0.0 and :: for
+  // every interface, a LAN or a link-local address) is reachable from other
+  // computers, and empty is unknown and is never loopback. A frame from a
+  // plugin that predates this field decodes with it empty, and a reader that
+  // predates it ignores it.
+  string local_host = 10;
 
   oneof connection {
     PortForwardResourceConnection resource_connection = 20;
