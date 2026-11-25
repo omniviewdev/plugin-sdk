@@ -395,6 +395,7 @@ func (m *Manager) createPortForwardSession(
 			State:          SessionStateActive,
 			ConnectionType: opts.ConnectionType,
 			Encryption:     opts.Encryption,
+			LocalHost:      m.statedLocalHost(ctx, sessionID, result.LocalHost),
 			LocalPort:      opts.LocalPort,
 			RemotePort:     opts.RemotePort,
 		},

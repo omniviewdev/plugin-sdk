@@ -23,6 +23,10 @@ type StubResourceForwarder struct {
 	// Simulates a tunnel that starts successfully but dies later.
 	FailAfter error
 
+	// LocalHost is the host the stub states its listener is bound to, as a real
+	// forwarder states it in ForwarderResult.LocalHost. Empty: the stub does not say.
+	LocalHost string
+
 	calls atomic.Int32
 	mu    sync.Mutex
 	opts  []networker.ResourcePortForwardHandlerOpts
@@ -70,6 +74,7 @@ func (s *StubResourceForwarder) ForwardResource(
 
 	return &networker.ForwarderResult{
 		SessionID: sessionID,
+		LocalHost: s.LocalHost,
 		Ready:     ready,
 		ErrCh:     errCh,
 	}, nil
@@ -95,6 +100,10 @@ type StubStaticForwarder struct {
 	// FailAfter causes the ErrCh to emit this error after Ready closes.
 	// Simulates a tunnel that starts successfully but dies later.
 	FailAfter error
+
+	// LocalHost is the host the stub states its listener is bound to, as a real
+	// forwarder states it in ForwarderResult.LocalHost. Empty: the stub does not say.
+	LocalHost string
 
 	calls atomic.Int32
 }
@@ -137,6 +146,7 @@ func (s *StubStaticForwarder) ForwardStatic(
 
 	return &networker.ForwarderResult{
 		SessionID: sessionID,
+		LocalHost: s.LocalHost,
 		Ready:     ready,
 		ErrCh:     errCh,
 	}, nil

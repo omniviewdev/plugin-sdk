@@ -32,6 +32,10 @@ The utility `RegisterPlugin` helpers above return errors; check them. `RegisterR
 
 Package names such as `pkg/v1/exec` remain current utility paths. They do not mean that those calls use the removed resource-v1 contract.
 
+A forwarder states where it listens. `ForwarderResult.LocalHost` is the host its listener is bound to: an IP address (an IPv6 address may carry a zone of letters, digits, `.`, `_` and `-`) or `localhost` in any case. A forwarder that opens its own listeners reads it from their addresses with `networker.LocalHostOf`, and one that hands listening to a library states the address it asked the library to bind. The session carries it as `local_host` (`PortForwardSession.LocalHost`, protobuf field 10). Empty means the forwarder did not say: the SDK never fills it in (the local port it picked says nothing about where the forwarder listens). A value that cannot be stated (not UTF-8, longer than 255 bytes, a zone of other bytes, anything that is not an IP address or `localhost`) is dropped, so the session states none; the log records its length and which of these it was, never the value. A host that predates the field ignores it, and a plugin that predates it sends none.
+
+**Reading `local_host`.** A consumer takes the forward as reachable only from this computer if and only if the host is not empty and is `localhost` (ASCII, any case) or an IP address that is loopback once an IPv4-mapped IPv6 address is unmapped: `127.0.0.0/8`, `::1` or `::ffff:127.x.y.z` (parse it with its zone, which does not change the answer). Every other host is reachable from other computers: `0.0.0.0` and `::` (every interface), a LAN address, a link-local address. Empty is unknown and is never loopback.
+
 Connection-scoped custom tools require `tools.CallInput.Route` with an explicit,
 nonempty resource-v2 `AccessRoute.Connection`. The body route may select a
 connection without metadata; selected connection metadata, when present, must

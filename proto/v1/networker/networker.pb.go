@@ -139,6 +139,21 @@ type PortForwardSession struct {
 	Labels     map[string]string               `protobuf:"bytes,7,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	State      PortForwardSession_SessionState `protobuf:"varint,8,opt,name=state,proto3,enum=omniview.sdk.networker.v1.PortForwardSession_SessionState" json:"state,omitempty"`
 	Encryption *PortForwardSessionEncryption   `protobuf:"bytes,9,opt,name=encryption,proto3" json:"encryption,omitempty"`
+	// The host the forwarder's listener is bound to, as the forwarder states it:
+	// an IP address ("127.0.0.1", "::1", "0.0.0.0", "::"; an IPv6 address may
+	// carry a zone of letters, digits, '.', '_' and '-') or "localhost" in any
+	// case. Empty means the forwarder did not say. It is never guessed or
+	// defaulted.
+	//
+	// A reader takes the forward as reachable only from this computer if and only
+	// if the value is not empty and is "localhost" (ASCII, any case) or an IP
+	// address that is loopback once an IPv4-mapped IPv6 address is unmapped:
+	// 127.0.0.0/8, ::1 or ::ffff:127.x.y.z. Any other value (0.0.0.0 and :: for
+	// every interface, a LAN or a link-local address) is reachable from other
+	// computers, and empty is unknown and is never loopback. A frame from a
+	// plugin that predates this field decodes with it empty, and a reader that
+	// predates it ignores it.
+	LocalHost string `protobuf:"bytes,10,opt,name=local_host,json=localHost,proto3" json:"local_host,omitempty"`
 	// Types that are valid to be assigned to Connection:
 	//
 	//	*PortForwardSession_ResourceConnection
@@ -239,6 +254,13 @@ func (x *PortForwardSession) GetEncryption() *PortForwardSessionEncryption {
 		return x.Encryption
 	}
 	return nil
+}
+
+func (x *PortForwardSession) GetLocalHost() string {
+	if x != nil {
+		return x.LocalHost
+	}
+	return ""
 }
 
 func (x *PortForwardSession) GetConnection() isPortForwardSession_Connection {
@@ -905,7 +927,7 @@ var File_proto_v1_networker_networker_proto protoreflect.FileDescriptor
 
 const file_proto_v1_networker_networker_proto_rawDesc = "" +
 	"\n" +
-	"\"proto/v1/networker/networker.proto\x12\x19omniview.sdk.networker.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1eproto/resource/v2/domain.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x82\a\n" +
+	"\"proto/v1/networker/networker.proto\x12\x19omniview.sdk.networker.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1eproto/resource/v2/domain.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa1\a\n" +
 	"\x12PortForwardSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -921,7 +943,10 @@ const file_proto_v1_networker_networker_proto_rawDesc = "" +
 	"\x05state\x18\b \x01(\x0e2:.omniview.sdk.networker.v1.PortForwardSession.SessionStateR\x05state\x12W\n" +
 	"\n" +
 	"encryption\x18\t \x01(\v27.omniview.sdk.networker.v1.PortForwardSessionEncryptionR\n" +
-	"encryption\x12k\n" +
+	"encryption\x12\x1d\n" +
+	"\n" +
+	"local_host\x18\n" +
+	" \x01(\tR\tlocalHost\x12k\n" +
 	"\x13resource_connection\x18\x14 \x01(\v28.omniview.sdk.networker.v1.PortForwardResourceConnectionH\x00R\x12resourceConnection\x12e\n" +
 	"\x11static_connection\x18\x15 \x01(\v26.omniview.sdk.networker.v1.PortForwardStaticConnectionH\x00R\x10staticConnection\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +

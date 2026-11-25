@@ -239,6 +239,16 @@ func cloneConnection(c Connection) Connection {
 // ---------------------------------------------------------------------------
 
 // PortForwardSession represents a session between a forwarding target and the host.
+//
+// LocalHost is the host the forwarder's listener is bound to, as the forwarder
+// stated it (see ForwarderResult.LocalHost): an IP address or "localhost" in any
+// case, and empty when the forwarder did not say. It is never defaulted, so
+// LocalPort alone is not an address, and empty is unknown, never loopback. A
+// reader takes the forward as reachable only from this computer if and only if
+// the host is not empty and is "localhost" or an IP address that is loopback once
+// an IPv4-mapped IPv6 address is unmapped (127.0.0.0/8, ::1, ::ffff:127.x.y.z);
+// 0.0.0.0, ::, a LAN or a link-local address are reachable from other computers.
+// A session from a plugin that predates the field decodes with it empty.
 type PortForwardSession struct {
 	CreatedAt      time.Time                    `json:"created_at"`
 	UpdatedAt      time.Time                    `json:"updated_at"`
@@ -249,6 +259,7 @@ type PortForwardSession struct {
 	State          SessionState                 `json:"state"`
 	ConnectionType PortForwardConnectionType    `json:"connection_type"`
 	Encryption     PortForwardSessionEncryption `json:"encryption"`
+	LocalHost      string                       `json:"local_host,omitempty"`
 	LocalPort      int32                        `json:"local_port"`
 	RemotePort     int32                        `json:"remote_port"`
 }
@@ -277,6 +288,7 @@ func (s *PortForwardSession) ToProto() (*networkerpb.PortForwardSession, error) 
 		State:      s.State.ToProto(),
 		Protocol:   s.Protocol.ToProto(),
 		Encryption: s.Encryption.ToProto(),
+		LocalHost:  s.LocalHost,
 		LocalPort:  s.LocalPort,
 		RemotePort: s.RemotePort,
 	}
@@ -331,6 +343,7 @@ func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) (*PortFor
 	metadata := PortForwardSession{
 		ID:         s.Id,
 		Labels:     s.Labels,
+		LocalHost:  s.LocalHost,
 		LocalPort:  s.LocalPort,
 		RemotePort: s.RemotePort,
 		Encryption: PortForwardSessionEncryptionFromProto(s.Encryption),
@@ -387,6 +400,7 @@ func NewPortForwardSessionFromProto(s *networkerpb.PortForwardSession) (*PortFor
 		Encryption:     PortForwardSessionEncryptionFromProto(s.GetEncryption()),
 		ConnectionType: connectionType,
 		Connection:     connection,
+		LocalHost:      s.GetLocalHost(),
 		LocalPort:      s.GetLocalPort(),
 		RemotePort:     s.GetRemotePort(),
 	}, nil
