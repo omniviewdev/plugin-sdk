@@ -7,8 +7,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
@@ -208,6 +210,77 @@ func TestRelatedReadConfigurationFailsClosed(t *testing.T) {
 	}
 }
 
+func TestRelatedRegistrationChargesEncodedDiscovery(t *testing.T) {
+	const limit = 16 << 10
+	// At this length, BytesValue has one tag byte and a two-byte length.
+	const exact = limit - len(`{"sources":[""]}`) - 3
+	eight := make([]string, 8)
+	for i := range eight {
+		eight[i] = strings.Repeat(strconv.Itoa(i), 2048)
+	}
+	for _, tc := range []struct {
+		name   string
+		ids    []string
+		wantOK bool
+	}{
+		{"exact", []string{strings.Repeat("x", exact)}, true},
+		{"over by one", []string{strings.Repeat("x", exact+1)}, false},
+		{"escaping", []string{strings.Repeat("\n", exact/2+1)}, false},
+		{"array overhead", eight, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := relatedConfig(func(context.Context, *string, RelatedReadRequest) (RelatedReadPage, error) {
+				panic("discovery must not run the handler")
+			})
+			cfg.RelatedReads[0].Sources = tc.ids
+			c, err := NewController(cfg)
+			if c != nil {
+				t.Cleanup(func() { _ = c.Close() })
+			}
+			if (err == nil) != tc.wantOK {
+				t.Fatalf("registration error = %v, want success = %t", err, tc.wantOK)
+			}
+		})
+	}
+}
+
+func TestRelatedDeliveryChecksHeldGenerationBeforeReturningRows(t *testing.T) {
+	c := newTestController(t, relatedConfig(func(context.Context, *string, RelatedReadRequest) (RelatedReadPage, error) {
+		panic("delivery must not invoke the handler")
+	}))
+	startTestConnection(t, c)
+	in := relatedRequestFixture()
+	lease, _, done, err := c.lease(t.Context(), in.Route)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := sync.OnceFunc(done)
+	defer release()
+	// Keep the held slot but delay observing context cancellation deterministically.
+	delivery := context.WithoutCancel(lease)
+	page := RelatedReadPage{Coverage: "complete", Sources: []string{in.Root.Address.Type}, Rows: []RelatedReadCandidate{{
+		Row: map[string]any{"value": "private"}, Evidence: []ResourceReference{in.Root},
+	}}}
+	if got, readErr := c.finishRelatedRead(delivery, in, page, 1); readErr != nil || len(got.Rows) != 1 {
+		t.Fatalf("live generation rejected: %+v %v", got, readErr)
+	}
+	slot := lease.Value(catalogSlotKey{}).(*clientSlot[string])
+	stopped := make(chan error, 1)
+	go func() { _, stopErr := c.StopConnection(t.Context(), in.Route.Connection); stopped <- stopErr }()
+	select {
+	case <-slot.ctx.Done():
+	case <-time.After(testWait):
+		t.Fatal("connection did not begin retirement")
+	}
+	if got, readErr := c.finishRelatedRead(delivery, in, page, 1); ErrorCode(readErr) != "RESET_REQUIRED" || len(got.Rows) != 0 {
+		t.Fatalf("retiring generation escaped delivery fence: %+v %v", got, readErr)
+	}
+	release()
+	if stopErr := waitForError(t, "stop after delivery", stopped); stopErr != nil {
+		t.Fatal(stopErr)
+	}
+}
+
 func TestRelatedReaderStaysReservedUntilCanceledCallbackReturns(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	var calls atomic.Int32
@@ -218,25 +291,33 @@ func TestRelatedReaderStaysReservedUntilCanceledCallbackReturns(t *testing.T) {
 		}
 		return RelatedReadPage{Coverage: "partial", Sources: []string{in.Root.Address.Type}, Rows: []RelatedReadCandidate{}}, nil
 	}))
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock() // Release the native callback before controller cleanup on every failure path.
 	startTestConnection(t, c)
 	in := relatedRequestFixture()
 	ctx := acceptedControllerContext(relatedSession(t.Context(), in), t, c)
 	first, cancel := context.WithCancel(ctx)
 	defer cancel()
-	done := make(chan error, 1)
-	go func() { _, err := c.ReadRelatedV1(first, in); done <- err }()
+	readAsync := func(ctx context.Context) <-chan error {
+		done := make(chan error, 1)
+		go func() { _, err := c.ReadRelatedV1(ctx, in); done <- err }()
+		return done
+	}
+	done := readAsync(first)
 	select {
 	case <-entered:
 	case err := <-done:
 		t.Fatalf("native callback never entered: %v", err)
+	case <-time.After(testWait):
+		t.Fatal("native callback did not enter")
 	}
 	cancel()
-	_, overlap := c.ReadRelatedV1(ctx, in)
+	overlap := waitForError(t, "overlapping read", readAsync(ctx))
 	s, _ := SessionFromContext(ctx)
 	s.RequesterID = "independent-window"
-	_, independent := c.ReadRelatedV1(WithSession(ctx, s), in)
-	close(release)
-	if err := <-done; err == nil || ErrorCode(overlap) != "UNAVAILABLE" || independent != nil || calls.Load() != 2 {
+	independent := waitForError(t, "independent read", readAsync(WithSession(ctx, s)))
+	unblock()
+	if err := waitForError(t, "canceled read", done); err == nil || ErrorCode(overlap) != "UNAVAILABLE" || independent != nil || calls.Load() != 2 {
 		t.Fatalf("physical reservation failed: first=%v overlap=%v independent=%v calls=%d", err, overlap, independent, calls.Load())
 	}
 	if _, err := c.ReadRelatedV1(ctx, in); err != nil || calls.Load() != 3 {

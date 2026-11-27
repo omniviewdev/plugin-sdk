@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	"github.com/omniviewdev/plugin-sdk/pkg/resource/v2/internal/relatedwire"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 	pkgsettings "github.com/omniviewdev/plugin-sdk/settings"
 )
@@ -29,7 +30,7 @@ const (
 	relatedSourcesMethod = "/" + relatedService + "/RelatedSourcesV1"
 	relatedOwnerMD       = "omniview-extension-owner-bin"
 	relatedConnectionMD  = "omniview-extension-connection-bin"
-	relatedRequestBytes  = 16 << 10
+	relatedRequestBytes  = relatedwire.MetadataBytes
 	relatedResponseBytes = 512 << 10
 	relatedTimeout       = 5 * time.Second
 )
@@ -157,9 +158,7 @@ func (s *relatedOwnerServer) invoke(ctx context.Context, method string, in resou
 		if err != nil {
 			return nil, relatedStatus(err)
 		}
-		result, limit = struct {
-			Sources []string `json:"sources"`
-		}{sources}, relatedRequestBytes
+		result, limit = relatedwire.Discovery{Sources: sources}, relatedwire.MetadataBytes
 	case readRelatedMethod:
 		page, err := s.owner.ReadRelatedV1(ctx, in)
 		if err != nil {
@@ -169,14 +168,14 @@ func (s *relatedOwnerServer) invoke(ctx context.Context, method string, in resou
 	default:
 		return nil, status.Error(codes.Unimplemented, "Related operation unavailable.")
 	}
-	out := relatedBuffer{limit: limit}
-	if err := json.MarshalWrite(&out, result); err != nil {
+	var out bytes.Buffer
+	if err := relatedwire.WriteJSON(&out, result, limit); err != nil {
 		return nil, status.Error(codes.ResourceExhausted, "Related response unavailable.")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, rpcError(err)
 	}
-	return wrapperspb.Bytes(out.data.Bytes()), nil
+	return wrapperspb.Bytes(out.Bytes()), nil
 }
 
 // Only this closed status class crosses the owner boundary. Even a classified
@@ -202,18 +201,6 @@ func relatedStatus(err error) error {
 		code = codes.DeadlineExceeded
 	}
 	return status.Error(code, "Related read unavailable.")
-}
-
-type relatedBuffer struct {
-	data  bytes.Buffer
-	limit int
-}
-
-func (b *relatedBuffer) Write(p []byte) (int, error) {
-	if len(p) > b.limit-b.data.Len() || 1+protowire.SizeBytes(b.data.Len()+len(p)) > b.limit {
-		return 0, limited("Related response too large.")
-	}
-	return b.data.Write(p)
 }
 
 func (s *relatedOwnerServer) session(ctx context.Context, in resourcev2.RelatedReadRequest) (context.Context, error) {

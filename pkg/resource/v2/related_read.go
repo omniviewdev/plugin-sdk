@@ -2,12 +2,15 @@ package resourcev2
 
 import (
 	"context"
+	"io"
 	"math"
 	"slices"
 	"strings"
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/omniviewdev/plugin-sdk/pkg/resource/v2/internal/relatedwire"
 )
 
 // RelatedReadRequest contains only host-admitted native state. Sources are the
@@ -117,7 +120,7 @@ func relatedFamilies(ids []string) bool {
 	if len(ids) == 0 || len(ids) > maxRelatedFamilies {
 		return false
 	}
-	remaining := 16 << 10
+	remaining := relatedwire.MetadataBytes
 	for i, id := range ids {
 		if id == "" || len(id) > remaining || !utf8.ValidString(id) || slices.Contains(ids[:i], id) {
 			return false
@@ -141,6 +144,10 @@ func prepareRelatedReads[T any](reads []RelatedReadRegistration[T], managed bool
 		if relatedOwnerID(r.Operation) == "" || r.RootType == "" || len(r.RootType) > 16<<10 || !utf8.ValidString(r.RootType) ||
 			r.Read == nil || !relatedFamilies(r.Sources) || seen[key] {
 			return nil, invalid("Invalid or duplicate related read declaration.")
+		}
+		// Count the exact wire encoding, including JSON escaping and the protobuf envelope.
+		if err := relatedwire.WriteJSON(io.Discard, relatedwire.Discovery{Sources: r.Sources}, relatedwire.MetadataBytes); err != nil {
+			return nil, invalid("Related source declaration exceeds the metadata frame limit.")
 		}
 		seen[key] = true
 		reads[i].Sources = slices.Clone(r.Sources)
@@ -318,14 +325,29 @@ func (c *Controller[T]) ReadRelatedV1(ctx context.Context, in RelatedReadRequest
 	if err != nil {
 		return RelatedReadPage{}, err
 	}
+	return c.finishRelatedRead(ctx, in, page, len(r.Sources))
+}
+
+func (c *Controller[T]) finishRelatedRead(
+	ctx context.Context, in RelatedReadRequest, page RelatedReadPage, declaredSources int,
+) (RelatedReadPage, error) {
 	if err := validateRelatedPage(in, page); err != nil {
 		return RelatedReadPage{}, err
 	}
-	if len(in.Sources) < len(r.Sources) {
+	if len(in.Sources) < declaredSources {
 		page.Coverage = "partial"
 	}
 	if err := ctx.Err(); err != nil {
 		return RelatedReadPage{}, err
+	}
+	// Lease cancellation propagates asynchronously. Linearize delivery against
+	// retirement under the same lock as StopConnection, after result validation.
+	slot, _ := ctx.Value(catalogSlotKey{}).(*clientSlot[T])
+	c.mu.Lock()
+	current := slot != nil && !c.closed && c.clients[in.Route.Connection] == slot && !slot.stopping && slot.ctx.Err() == nil
+	c.mu.Unlock()
+	if !current {
+		return RelatedReadPage{}, NewError("RESET_REQUIRED", "Related connection changed.")
 	}
 	return page, nil
 }

@@ -1,13 +1,13 @@
 package plugin
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	json "encoding/json/v2"
+	"io"
 	"math/big"
 	"net"
 	"slices"
@@ -25,6 +25,7 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	resourcev2 "github.com/omniviewdev/plugin-sdk/pkg/resource/v2"
+	"github.com/omniviewdev/plugin-sdk/pkg/resource/v2/internal/relatedwire"
 	"github.com/omniviewdev/plugin-sdk/pkg/types"
 )
 
@@ -232,11 +233,12 @@ func TestRelatedRegistrationIsOptionalAndEnvelopeBudgetIncludesFraming(t *testin
 	if _, ok := s.GetServiceInfo()[relatedService]; ok {
 		t.Fatal("unconfigured owner registered an extension service")
 	}
-	buf := relatedBuffer{limit: 512 << 10}
-	if _, err := buf.Write(bytes.Repeat([]byte{'x'}, (512<<10)-4)); err != nil {
+	// The two JSON quotes and four protobuf framing bytes count towards the limit.
+	text := strings.Repeat("x", relatedResponseBytes-6)
+	if err := relatedwire.WriteJSON(io.Discard, text, relatedResponseBytes); err != nil {
 		t.Fatal("exactly 512 KiB refused", err)
 	}
-	if _, err := buf.Write([]byte{'x'}); err == nil {
+	if err := relatedwire.WriteJSON(io.Discard, text+"x", relatedResponseBytes); err == nil {
 		t.Fatal("protobuf envelope was not charged")
 	}
 }

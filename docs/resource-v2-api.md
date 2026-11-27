@@ -350,6 +350,8 @@ dispatches on an active client generation under a checked session and catalog
 revision. Both methods require a mutually verified gRPC channel. The request
 and response are closed JSON in one `google.protobuf.BytesValue`: 16 KiB
 request, 512 KiB response (16 KiB for metadata), including protobuf framing.
+Registration rejects source lists whose encoded discovery response exceeds
+that metadata limit, including JSON escaping and the protobuf envelope.
 Neither service uses resource commands, native queries or JS.
 
 The callback receives the private incarnation-bearing root and only the collection
