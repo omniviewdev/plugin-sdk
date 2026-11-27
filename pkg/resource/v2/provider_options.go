@@ -23,6 +23,9 @@ type Config[ClientT any] struct {
 	Catalog       func(context.Context, CatalogRequest) (Catalog, error)
 	Registrations []Registration[ClientT]
 	Lifecycle     *Lifecycle[ClientT]
+	// RelatedReads binds fixed owner operations to an already-started client.
+	// Nil installs no extension service. Construction copies these declarations.
+	RelatedReads []RelatedReadRegistration[ClientT]
 	// ConnectionMetadata observes public server facts using an already-started
 	// leased client. It must honor cancellation and never return secrets.
 	ConnectionMetadata func(context.Context, types.Connection, *ClientT) (ConnectionMetadataUpdate, error)

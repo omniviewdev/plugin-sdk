@@ -341,6 +341,40 @@ Negotiate remote features through [`FeatureNegotiator`](../pkg/resource/v2/featu
 | Describe/stream actions | `ActionCatalog`, `StreamingActioner` in [ancillary.go](../pkg/resource/v2/ancillary.go) | Exactly one `ready` after native establishment, before output |
 | Publish source sessions | `SourceProvider`, `SourceEmitter` in [source.go](../pkg/resource/v2/source.go) | Emit snapshot, snapshot boundary, then changes; declare honest continuity |
 
+An installed owner can separately opt in to the native `omniview.extension.v1.Owner`
+service with `Config[T].RelatedReads`. Each `RelatedReadRegistration[T]` fixes the
+versioned `Operation`, `RootType`, static `Sources` (1–8 distinct type IDs) and
+typed `Read` callback. `sdk.RegisterResourcePlugin` binds the service to the
+installed owner. `RelatedSourcesV1` reads only the registration. `ReadRelatedV1`
+dispatches on an active client generation under a checked session and catalog
+revision. Both methods require a mutually verified gRPC channel. The request
+and response are closed JSON in one `google.protobuf.BytesValue`: 16 KiB
+request, 512 KiB response (16 KiB for metadata), including protobuf framing.
+Neither service uses resource commands, native queries or JS.
+
+The callback receives the private incarnation-bearing root and only the collection
+targets the host admitted. Use their **type-specific** authorities and scopes.
+The root type as a source denotes only that exact point Get, never a collection
+of other roots. The host may preauthorize a selection-only query dimension as
+`any`; identity dimensions must retain the root's exact selection.
+Re-read and authorize the root UID before acquisition and before returning.
+Read through the leased client with the caller's native credentials, not a cache
+or a more privileged client. Reserve work before each page or lookup: at most
+8 acquisitions, 64 objects per page, 2 MiB decoded input total and 5 seconds.
+Use a byte-limited reader and native page size; collecting then slicing is invalid.
+`Sources` in the result names the authorized families actually examined, never
+object counts. `complete` certifies exhaustive acquisition **and** read rights
+over each examined nonroot family scope. Establish both independently of
+candidate presence: a missing or denied individual candidate must not determine
+coverage or reveal its existence. Otherwise return generic partial coverage,
+or a permission error if no family can be examined. Supply at most 129 private candidates
+(one overflow witness), with 1–64 string/finite-number fields, 1–4 exact evidence
+references and an optional exact neighbor. Return no count, cursor or truncation
+flag. The host independently checks evidence, consent and the 64 KiB compact
+UTF-8 disclosure limit including `state`, `rows`, `coverage` and `truncated`.
+Cancellation does not release the authenticated window's physical read slot
+until its handler returns. Overlapping reads fail without starting native work.
+
 Source sessions begin with a framework-issued `begin` frame. Providers emit snapshot observations and call `EndSnapshot` with coverage and continuity before sending changes. Snapshot-only sessions terminate at the boundary; update sessions terminate with reset or failure. Catalog `sourceUpdates` capabilities declare `gapFree` or `bestEffort` continuity. Existing explicit non-Kubernetes `AcquireOnConnect` policy still requires that capability; it does not make every connection an inventory consumer. Hosts supply session and generation tokens and frame limits, and must reopen after a reset.
 
 `SourceOpenRequest.Binding` supplies the selected `Representation{ID, Revision}` once per generation. Finite `Record` and compact `SourceRecord` use that same format type. Observations retain tagged `Value` bodies, per-record coverage, and independent `DocumentCoverage.KnownAbsent` paths. Frame sequences use unsigned decimal strings in JSON; protobuf retains `uint64`. `CompactSourceRecord` adapts a finite record without schema copies.

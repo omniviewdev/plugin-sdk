@@ -44,6 +44,9 @@ type Controller[ClientT any] struct {
 	disabled          map[string]struct{}
 	changing          map[string]bool
 	clients           map[string]*clientSlot[ClientT]
+	// relatedReaders holds physical native reads, not merely live RPCs. A
+	// canceled handler keeps its window's slot until native work returns.
+	relatedReaders map[string]struct{}
 	// failedStarts retains only safe lifecycle outcome, never clients or errors.
 	// Entries are bounded by configured IDs and survive failed-client cleanup.
 	failedStarts     map[string]bool
@@ -108,6 +111,11 @@ func NewController[T any](cfg Config[T]) (*Controller[T], error) {
 	for i := range cfg.Registrations {
 		cfg.Registrations[i].Actions = cloneActionDescriptors(cfg.Registrations[i].Actions)
 	}
+	reads, err := prepareRelatedReads(cfg.RelatedReads, cfg.Lifecycle != nil)
+	if err != nil {
+		return nil, err
+	}
+	cfg.RelatedReads = reads
 	nonce, err := newCatalogNonce()
 	if err != nil {
 		return nil, err
