@@ -19,11 +19,15 @@ type GRPCPlugin struct {
 
 	Impl             resourcev2.Provider
 	SettingsProvider pkgsettings.Provider
+	// OwnerID is the installed identity, not the canonical resource provider.
+	// Without it the optional extension service is not registered.
+	OwnerID string
 }
 
 // GRPCServer registers resource services with the plugin's gRPC server.
 func (p *GRPCPlugin) GRPCServer(_ *goplugin.GRPCBroker, s *grpc.Server) error {
 	register(s, p.Impl, p.SettingsProvider)
+	registerRelatedOwner(s, p)
 	return nil
 }
 
@@ -39,6 +43,10 @@ func ServerOptions() []grpc.ServerOption {
 		grpc.MaxSendMsgSize(MaxWireBytes),
 		grpc.MethodMaxRecvMsgSize(resourcepb.ResourceSources_Open_FullMethodName, 256<<10),
 		grpc.MethodPartialMessageReadTimeout(resourcepb.ResourceSources_Open_FullMethodName, 5*time.Second),
+		grpc.MethodMaxRecvMsgSize(relatedSourcesMethod, relatedRequestBytes),
+		grpc.MethodMaxRecvMsgSize(readRelatedMethod, relatedRequestBytes),
+		grpc.MethodPartialMessageReadTimeout(relatedSourcesMethod, relatedTimeout),
+		grpc.MethodPartialMessageReadTimeout(readRelatedMethod, relatedTimeout),
 	}
 }
 

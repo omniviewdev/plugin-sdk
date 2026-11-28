@@ -340,6 +340,7 @@ func RegisterResourcePlugin(p *Plugin, provider resourcev2.Provider) {
 	p.RegisterCapability("resource", &rp.GRPCPlugin{
 		Impl:             provider,
 		SettingsProvider: p.SettingsProvider,
+		OwnerID:          p.GetPluginID(),
 	})
 }
 
